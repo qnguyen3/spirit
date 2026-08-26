@@ -472,12 +472,10 @@ impl Input {
             });
         }
 
-        // Safety net: commands whose availability requires AI should not execute when AI is
-        // globally disabled. They're normally filtered out of the slash command menu, but this
-        // protects keybinding-triggered execution where a bound key may still address the command.
-        if command.availability.contains(Availability::AI_ENABLED)
-            && !AISettings::as_ref(ctx).is_any_ai_enabled(ctx)
-        {
+        // Safety net: commands whose availability requires AI should not execute. They're
+        // normally filtered out of the slash command menu, but this protects keybinding-triggered
+        // execution where a bound key may still address the command.
+        if command.availability.contains(Availability::AI_ENABLED) {
             show_error_toast(format!("{} requires AI to be enabled", command.name), ctx);
             return true;
         }

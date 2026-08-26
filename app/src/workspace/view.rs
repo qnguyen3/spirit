@@ -158,6 +158,8 @@ use super::util::{
     WorkspaceMouseStates, WorkspaceState,
 };
 use super::{ActiveSession, TabBarDropTargetData, TabBarLocation, WorkspaceRegistry, util};
+use crate::agent_launcher::catalog::agent_catalog;
+use crate::agent_launcher::pane_manager::AgentPickerPaneManager;
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::agent::CancellationReason;
@@ -182,7 +184,7 @@ use crate::ai::agent_management::view::{AgentManagementView, AgentManagementView
 #[cfg(not(target_family = "wasm"))]
 use crate::ai::agent_sdk::driver::harness::{claude_transcript, codex_transcript};
 use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::ai::ambient_agents::telemetry::{CloudAgentTelemetryEvent, CloudModeEntryPoint};
+use crate::ai::ambient_agents::telemetry::CloudAgentTelemetryEvent;
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::ambient_agents::telemetry::{HandoffEntryPoint, HandoffSurface};
 use crate::ai::blocklist::agent_view::AgentViewEntryOrigin;
@@ -225,7 +227,7 @@ use crate::ai::llms::LLMPreferences;
 use crate::ai::persisted_workspace::PersistedWorkspace;
 use crate::ai_assistant::execution_context::execution_context_for_session;
 use crate::ai_assistant::panel::{AIAssistantPanelEvent, AIAssistantPanelView};
-use crate::ai_assistant::{AI_ASSISTANT_FEATURE_NAME, AI_ASSISTANT_LOGO_COLOR, AskAIType};
+use crate::ai_assistant::{AI_ASSISTANT_FEATURE_NAME, AI_ASSISTANT_LOGO_COLOR};
 use crate::app_state::{
     LeafContents, LeafSnapshot, LeftPanelDisplayedTab, LeftPanelSnapshot, NotebookPaneSnapshot,
     PaneNodeSnapshot, PaneUuid, RightPanelSnapshot, SettingsPaneSnapshot, TabGroupSnapshot,
@@ -247,7 +249,7 @@ use crate::billing::shared_objects_creation_denied_modal::{
     SharedObjectsCreationDeniedModal, SharedObjectsCreationDeniedModalEvent,
 };
 use crate::changelog_model::{ChangelogModel, ChangelogRequestType, Event as ChangelogEvent};
-use crate::channel::{Channel, ChannelState};
+use crate::channel::ChannelState;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::cloud_object::toast_message::CloudObjectToastMessage;
 use crate::cloud_object::{
@@ -281,7 +283,6 @@ use crate::editor::{
 };
 use crate::env_vars::CloudEnvVarCollection;
 use crate::env_vars::manager::{EnvVarCollectionManager, EnvVarCollectionSource};
-use crate::experiments::{BlockOnboarding, Experiment};
 use crate::launch_configs::launch_config::WindowTemplate;
 use crate::launch_configs::save_modal::{LaunchConfigModalEvent, LaunchConfigSaveModal};
 use crate::menu::{
@@ -298,10 +299,10 @@ use crate::palette::PaletteMode;
 use crate::pane_group::FilePane;
 use crate::pane_group::pane::ActionOrigin;
 use crate::pane_group::{
-    self, AIFactPane, AnyPaneContent, ChildAgentOrigin, CodeDiffPane, CodePane, CodeReviewPanelArg,
-    CustomRouterEditorPane, Direction as PaneGroupDirection, Direction, EnvironmentManagementPane,
-    ExecutionProfileEditorPane, NetworkLogPane, NewTerminalOptions, PaneGroup, PaneId, PanesLayout,
-    TabBarHoverIndex, TerminalPaneId,
+    self, AGENT_PICKER_PANE_TITLE, AIFactPane, AnyPaneContent, ChildAgentOrigin, CodeDiffPane,
+    CodePane, CodeReviewPanelArg, CustomRouterEditorPane, Direction as PaneGroupDirection,
+    Direction, EnvironmentManagementPane, ExecutionProfileEditorPane, NetworkLogPane,
+    NewTerminalOptions, PaneGroup, PaneId, PanesLayout, TabBarHoverIndex, TerminalPaneId,
 };
 use crate::persistence::ModelEvent;
 use crate::projects::ProjectManagementModel;
@@ -339,8 +340,8 @@ use crate::server::server_api::{ServerApi, ServerApiProvider, ServerTime};
 use crate::server::telemetry::{
     AddTabWithShellSource, AnonymousUserSignupEntrypoint, CloseTarget, EnvVarTelemetryMetadata,
     FileTreeSource, KnowledgePaneEntrypoint, LaunchConfigUiLocation,
-    MCPServerCollectionPaneEntrypoint, NotificationsTurnedOnSource, OpenedWarpAISource,
-    PaletteSource, SharingDialogSource, TabRenameEvent, TierLimitHitEvent, WarpDriveSource,
+    MCPServerCollectionPaneEntrypoint, NotificationsTurnedOnSource, PaletteSource,
+    SharingDialogSource, TabRenameEvent, TierLimitHitEvent, WarpDriveSource,
 };
 use crate::session_management::{SessionNavigationData, SessionSource, TabNavigationData};
 use crate::settings::cloud_preferences::CloudPreferencesSettings;
@@ -422,15 +423,13 @@ use crate::terminal::view::ambient_agent::AmbientAgentViewModel as HandoffAmbien
 use crate::terminal::view::ambient_agent::{AuthSecretFtuxView, AuthSecretFtuxViewEvent};
 #[cfg(feature = "local_tty")]
 use crate::terminal::view::docker_sandbox::DEFAULT_DOCKER_SANDBOX_BASE_IMAGE;
-use crate::terminal::view::inline_banner::ZeroStatePromptSuggestionType;
 use crate::terminal::view::load_ai_conversation::{
     RestorationDirState, RestoreConversationEntryBehavior, RestoredAIConversation,
 };
 use crate::terminal::view::ssh_file_upload::FileUploadId;
 use crate::terminal::view::{
-    AgentOnboardingVersion, ConversationRestorationInNewPaneType, LeftPanelTargetView,
-    NOTIFICATIONS_TROUBLESHOOT_URL, OnboardingIntention, OnboardingVersion, SyncEvent,
-    SyncInputType, TerminalAction,
+    ConversationRestorationInNewPaneType, LeftPanelTargetView, NOTIFICATIONS_TROUBLESHOOT_URL,
+    OnboardingIntention, SyncEvent, SyncInputType, TerminalAction,
 };
 use crate::terminal::warpify::settings::WarpifySettings;
 use crate::terminal::{self, BlockListSettings, SizeInfo, TerminalModel, TerminalView};
@@ -514,7 +513,7 @@ use crate::workspace::view::build_plan_migration_modal::{
     BuildPlanMigrationModal, BuildPlanMigrationModalEvent,
 };
 use crate::workspace::view::cloud_agent_capacity_modal::{
-    CloudAgentCapacityModal, CloudAgentCapacityModalEvent, CloudAgentCapacityModalVariant,
+    CloudAgentCapacityModal, CloudAgentCapacityModalEvent,
 };
 use crate::workspace::view::codex_modal::{CodexModal, CodexModalEvent};
 use crate::workspace::view::feature_intro_modal::{
@@ -665,8 +664,7 @@ pub(crate) const TOGGLE_CONVERSATION_LIST_VIEW_BINDING_NAME: &str =
 pub(crate) const NEW_TAB_BINDING_NAME: &str = "workspace:new_tab";
 pub(crate) const NEW_TERMINAL_TAB_BINDING_NAME: &str = "workspace:new_terminal_tab";
 pub(crate) const NEW_FILE_BINDING_NAME: &str = "workspace:new_file";
-pub(crate) const NEW_AGENT_TAB_BINDING_NAME: &str = "workspace:new_agent_tab";
-pub(crate) const NEW_AMBIENT_AGENT_TAB_BINDING_NAME: &str = "workspace:new_ambient_agent_tab";
+pub(crate) const NEW_AGENT_PICKER_BINDING_NAME: &str = "workspace:new_agent_picker";
 pub(crate) const TOGGLE_TAB_CONFIGS_MENU_BINDING_NAME: &str = "workspace:toggle_tab_configs_menu";
 
 // Editable left panel toolbelt keybindings.
@@ -894,9 +892,6 @@ pub enum BannerSeverity {
 /// Visual style for an individual banner action button.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum BannerButtonVariant {
-    /// No fill, no border, just text (and optional icon). Used for the primary
-    /// action in the Figma design (e.g. "Fix with Warp Agent").
-    Naked,
     /// Border-only, no fill (e.g. "Open file").
     Outlined,
 }
@@ -961,16 +956,6 @@ struct ModalWithTab<V> {
 struct PendingSessionConfigReplacement {
     old_pane_group_id: EntityId,
 }
-enum PendingSessionConfigTabConfigChipTutorial {
-    WhenBootstrapped {
-        has_project: bool,
-        intention: OnboardingIntention,
-    },
-    AfterSetupCommands {
-        intention: OnboardingIntention,
-    },
-}
-
 fn query_for_rewind_prefill(inputs: &[AIAgentInput]) -> Option<String> {
     inputs.iter().find_map(AIAgentInput::display_query)
 }
@@ -1081,8 +1066,6 @@ pub struct Workspace {
     pending_onboarding_intention: Option<OnboardingIntention>,
     pending_session_config_tab_config_chip: bool,
     show_session_config_tab_config_chip: bool,
-    pending_session_config_tab_config_chip_tutorial:
-        Option<PendingSessionConfigTabConfigChipTutorial>,
     new_worktree_modal: ModalViewState<Modal<NewWorktreeModal>>,
     close_session_confirmation_dialog: ViewHandle<CloseSessionConfirmationDialog>,
     rewind_confirmation_dialog: ViewHandle<RewindConfirmationDialog>,
@@ -2192,7 +2175,7 @@ impl Workspace {
             RemoveTabConfigConfirmationEvent::Confirm { path } => {
                 // If the removed config was the default, revert to Terminal.
                 let ai_settings = AISettings::as_ref(ctx);
-                let is_removed_default = ai_settings.default_session_mode(ctx)
+                let is_removed_default = ai_settings.default_session_mode()
                     == DefaultSessionMode::TabConfig
                     && ai_settings.default_tab_config_path() == path.to_string_lossy();
                 if is_removed_default {
@@ -2274,35 +2257,8 @@ impl Workspace {
                 };
                 self.handle_session_config_completed(selection, ctx);
 
-                if let Some(intention) = pending_intention {
-                    if has_worktree && has_params {
-                        // Worktree with params modal: the tab hasn't been
-                        // created yet. Keep the intention so the params modal
-                        // handler can queue the tutorial after it closes.
-                        self.pending_onboarding_intention = Some(intention);
-                    } else if has_worktree {
-                        self.queue_onboarding_tutorial_after_session_config_tab_config_chip(
-                            PendingSessionConfigTabConfigChipTutorial::AfterSetupCommands {
-                                intention,
-                            },
-                            ctx,
-                        );
-                    } else {
-                        // No worktree: tab is ready. Start the tutorial after
-                        // the tab-config chip is dismissed.
-                        // TODO(roland): We do have a directory in this case so we could consider passing has_project = true
-                        // which has an optional /init flow. But the behavior of /init needs to be revisited:
-                        // 1. Sends /init as a query which differs in behavior from /init slash command
-                        // 2. Sends /init even if not in a git repo - unclear if this should happen (depends on desired behavior from 1)
-                        // 3. With no free AI, /init will not work.
-                        self.queue_onboarding_tutorial_after_session_config_tab_config_chip(
-                            PendingSessionConfigTabConfigChipTutorial::WhenBootstrapped {
-                                has_project: false,
-                                intention,
-                            },
-                            ctx,
-                        );
-                    }
+                if pending_intention.is_some() && has_worktree && has_params {
+                    self.pending_onboarding_intention = pending_intention;
                 }
 
                 // Show the chip only when no params modal followed.
@@ -2311,16 +2267,11 @@ impl Workspace {
                 }
             }
             SessionConfigModalEvent::Dismissed => {
-                let pending_intention = self.pending_onboarding_intention.take();
+                self.pending_onboarding_intention = None;
 
                 // No tab config was created, so don't show the chip.
                 self.pending_session_config_tab_config_chip = false;
                 self.close_session_config_modal(ctx);
-
-                // Start the onboarding tutorial without project context.
-                if let Some(intention) = pending_intention {
-                    self.dispatch_tutorial_when_bootstrapped(false, intention, ctx);
-                }
             }
         }
     }
@@ -2504,40 +2455,9 @@ impl Workspace {
             && !self.current_workspace_state.is_tab_config_params_modal_open
     }
 
-    fn queue_onboarding_tutorial_after_session_config_tab_config_chip(
-        &mut self,
-        pending_tutorial: PendingSessionConfigTabConfigChipTutorial,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if matches!(
-            pending_tutorial,
-            PendingSessionConfigTabConfigChipTutorial::AfterSetupCommands { .. }
-        ) && let Some(terminal_view) = self.active_session_view(ctx)
-        {
-            terminal_view.update(ctx, |view, _| {
-                view.clear_enter_agent_view_after_pending_commands();
-            });
-        }
-        self.pending_session_config_tab_config_chip_tutorial = Some(pending_tutorial);
-    }
-
     fn dismiss_session_config_tab_config_chip(&mut self, ctx: &mut ViewContext<Self>) {
         self.pending_session_config_tab_config_chip = false;
         self.show_session_config_tab_config_chip = false;
-        if let Some(pending_tutorial) = self.pending_session_config_tab_config_chip_tutorial.take()
-        {
-            match pending_tutorial {
-                PendingSessionConfigTabConfigChipTutorial::WhenBootstrapped {
-                    has_project,
-                    intention,
-                } => {
-                    self.dispatch_tutorial_when_bootstrapped(has_project, intention, ctx);
-                }
-                PendingSessionConfigTabConfigChipTutorial::AfterSetupCommands { intention } => {
-                    self.dispatch_tutorial_after_setup_commands(intention, ctx);
-                }
-            }
-        }
         ctx.notify();
     }
 
@@ -3181,27 +3101,7 @@ impl Workspace {
             me.handle_window_settings_changed_event(event, ctx);
         });
 
-        // Show the Warp AI warm welcome iff the user hasn't dismissed it nor interacted with Warp AI before.
-        // Also, avoid showing it in integration tests to prevent interaction with other tests.
-        let mut should_show_ai_assistant_warm_welcome: bool = !FeatureFlag::AgentMode.is_enabled()
-            && AISettings::as_ref(ctx).is_any_ai_enabled(ctx)
-            && !matches!(ChannelState::channel(), Channel::Integration)
-            && ctx
-                .private_user_preferences()
-                .read_value(settings::DISMISSED_AI_ASSISTANT_WELCOME_KEY)
-                .unwrap_or_default()
-                .and_then(|s| serde_json::from_str(&s).ok())
-                .map(|dismissed: bool| !dismissed)
-                .unwrap_or(true);
-
-        // Don't automatically show the Warp AI welcome during onboarding if the block onboarding flow is being used.
-        // This way, we can delay the reveal until the end of the onboarding flow so as not to overwhelm the user.
-        if matches!(
-            BlockOnboarding::get_group(ctx),
-            Some(BlockOnboarding::VariantOne) | Some(BlockOnboarding::VariantTwo)
-        ) {
-            should_show_ai_assistant_warm_welcome = false;
-        }
+        let should_show_ai_assistant_warm_welcome = false;
 
         let tab_settings_handle = TabSettings::handle(ctx);
         ctx.subscribe_to_model(&tab_settings_handle, |me, _, event, ctx| {
@@ -3439,7 +3339,6 @@ impl Workspace {
             pending_onboarding_intention: None,
             pending_session_config_tab_config_chip: false,
             show_session_config_tab_config_chip: false,
-            pending_session_config_tab_config_chip_tutorial: None,
             new_worktree_modal,
             close_session_confirmation_dialog,
             rewind_confirmation_dialog,
@@ -4040,30 +3939,17 @@ impl Workspace {
             NewWorkspaceSource::FromCloudConversationId { conversation_id } => {
                 self.open_cloud_conversation_from_server_token(conversation_id, ctx);
             }
-            NewWorkspaceSource::AgentSession {
-                options,
-                initial_query,
-            } => {
+            NewWorkspaceSource::AgentSession { options, .. } => {
                 self.add_tab_with_pane_layout(
                     PanesLayout::SingleTerminal(options),
                     Arc::new(HashMap::new()),
                     None,
                     ctx,
                 );
-                // Enter agent mode with the environment creation query.
-                self.active_tab_pane_group().update(ctx, |pane_group, ctx| {
-                    pane_group.start_agent_mode_in_new_pane(initial_query.as_deref(), None, ctx);
-                });
                 self.check_and_trigger_onboarding(ctx);
             }
             NewWorkspaceSource::AmbientAgent => {
-                self.add_tab_with_pane_layout(
-                    PanesLayout::AmbientAgent,
-                    Arc::new(HashMap::new()),
-                    None,
-                    ctx,
-                );
-                self.check_and_trigger_onboarding(ctx);
+                self.configure_empty_workspace(None, None, ctx);
             }
             NewWorkspaceSource::TeamSwitched { .. } => {
                 self.configure_empty_workspace(
@@ -4723,115 +4609,6 @@ impl Workspace {
             settings::DISMISSED_AI_ASSISTANT_WELCOME_KEY,
             true.to_string(),
         );
-        ctx.notify();
-    }
-
-    /// Add and focus a new terminal pane in AI mode in a new tab.
-    fn add_terminal_tab_in_ai_mode(
-        &mut self,
-        zero_state_prompt_suggestion_type: Option<ZeroStatePromptSuggestionType>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        self.add_new_session_tab_internal_with_default_session_mode_behavior(
-            NewSessionSource::Tab,
-            Some(ctx.window_id()),
-            None,
-            None,
-            false,
-            DefaultSessionModeBehavior::Ignore,
-            ctx,
-        );
-        self.active_tab_pane_group().update(ctx, |pane_group, ctx| {
-            pane_group.start_agent_mode_in_new_pane(None, zero_state_prompt_suggestion_type, ctx);
-        });
-    }
-
-    /// Add and focus a new terminal pane in AI mode. Add the terminal pane to the right of
-    /// all other panes, as a split on the root node.
-    fn add_terminal_pane_in_ai_mode(
-        &mut self,
-        zero_state_prompt_suggestion_type: Option<ZeroStatePromptSuggestionType>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        self.active_tab_pane_group().update(ctx, |pane_group, ctx| {
-            pane_group.add_terminal_pane_in_agent_mode(
-                None,
-                zero_state_prompt_suggestion_type,
-                ctx,
-            );
-        });
-    }
-
-    /// Add a new terminal tab and enter the agent view with a new conversation.
-    fn add_terminal_tab_with_new_agent_view(&mut self, ctx: &mut ViewContext<Self>) {
-        let was_left_panel_open = self.active_tab_pane_group().as_ref(ctx).left_panel_open;
-        self.add_new_session_tab_internal_with_default_session_mode_behavior(
-            NewSessionSource::Tab,
-            Some(ctx.window_id()),
-            None,
-            None,
-            false,
-            DefaultSessionModeBehavior::Ignore,
-            ctx,
-        );
-        self.active_tab_pane_group().update(ctx, |pane_group, ctx| {
-            if was_left_panel_open {
-                pane_group.set_left_panel_open(true, ctx);
-            }
-            if let Some(terminal_view) = pane_group.active_session_view(ctx) {
-                terminal_view.update(ctx, |view, ctx| {
-                    view.enter_agent_view_for_new_conversation(
-                        None,
-                        AgentViewEntryOrigin::ConversationListView,
-                        ctx,
-                    );
-                });
-            }
-        });
-    }
-
-    fn toggle_ai_assistant_panel(&mut self, ctx: &mut ViewContext<Self>) {
-        // Now that the user has interacted with the panel, we can close
-        // the dialogue and mark it as dismissed.
-        if self.should_show_ai_assistant_warm_welcome {
-            self.dismiss_ai_assistant_warm_welcome(ctx);
-        }
-
-        self.tips_completed.update(ctx, |tips_completed, ctx| {
-            mark_feature_used_and_write_to_user_defaults(
-                Tip::Action(TipAction::WarpAI),
-                tips_completed,
-                ctx,
-            );
-            ctx.notify();
-        });
-
-        // The panel is already open and no models are open, so just refocus the panel.
-        // If there is a modal open, it would sit above the Warp AI panel and we would end up
-        // focusing the Warp AI panel _behind_ the floating modal. Instead, we opt for the normal
-        // toggle behavior which will close the current modal view and then toggle Warp AI.
-        if self.current_workspace_state.is_ai_assistant_panel_open
-            && !self.ai_assistant_panel.is_self_or_child_focused(ctx)
-            && !self.current_workspace_state.is_any_modal_open(ctx)
-        {
-            ctx.focus(&self.ai_assistant_panel);
-            return;
-        }
-
-        // Otherwise, open / close the panel accordingly.
-        self.current_workspace_state.is_ai_assistant_panel_open =
-            !self.current_workspace_state.is_ai_assistant_panel_open;
-
-        // Close any other modals that could be floating on top of the Warp AI panel.
-        self.current_workspace_state.close_all_modals();
-
-        if self.current_workspace_state.is_ai_assistant_panel_open {
-            // Close the resource center panel if we open the AI Assistant panel.
-            self.current_workspace_state.is_resource_center_open = false;
-            ctx.focus(&self.ai_assistant_panel);
-        } else {
-            self.focus_active_tab(ctx);
-        }
         ctx.notify();
     }
 
@@ -6575,7 +6352,7 @@ impl Workspace {
                 }
             }
             LeftPanelEvent::NewConversationInNewTab => {
-                self.add_terminal_tab_with_new_agent_view(ctx);
+                self.add_agent_picker_tab(ctx);
             }
             LeftPanelEvent::ShowDeleteConfirmationDialog {
                 conversation_id,
@@ -6761,23 +6538,25 @@ impl Workspace {
     ) -> Vec<MenuItem<WorkspaceAction>> {
         let mut menu_items = vec![];
 
-        let is_any_ai_enabled = AISettings::as_ref(ctx).is_any_ai_enabled(ctx);
         let ai_settings = AISettings::as_ref(ctx);
-        let effective_default = ai_settings.default_session_mode(ctx);
+        let effective_default = ai_settings.default_session_mode();
         let default_tab_config_path = ai_settings.default_tab_config_path().to_string();
         let shortcut_label = keybinding_name_to_display_string(NEW_TAB_BINDING_NAME, ctx);
         let reopen_closed_session_shortcut_label =
             keybinding_name_to_display_string("app:reopen_closed_session", ctx);
 
-        // 1. Agent (if AI enabled)
-        if is_any_ai_enabled {
-            let mut agent_item = MenuItemFields::new("Agent")
-                .with_on_select_action(WorkspaceAction::AddAgentTab)
-                .with_icon(icons::Icon::LayoutAlt01);
-            if effective_default == DefaultSessionMode::Agent {
-                agent_item = agent_item.with_key_shortcut_label(shortcut_label.clone());
-            }
-            menu_items.push(agent_item.into_item());
+        // 1. Agent
+        if FeatureFlag::AgentLauncher.is_enabled() {
+            menu_items.push(
+                MenuItemFields::new("New Agent…")
+                    .with_on_select_action(WorkspaceAction::AddAgentPickerTab)
+                    .with_icon(icons::Icon::Agent)
+                    .with_key_shortcut_label(keybinding_name_to_display_string(
+                        NEW_AGENT_PICKER_BINDING_NAME,
+                        ctx,
+                    ))
+                    .into_item(),
+            );
         }
 
         // 2. Terminal (+ individual shells on Windows)
@@ -6834,20 +6613,6 @@ impl Workspace {
                 }
                 menu_items.push(terminal_item.into_item());
             }
-        }
-
-        // 3. Cloud Agent (if flags enabled)
-        if is_any_ai_enabled
-            && FeatureFlag::AgentView.is_enabled()
-            && FeatureFlag::CloudMode.is_enabled()
-        {
-            let mut cloud_item = MenuItemFields::new("Cloud Agent")
-                .with_on_select_action(WorkspaceAction::AddAmbientAgentTab)
-                .with_icon(icons::Icon::LayoutAlt01);
-            if effective_default == DefaultSessionMode::CloudAgent {
-                cloud_item = cloud_item.with_key_shortcut_label(shortcut_label.clone());
-            }
-            menu_items.push(cloud_item.into_item());
         }
 
         // 3b. Local Docker Sandbox
@@ -8171,12 +7936,6 @@ impl Workspace {
             return false;
         }
 
-        // If AgentOnboarding is enabled and the user is NOT in the control group for the
-        // AgentOnboarding experiment, don't show Get Started onboarding.
-        if self.should_show_agent_onboarding(ctx) {
-            return false;
-        }
-
         true
     }
 
@@ -8198,15 +7957,6 @@ impl Workspace {
         }
 
         if !self.auth_state.is_onboarded().unwrap_or_default() {
-            if self.should_show_agent_onboarding(ctx) {
-                // If the user is anonymous, we shouldn't trigger agent onboarding.
-                // It will not display anyway, and we don't want to mark the user as onboarded.
-                if self.auth_state.is_anonymous_or_logged_out() {
-                    return false;
-                }
-                self.trigger_agent_onboarding(ctx);
-            }
-
             // Add telemetry banner for new users BEFORE the agentic onboarding blocks.
             if let Some(terminal_view_handle) = self.active_session_view(ctx) {
                 terminal_view_handle.update(ctx, |terminal_view, ctx| {
@@ -8223,39 +7973,6 @@ impl Workspace {
         }
 
         false
-    }
-
-    fn trigger_agent_onboarding(&self, ctx: &mut ViewContext<Self>) {
-        report_error!(
-            "Triggering agent onboarding callout flow but not during initial login. This should not normally happen."
-        );
-        let version = if FeatureFlag::AgentView.is_enabled() {
-            AgentOnboardingVersion::AgentModality {
-                has_project: false,
-                intention: OnboardingIntention::AgentDrivenDevelopment,
-            }
-        } else {
-            AgentOnboardingVersion::UniversalInput { has_project: false }
-        };
-        self.dispatch_onboarding(
-            TerminalAction::OnboardingFlow(OnboardingVersion::Agent(version)),
-            ctx,
-        );
-    }
-
-    fn dispatch_onboarding(&self, action: TerminalAction, ctx: &mut ViewContext<Self>) {
-        if let Some(pane_group_handle) = self.get_pane_group_view(self.active_tab_index) {
-            pane_group_handle.update(ctx, |pane_group, ctx| {
-                if let Some(terminal_view_handle) = pane_group.active_session_view(ctx) {
-                    let window_id = ctx.window_id();
-                    ctx.dispatch_typed_action_for_view(
-                        window_id,
-                        terminal_view_handle.id(),
-                        &action,
-                    );
-                }
-            });
-        }
     }
 
     fn open_suggested_agent_mode_workflow_modal(
@@ -10561,16 +10278,6 @@ impl Workspace {
             Some(WorkspaceAction::SelectTabConfig(config)) => SidecarItemKind::UserTabConfig {
                 config: config.clone(),
             },
-            Some(WorkspaceAction::AddAgentTab) => SidecarItemKind::BuiltIn {
-                name: label.to_string(),
-                default_mode: DefaultSessionMode::Agent,
-                shell: None,
-            },
-            Some(WorkspaceAction::AddAmbientAgentTab) => SidecarItemKind::BuiltIn {
-                name: label.to_string(),
-                default_mode: DefaultSessionMode::CloudAgent,
-                shell: None,
-            },
             Some(WorkspaceAction::AddTerminalTab { .. }) => SidecarItemKind::BuiltIn {
                 name: label.to_string(),
                 default_mode: DefaultSessionMode::Terminal,
@@ -10791,14 +10498,10 @@ impl Workspace {
     /// Cleans up pending state and closes the tab-config params modal without
     /// creating a tab config. Used when the modal is dismissed or cancelled.
     fn cancel_tab_config_params_modal(&mut self, ctx: &mut ViewContext<Self>) {
-        let pending_intention = self.pending_onboarding_intention.take();
+        self.pending_onboarding_intention = None;
         self.pending_session_config_replacement = None;
         self.pending_session_config_tab_config_chip = false;
         self.close_tab_config_params_modal(ctx);
-
-        if let Some(intention) = pending_intention {
-            self.dispatch_tutorial_when_bootstrapped(false, intention, ctx);
-        }
     }
 
     fn handle_tab_config_params_modal_body_event(
@@ -10808,7 +10511,7 @@ impl Workspace {
     ) {
         match event {
             TabConfigParamsModalEvent::Submit { config, params } => {
-                let pending_intention = self.pending_onboarding_intention.take();
+                self.pending_onboarding_intention = None;
                 let should_track_existing_config_open =
                     self.pending_session_config_replacement.is_none();
                 let worktree_name = self.maybe_generate_worktree_name(config);
@@ -10829,16 +10532,6 @@ impl Workspace {
                 }
                 self.close_tab_config_params_modal(ctx);
                 self.complete_pending_session_config_replacement(ctx);
-
-                // The new tab has setup commands (worktree creation); wait for
-                // them to finish before starting the onboarding tutorial, but
-                // only after the tab-config chip is dismissed.
-                if let Some(intention) = pending_intention {
-                    self.queue_onboarding_tutorial_after_session_config_tab_config_chip(
-                        PendingSessionConfigTabConfigChipTutorial::AfterSetupCommands { intention },
-                        ctx,
-                    );
-                }
 
                 // Params modal is now closed; show the chip if it was pending.
                 self.promote_session_config_tab_config_chip(ctx);
@@ -11140,7 +10833,7 @@ impl Workspace {
         let config_name = format!("Worktree: {repo_display_name}");
         // Use the user's default session mode to decide pane type.
         let pane_type = if AISettings::as_ref(ctx).is_any_ai_enabled(ctx)
-            && AISettings::as_ref(ctx).default_session_mode(ctx) == DefaultSessionMode::Agent
+            && AISettings::as_ref(ctx).default_session_mode() == DefaultSessionMode::Agent
         {
             "agent"
         } else {
@@ -12557,6 +12250,88 @@ impl Workspace {
         ctx.notify();
     }
 
+    fn add_agent_picker_tab(&mut self, ctx: &mut ViewContext<Self>) {
+        if !FeatureFlag::AgentLauncher.is_enabled() {
+            return;
+        }
+        if let Some(locator) = AgentPickerPaneManager::handle(ctx)
+            .as_ref(ctx)
+            .find_pane(ctx.window_id())
+        {
+            self.focus_pane(locator, ctx);
+            return;
+        }
+        self.add_tab_with_pane_layout(
+            PanesLayout::Snapshot(Box::new(PaneNodeSnapshot::Leaf(LeafSnapshot {
+                is_focused: true,
+                custom_vertical_tabs_title: None,
+                contents: LeafContents::AgentPicker,
+            }))),
+            Arc::new(HashMap::new()),
+            Some(AGENT_PICKER_PANE_TITLE.to_owned()),
+            ctx,
+        );
+        ctx.notify();
+    }
+
+    fn launch_agent_from_picker(&mut self, catalog_index: usize, ctx: &mut ViewContext<Self>) {
+        if !FeatureFlag::AgentLauncher.is_enabled() {
+            return;
+        }
+        let Some(agent) = agent_catalog().get(catalog_index) else {
+            log::warn!("Agent launcher: no catalog entry at index {catalog_index}");
+            return;
+        };
+        let picker_locator = AgentPickerPaneManager::handle(ctx)
+            .as_ref(ctx)
+            .find_pane(ctx.window_id());
+
+        let startup_directory = self.get_new_tab_startup_directory(
+            NewSessionSource::Tab,
+            Some(ctx.window_id()),
+            None,
+            ctx,
+        );
+        self.add_tab_with_pane_layout(
+            PanesLayout::SingleTerminal(Box::new(
+                NewTerminalOptions::default()
+                    .with_initial_directory_opt(startup_directory)
+                    .with_homepage_hidden(),
+            )),
+            Arc::new(HashMap::new()),
+            Some(agent.display_name.to_owned()),
+            ctx,
+        );
+
+        match self
+            .active_tab_pane_group()
+            .as_ref(ctx)
+            .active_session_view(ctx)
+        {
+            Some(terminal_view) => {
+                terminal_view.update(ctx, |terminal_view, ctx| {
+                    terminal_view.execute_command_or_set_pending(agent.command, ctx);
+                });
+            }
+            None => {
+                log::warn!("Agent launcher: could not find terminal view after creating new tab");
+            }
+        }
+
+        if let Some(locator) = picker_locator
+            && let Some(tab) = self
+                .tabs
+                .iter()
+                .find(|tab| tab.pane_group.id() == locator.pane_group_id)
+        {
+            let pane_group = tab.pane_group.clone();
+            pane_group.update(ctx, |pane_group, ctx| {
+                pane_group.close_pane(locator.pane_id, ctx);
+            });
+        }
+        ctx.notify();
+    }
+
     fn add_docker_sandbox_tab(&mut self, ctx: &mut ViewContext<Self>) {
         if !FeatureFlag::LocalDockerSandbox.is_enabled() {
             log::warn!("Local docker sandbox feature flag is disabled");
@@ -12600,27 +12375,6 @@ impl Workspace {
             let _ = ctx;
             log::warn!("Docker sandbox requires the `local_tty` feature; ignoring request");
         }
-    }
-
-    fn add_ambient_agent_tab(&mut self, ctx: &mut ViewContext<Self>) {
-        if !FeatureFlag::AgentView.is_enabled() || !FeatureFlag::CloudMode.is_enabled() {
-            return;
-        }
-
-        send_telemetry_from_ctx!(
-            CloudAgentTelemetryEvent::EnteredCloudMode {
-                entry_point: CloudModeEntryPoint::NewTab,
-            },
-            ctx
-        );
-
-        self.add_tab_with_pane_layout(
-            PanesLayout::AmbientAgent,
-            Arc::new(HashMap::new()),
-            None,
-            ctx,
-        );
-        ctx.notify();
     }
 
     // Adds a tab with a specific shell, only meant to be dispatched directly by actions.
@@ -12684,7 +12438,7 @@ impl Workspace {
             default_session_mode_behavior,
             DefaultSessionModeBehavior::Apply
         ) && conversation_restoration.is_none()
-            && AISettings::as_ref(ctx).default_session_mode(ctx) == DefaultSessionMode::Agent;
+            && AISettings::as_ref(ctx).default_session_mode() == DefaultSessionMode::Agent;
         #[cfg(feature = "local_tty")]
         let is_docker_sandbox = chosen_shell
             .as_ref()
@@ -16117,7 +15871,7 @@ impl Workspace {
             pane_group::Event::OpenPluginInstructionsPane(agent, kind) => {
                 self.open_plugin_instructions_pane(*agent, *kind, ctx);
             }
-            pane_group::Event::AskAIAssistant(ask_type) => self.ask_ai_assistant(ask_type, ctx),
+            pane_group::Event::AskAIAssistant(_) => {}
             pane_group::Event::SyncInput(input_type) => {
                 self.process_sync_event_for_all_synced_pane_groups(input_type, ctx);
             }
@@ -16128,7 +15882,6 @@ impl Workspace {
             pane_group::Event::OnboardingTutorialCompleted => {
                 self.pending_session_config_tab_config_chip = false;
                 self.show_session_config_tab_config_chip = false;
-                self.pending_session_config_tab_config_chip_tutorial = None;
                 ctx.notify();
             }
             pane_group::Event::InvalidatedActiveConversation => {
@@ -17214,9 +16967,7 @@ impl Workspace {
                     });
                 }
             }
-            pane_group::Event::ShowCloudAgentCapacityModal { variant } => {
-                self.open_cloud_agent_capacity_modal(*variant, ctx);
-            }
+            pane_group::Event::ShowCloudAgentCapacityModal { .. } => {}
         }
     }
 
@@ -18094,35 +17845,7 @@ impl Workspace {
                             ctx,
                         );
                     }
-                    OpenWarpAI => {
-                        if !AISettings::as_ref(ctx).is_any_ai_enabled(ctx) {
-                            return;
-                        }
-
-                        if FeatureFlag::AgentMode.is_enabled() {
-                            let active_terminal_view = self.active_session_view(ctx).expect("There must be an active terminal view if the user selected a command search result");
-
-                            active_terminal_view.update(ctx, |terminal_view, ctx| {
-                                terminal_view.ask_blocklist_ai(
-                                    &AskAIType::FromAICommandSearch {
-                                        query: Arc::new(query.to_owned()),
-                                    },
-                                    ctx,
-                                )
-                            });
-                        } else {
-                            active_input_handle.update(ctx, |input, ctx| {
-                                input.replace_buffer_content("", ctx);
-                            });
-
-                            self.ask_ai_assistant(
-                                &AskAIType::FromAICommandSearch {
-                                    query: Arc::new(query.to_string()),
-                                },
-                                ctx,
-                            );
-                        }
-                    }
+                    OpenWarpAI => {}
                     AcceptAIQuery(ai_query) => {
                         let active_terminal_view = self.active_session_view(ctx).expect("There must be an active terminal view if the user selected a command search result");
 
@@ -19355,65 +19078,6 @@ impl Workspace {
         });
     }
 
-    /// Opens the Codex modal.
-    pub fn open_codex_modal(&mut self, ctx: &mut ViewContext<Self>) {
-        self.current_workspace_state.is_codex_modal_open = true;
-        ctx.focus(&self.codex_modal);
-        ctx.notify();
-        send_telemetry_from_ctx!(TelemetryEvent::CodexModalOpened, ctx);
-    }
-
-    /// Opens a new tab and enters agent view with a prompt from a Linear deeplink.
-    pub fn open_linear_issue_work(
-        &mut self,
-        args: &crate::linear::LinearIssueWork,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        send_telemetry_from_ctx!(TelemetryEvent::LinearIssueLinkOpened, ctx);
-
-        self.add_new_session_tab_internal_with_default_session_mode_behavior(
-            NewSessionSource::Tab,
-            Some(ctx.window_id()),
-            None,  // Chosen shell
-            None,  // Conversation restoration
-            false, // Hide the agent view homepage
-            DefaultSessionModeBehavior::Ignore,
-            ctx,
-        );
-
-        let Some(terminal_view) = self
-            .active_tab_pane_group()
-            .as_ref(ctx)
-            .active_session_view(ctx)
-        else {
-            report_error!("No active terminal view after adding tab for Linear issue work");
-            return;
-        };
-
-        let prompt = args.prompt.clone();
-        terminal_view.update(ctx, |terminal_view, ctx| {
-            terminal_view.enter_agent_view_for_new_conversation(
-                prompt,
-                AgentViewEntryOrigin::LinearDeepLink,
-                ctx,
-            );
-        });
-
-        if let Some(conversation_id) = terminal_view
-            .as_ref(ctx)
-            .agent_view_controller()
-            .as_ref(ctx)
-            .agent_view_state()
-            .active_conversation_id()
-        {
-            BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, _ctx| {
-                if let Some(conversation) = history.conversation_mut(&conversation_id) {
-                    conversation.set_fallback_display_title("Linear Issue".to_string());
-                }
-            });
-        }
-    }
-
     fn handle_cloud_agent_capacity_modal_event(
         &mut self,
         event: &CloudAgentCapacityModalEvent,
@@ -19427,39 +19091,6 @@ impl Workspace {
                 ctx.notify();
             }
         }
-    }
-
-    pub fn open_cloud_agent_capacity_modal(
-        &mut self,
-        variant: CloudAgentCapacityModalVariant,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if !FeatureFlag::CloudMode.is_enabled() {
-            return;
-        }
-        self.cloud_agent_capacity_modal.update(ctx, |modal, ctx| {
-            modal.set_variant(variant);
-            ctx.notify();
-        });
-        self.current_workspace_state
-            .is_cloud_agent_capacity_modal_open = true;
-        ctx.focus(&self.cloud_agent_capacity_modal);
-        ctx.notify();
-        send_telemetry_from_ctx!(TelemetryEvent::CloudAgentCapacityModalOpened, ctx);
-    }
-
-    fn ask_ai_assistant(&mut self, ask_type: &AskAIType, ctx: &mut ViewContext<Self>) {
-        if !self.current_workspace_state.is_ai_assistant_panel_open {
-            self.toggle_ai_assistant_panel(ctx);
-        }
-
-        ctx.focus(&self.ai_assistant_panel);
-
-        self.ai_assistant_panel.update(ctx, |ai_assistant, ctx| {
-            ai_assistant.ask_ai(ask_type, ctx);
-        });
-
-        ctx.notify();
     }
 
     /// Determines if the changelog is currently being shown or if the changelog request is
@@ -20799,10 +20430,6 @@ impl Workspace {
         ctx: &AppContext,
     ) -> Box<dyn Element> {
         let mut tab_bar = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
-        let is_web_anonymous_user = self
-            .auth_state
-            .is_user_web_anonymous_user()
-            .unwrap_or_default();
 
         // Simplified mode for viewing Warp Drive objects, shared sessions, or conversation transcripts on WASM
         #[cfg(target_family = "wasm")]
@@ -20924,7 +20551,6 @@ impl Workspace {
             self.add_configurable_right_side_tab_bar_controls(
                 &mut right_controls,
                 &config,
-                is_web_anonymous_user,
                 appearance,
                 ctx,
             );
@@ -21099,13 +20725,7 @@ impl Workspace {
         // the freed flex is distributed accross the remaining flex items in the tab bar.
         tab_bar.add_child(Shrinkable::new(0.5, Empty::new().finish()).finish());
 
-        self.add_configurable_right_side_tab_bar_controls(
-            &mut tab_bar,
-            &config,
-            is_web_anonymous_user,
-            appearance,
-            ctx,
-        );
+        self.add_configurable_right_side_tab_bar_controls(&mut tab_bar, &config, appearance, ctx);
 
         let left_padding = self.compute_tab_bar_left_padding(ctx);
 
@@ -21244,7 +20864,6 @@ impl Workspace {
         &self,
         target: &mut Flex,
         config: &crate::workspace::tab_settings::HeaderToolbarChipSelection,
-        is_web_anonymous_user: bool,
         appearance: &Appearance,
         ctx: &AppContext,
     ) {
@@ -21274,25 +20893,6 @@ impl Workspace {
             if let Some(button) = self.render_header_toolbar_button(&item, appearance, ctx) {
                 target.add_child(button);
             }
-        }
-
-        // Legacy AI assistant button (non-agent-mode only)
-        if is_online
-            && !FeatureFlag::AgentMode.is_enabled()
-            && !is_web_anonymous_user
-            && !self.current_workspace_state.is_ai_assistant_panel_open
-        {
-            target.add_child(
-                Container::new(
-                    SavePosition::new(
-                        self.render_legacy_warp_ai_entrypoint_button(appearance),
-                        AI_ASSISTANT_BUTTON_ID,
-                    )
-                    .finish(),
-                )
-                .with_margin_left(TAB_BAR_PADDING_LEFT)
-                .finish(),
-            );
         }
 
         if FeatureFlag::AvatarInTabBar.is_enabled() {
@@ -21772,29 +21372,6 @@ impl Workspace {
         Align::new(hoverable.finish()).finish()
     }
 
-    fn render_legacy_warp_ai_entrypoint_button(&self, appearance: &Appearance) -> Box<dyn Element> {
-        let (icon, action, label) = (
-            icons::Icon::AiAssistant,
-            WorkspaceAction::ClickedAIAssistantIcon,
-            AI_ASSISTANT_FEATURE_NAME.to_owned(),
-        );
-
-        Align::new(
-            self.render_tab_bar_icon_button(
-                appearance,
-                icon,
-                &self.mouse_states.ai_tab_bar_button,
-                action,
-                label,
-                self.cached_keybindings[ASK_AI_ASSISTANT_KEYBINDING_NAME].clone(),
-                false,
-                false,
-            )
-            .finish(),
-        )
-        .finish()
-    }
-
     fn render_tab_bar_icon_button_tooltip(
         &self,
         appearance: &Appearance,
@@ -22076,7 +21653,7 @@ impl Workspace {
         // banners.
         let banner_fields = self
             .render_reauth_banner_element()
-            .or_else(|| self.render_settings_error_banner(app))
+            .or_else(|| self.render_settings_error_banner())
             .or_else(|| self.render_autoupdate_banner_element(app));
 
         #[cfg(enable_crash_recovery)]
@@ -22085,24 +21662,13 @@ impl Workspace {
         banner_fields
     }
 
-    fn render_settings_error_banner(&self, app: &AppContext) -> Option<WorkspaceBannerFields> {
+    fn render_settings_error_banner(&self) -> Option<WorkspaceBannerFields> {
         if self.settings_error_banner_dismissed {
             return None;
         }
         let error = self.settings_file_error.as_ref()?;
         let (heading, description) = error.heading_and_description();
-        let secondary_button =
-            AISettings::as_ref(app)
-                .is_any_ai_enabled(app)
-                .then(|| WorkspaceBannerButtonDetails {
-                    text: "Fix with Warp Agent".to_owned(),
-                    action: WorkspaceAction::FixSettingsWithOz {
-                        error_description: error.to_string(),
-                    },
-                    variant: BannerButtonVariant::Naked,
-                    icon: Some(Icon::Agent),
-                    more_info_button_action: None,
-                });
+        let secondary_button = None;
         Some(WorkspaceBannerFields {
             banner_type: WorkspaceBanner::InvalidSettings,
             severity: BannerSeverity::Warning,
@@ -23684,11 +23250,6 @@ impl Workspace {
         if cfg!(feature = "local_fs") && *CodeSettings::as_ref(ctx).show_project_explorer.value() {
             views.push(ToolPanelView::ProjectExplorer);
         }
-        if FeatureFlag::AgentViewConversationListView.is_enabled()
-            && *AISettings::as_ref(ctx).show_conversation_history
-        {
-            views.push(ToolPanelView::ConversationListView);
-        }
         if cfg!(feature = "local_fs")
             && FeatureFlag::GlobalSearch.is_enabled()
             && *CodeSettings::as_ref(ctx).show_global_search.value()
@@ -23956,7 +23517,7 @@ impl TypedActionView for Workspace {
                 }
             }
             AddDefaultTab => {
-                let effective_mode = AISettings::as_ref(ctx).default_session_mode(ctx);
+                let effective_mode = AISettings::as_ref(ctx).default_session_mode();
                 match effective_mode {
                     DefaultSessionMode::TabConfig => {
                         let ai_settings = AISettings::as_ref(ctx);
@@ -23979,15 +23540,12 @@ impl TypedActionView for Workspace {
                             self.add_terminal_tab(false, ctx);
                         }
                     }
-                    DefaultSessionMode::CloudAgent => {
-                        self.add_ambient_agent_tab(ctx);
-                    }
                     DefaultSessionMode::DockerSandbox => {
                         self.add_docker_sandbox_tab(ctx);
                     }
-                    // Terminal and Agent are handled by the existing path
-                    // (add_terminal_tab applies DefaultSessionMode::Agent internally).
-                    DefaultSessionMode::Terminal | DefaultSessionMode::Agent => {
+                    DefaultSessionMode::Terminal
+                    | DefaultSessionMode::Agent
+                    | DefaultSessionMode::CloudAgent => {
                         self.add_terminal_tab(false, ctx);
                     }
                 }
@@ -24008,12 +23566,13 @@ impl TypedActionView for Workspace {
                 self.add_tab_with_shell(shell.clone(), *source, ctx)
             }
             AddGetStartedTab => self.add_get_started_tab(ctx),
-            AddAmbientAgentTab => self.add_ambient_agent_tab(ctx),
-            AddAgentTab => self.add_terminal_tab_with_new_agent_view(ctx),
-            AddDockerSandboxTab => self.add_docker_sandbox_tab(ctx),
-            StartAgentOnboardingTutorial(tutorial) => {
-                self.start_agent_onboarding_tutorial(tutorial.clone(), ctx)
+            AddAgentPickerTab => self.add_agent_picker_tab(ctx),
+            LaunchAgentFromPicker { catalog_index } => {
+                self.launch_agent_from_picker(*catalog_index, ctx)
             }
+            AddAmbientAgentTab | AddAgentTab => self.add_agent_picker_tab(ctx),
+            AddDockerSandboxTab => self.add_docker_sandbox_tab(ctx),
+            StartAgentOnboardingTutorial(_) => {}
             OpenNewSessionMenu { anchor } => self.open_new_session_dropdown_menu(*anchor, ctx),
             ToggleTabConfigsMenu => self.toggle_tab_configs_menu(ctx),
             ShowSessionConfigModal => self.show_session_config_modal(ctx),
@@ -24867,79 +24426,14 @@ impl TypedActionView for Workspace {
             OpenFilePath { path } => {
                 ctx.open_file_path(path);
             }
-            NewTabInAgentMode {
-                entrypoint,
-                zero_state_prompt_suggestion_type,
-            } => {
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::AgentModeClickedEntrypoint {
-                        entrypoint: entrypoint.clone(),
-                    },
-                    ctx
-                );
-
-                self.add_terminal_tab_in_ai_mode(*zero_state_prompt_suggestion_type, ctx);
+            NewTabInAgentMode { .. } | NewPaneInAgentMode { .. } => {
+                self.add_agent_picker_tab(ctx);
             }
-            NewPaneInAgentMode {
-                entrypoint,
-                zero_state_prompt_suggestion_type,
-            } => {
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::AgentModeClickedEntrypoint {
-                        entrypoint: entrypoint.clone(),
-                    },
-                    ctx
-                );
-
-                self.add_terminal_pane_in_ai_mode(*zero_state_prompt_suggestion_type, ctx);
-            }
-            OpenCloudAgentSetupGuide => {
-                if AISettings::as_ref(ctx).is_any_ai_enabled(ctx)
-                    && FeatureFlag::AgentManagementView.is_enabled()
-                {
-                    self.set_is_agent_management_view_open(true, ctx);
-                    ctx.focus(&self.agent_management_view);
-                    self.agent_management_view.update(ctx, |view, ctx| {
-                        view.show_setup_guide_from_link(ctx);
-                    });
-                    ctx.notify();
-                }
-            }
-            ToggleAIAssistant => {
-                self.toggle_ai_assistant_panel(ctx);
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::ToggleWarpAI {
-                        opened: self.current_workspace_state.is_ai_assistant_panel_open
-                    },
-                    ctx
-                );
-            }
-            ClickedAIAssistantIcon => {
-                if !FeatureFlag::AgentMode.is_enabled() {
-                    self.toggle_ai_assistant_panel(ctx);
-                    if self.current_workspace_state.is_ai_assistant_panel_open {
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::OpenedWarpAI {
-                                source: OpenedWarpAISource::GlobalEntryButton
-                            },
-                            ctx
-                        );
-                    }
-                }
-            }
-            ShowAIAssistantWarmWelcome => {
-                self.should_show_ai_assistant_warm_welcome = true;
-                ctx.notify();
-            }
-            ClickedAIAssistantWarmWelcome => {
-                self.toggle_ai_assistant_panel(ctx);
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::OpenedWarpAI {
-                        source: OpenedWarpAISource::WarmWelcome
-                    },
-                    ctx
-                );
-            }
+            OpenCloudAgentSetupGuide => {}
+            ToggleAIAssistant
+            | ClickedAIAssistantIcon
+            | ShowAIAssistantWarmWelcome
+            | ClickedAIAssistantWarmWelcome => {}
             DragTab {
                 tab_index,
                 tab_position,
@@ -27035,7 +26529,7 @@ impl View for Workspace {
                 if let Some(anchor_label) = anchor_label {
                     let is_already_default = {
                         let ai_settings = AISettings::as_ref(app);
-                        let current_mode = ai_settings.default_session_mode(app);
+                        let current_mode = ai_settings.default_session_mode();
                         let current_path = ai_settings.default_tab_config_path();
                         match sidecar_item {
                             SidecarItemKind::BuiltIn {

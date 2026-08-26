@@ -189,6 +189,8 @@ use focus_state::PaneGroupFocusState;
 #[path = "mod_tests.rs"]
 mod tests;
 
+pub use pane::agent_picker_pane::AgentPickerPane;
+pub use pane::agent_picker_view::AGENT_PICKER_PANE_TITLE;
 pub use pane::ai_document_pane::AIDocumentPane;
 pub use pane::ai_fact_pane::AIFactPane;
 pub use pane::code_diff_pane::CodeDiffPane;
@@ -1444,27 +1446,6 @@ impl PaneGroup {
                     });
                 }
 
-                // Agent mode: enter the agent view. When setup commands are
-                // pending (e.g. worktree creation), defer entry until they
-                // complete so they run in terminal mode.
-                if matches!(pane_mode, PaneMode::Agent) {
-                    if !has_commands {
-                        view.update(ctx, |terminal_view, ctx| {
-                            terminal_view.enter_agent_view_for_new_conversation(
-                                None,
-                                AgentViewEntryOrigin::Input {
-                                    was_prompt_autodetected: false,
-                                },
-                                ctx,
-                            );
-                        });
-                    } else {
-                        view.update(ctx, |terminal_view, _| {
-                            terminal_view.set_enter_agent_view_after_pending_commands();
-                        });
-                    }
-                }
-
                 let pane_data = TerminalPane::new(
                     uuid.as_bytes().to_vec(),
                     terminal_manager,
@@ -2032,6 +2013,21 @@ impl PaneGroup {
                 } else {
                     let pane: Box<dyn AnyPaneContent + 'static> =
                         Box::new(GetStartedPane::new(ctx));
+                    let pane_id = pane.as_pane().id();
+                    pane_contents.insert(pane_id, pane);
+                    let focus = InitialFocus {
+                        focused_pane: leaf.is_focused.then_some(pane_id),
+                        active_session: None,
+                    };
+                    Ok((PaneData::new(pane_id), focus))
+                }
+            }
+            LeafContents::AgentPicker => {
+                if !FeatureFlag::AgentLauncher.is_enabled() {
+                    Err(anyhow::anyhow!("Agent picker pane not supported"))
+                } else {
+                    let pane: Box<dyn AnyPaneContent + 'static> =
+                        Box::new(AgentPickerPane::new(ctx));
                     let pane_id = pane.as_pane().id();
                     pane_contents.insert(pane_id, pane);
                     let focus = InitialFocus {
@@ -6740,7 +6736,7 @@ impl PaneGroup {
             default_session_mode_behavior,
             DefaultSessionModeBehavior::Apply
         ) && conversation_restoration.is_none()
-            && AISettings::as_ref(ctx).default_session_mode(ctx) == DefaultSessionMode::Agent;
+            && AISettings::as_ref(ctx).default_session_mode() == DefaultSessionMode::Agent;
 
         let (pane_data, view) = self.create_terminal_pane_data(
             startup_directory,

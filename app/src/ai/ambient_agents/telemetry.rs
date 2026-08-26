@@ -10,8 +10,6 @@ use crate::server::ids::ServerId;
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CloudModeEntryPoint {
-    /// User clicked "New Cloud Agent Tab" or similar action to create a dedicated Cloud Mode tab.
-    NewTab,
     /// User entered Cloud Mode from an existing local terminal session (e.g., via keyboard shortcut or command).
     LocalSession,
     /// User entered Cloud Mode through the Oz launch modal.

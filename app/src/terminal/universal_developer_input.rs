@@ -817,14 +817,7 @@ impl View for UniversalDeveloperInputButtonBar {
                 .with_main_axis_size(MainAxisSize::Max)
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
                 .with_main_axis_alignment(MainAxisAlignment::Start)
-                .with_child(
-                    Container::new(ChildView::new(&self.segmented_control).finish())
-                        .with_padding_right(4.0)
-                        .finish(),
-                );
-            buttons = buttons.with_child(create_divider());
-
-            buttons = buttons.with_child(ChildView::new(&self.slash_command_button).finish());
+                .with_child(ChildView::new(&self.slash_command_button).finish());
 
             #[cfg(feature = "voice_input")]
             if is_voice_input_enabled {

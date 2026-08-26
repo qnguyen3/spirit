@@ -115,25 +115,21 @@ fn account_first_completion_metadata_matches_terminal_outcomes() {
             AccountFirstCompletion::AccountSkipped,
             "account_skipped",
             None,
-            false,
         ),
         (
             AccountFirstCompletion::PaidTeam,
             "paid_team",
             Some(FtueAccountClass::Paid),
-            true,
         ),
         (
             AccountFirstCompletion::FreeIcpSetupLater,
             "free_icp_setup_later",
             Some(FtueAccountClass::FreeIcp),
-            true,
         ),
         (
             AccountFirstCompletion::FreeStandardSetupLater,
             "free_standard_setup_later",
             Some(FtueAccountClass::FreeStandard),
-            true,
         ),
         (
             AccountFirstCompletion::FreeStandardCreditsPurchased,
@@ -141,20 +137,17 @@ fn account_first_completion_metadata_matches_terminal_outcomes() {
             // Buying one-time credits does not put the user on a plan, so they
             // stay free-standard.
             Some(FtueAccountClass::FreeStandard),
-            true,
         ),
         (
             AccountFirstCompletion::UpgradeCompleted,
             "upgrade_completed",
             Some(FtueAccountClass::Paid),
-            true,
         ),
     ];
 
-    for (completion, completion_type, account_class, starts_agent_tutorial) in cases {
+    for (completion, completion_type, account_class) in cases {
         assert_eq!(completion.completion_type(), completion_type);
         assert_eq!(completion.account_class(), account_class);
-        assert_eq!(completion.starts_agent_tutorial(), starts_agent_tutorial);
     }
 }
 

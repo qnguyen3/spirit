@@ -165,6 +165,7 @@ pub(crate) fn initialize_app(app: &mut App) {
     app.add_singleton_model(HarnessAvailabilityModel::new);
     app.add_singleton_model(|ctx| AITipModel::new_for_agent_tips(ctx));
     app.add_singleton_model(|_| SettingsPaneManager::new());
+    app.add_singleton_model(|_| AgentPickerPaneManager::default());
     app.add_singleton_model(|_| AIFactManager::new());
 
     // Initialize file-based MCP dependencies.
@@ -415,38 +416,25 @@ fn test_theme_chooser_does_not_suppress_tab_bar_traffic_light_padding() {
     });
 }
 
-/// Regression for account-first onboarding users who select Warp Drive and
-/// conversation history, skip signup, and create an account later. The stored
-/// preferences should remain true while unavailable, then take effect
-/// automatically as account and AI availability change—without an off/on
-/// toggle.
+/// Regression for account-first onboarding users who select Warp Drive, skip
+/// signup, and create an account later. The stored preference should remain
+/// true while unavailable, then take effect automatically once the account
+/// exists—without an off/on toggle.
 #[test]
-fn test_tools_panel_preferences_activate_after_signup_and_ai_enablement() {
+fn test_tools_panel_preferences_activate_after_signup() {
     let _skip_anon_guard = FeatureFlag::SkipFirebaseAnonymousUser.override_enabled(true);
-    let _conversation_list_guard =
-        FeatureFlag::AgentViewConversationListView.override_enabled(true);
 
     App::test((), |mut app| async move {
         initialize_app(&mut app);
 
-        // Preserve the user's onboarding intent while starting logged out with
-        // AI disabled (the account-skipped account-first completion state).
+        // Preserve the user's onboarding intent while starting logged out (the
+        // account-skipped account-first completion state).
         app.update(|ctx| {
             WarpDriveSettings::handle(ctx).update(ctx, |settings, ctx| {
                 settings
                     .enable_warp_drive
                     .set_value(true, ctx)
                     .expect("remember Warp Drive preference");
-            });
-            AISettings::handle(ctx).update(ctx, |settings, ctx| {
-                settings
-                    .show_conversation_history
-                    .set_value(true, ctx)
-                    .expect("remember conversation-history preference");
-                settings
-                    .is_any_ai_enabled
-                    .set_value(false, ctx)
-                    .expect("AI remains disabled after skipped signup");
             });
             let auth_state = AuthStateProvider::as_ref(ctx).get();
             auth_state.set_user(None);
@@ -461,25 +449,8 @@ fn test_tools_panel_preferences_activate_after_signup_and_ai_enablement() {
                     .contains(&ToolPanelView::WarpDrive),
                 "the stored preference should keep the locked Warp Drive entry visible"
             );
-            assert!(
-                workspace
-                    .left_panel_views
-                    .contains(&ToolPanelView::ConversationListView),
-                "the stored preference should keep the locked conversations entry visible"
-            );
             workspace.left_panel_view.update(ctx, |left_panel, ctx| {
                 left_panel.handle_action_with_force_open(&LeftPanelAction::WarpDrive, false, ctx);
-                assert_eq!(
-                    left_panel.active_view_availability(ctx),
-                    left_panel::ToolPanelAvailability::RequiresAccount
-                );
-                drop(left_panel.render(ctx));
-
-                left_panel.handle_action_with_force_open(
-                    &LeftPanelAction::ConversationListView,
-                    false,
-                    ctx,
-                );
                 assert_eq!(
                     left_panel.active_view_availability(ctx),
                     left_panel::ToolPanelAvailability::RequiresAccount
@@ -500,13 +471,10 @@ fn test_tools_panel_preferences_activate_after_signup_and_ai_enablement() {
                 .is_require_login_modal_open = false;
         });
         app.read(|ctx| {
-            // Availability must not erase the raw onboarding preferences.
+            // Availability must not erase the raw onboarding preference.
             assert!(*WarpDriveSettings::as_ref(ctx).enable_warp_drive);
-            assert!(*AISettings::as_ref(ctx).show_conversation_history);
             assert!(!WarpDriveSettings::is_warp_drive_available(ctx));
             assert!(!WarpDriveSettings::is_warp_drive_enabled(ctx));
-            assert!(!AISettings::as_ref(ctx).is_conversation_history_available(ctx));
-            assert!(!AISettings::as_ref(ctx).is_conversation_history_enabled(ctx));
         });
 
         // Signing up makes account-backed features available. AuthComplete
@@ -532,82 +500,16 @@ fn test_tools_panel_preferences_activate_after_signup_and_ai_enablement() {
                     .contains(&ToolPanelView::WarpDrive),
                 "Drive entry remains visible and unlocks after signup"
             );
-            assert!(
-                workspace
-                    .left_panel_views
-                    .contains(&ToolPanelView::ConversationListView),
-                "conversation entry remains visible while waiting for AI"
-            );
             assert!(!workspace.auth_state.is_anonymous_or_logged_out());
             assert!(WarpDriveSettings::is_warp_drive_enabled(ctx));
-            assert!(!AISettings::as_ref(ctx).is_conversation_history_enabled(ctx));
             workspace.left_panel_view.update(ctx, |left_panel, ctx| {
                 left_panel.handle_action_with_force_open(&LeftPanelAction::WarpDrive, false, ctx);
                 assert_eq!(
                     left_panel.active_view_availability(ctx),
                     left_panel::ToolPanelAvailability::Available
                 );
-
-                left_panel.handle_action_with_force_open(
-                    &LeftPanelAction::ConversationListView,
-                    false,
-                    ctx,
-                );
-                assert_eq!(
-                    left_panel.active_view_availability(ctx),
-                    left_panel::ToolPanelAvailability::RequiresAi
-                );
                 drop(left_panel.render(ctx));
             });
-        });
-
-        // Enabling AI later should make the preserved conversation-history
-        // preference effective through the existing AI-settings subscription.
-        app.update(|ctx| {
-            AISettings::handle(ctx).update(ctx, |settings, ctx| {
-                settings
-                    .is_any_ai_enabled
-                    .set_value(true, ctx)
-                    .expect("enable AI");
-            });
-        });
-        workspace.update(&mut app, |workspace, ctx| {
-            assert!(
-                workspace
-                    .left_panel_views
-                    .contains(&ToolPanelView::ConversationListView)
-            );
-            workspace.left_panel_view.update(ctx, |left_panel, ctx| {
-                left_panel.handle_action_with_force_open(
-                    &LeftPanelAction::ConversationListView,
-                    false,
-                    ctx,
-                );
-                assert_eq!(
-                    left_panel.active_view_availability(ctx),
-                    left_panel::ToolPanelAvailability::Available
-                );
-            });
-        });
-        app.read(|ctx| {
-            assert!(AISettings::as_ref(ctx).is_conversation_history_enabled(ctx));
-        });
-
-        // The raw setting still controls whether the toolbelt entry exists.
-        app.update(|ctx| {
-            AISettings::handle(ctx).update(ctx, |settings, ctx| {
-                settings
-                    .show_conversation_history
-                    .set_value(false, ctx)
-                    .expect("hide conversation history");
-            });
-        });
-        workspace.read(&app, |workspace, _| {
-            assert!(
-                !workspace
-                    .left_panel_views
-                    .contains(&ToolPanelView::ConversationListView)
-            );
         });
     });
 }
@@ -4102,51 +4004,6 @@ fn test_standard_tab_context_menu_shows_hover_only_tab_bar() {
 }
 
 #[test]
-fn test_open_cloud_agent_setup_guide_action_opens_management_view_and_is_idempotent() {
-    let _agent_management_guard = FeatureFlag::AgentManagementView.override_enabled(true);
-
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        let workspace = mock_workspace(&mut app);
-
-        workspace.update(&mut app, |workspace, ctx| {
-            assert!(
-                !workspace
-                    .current_workspace_state
-                    .is_agent_management_view_open
-            );
-
-            workspace.handle_action(&WorkspaceAction::OpenCloudAgentSetupGuide, ctx);
-            assert!(
-                workspace
-                    .current_workspace_state
-                    .is_agent_management_view_open
-            );
-            assert!(
-                workspace
-                    .agent_management_view
-                    .as_ref(ctx)
-                    .is_showing_setup_guide()
-            );
-
-            workspace.handle_action(&WorkspaceAction::OpenCloudAgentSetupGuide, ctx);
-            assert!(
-                workspace
-                    .current_workspace_state
-                    .is_agent_management_view_open
-            );
-            assert!(
-                workspace
-                    .agent_management_view
-                    .as_ref(ctx)
-                    .is_showing_setup_guide()
-            );
-        });
-    });
-}
-
-#[test]
 fn test_tab_mru_order() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
@@ -5017,6 +4874,98 @@ fn test_tools_panel_warp_drive_toggle_updates_available_views() {
                 workspace.left_panel_view.as_ref(ctx).active_view(),
                 ToolPanelView::WarpDrive,
                 "Warp Drive should be selectable again after re-enabling"
+            );
+        });
+    });
+}
+
+#[test]
+fn add_agent_picker_tab_opens_a_single_picker_tab_per_window() {
+    let _agent_launcher_guard = FeatureFlag::AgentLauncher.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let workspace = mock_workspace(&mut app);
+
+        let (initial_tab_count, window_id) = workspace.update(&mut app, |workspace, ctx| {
+            let initial_tab_count = workspace.tabs.len();
+            workspace.add_agent_picker_tab(ctx);
+            (initial_tab_count, ctx.window_id())
+        });
+
+        workspace.update(&mut app, |workspace, ctx| {
+            assert_eq!(workspace.tabs.len(), initial_tab_count + 1);
+            assert!(
+                AgentPickerPaneManager::handle(ctx)
+                    .as_ref(ctx)
+                    .find_pane(window_id)
+                    .is_some(),
+                "the picker pane should be registered for the window"
+            );
+            workspace.add_terminal_tab(false, ctx);
+        });
+
+        workspace.update(&mut app, |workspace, ctx| {
+            workspace.add_agent_picker_tab(ctx);
+        });
+
+        workspace.update(&mut app, |workspace, ctx| {
+            assert_eq!(
+                workspace.tabs.len(),
+                initial_tab_count + 2,
+                "re-opening the picker should focus the existing tab, not add one"
+            );
+            let locator = AgentPickerPaneManager::handle(ctx)
+                .as_ref(ctx)
+                .find_pane(window_id)
+                .expect("the picker pane should still be registered");
+            assert_eq!(
+                workspace.tabs[workspace.active_tab_index].pane_group.id(),
+                locator.pane_group_id,
+                "the existing picker tab should be focused"
+            );
+        });
+    });
+}
+
+#[test]
+fn launch_agent_from_picker_stages_the_agent_command_and_closes_the_picker() {
+    let _agent_launcher_guard = FeatureFlag::AgentLauncher.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let workspace = mock_workspace(&mut app);
+
+        let window_id = workspace.update(&mut app, |workspace, ctx| {
+            workspace.add_agent_picker_tab(ctx);
+            ctx.window_id()
+        });
+
+        workspace.update(&mut app, |workspace, ctx| {
+            workspace.launch_agent_from_picker(0, ctx);
+        });
+
+        let expected_command = agent_catalog()[0].command;
+        workspace.update(&mut app, |workspace, ctx| {
+            let terminal_view = workspace
+                .active_tab_pane_group()
+                .as_ref(ctx)
+                .active_session_view(ctx)
+                .expect("expected a terminal view for the launched agent");
+            let input = terminal_view.as_ref(ctx).input().clone();
+            input.read(ctx, |input, ctx| {
+                assert!(
+                    input.has_pending_command(),
+                    "the launch command should be staged as the pending command"
+                );
+                assert_eq!(input.buffer_text(ctx), expected_command);
+            });
+            assert!(
+                AgentPickerPaneManager::handle(ctx)
+                    .as_ref(ctx)
+                    .find_pane(window_id)
+                    .is_none(),
+                "the picker tab should be closed after launching an agent"
             );
         });
     });

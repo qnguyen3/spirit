@@ -153,6 +153,7 @@ pub enum LeafContents {
     NetworkLog,
     /// A new first-time user experience which prioritizes choosing a coding repository.
     GetStarted,
+    AgentPicker,
 }
 
 #[cfg(feature = "local_fs")]
@@ -174,7 +175,8 @@ impl LeafContents {
             LeafContents::NetworkLog
             // Environment management panes are opened on-demand via workspace
             // actions and have no persistable state.
-            | LeafContents::EnvironmentManagement(_) => false,
+            | LeafContents::EnvironmentManagement(_)
+            | LeafContents::AgentPicker => false,
             LeafContents::Terminal(_)
             | LeafContents::Notebook(_)
             | LeafContents::AIDocument(_)

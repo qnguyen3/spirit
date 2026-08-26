@@ -50,18 +50,10 @@ impl InputModePolicy for GuiInputModePolicy {
     }
 
     fn allows_locked_ai_input(&self, app: &AppContext) -> bool {
-        // When `AgentView` is enabled, AI input mode can only be set in the top-level terminal
-        // mode via autodetection; it cannot be locked to AI input mode unless there is an active
-        // agent view or a CLI agent rich input session is open. In the agent view case, executing
-        // autodetected AI input will trigger entering the agent view with that query. In the CLI
-        // agent rich input case, the input must be in AI mode to suppress shell decorations
-        // (syntax highlighting, error underlining).
-        !FeatureFlag::AgentView.is_enabled()
-            || self
-                .conversation_selection
-                .as_ref(app)
-                .is_conversation_active(app)
-            || CLIAgentSessionsModel::as_ref(app).is_input_open(self.terminal_surface_id)
+        // AI input mode exists only to serve the CLI agent rich input, where it suppresses shell
+        // decorations (syntax highlighting, error underlining) while the user types a prompt for
+        // the third-party agent. Everywhere else the input is a shell prompt.
+        CLIAgentSessionsModel::as_ref(app).is_input_open(self.terminal_surface_id)
     }
 
     fn is_autodetection_enabled(&self, app: &AppContext) -> bool {

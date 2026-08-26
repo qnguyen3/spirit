@@ -8,6 +8,8 @@
 //! The [`PaneContent`] interface requires implementers to maintain a [`PaneId`] for their pane.
 //! The [`PaneId`] must be created via a [`PaneView<BackingView>`]. The [`PaneId`] is consequently
 //! used to render a [`PaneView`] which internally renders the pane, including the [`BackingView`].
+pub(super) mod agent_picker_pane;
+pub(super) mod agent_picker_view;
 pub(super) mod ai_document_pane;
 pub(super) mod ai_fact_pane;
 pub(super) mod code_diff_pane;
@@ -57,6 +59,7 @@ use crate::menu::MenuItem;
 use crate::notebooks::file::FileNotebookView;
 use crate::notebooks::notebook::NotebookView;
 use crate::pane_group::focus_state::PaneFocusHandle;
+use crate::pane_group::pane::agent_picker_view::AgentPickerView;
 use crate::pane_group::pane::get_started_view::GetStartedView;
 use crate::server::network_log_view::NetworkLogView;
 use crate::server::telemetry::SharingDialogSource;
@@ -71,6 +74,7 @@ use crate::workflows::workflow_view::WorkflowView;
 pub(super) fn init(app: &mut AppContext) {
     self::view::init(app);
     get_started_view::init(app);
+    agent_picker_view::init(app);
 }
 
 /// The opaque identifier for an arbitrary pane. Consumers
@@ -145,6 +149,7 @@ pub(crate) enum IPaneType {
     CustomRouterEditor,
     ExecutionProfileEditor,
     GetStarted,
+    AgentPicker,
     NetworkLog,
     DeferredPlaceholder,
     /// A pane type only for tests.
@@ -169,6 +174,7 @@ impl Display for IPaneType {
             IPaneType::CustomRouterEditor => write!(f, "Custom Router Editor"),
             IPaneType::ExecutionProfileEditor => write!(f, "Execution Profile Editor"),
             IPaneType::GetStarted => write!(f, "GetStarted"),
+            IPaneType::AgentPicker => write!(f, "Agent Picker"),
             IPaneType::NetworkLog => write!(f, "Network Log"),
             IPaneType::DeferredPlaceholder => write!(f, "Placeholder"),
             #[cfg(test)]
@@ -267,6 +273,10 @@ impl PaneId {
 
     pub fn from_get_started_pane_ctx(ctx: &ViewContext<PaneView<GetStartedView>>) -> Self {
         Self::new_from_ctx(IPaneType::GetStarted, ctx)
+    }
+
+    pub fn from_agent_picker_pane_ctx(ctx: &ViewContext<PaneView<AgentPickerView>>) -> Self {
+        Self::new_from_ctx(IPaneType::AgentPicker, ctx)
     }
 
     /// Creates a [`PaneId`] from a [`ViewContext<PaneView<NetworkLogView>>`].
@@ -369,6 +379,12 @@ impl PaneId {
         get_started_pane_view: &ViewHandle<PaneView<GetStartedView>>,
     ) -> Self {
         Self::new(IPaneType::GetStarted, get_started_pane_view)
+    }
+
+    pub fn from_agent_picker_pane_view(
+        agent_picker_pane_view: &ViewHandle<PaneView<AgentPickerView>>,
+    ) -> Self {
+        Self::new(IPaneType::AgentPicker, agent_picker_pane_view)
     }
 
     /// Creates a [`PaneId`] from a [`PaneView<NetworkLogView>`] entity ID.
@@ -493,6 +509,9 @@ impl PaneId {
             }
             IPaneType::GetStarted => {
                 ChildView::<PaneView<GetStartedView>>::with_id(self.0.pane_view_id).finish()
+            }
+            IPaneType::AgentPicker => {
+                ChildView::<PaneView<AgentPickerView>>::with_id(self.0.pane_view_id).finish()
             }
             IPaneType::NetworkLog => {
                 ChildView::<PaneView<NetworkLogView>>::with_id(self.0.pane_view_id).finish()

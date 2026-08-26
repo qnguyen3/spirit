@@ -180,7 +180,7 @@ impl TuiTerminalSessionView {
         if !self
             .ai_input_model
             .as_ref(ctx)
-            .should_run_input_autodetection(ctx)
+            .should_run_input_autodetection()
         {
             return;
         }

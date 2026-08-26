@@ -763,53 +763,6 @@ fn complete_drain_with_first_row_in_edit_mode_returns_pop_from_edit_mode() {
 }
 
 #[test]
-fn complete_drain_of_edited_command_restores_text_in_shell_mode() {
-    // A command row being edited when the agent finishes cleanly is popped into the input in
-    // shell mode, so the restored text stays a command rather than being submitted as a prompt.
-    App::test((), |mut app| async move {
-        initialize_app_for_terminal_view(&mut app);
-        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
-
-        let terminal = add_window_with_terminal(&mut app, None);
-        // Entering agent view puts the input in agent (AI) mode, so the drain must actively
-        // switch it to shell mode for the restored command.
-        let conversation_id = terminal.update(&mut app, |view, ctx| {
-            view.agent_view_controller().update(ctx, |controller, ctx| {
-                controller
-                    .try_enter_agent_view(
-                        None,
-                        AgentViewEntryOrigin::Input {
-                            was_prompt_autodetected: false,
-                        },
-                        ctx,
-                    )
-                    .expect("should enter agent view")
-            })
-        });
-        terminal.read(&app, |view, ctx| {
-            assert!(view.ai_input_model.as_ref(ctx).is_ai_input_enabled());
-        });
-
-        QueuedQueryModel::handle(&app).update(&mut app, |model, ctx| {
-            let id = model.append(conversation_id, command_query("echo 1"), ctx);
-            model.enter_edit_mode(conversation_id, id, ctx);
-        });
-
-        terminal.update(&mut app, |view, ctx| {
-            view.drain_queued_prompts(conversation_id, FinishReason::Complete, ctx);
-        });
-
-        terminal.read(&app, |view, ctx| {
-            assert_eq!(view.input().as_ref(ctx).buffer_text(ctx), "echo 1");
-            assert!(!view.ai_input_model.as_ref(ctx).is_ai_input_enabled());
-        });
-        QueuedQueryModel::handle(&app).read(&app, |model, _| {
-            assert!(model.queue(conversation_id).is_empty());
-        });
-    });
-}
-
-#[test]
 fn error_drain_of_command_restores_text_in_shell_mode() {
     // On a non-clean finish, the head command is popped into the empty input in shell mode, so a
     // restored command stays a command.

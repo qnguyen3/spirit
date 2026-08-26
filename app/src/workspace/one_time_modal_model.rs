@@ -186,7 +186,7 @@ impl OneTimeModalModel {
 
     /// Returns whether the Oz launch modal is currently open.
     pub fn is_oz_launch_modal_open(&self) -> bool {
-        self.is_oz_launch_modal_open && self.target_window_id.is_some()
+        false
     }
 
     /// Returns the window ID where the currently open one-time modal should be displayed.
@@ -200,7 +200,7 @@ impl OneTimeModalModel {
 
     /// Returns whether the OpenWarp launch modal is currently open.
     pub fn is_openwarp_launch_modal_open(&self) -> bool {
-        self.is_openwarp_launch_modal_open && self.target_window_id.is_some()
+        false
     }
 
     pub fn mark_openwarp_launch_modal_dismissed(&mut self, ctx: &mut ModelContext<Self>) {
@@ -208,7 +208,7 @@ impl OneTimeModalModel {
     }
 
     pub fn is_orchestration_launch_modal_open(&self) -> bool {
-        self.is_orchestration_launch_modal_open && self.target_window_id.is_some()
+        false
     }
 
     pub fn mark_orchestration_launch_modal_dismissed(&mut self, ctx: &mut ModelContext<Self>) {
@@ -216,7 +216,7 @@ impl OneTimeModalModel {
     }
 
     pub fn is_agent_cli_launch_modal_open(&self) -> bool {
-        self.is_agent_cli_launch_modal_open && self.target_window_id.is_some()
+        false
     }
 
     pub fn mark_agent_cli_launch_modal_dismissed(&mut self, ctx: &mut ModelContext<Self>) {
@@ -359,13 +359,8 @@ impl OneTimeModalModel {
 
     /// Returns true if any one-time modal is currently open.
     pub fn is_any_modal_open(&self) -> bool {
-        (self.is_oz_launch_modal_open
-            || self.is_openwarp_launch_modal_open
-            || self.is_orchestration_launch_modal_open
-            || self.is_agent_cli_launch_modal_open
-            || self.is_auto_handoff_sleep_modal_open
+        (self.is_auto_handoff_sleep_modal_open
             || self.is_build_plan_migration_modal_open
-            || self.is_free_ai_removal_modal_open
             || self.is_hoa_onboarding_open)
             && self.target_window_id.is_some()
     }
@@ -510,7 +505,7 @@ impl OneTimeModalModel {
 
     /// Returns whether the free-AI-removal notice modal is currently open.
     pub fn is_free_ai_removal_modal_open(&self) -> bool {
-        self.is_free_ai_removal_modal_open && self.target_window_id.is_some()
+        false
     }
 
     pub fn mark_free_ai_removal_modal_dismissed(&mut self, ctx: &mut ModelContext<Self>) {

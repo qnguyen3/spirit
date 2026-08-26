@@ -2215,18 +2215,15 @@ impl AISettings {
         *self.show_conversation_history && self.is_conversation_history_available(app)
     }
 
-    pub fn default_session_mode(&self, app: &AppContext) -> DefaultSessionMode {
+    pub fn default_session_mode(&self) -> DefaultSessionMode {
         let mode = *self.default_session_mode_internal.value();
         match mode {
             // Terminal and TabConfig don't require AI.
             DefaultSessionMode::Terminal | DefaultSessionMode::TabConfig => mode,
-            // Agent and CloudAgent require AI to be enabled.
+            // Agent and CloudAgent are no longer offered; a stale stored value falls back to
+            // Terminal so new sessions always open a shell.
             DefaultSessionMode::Agent | DefaultSessionMode::CloudAgent => {
-                if self.is_any_ai_enabled(app) {
-                    mode
-                } else {
-                    DefaultSessionMode::Terminal
-                }
+                DefaultSessionMode::Terminal
             }
             // DockerSandbox is gated on its feature flag; fall back to Terminal
             // when disabled so a stale stored value doesn't wedge the user.

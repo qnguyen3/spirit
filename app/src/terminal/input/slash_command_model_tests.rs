@@ -1,4 +1,5 @@
 use settings::Setting as _;
+use warp_core::features::FeatureFlag;
 use warp_errors::report_if_error;
 use warpui::{App, SingletonEntity as _};
 
@@ -42,6 +43,8 @@ fn test_parse_input_requires_slash_at_start() {
 
 #[test]
 fn test_parse_slash_command_handles_argument_rules() {
+    let _changelog = FeatureFlag::Changelog.override_enabled(true);
+
     App::test((), |mut app| async move {
         initialize_app(&mut app);
 

@@ -13,7 +13,6 @@ use crate::search::async_snapshot_data_source::AsyncSnapshotDataSource;
 use crate::search::data_source::{Query, QueryResult};
 use crate::search::mixer::{BoxFuture, DataSourceRunErrorWrapper};
 use crate::server::ids::SyncId;
-use crate::settings::AISettings;
 use crate::terminal::input::slash_commands::{AcceptSlashCommandOrSavedPrompt, InlineItem};
 use crate::workflows::CloudWorkflowModel;
 
@@ -43,7 +42,7 @@ pub(crate) fn saved_prompts_data_source()
 -> AsyncSnapshotDataSource<SavedPromptsSnapshot, AcceptSlashCommandOrSavedPrompt> {
     AsyncSnapshotDataSource::new(
         |query: &Query, app: &AppContext| {
-            let ai_enabled = AISettings::as_ref(app).is_any_ai_enabled(app);
+            let ai_enabled = false;
             // Skip the workflow scan entirely when AI is off; the match step will return empty.
             let candidates: Vec<SavedPromptCandidate> = if ai_enabled {
                 CloudModel::as_ref(app)

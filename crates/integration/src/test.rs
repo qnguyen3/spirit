@@ -94,6 +94,7 @@ pub use typeahead::*;
 use version_compare::Cmp;
 pub use video_recording::*;
 use warp::appearance::Appearance;
+use warp::cmd_or_ctrl_shift;
 use warp::features::FeatureFlag;
 use warp::integration_testing::assertions::{
     assert_binding_display_string, go_offline, go_online, join_a_workspace,
@@ -115,9 +116,7 @@ use warp::integration_testing::navigation_palette::{
     RecentSession, check_recency, navigate_to_other_session_step, open_navigation_palette_step,
 };
 use warp::integration_testing::pane_group::assert_focused_pane_index;
-use warp::integration_testing::settings::{
-    assert_theme_chooser_contains, set_window_custom_size, toggle_setting,
-};
+use warp::integration_testing::settings::{assert_theme_chooser_contains, toggle_setting};
 use warp::integration_testing::step::{
     assert_no_pending_model_events, new_step_with_default_assertions,
     new_step_with_default_assertions_for_pane,
@@ -146,9 +145,8 @@ use warp::integration_testing::terminal::{
     validate_git_branch, wait_until_bootstrapped_pane, wait_until_bootstrapped_single_pane_for_tab,
 };
 use warp::integration_testing::view_getters::{
-    pane_group_view, single_input_suggestions_view_for_tab, single_input_view_for_tab,
+    single_input_suggestions_view_for_tab, single_input_view_for_tab,
     single_terminal_pane_view_for_tab, single_terminal_view, single_terminal_view_for_tab,
-    workspace_view,
 };
 use warp::integration_testing::warp_drive::{
     assert_is_left_panel_open, assert_warp_drive_is_closed, assert_warp_drive_is_open,
@@ -159,7 +157,6 @@ use warp::integration_testing::window::{
 };
 use warp::integration_testing::workspace::assert_tab_count;
 use warp::integration_testing::{self, view_of_type};
-use warp::pane_group::AGENT_MODE_PANE_DEFAULT_MINIMUM_WIDTH;
 use warp::settings::{
     CompletionsOpenWhileTyping, CtrlTabBehavior, INPUT_MODE, MonospaceFontSize, TabBehavior,
 };
@@ -184,10 +181,7 @@ use warp::terminal::view::{
 use warp::terminal::{TerminalView, shell};
 use warp::util::bindings::CustomAction;
 use warp::workflows::categories::CategoriesView;
-use warp::workspace::{
-    NEW_SESSION_MENU_BUTTON_POSITION_ID, NEW_TAB_BUTTON_POSITION_ID, Workspace, WorkspaceAction,
-};
-use warp::{AgentModeEntrypoint, cmd_or_ctrl_shift};
+use warp::workspace::{NEW_SESSION_MENU_BUTTON_POSITION_ID, NEW_TAB_BUTTON_POSITION_ID, Workspace};
 use warpui_core::event::KeyState;
 use warpui_core::integration::{AssertionOutcome, StepData, TestStep};
 use warpui_core::keymap::{Keystroke, PerPlatformKeystroke, Trigger};
@@ -6723,92 +6717,6 @@ pub fn test_pane_group_state_clear_blocks() -> Builder {
             new_step_with_default_assertions("clear the pane")
                 .with_keystrokes(&[cmd_or_ctrl_shift("k")])
                 .add_assertion(assert_pane_group_has_state(0, TerminalViewState::Normal)),
-        )
-}
-
-/// Create a small window and enough terminal panes inside it so that a new pane would normally have
-/// a narrow width. Check that the Agent Mode pane is wide enough regardless.
-pub fn test_agent_mode_pane_minimum_size() -> Builder {
-    const WINDOW_ID_KEY: &str = "small_window_id";
-
-    new_builder()
-        .with_step(set_window_custom_size(40, 120))
-        .with_step(add_and_save_window(WINDOW_ID_KEY))
-        .with_step(
-            new_step_with_default_assertions("Check the new window size")
-                .add_named_assertion_with_data_from_prior_step(
-                    "Validate window size",
-                    move |app, _, step_data_map| {
-                        let window_id = step_data_map
-                            .get(WINDOW_ID_KEY)
-                            .expect("Window ID for new window should exist");
-
-                        let size = app
-                            .window_bounds(window_id)
-                            .expect("Window should exist")
-                            .size();
-                        // This doesn't correspond clearly to the given rows and columns due to line
-                        // height and padding. There's also some platform-specific variance and room
-                        // for floating-point error.
-                        assert_approx_eq!(f32, size.x(), 992., epsilon = 2.);
-                        assert_approx_eq!(f32, size.y(), 644., epsilon = 2.);
-                        AssertionOutcome::Success
-                    },
-                ),
-        )
-        .with_step(
-            new_step_with_default_assertions("Create a new empty pane")
-                .with_keystrokes(&[cmd_or_ctrl_shift("d")]),
-        )
-        .with_step(
-            new_step_with_default_assertions("Create an Agent Mode pane and check its width")
-                .with_action(move |app, _, step_data_map| {
-                    let window_id = step_data_map
-                        .get(WINDOW_ID_KEY)
-                        .expect("Window ID for new window should exist");
-
-                    let workspace_view_id = workspace_view(app, *window_id).id();
-
-                    app.dispatch_typed_action(
-                        *window_id,
-                        &[workspace_view_id],
-                        &WorkspaceAction::NewPaneInAgentMode {
-                            entrypoint: AgentModeEntrypoint::TabBar,
-                            zero_state_prompt_suggestion_type: None,
-                        },
-                    );
-                })
-                .add_named_assertion_with_data_from_prior_step(
-                    "Check Agent Mode pane width",
-                    |app, _, step_data_map| {
-                        let window_id = step_data_map
-                            .get(WINDOW_ID_KEY)
-                            .expect("Window ID for new window should exist");
-
-                        let pane_group = pane_group_view(app, *window_id, 0);
-                        pane_group.read(app, |view, app| {
-                            let Some(agent_mode_pane) = view.terminal_view_at_pane_index(2, app)
-                            else {
-                                return AssertionOutcome::failure(
-                                    "no terminal pane at pane_index 2".to_owned(),
-                                );
-                            };
-
-                            let pane_width =
-                                agent_mode_pane.as_ref(app).size_info().pane_size_px().x();
-
-                            // Approx equality to handle pane borders, etc.
-                            assert_approx_eq!(
-                                f32,
-                                pane_width - AGENT_MODE_PANE_DEFAULT_MINIMUM_WIDTH,
-                                0.,
-                                epsilon = 4.
-                            );
-
-                            AssertionOutcome::Success
-                        })
-                    },
-                ),
         )
 }
 

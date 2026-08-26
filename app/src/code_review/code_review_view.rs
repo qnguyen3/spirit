@@ -65,7 +65,6 @@ use crate::TelemetryEvent;
 use crate::ai::agent::{
     AIAgentAttachment, AgentReviewCommentBatch, CurrentHead, DiffBase, DiffSetHunk,
 };
-use crate::ai::blocklist::agent_view::AgentViewEntryOrigin;
 use crate::appearance::Appearance;
 use crate::code::ShowCommentEditorProvider;
 #[cfg(not(target_family = "wasm"))]
@@ -120,7 +119,7 @@ use crate::quit_warning::UnsavedStateSummary;
 use crate::send_telemetry_from_ctx;
 #[cfg(feature = "local_fs")]
 use crate::server::telemetry::CodePanelsFileOpenEntrypoint;
-use crate::settings::{AISettings, CodeSettings};
+use crate::settings::CodeSettings;
 use crate::settings_view::SettingsSection;
 use crate::terminal::cli_agent::{
     build_selection_line_range_prompt, build_selection_substring_prompt,
@@ -361,7 +360,6 @@ pub struct FileState {
     chevron_button: ViewHandle<ActionButton>,
     open_in_tab_button: ViewHandle<ActionButton>,
     discard_button: ViewHandle<ActionButton>,
-    add_context_button: ViewHandle<ActionButton>,
     copy_path_button: ViewHandle<ActionButton>,
 }
 
@@ -2675,19 +2673,6 @@ impl CodeReviewView {
                 button
             });
 
-            let context_path = file.file_diff.file_path.clone();
-            let add_context_button = ctx.add_typed_action_view(move |_ctx| {
-                ActionButton::new("", NakedTheme)
-                    .with_icon(Icon::Paperclip)
-                    .with_size(ButtonSize::InlineActionHeader)
-                    .with_tooltip("Add file diff as context")
-                    .on_click(move |ctx| {
-                        ctx.dispatch_typed_action(CodeReviewAction::AddDiffSetAsContext(
-                            DiffSetScope::File(context_path.clone()),
-                        ))
-                    })
-            });
-
             let copy_path = file.file_diff.file_path.clone();
             let copy_path_button = ctx.add_typed_action_view(move |_ctx| {
                 ActionButton::new("", NakedTheme)
@@ -2706,7 +2691,6 @@ impl CodeReviewView {
                 chevron_button,
                 open_in_tab_button,
                 discard_button,
-                add_context_button,
                 copy_path_button,
                 sidebar_mouse_state: MouseStateHandle::default(),
                 header_mouse_state: MouseStateHandle::default(),
@@ -4997,20 +4981,6 @@ impl CodeReviewView {
             .with_main_axis_alignment(MainAxisAlignment::End)
             .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
-        // Add file diff as context button (before remove button)
-        if FeatureFlag::DiffSetAsContext.is_enabled() {
-            right_row.add_child(
-                EventHandler::new(
-                    Container::new(ChildView::new(&file.add_context_button).finish())
-                        .with_margin_left(4.)
-                        .finish(),
-                )
-                .on_left_mouse_up(|_, _, _| DispatchEventResult::StopPropagation)
-                .on_left_mouse_down(|_, _, _| DispatchEventResult::StopPropagation)
-                .finish(),
-            );
-        }
-
         if FeatureFlag::DiscardPerFileAndAllChanges.is_enabled() {
             right_row.add_child(
                 EventHandler::new(
@@ -5953,20 +5923,6 @@ impl CodeReviewView {
                         base,
                         ctx,
                     );
-
-                    // Enter agent view if enabled and not already active
-                    if FeatureFlag::AgentView.is_enabled()
-                        && !terminal_view
-                            .agent_view_controller()
-                            .as_ref(ctx)
-                            .is_active()
-                    {
-                        terminal_view.enter_agent_view_for_new_conversation(
-                            None,
-                            AgentViewEntryOrigin::CodeReviewContext,
-                            ctx,
-                        );
-                    }
                 });
             }
         }
@@ -6167,20 +6123,6 @@ impl CodeReviewView {
                         .update(ctx, |context_model, _| {
                             context_model.register_diff_hunk_attachment(diff_hunk_key, attachment);
                         });
-
-                    // Enter agent view if enabled and not already active
-                    if FeatureFlag::AgentView.is_enabled()
-                        && !terminal_view
-                            .agent_view_controller()
-                            .as_ref(ctx)
-                            .is_active()
-                    {
-                        terminal_view.enter_agent_view_for_new_conversation(
-                            None,
-                            AgentViewEntryOrigin::CodeReviewContext,
-                            ctx,
-                        );
-                    }
                 });
             }
         }
@@ -6799,20 +6741,6 @@ impl CodeReviewView {
             return items;
         }
 
-        let mut has_changes = false;
-        if let CodeReviewViewState::Loaded(loaded) = self.state() {
-            has_changes = !loaded.to_diff_stats().has_no_changes();
-        }
-
-        if FeatureFlag::DiffSetAsContext.is_enabled() && has_changes {
-            items.push(
-                MenuItemFields::new("Add diff set as context")
-                    .with_icon(Icon::Paperclip)
-                    .with_on_select_action(CodeReviewAction::AddDiffSetAsContext(DiffSetScope::All))
-                    .into_item(),
-            );
-        }
-
         let (comment_label, comment_icon) = if self.get_existing_diffset_comment(ctx).is_some() {
             ("Show saved comment", Icon::MessageText)
         } else {
@@ -6837,16 +6765,6 @@ impl CodeReviewView {
         let mut items = Vec::new();
 
         let has_changes = matches!(self.state(), CodeReviewViewState::Loaded(loaded) if !loaded.to_diff_stats().has_no_changes());
-
-        let is_ai_enabled = AISettings::as_ref(ctx).is_any_ai_enabled(ctx);
-        if is_ai_enabled && FeatureFlag::DiffSetAsContext.is_enabled() && has_changes {
-            items.push(
-                MenuItemFields::new("Add diff set as context")
-                    .with_icon(Icon::Paperclip)
-                    .with_on_select_action(CodeReviewAction::AddDiffSetAsContext(DiffSetScope::All))
-                    .into_item(),
-            );
-        }
 
         if FeatureFlag::FileAndDiffSetComments.is_enabled() && has_changes {
             let (comment_label, comment_icon) = if self.get_existing_diffset_comment(ctx).is_some()

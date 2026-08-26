@@ -223,7 +223,7 @@ pub const CREATE_DOCKER_SANDBOX: StaticCommand = StaticCommand {
     supported_surfaces: SlashCommandSurfaces::GuiOnly {
         icon_path: "bundled/svg/docker.svg",
     },
-    availability: Availability::LOCAL.union(Availability::AI_ENABLED),
+    availability: Availability::LOCAL,
     auto_enter_ai_mode: false,
     argument: None,
 };

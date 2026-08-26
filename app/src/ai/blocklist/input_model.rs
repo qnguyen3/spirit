@@ -455,14 +455,22 @@ impl BlocklistAIInputModel {
         decision_source: Option<InputTypeAutoDetectionSource>,
         ctx: &mut ModelContext<Self>,
     ) -> bool {
-        // Locking the input to AI is only allowed when the view's policy permits it (e.g. the
-        // GUI only allows it inside an agent view or an open CLI agent rich input session).
-        if new_config.input_type.is_ai()
-            && new_config.is_locked
-            && !self.policy.allows_locked_ai_input(ctx)
-        {
+        // AI input is only allowed when the view's policy permits it (the GUI only allows it
+        // while a CLI agent rich input session is open); everywhere else the input is a shell
+        // prompt. A locked-AI write is rejected outright rather than coerced so it cannot lock
+        // the input as a side effect.
+        let allows_ai_input = self.policy.allows_locked_ai_input(ctx);
+        if new_config.input_type.is_ai() && new_config.is_locked && !allows_ai_input {
             return false;
         }
+        let new_config = if allows_ai_input {
+            new_config
+        } else {
+            InputConfig {
+                input_type: InputType::Shell,
+                ..new_config
+            }
+        };
 
         if self.input_config == new_config {
             self.last_ai_autodetection_source = decision_source;
@@ -535,10 +543,8 @@ impl BlocklistAIInputModel {
 
     /// Returns `false` if the input type is locked and we will not attempt to automatically detect
     /// and change the input type.
-    pub fn should_run_input_autodetection(&self, app: &AppContext) -> bool {
-        FeatureFlag::AgentMode.is_enabled()
-            && self.is_autodetection_enabled_for_current_context(app)
-            && !self.input_config.is_locked
+    pub fn should_run_input_autodetection(&self) -> bool {
+        false
     }
 
     /// Returns whether autodetection is enabled for the current context, layering view-agnostic
@@ -636,7 +642,7 @@ impl BlocklistAIInputModel {
         self.abort_in_progress_detection();
 
         // If the input mode is locked, there's no point in running autodetection.
-        if !self.should_run_input_autodetection(ctx) {
+        if !self.should_run_input_autodetection() {
             return;
         }
 
@@ -810,7 +816,7 @@ impl BlocklistAIInputModel {
                     // In theory, we shouldn't need to check this, as we only run autodetection if the input
                     // is not locked, and we should abort the autodetect future if the input is locked, but
                     // we do it anyway out of an abundance of caution.
-                    if !me.should_run_input_autodetection(ctx) {
+                    if !me.should_run_input_autodetection() {
                         return;
                     }
                     // If the autodetect abort handle is none, it means we aborted autodetection.

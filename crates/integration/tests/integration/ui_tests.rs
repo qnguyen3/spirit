@@ -287,7 +287,6 @@ integration_tests! {
     test_settings_search_subpage_still_renders_content,
     test_settings_search_clear_restores_umbrella_state,
     test_settings_search_preserved_on_sidebar_click,
-    test_settings_agent_mcp_servers_renders_standalone_page,
 
     test_copy_selection_within_ai_block,
     #[ignore = "Affected by agent_view feature flag UI changes"]
@@ -334,7 +333,6 @@ integration_tests! {
     // Middle-click-paste is only implemented for Linux right now.
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     test_middle_click_paste,
-    test_agent_mode_pane_minimum_size,
 
     test_rule_creation,
     test_rule_update,

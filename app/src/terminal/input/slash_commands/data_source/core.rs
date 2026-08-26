@@ -356,10 +356,6 @@ pub trait SlashCommandDataSource {
             availability |= Availability::CODEBASE_CONTEXT;
         }
 
-        if AISettings::as_ref(ctx).is_any_ai_enabled(ctx) {
-            availability |= Availability::AI_ENABLED;
-        }
-
         availability
     }
 

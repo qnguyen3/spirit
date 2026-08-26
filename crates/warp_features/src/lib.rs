@@ -379,6 +379,8 @@ pub enum FeatureFlag {
     /// A new first-time user experience which prioritizes choosing a coding repository.
     GetStartedTab,
 
+    AgentLauncher,
+
     /// Enables Projects and Project management
     Projects,
 
@@ -1045,11 +1047,12 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::BoxDrawingGlyphs,
     FeatureFlag::PricingTransparency,
     FeatureFlag::PeriodicHandoffCheckpoints,
+    FeatureFlag::AgentLauncher,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).
 /// All PREVIEW_FLAGS are also automatically added to dogfood builds (WarpDev).
-pub const PREVIEW_FLAGS: &[FeatureFlag] = &[];
+pub const PREVIEW_FLAGS: &[FeatureFlag] = &[FeatureFlag::AgentLauncher];
 
 /// Features enabled for all release builds (i.e.: everything but WarpLocal).
 /// NOTE: if you are promoting a feature from Preview to launch, you'll likely
@@ -1065,6 +1068,7 @@ pub const RELEASE_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::SshRemoteServer,
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     FeatureFlag::DragTabsToWindows,
+    FeatureFlag::AgentLauncher,
 ];
 
 /// Flags that we want to allow to switch at runtime (assuming RuntimeFeatureFlags is set)

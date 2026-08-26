@@ -206,9 +206,9 @@ impl OnboardingStateModel {
     ) -> Self {
         Self {
             step: OnboardingStep::Intro,
-            intention: OnboardingIntention::AgentDrivenDevelopment,
+            intention: OnboardingIntention::Terminal,
             agent_settings: AgentDevelopmentSettings::new(default_model_id),
-            ui_customization: UICustomizationSettings::agent_defaults(),
+            ui_customization: UICustomizationSettings::terminal_defaults(),
             models,
             workspace_enforces_autonomy,
             ai_setup_choice: AiSetupChoice::default(),
@@ -803,8 +803,6 @@ impl OnboardingStateModel {
     pub(crate) fn back(&mut self, ctx: &mut ModelContext<Self>) {
         use warp_core::features::FeatureFlag;
         let account_first = FeatureFlag::AccountFirstOnboarding.is_enabled();
-        let agent_intention = matches!(self.intention, OnboardingIntention::AgentDrivenDevelopment);
-
         let prev = if account_first {
             match self.step {
                 OnboardingStep::Intro => None,
@@ -822,16 +820,7 @@ impl OnboardingStateModel {
                 OnboardingStep::Intro => None,
                 OnboardingStep::Intention => Some(OnboardingStep::Intro),
                 OnboardingStep::AiSetup => Some(OnboardingStep::Intention),
-                OnboardingStep::Customize => {
-                    if agent_intention {
-                        match self.ai_setup_choice {
-                            AiSetupChoice::WarpAgent => Some(OnboardingStep::AiAccess),
-                            AiSetupChoice::ThirdParty => Some(OnboardingStep::ThirdParty),
-                        }
-                    } else {
-                        Some(OnboardingStep::Intention)
-                    }
-                }
+                OnboardingStep::Customize => Some(OnboardingStep::Intro),
                 OnboardingStep::AiAccess => Some(OnboardingStep::Agent),
                 OnboardingStep::Agent => Some(OnboardingStep::AiSetup),
                 OnboardingStep::ThirdParty => Some(OnboardingStep::AiSetup),
@@ -880,13 +869,8 @@ impl OnboardingStateModel {
             }
         } else {
             match self.step {
-                OnboardingStep::Intro => self.set_step(OnboardingStep::Intention, ctx),
-                OnboardingStep::Intention => match self.intention {
-                    OnboardingIntention::Terminal => self.set_step(OnboardingStep::Customize, ctx),
-                    OnboardingIntention::AgentDrivenDevelopment => {
-                        self.set_step(OnboardingStep::AiSetup, ctx)
-                    }
-                },
+                OnboardingStep::Intro => self.set_step(OnboardingStep::Customize, ctx),
+                OnboardingStep::Intention => self.set_step(OnboardingStep::Customize, ctx),
                 OnboardingStep::AiSetup => match self.ai_setup_choice {
                     AiSetupChoice::WarpAgent => self.set_step(OnboardingStep::Agent, ctx),
                     AiSetupChoice::ThirdParty => self.set_step(OnboardingStep::ThirdParty, ctx),

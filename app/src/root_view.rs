@@ -70,7 +70,6 @@ use crate::experiments::{BlockOnboarding, Experiment};
 use crate::features::FeatureFlag;
 use crate::interval_timer::IntervalTimer;
 use crate::launch_configs::launch_config;
-use crate::linear::LinearIssueWork;
 use crate::notebooks::manager::NotebookSource;
 use crate::pane_group::{NewTerminalOptions, PanesLayout};
 use crate::persistence::ModelEvent;
@@ -449,24 +448,6 @@ pub fn init(app: &mut AppContext) {
     app.add_action(
         "root_view:open_mcp_settings_in_existing_window",
         RootView::open_mcp_settings_in_existing_window,
-    );
-
-    app.add_global_action(
-        "root_view:open_codex_in_new_window",
-        open_codex_in_new_window,
-    );
-    app.add_action(
-        "root_view:open_codex_in_existing_window",
-        RootView::open_codex_in_existing_window,
-    );
-
-    app.add_global_action(
-        "root_view:open_linear_issue_work_in_new_window",
-        open_linear_issue_work_in_new_window,
-    );
-    app.add_action(
-        "root_view:open_linear_issue_work_in_existing_window",
-        RootView::open_linear_issue_work_in_existing_window,
     );
 
     app.add_action("root_view:add_file_pane", RootView::add_file_pane);
@@ -1116,38 +1097,6 @@ fn open_mcp_settings_in_new_window(args: &OpenMCPSettingsArgs, ctx: &mut AppCont
     });
 }
 
-/// Opens a new window and shows the Codex modal.
-fn open_codex_in_new_window(_: &(), ctx: &mut AppContext) {
-    let root_handle = open_new_window_get_handles(None, ctx).1;
-    root_handle.update(ctx, |root_view, ctx| {
-        if let AuthOnboardingState::Terminal(workspace_view_handle) =
-            &root_view.auth_onboarding_state
-        {
-            let initial_load_complete = UpdateManager::as_ref(ctx).initial_load_complete();
-            workspace_view_handle.update(ctx, |_, ctx| {
-                let _ = ctx.spawn(initial_load_complete, move |workspace, _, ctx| {
-                    workspace.open_codex_modal(ctx)
-                });
-            });
-        }
-    });
-}
-
-/// Opens a new window and enters agent view with the Linear issue work prompt.
-fn open_linear_issue_work_in_new_window(args: &LinearIssueWork, ctx: &mut AppContext) {
-    let (_, root_handle) = open_new_window_get_handles(None, ctx);
-    let args = args.clone();
-    root_handle.update(ctx, |root_view, ctx| {
-        if let AuthOnboardingState::Terminal(workspace_view_handle) =
-            &root_view.auth_onboarding_state
-        {
-            workspace_view_handle.update(ctx, |workspace, ctx| {
-                workspace.open_linear_issue_work(&args, ctx);
-            });
-        }
-    });
-}
-
 fn open_warp_drive_object(arg: &OpenWarpDriveObjectArgs, ctx: &mut AppContext) {
     match arg.object_type {
         ObjectType::Notebook => open_new_workspace_with_notebook_open(
@@ -1751,17 +1700,6 @@ impl AccountFirstCompletion {
                 Some(FtueAccountClass::FreeStandard)
             }
         }
-    }
-
-    fn starts_agent_tutorial(self) -> bool {
-        matches!(
-            self,
-            AccountFirstCompletion::PaidTeam
-                | AccountFirstCompletion::FreeIcpSetupLater
-                | AccountFirstCompletion::FreeStandardSetupLater
-                | AccountFirstCompletion::FreeStandardCreditsPurchased
-                | AccountFirstCompletion::UpgradeCompleted
-        )
     }
 }
 
@@ -2462,7 +2400,7 @@ impl RootView {
         let account_class = completion.account_class();
         self.pending_account_first_sso_login = None;
         let cloud_ready = CloudPreferencesSyncer::as_ref(ctx).has_completed_initial_load();
-        let settings_applied = if account_class.is_none() || cloud_ready {
+        if account_class.is_none() || cloud_ready {
             self.pending_account_first_settings_class = None;
             if let Some(selected_settings) = self.pending_post_auth_onboarding_settings.take() {
                 let team_context = UserWorkspaces::as_ref(ctx).team_context_for_operation(ctx);
@@ -2473,17 +2411,12 @@ impl RootView {
                     ctx,
                 );
             }
-            true
         } else {
             self.pending_account_first_settings_class = account_class;
-            false
-        };
-
-        if !completion.starts_agent_tutorial() {
-            self.pending_tutorial = None;
         }
-        self.pending_account_first_tutorial_after_settings =
-            completion.starts_agent_tutorial() && !settings_applied;
+
+        self.pending_tutorial = None;
+        self.pending_account_first_tutorial_after_settings = false;
 
         send_telemetry_from_ctx!(
             OnboardingEvent::OnboardingCompleted {
@@ -2494,9 +2427,6 @@ impl RootView {
 
         self.auth_onboarding_state = AuthOnboardingState::Terminal(target.to_workspace(ctx));
         ctx.emit(RootViewEvent::AuthOnboardingStateChanged);
-        if completion.starts_agent_tutorial() && settings_applied {
-            self.start_pending_tutorial(ctx);
-        }
         self.start_autoupdate_polling(ctx);
         self.focus(ctx);
         ctx.notify();
@@ -3443,39 +3373,6 @@ impl RootView {
         true
     }
 
-    /// Opens the Codex modal in an existing window.
-    pub fn open_codex_in_existing_window(&mut self, _: &(), ctx: &mut ViewContext<Self>) -> bool {
-        let window_id = ctx.window_id();
-        if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
-            handle.update(ctx, |workspace, ctx| {
-                workspace.open_codex_modal(ctx);
-            });
-            ctx.windows().show_window_and_focus_app(window_id);
-        } else {
-            report_error!("Auth not complete before trying to open Codex modal");
-        }
-        true
-    }
-
-    /// Opens a new tab with agent view for a Linear issue work deeplink.
-    pub fn open_linear_issue_work_in_existing_window(
-        &mut self,
-        args: &LinearIssueWork,
-        ctx: &mut ViewContext<Self>,
-    ) -> bool {
-        let window_id = ctx.window_id();
-        if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
-            let args = args.clone();
-            handle.update(ctx, |workspace, ctx| {
-                workspace.open_linear_issue_work(&args, ctx);
-            });
-            ctx.windows().show_window_and_focus_app(window_id);
-        } else {
-            report_error!("Auth not complete before trying to open Linear issue work");
-        }
-        true
-    }
-
     /// Syncs the local "onboarding completed" flag to the server if the user
     /// finished onboarding pre-login and has since authenticated. Runs on every
     /// `AuthComplete`, so it also covers users who skipped login during onboarding
@@ -3867,29 +3764,17 @@ impl RootView {
     /// If onboarding stored a pending tutorial (because login was required first),
     /// start it now that the workspace exists.
     fn start_pending_tutorial(&mut self, ctx: &mut ViewContext<Self>) {
-        let Some(tutorial) = self.pending_tutorial.take() else {
+        if self.pending_tutorial.take().is_none() {
             return;
-        };
+        }
 
         let AuthOnboardingState::Terminal(workspace) = &self.auth_onboarding_state else {
             return;
         };
 
         if FeatureFlag::TabConfigs.is_enabled() {
-            let intention = tutorial.intention();
-            if matches!(intention, OnboardingIntention::AgentDrivenDevelopment) {
-                workspace.update(ctx, |view, ctx| {
-                    view.open_vertical_tabs_panel_if_enabled(ctx);
-                    view.start_agent_onboarding_tutorial(tutorial, ctx);
-                });
-            } else {
-                workspace.update(ctx, |view, ctx| {
-                    view.open_vertical_tabs_panel_if_enabled(ctx);
-                });
-            }
-        } else if *AISettings::as_ref(ctx).is_any_ai_enabled {
             workspace.update(ctx, |view, ctx| {
-                view.start_agent_onboarding_tutorial(tutorial, ctx);
+                view.open_vertical_tabs_panel_if_enabled(ctx);
             });
         }
     }

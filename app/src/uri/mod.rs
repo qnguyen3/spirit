@@ -28,7 +28,6 @@ use crate::cloud_object::ObjectType;
 use crate::drive::{OpenWarpDriveObjectArgs, OpenWarpDriveObjectSettings};
 use crate::features::FeatureFlag;
 use crate::launch_configs::launch_config::LaunchConfig;
-use crate::linear::{LinearAction, LinearIssueWork};
 use crate::root_view::{
     NewWorkspaceSource, OpenLaunchConfigArg, open_new_window_get_handles,
     open_new_with_workspace_source,
@@ -510,30 +509,7 @@ impl UriHost {
                     }
                 }
             }
-            UriHost::Codex => {
-                dispatch_action_in_new_or_existing_window(
-                    primary_window_id,
-                    "root_view:open_codex_in_existing_window",
-                    "root_view:open_codex_in_new_window",
-                    &(),
-                    ctx,
-                );
-            }
-            UriHost::Linear => match LinearAction::parse(url) {
-                Ok(LinearAction::WorkOnIssue) => {
-                    let args = LinearIssueWork::from_url(url);
-                    dispatch_action_in_new_or_existing_window(
-                        primary_window_id,
-                        "root_view:open_linear_issue_work_in_existing_window",
-                        "root_view:open_linear_issue_work_in_new_window",
-                        &args,
-                        ctx,
-                    );
-                }
-                Err(err) => {
-                    log::warn!("{err}");
-                }
-            },
+            UriHost::Codex | UriHost::Linear => {}
             UriHost::Session => {
                 let uuid_hex = url
                     .path_segments()

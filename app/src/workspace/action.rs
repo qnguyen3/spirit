@@ -269,6 +269,10 @@ pub enum WorkspaceAction {
         source: AddTabWithShellSource,
     },
     AddGetStartedTab,
+    AddAgentPickerTab,
+    LaunchAgentFromPicker {
+        catalog_index: usize,
+    },
     AddAmbientAgentTab,
     /// Add a new tab that immediately enters agent view with a new conversation.
     AddAgentTab,
@@ -997,6 +1001,8 @@ impl WorkspaceAction {
             | AddTerminalTab { .. }
             | AddTabWithShell { .. }
             | AddGetStartedTab
+            | AddAgentPickerTab
+            | LaunchAgentFromPicker { .. }
             | AddAgentTab
             | AddAmbientAgentTab
             | AddDockerSandboxTab

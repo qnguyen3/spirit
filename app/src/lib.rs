@@ -1,5 +1,6 @@
 #![allow(clippy::doc_lazy_continuation)]
 
+mod agent_launcher;
 mod ai;
 mod alloc;
 mod antivirus;
@@ -41,7 +42,6 @@ mod global_resource_handles;
 mod gpu_state;
 mod input_classifier;
 mod interval_timer;
-mod linear;
 #[cfg(feature = "local_fs")]
 mod local_control;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -145,6 +145,7 @@ use ::ai::index::full_source_code_embedding::manager::{
     CodebaseIndexManager, CodebaseIndexManagerConfig,
 };
 use ::ai::project_context::model::ProjectContextModel;
+use agent_launcher::pane_manager::AgentPickerPaneManager;
 pub use ai::agent::todos::AIAgentTodoList;
 pub use ai::agent::{AIAgentActionResultType, FileEdit, TodoOperation};
 use ai::agent_conversations_model::AgentConversationsModel;
@@ -338,6 +339,18 @@ use crate::workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent};
 /// Our embedded application assets.
 pub static ASSETS: warp_assets::Assets = warp_assets::Assets;
 const TUI_SECURE_STORAGE_SERVICE_SUFFIX: &str = ".tui";
+
+fn is_unsupported_agent_command(command: &warp_cli::CliCommand) -> bool {
+    matches!(
+        command,
+        warp_cli::CliCommand::Agent(_)
+            | warp_cli::CliCommand::HarnessSupport(_)
+            | warp_cli::CliCommand::MCP(_)
+            | warp_cli::CliCommand::Run(_)
+            | warp_cli::CliCommand::Runner(_)
+            | warp_cli::CliCommand::Schedule(_)
+    )
+}
 
 fn determine_agent_source(
     launch_mode: &LaunchMode,
@@ -792,6 +805,13 @@ pub fn run() -> Result<()> {
                 return warp_cli::completions::generate_to_stdout(*shell);
             }
             warp_cli::Command::CommandLine(cmd) => {
+                if is_unsupported_agent_command(cmd.as_ref()) {
+                    return Err(anyhow!(
+                        "`warp {}` is not supported in Spirit. Launch a third-party CLI agent with New Agent instead.",
+                        cmd.as_str_for_tracing()
+                    ));
+                }
+
                 let (is_sandboxed, computer_use_override) = match cmd.as_ref() {
                     warp_cli::CliCommand::Agent(warp_cli::agent::AgentCommand::Run(run_args)) => (
                         run_args.sandboxed,
@@ -1843,6 +1863,7 @@ pub(crate) fn initialize_app(
     ctx.add_singleton_model(|_| RecordingController::new());
     ctx.add_singleton_model(|_| ExecutionProfileEditorManager::default());
     ctx.add_singleton_model(|_| NetworkLogPaneManager::default());
+    ctx.add_singleton_model(|_| AgentPickerPaneManager::default());
     ctx.add_singleton_model(|_| pricing::PricingInfoModel::new());
     ctx.add_singleton_model(ai::pricing_promotion::PricingPromotionState::new);
     ctx.add_singleton_model(|ctx| {
