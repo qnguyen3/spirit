@@ -175,9 +175,6 @@ pub enum CodeViewEvent {
         location: LocalOrRemotePath,
         tab_index: usize,
     },
-    RunTabConfigSkill {
-        path: PathBuf,
-    },
     OpenLspLogs {
         log_path: PathBuf,
     },
