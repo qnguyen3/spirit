@@ -3972,7 +3972,7 @@ fn set_amp_session(view: &mut TerminalView, ctx: &mut ViewContext<TerminalView>)
 }
 
 #[test]
-fn amp_session_start_registers_listener_without_auto_toggle() {
+fn cli_agent_session_start_registers_listener_without_auto_toggle() {
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
 
@@ -3980,7 +3980,7 @@ fn amp_session_start_registers_listener_without_auto_toggle() {
         terminal.update(&mut app, |view, ctx| {
             view.handle_cli_agent_notification(
                 Some(CLI_AGENT_NOTIFICATION_SENTINEL),
-                r#"{"v":1,"agent":"amp","event":"session_start"}"#,
+                r#"{"v":1,"agent":"claude","event":"session_start"}"#,
                 ctx,
             );
         });
