@@ -12,6 +12,7 @@ mod suggestions_mode_menu;
 pub mod suggestions_mode_model;
 mod terminal;
 mod terminal_message_bar;
+pub mod voice_input;
 
 use std::any::Any;
 use std::borrow::Cow;
@@ -66,6 +67,7 @@ use warpui::elements::{
     ResizableStateHandle, SavePosition, SelectionHandle, YAxisAnchor, resizable_state_handle,
 };
 pub use warpui::elements::{ParentElement as _, Stack};
+use warpui::event::KeyState;
 pub use warpui::geometry::vector::{Vector2F, vec2f};
 use warpui::keymap::{BindingDescription, EditableBinding, FixedBinding, Keystroke};
 use warpui::platform::OperatingSystem;
@@ -177,6 +179,7 @@ use crate::terminal::input::suggestions_mode_model::{
     InputSuggestionsModeEvent, InputSuggestionsModeModel,
 };
 use crate::terminal::input::terminal_message_bar::TerminalInputMessageBar;
+use crate::terminal::input::voice_input::VoiceInputButton;
 use crate::terminal::model::session::active_session::ActiveSession;
 use crate::terminal::model::session::shell_quote_arg;
 use crate::terminal::prompt_render_helper::should_render_ps1_prompt;
@@ -722,6 +725,8 @@ pub enum InputAction {
 
     /// Triggers a slash command from a custom keybinding. The string is the command name.
     TriggerSlashCommandFromKeybinding(&'static str),
+
+    VoiceHoldKeyChanged(KeyState),
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
@@ -1118,6 +1123,7 @@ pub struct Input {
 
     terminal_input_message_bar: ViewHandle<TerminalInputMessageBar>,
     cli_agent_plugin_chip: ViewHandle<CliAgentPluginChip>,
+    voice_input_button: ViewHandle<VoiceInputButton>,
 
     inline_slash_commands_view: ViewHandle<InlineSlashCommandView>,
     slash_command_data_source: ModelHandle<GuiSlashCommandDataSource>,
@@ -1600,6 +1606,8 @@ impl Input {
             }
         });
 
+        let voice_input_button = ctx.add_typed_action_view(VoiceInputButton::new);
+
         current_prompt.update(ctx, |prompt_type, ctx| {
             if let PromptType::Dynamic { prompt } = prompt_type {
                 prompt.update(ctx, |current_prompt, ctx| {
@@ -1777,6 +1785,7 @@ impl Input {
             menu_positioning_provider,
             terminal_input_message_bar,
             cli_agent_plugin_chip,
+            voice_input_button,
             prompt_render_helper,
             prompt_type: current_prompt,
             enable_autosuggestions_setting: *editor_settings_handle
@@ -7060,6 +7069,11 @@ impl TypedActionView for Input {
     fn handle_action(&mut self, action: &InputAction, ctx: &mut ViewContext<Self>) {
         match action {
             InputAction::FocusInputBox => self.focus_input_box(ctx),
+            InputAction::VoiceHoldKeyChanged(key_state) => {
+                self.voice_input_button.update(ctx, |button, ctx| {
+                    button.handle_hold_key(*key_state, ctx);
+                });
+            }
             InputAction::Up => self.editor_up(ctx),
             InputAction::PageUp => self.editor_page_up(ctx),
             InputAction::PageDown => self.editor_page_down(ctx),

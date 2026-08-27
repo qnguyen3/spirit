@@ -373,6 +373,8 @@ pub enum FeatureFlag {
     /// Enables the inline history menu for quickly accessing previous commands and conversations.
     InlineHistoryMenu,
 
+    VoiceInput,
+
     /// Enables cloud mode functionality for ambient agents.
     CloudMode,
 
@@ -624,6 +626,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::JupyterNotebookRendering,
     FeatureFlag::BoxDrawingGlyphs,
     FeatureFlag::AgentLauncher,
+    FeatureFlag::VoiceInput,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).

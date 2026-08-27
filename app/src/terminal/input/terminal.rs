@@ -1,8 +1,9 @@
 use warp_core::settings::Setting;
 use warpui::elements::{
-    Border, Clipped, Container, DropTarget, Element, Flex, Hoverable, ParentElement, SavePosition,
-    Stack,
+    Border, Clipped, Container, CrossAxisAlignment, DispatchEventResult, DropTarget, Element,
+    EventHandler, Flex, Hoverable, ParentElement, SavePosition, Stack,
 };
+use warpui::event::KeyState;
 use warpui::presenter::ChildView;
 use warpui::{AppContext, SingletonEntity};
 
@@ -11,9 +12,10 @@ use super::common::{
     add_workflow_info_overlay, should_show_terminal_input_message_bar,
     wrap_input_with_terminal_padding_and_focus_handler,
 };
-use super::{Input, InputDropTargetData};
+use super::{Input, InputAction, InputDropTargetData, voice_input};
 use crate::appearance::Appearance;
 use crate::context_chips::spacing;
+use crate::features::FeatureFlag;
 use crate::settings::{AppEditorSettings, InputModeSettings};
 use crate::terminal::block_list_settings::BlockListSettings;
 use crate::terminal::block_list_viewport::InputMode;
@@ -57,7 +59,17 @@ impl Input {
                 .finish(),
         );
 
-        column.add_child(ChildView::new(&self.cli_agent_plugin_chip).finish());
+        if FeatureFlag::VoiceInput.is_enabled() {
+            column.add_child(
+                Flex::row()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_child(ChildView::new(&self.voice_input_button).finish())
+                    .with_child(ChildView::new(&self.cli_agent_plugin_chip).finish())
+                    .finish(),
+            );
+        } else {
+            column.add_child(ChildView::new(&self.cli_agent_plugin_chip).finish());
+        }
 
         if should_show_terminal_input_message_bar(app) {
             column.add_child(
@@ -213,7 +225,21 @@ impl Input {
             }
         }
 
-        SavePosition::new(column.finish(), &self.save_position_id()).finish()
+        let input = SavePosition::new(column.finish(), &self.save_position_id()).finish();
+        if !FeatureFlag::VoiceInput.is_enabled() {
+            return input;
+        }
+
+        let hold_key = voice_input::hold_key();
+        EventHandler::new(input)
+            .on_modifier_state_changed(move |ctx, _, key_code, key_state| {
+                let released = matches!(key_state, KeyState::Released);
+                if *key_code == hold_key && (is_focused || released) {
+                    ctx.dispatch_typed_action(InputAction::VoiceHoldKeyChanged(*key_state));
+                }
+                DispatchEventResult::PropagateToParent
+            })
+            .finish()
     }
 }
 
