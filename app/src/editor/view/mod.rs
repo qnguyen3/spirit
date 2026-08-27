@@ -7151,7 +7151,6 @@ impl EditorView {
             editor_model.clear_marked_text(ctx);
         });
     }
-
 }
 
 /// Try to convert display point to an anchor. If it is not possible, clamp to anchoring at end of buffer.

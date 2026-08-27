@@ -517,7 +517,6 @@ pub struct TeamsPageView {
     // Note that rather than storing just the current workspace, we're storing the entire
     // ModelHandle<UserWorkspaces>. That's because eventually we'll be handling more than one workspace.
     user_workspaces: ModelHandle<UserWorkspaces>,
-    ai_request_usage_model: ModelHandle<AIRequestUsageModel>,
     pricing_info_model: ModelHandle<PricingInfoModel>,
     cloud_model: ModelHandle<CloudModel>,
     invite_view: TeamsInviteOption,
@@ -586,13 +585,8 @@ impl TypedActionView for TeamsPageView {
             }
             TeamsPageAction::OpenWarpDrive => ctx.emit(TeamsPageViewEvent::OpenWarpDrive),
             TeamsPageAction::ShowLeaveTeamConfirmationDialog => {
-                let variant = if self.should_show_reload_credits_confirmation(ctx) {
-                    CloudActionConfirmationDialogVariant::LeaveTeamReloadCredits
-                } else {
-                    CloudActionConfirmationDialogVariant::LeaveTeam
-                };
                 self.show_team_action_confirmation(
-                    variant,
+                    CloudActionConfirmationDialogVariant::LeaveTeam,
                     TeamActionConfirmationTarget::Leave,
                     ctx,
                 );
@@ -909,7 +903,6 @@ impl TeamsPageView {
                 num_chips: 0,
             },
             user_workspaces,
-            ai_request_usage_model: AIRequestUsageModel::handle(ctx),
             pricing_info_model,
             cloud_model,
             invite_view: TeamsInviteOption::default(),
@@ -988,10 +981,6 @@ impl TeamsPageView {
             UserWorkspacesEvent::TeamsChanged => {
                 self.update_team_members_state(ctx);
                 self.update_approved_domains_state(ctx);
-
-                AIRequestUsageModel::handle(ctx).update(ctx, |usage_model, ctx| {
-                    usage_model.refresh_request_usage_async(ctx);
-                });
 
                 ctx.emit(TeamsPageViewEvent::TeamsChanged);
             }
@@ -1138,15 +1127,6 @@ impl TeamsPageView {
                 // Build plan migration modal is handled by OneTimeModalModel
             }
         }
-    }
-
-    fn should_show_reload_credits_confirmation(&self, ctx: &AppContext) -> bool {
-        FeatureFlag::BillingAndUsagePageV2.is_enabled()
-            && self
-                .ai_request_usage_model
-                .as_ref(ctx)
-                .total_user_interactive_bonus_credits_remaining()
-                > 0
     }
 
     fn show_team_action_confirmation(
@@ -2333,14 +2313,11 @@ impl TeamsWidget {
         app: &AppContext,
     ) -> Box<dyn Element> {
         let cloud_model = view.cloud_model.as_ref(app);
-        let ai_request_usage_model = view.ai_request_usage_model.as_ref(app);
         let current_user_email = view.auth_state.user_email().unwrap_or_default();
         let has_admin_permissions = team_metadata.has_admin_permissions(&current_user_email);
         let is_owner = team_metadata.has_owner_permissions(&current_user_email);
-        let remaining_workspace_and_team_credits =
-            ai_request_usage_model.total_current_workspace_and_team_bonus_credits_remaining(app);
-        let delete_disabled_reason = team_metadata
-            .get_delete_disabled_reason(&current_user_email, remaining_workspace_and_team_credits);
+        let delete_disabled_reason =
+            team_metadata.get_delete_disabled_reason(&current_user_email, 0);
 
         let mut main_content = Flex::column();
         let chip_editor_style = UiComponentStyles::default()

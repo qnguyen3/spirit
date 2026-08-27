@@ -774,8 +774,8 @@ impl InputSuggestions {
                                 Flex::row().with_cross_axis_alignment(CrossAxisAlignment::End);
 
                             if let Some(icon_type) = item.icon_type.as_ref() {
-                                let icon_width = font_size
-                                    * icon_type.width_font_size_multiplication_factor();
+                                let icon_width =
+                                    font_size * icon_type.width_font_size_multiplication_factor();
                                 let icon_container = Container::new(
                                     ConstrainedBox::new(
                                         Icon::new(

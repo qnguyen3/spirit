@@ -298,12 +298,12 @@ impl crate::search::mixer::SyncDataSource for DataSource {
         if should_include_command_workflows {
             filtered_cloud_objects.extend(
                 self.search_workflows(query, should_include_command_workflows, app)
-                .map_err(|err| {
-                    Box::new(DataSourceSearchError::new(err.to_string()))
-                        as DataSourceRunErrorWrapper
-                })?
-                .into_iter()
-                .map(QueryResult::from),
+                    .map_err(|err| {
+                        Box::new(DataSourceSearchError::new(err.to_string()))
+                            as DataSourceRunErrorWrapper
+                    })?
+                    .into_iter()
+                    .map(QueryResult::from),
             );
         }
 

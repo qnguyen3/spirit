@@ -204,7 +204,6 @@ pub struct EditorElement {
     editor_decorator_elements: EditorDecoratorElements,
     local_selection_data: LocalDrawableSelectionData,
     remote_selections_data: HashMap<ReplicaId, RemoteDrawableSelectionData>,
-
 }
 
 impl EditorElement {
@@ -834,7 +833,6 @@ impl EditorElement {
                     .paint(avatar_origin, ctx, app);
                 ctx.scene.stop_layer();
             }
-
         }
     }
 

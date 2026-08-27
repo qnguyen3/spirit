@@ -2905,13 +2905,6 @@ impl ServerModel {
         let message = msg.message;
         let include_unstaged = msg.include_unstaged;
         let branch = msg.branch;
-        // The create-PR stage AI-generates the title/body only when the client
-        // asked for it. Capture the client on the main thread (ctx isn't
-        // available inside the spawned future) and only for the PR mode, so
-        // commit-only / commit-and-push never touch the AI path.
-        let ai_client = (matches!(mode, GitCommitChainMode::CommitAndCreatePr)
-            && msg.autogenerate_pr_content)
-            .then(|| ServerApiProvider::handle(ctx).as_ref(ctx).get_ai_client());
         let chain_mode = CommitChainMode::from(mode);
         let path_future = Self::interactive_path_future(ctx);
         let request_id_for_response = request_id.clone();
@@ -2935,7 +2928,6 @@ impl ServerModel {
                     &message,
                     include_unstaged,
                     &branch,
-                    ai_client.as_deref(),
                     path_env,
                 )
                 .await
@@ -3050,14 +3042,6 @@ impl ServerModel {
             msg.repo_path
         );
         let branch = msg.branch;
-        // Generate the PR title/body via AI only when the client asked for it
-        // and didn't already supply them. Reuses the same helper the local
-        // dialog uses, so local and remote PRs are produced identically
-        // (AI-with-`--fill`-fallback). The daemon's `ServerApiProvider` is
-        // authenticated with the user's forwarded bearer token.
-        let ai_client = msg
-            .autogenerate_content
-            .then(|| ServerApiProvider::handle(ctx).as_ref(ctx).get_ai_client());
         let path_future = Self::interactive_path_future(ctx);
         let request_id_for_response = request_id.clone();
         let handle = self.spawn_request_handler(
@@ -3069,8 +3053,8 @@ impl ServerModel {
                         "another git operation is in progress (merge, rebase, cherry-pick, or a lock file is present)"
                     );
                 }
-                git_actions::create_pr(&repo_path, &branch, ai_client.as_deref(), path_env.as_deref())
-                    .await
+                let _ = branch;
+                git_actions::create_pr(&repo_path, path_env.as_deref()).await
             },
             move |me, result, _ctx| {
                 let message = match result {

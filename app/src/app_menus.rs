@@ -25,9 +25,7 @@ use crate::features::{FeatureFlag, runtime_flags_menu_items};
 use crate::persisted_workspace::PersistedWorkspace;
 use crate::root_view::OpenLaunchConfigArg;
 use crate::server::telemetry::LaunchConfigUiLocation;
-use crate::settings::{
-    BlockVisibilitySettings, DebugSettings, SelectionSettings,
-};
+use crate::settings::{BlockVisibilitySettings, DebugSettings, SelectionSettings};
 use crate::terminal::alt_screen_reporting::AltScreenReporting;
 use crate::terminal::session_settings::SessionSettings;
 use crate::terminal::settings::{SpacingMode, TerminalSettings};

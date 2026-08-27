@@ -633,5 +633,4 @@ impl ViewSnapshot {
     pub fn cursor_avatar_size(&self) -> f32 {
         self.font_size + CURSOR_AVATAR_IMAGE_OFFSET
     }
-
 }
