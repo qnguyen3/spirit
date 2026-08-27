@@ -123,8 +123,6 @@ impl TeamUpdateManager {
                     workspaces: vec![],
                     joinable_teams: vec![],
                     experiments: None,
-                    feature_model_choices: None,
-                    ai_credit_availability: None,
                     user_purchase_policy: None,
                 },
                 pricing_info: None,
@@ -348,12 +346,6 @@ impl TeamUpdateManager {
                     });
                 }
 
-                if let Some(availability) = response.metadata.ai_credit_availability {
-                    AIRequestUsageModel::handle(ctx).update(ctx, |usage_model, ctx| {
-                        usage_model.apply_server_availability(Ok(availability), ctx);
-                    });
-                }
-
                 let workspaces = response.metadata.workspaces;
                 let joinable_teams = response.metadata.joinable_teams;
                 let user_purchase_policy = response.metadata.user_purchase_policy;
@@ -479,12 +471,6 @@ impl TeamUpdateManager {
                 let experiments = user_workspaces_access.experiments;
                 let user_purchase_policy = user_workspaces_access.user_purchase_policy;
 
-                if let Some(availability) = user_workspaces_access.ai_credit_availability {
-                    AIRequestUsageModel::handle(ctx).update(ctx, |usage_model, ctx| {
-                        usage_model.apply_server_availability(Ok(availability), ctx);
-                    });
-                }
-
                 UserWorkspaces::handle(ctx).update(ctx, |user_workspaces, ctx| {
                     user_workspaces.set_user_purchase_policy(user_purchase_policy);
                     user_workspaces.update_workspaces(workspaces.clone(), ctx);
@@ -506,13 +492,6 @@ impl TeamUpdateManager {
                 if let Some(experiments) = experiments {
                     ServerApiProvider::handle(ctx).update(ctx, |provider, ctx| {
                         provider.handle_experiments_fetched(experiments, ctx);
-                    });
-                }
-
-                if let Some(feature_model_choices) = user_workspaces_access.feature_model_choices {
-                    LLMPreferences::handle(ctx).update(ctx, |llm_preferences, ctx| {
-                        llm_preferences
-                            .update_feature_model_choices(feature_model_choices.try_into(), ctx);
                     });
                 }
 

@@ -124,9 +124,9 @@ impl SessionConfigModal {
     /// Resets the selection to index 0 (the first available type).
     /// When Oz is disabled, hides the session type row entirely and defaults
     /// to Terminal behind the scenes.
-    pub fn configure(&mut self, show_oz: bool) {
-        self.show_session_type_row = show_oz;
-        self.session_types = session_config_rendering::visible_session_types(show_oz);
+    pub fn configure(&mut self) {
+        self.show_session_type_row = false;
+        self.session_types = session_config_rendering::visible_session_types(false);
         self.selected_session_type_index = 0;
         self.session_pill_mouse_states = self
             .session_types

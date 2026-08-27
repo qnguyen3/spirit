@@ -10,9 +10,7 @@ use super::UserWorkspaces;
 use crate::auth::AuthStateProvider;
 use crate::channel::ChannelState;
 use crate::workspaces::team::Team;
-use crate::workspaces::workspace::{
-    BillingMetadata, CustomerType, PurchaseAddOnCreditsPolicy, Workspace,
-};
+use crate::workspaces::workspace::{BillingMetadata, CustomerType, PurchaseAddOnCreditsPolicy};
 
 impl UserWorkspaces {
     pub fn current_workspace_billing_metadata(&self) -> Option<&BillingMetadata> {
@@ -30,15 +28,6 @@ impl UserWorkspaces {
     ) -> Option<&'a BillingMetadata> {
         team.map(|team| &team.billing_metadata)
             .or_else(|| self.current_workspace_billing_metadata())
-    }
-
-    pub fn is_custom_llm_enabled_for_team(&self, team: Option<&Team>) -> bool {
-        team.map(Team::is_custom_llm_enabled)
-            .or_else(|| {
-                self.current_workspace()
-                    .map(Workspace::is_custom_llm_enabled)
-            })
-            .unwrap_or(false)
     }
 
     /// The add-on credits purchase policy for the current viewer context: the

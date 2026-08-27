@@ -19,12 +19,8 @@ use warpui::{AppContext, Entity, SingletonEntity, ViewContext, WeakViewHandle, W
 
 use super::UserWorkspaces;
 use crate::server::ids::ServerId;
-use crate::settings::AgentModeCommandExecutionPredicate;
-use crate::workspaces::gql_convert::ToAgentModeCommandExecutionPredicates;
 use crate::workspaces::team::Team;
-use crate::workspaces::workspace::{
-    AdminEnablementSetting, AiAutonomySettings, TeamByoSettings, Workspace,
-};
+use crate::workspaces::workspace::{AdminEnablementSetting, TeamByoSettings, Workspace};
 
 mod sealed {
     pub trait Sealed {}
@@ -231,37 +227,6 @@ impl UserWorkspaces {
                 .is_some_and(|team_byo| team_byo.endpoints_enabled && team_byo.allow_user_endpoints)
     }
 
-    /// Whether `scope`'s team provides a managed endpoint serving `llm_id`.
-    pub fn has_team_byo_endpoint<S: TeamScope + ?Sized>(&self, scope: &S, llm_id: &LLMId) -> bool {
-        self.is_managed_byok_byoe_enabled()
-            && self.team_byo_for_scope(scope).is_some_and(|team_byo| {
-                team_byo.endpoints_enabled
-                    && team_byo.endpoints.iter().any(|endpoint| {
-                        endpoint.enabled
-                            && endpoint
-                                .models
-                                .iter()
-                                .any(|model| model.enabled && model.config_key == llm_id.as_str())
-                    })
-            })
-    }
-
-    /// Whether a first-party key for `provider` has been configured for `scope`.
-    pub fn has_team_first_party_key<S: TeamScope + ?Sized>(
-        &self,
-        scope: &S,
-        provider: LLMProvider,
-    ) -> bool {
-        self.is_managed_byok_byoe_enabled()
-            && self.team_byo_for_scope(scope).is_some_and(|team_byo| {
-                team_byo.first_party_enabled
-                    && team_byo
-                        .first_party_keys
-                        .iter()
-                        .any(|key| key.provider == provider)
-            })
-    }
-
     /// [`Self::are_member_byo_endpoints_allowed`] across every team at once, for callers with no
     /// window: id resolution and preference reconciliation act on state that follows the user
     /// between teams and devices, so neither may turn on one arbitrarily elected team's policy.
@@ -349,79 +314,6 @@ impl UserWorkspaces {
             |workspace| workspace.settings.enable_warp_attribution.clone(),
             AdminEnablementSetting::default(),
         )
-    }
-
-    /// The AI autonomy policy that applies to `scope`'s team. See
-    /// [`Self::scoped_or_workspace_setting`] for the no-team fallback.
-    pub(crate) fn ai_autonomy_settings<S: TeamScope + ?Sized>(
-        &self,
-        scope: &S,
-    ) -> AiAutonomySettings {
-        self.scoped_or_workspace_setting(
-            scope,
-            |team| AiAutonomySettings::from(&team.settings.ai_autonomy),
-            |workspace| workspace.settings.ai_autonomy_settings.clone(),
-            AiAutonomySettings::default(),
-        )
-    }
-
-    /// The organization-managed command denylist a sandboxed agent must obey, for `scope`'s
-    /// team. An empty or unconfigured list is no constraint (a denylist blocks only what it
-    /// lists), so both lower to `None`. See [`Self::scoped_or_workspace_setting`] for the
-    /// no-team fallback.
-    pub(crate) fn sandboxed_agent_execute_commands_denylist_for_scope<S: TeamScope + ?Sized>(
-        &self,
-        scope: &S,
-    ) -> Option<Vec<AgentModeCommandExecutionPredicate>> {
-        self.scoped_or_workspace_setting(
-            scope,
-            |team| {
-                // A denylist blocks only what it lists, so an empty list is no constraint.
-                let values = &team
-                    .settings
-                    .sandboxed_agent
-                    .execute_commands_denylist
-                    .values;
-                (!values.is_empty()).then(|| values.clone().to_predicates())
-            },
-            |workspace| {
-                workspace
-                    .settings
-                    .sandboxed_agent_settings
-                    .clone()
-                    .and_then(|settings| settings.execute_commands_denylist)
-            },
-            None,
-        )
-    }
-
-    /// Returns true iff AI autonomy features are allowed for `scope`'s team.
-    /// TODO: This should be deleted soon. AI autonomy settings have been moved into organization
-    /// settings (see `ai_autonomy_settings` above), but there could be an interim time where we
-    /// have not set up the org settings yet for an enterprise that previously had the entire
-    /// feature set disabled. To capture that case, we'll see if all the settings are `None`;
-    /// if so, we'll fall back to their billing metadata's value. Once we've migrated everyone
-    /// into org settings, we should remove `is_enabled` from the policy and delete this function.
-    pub fn is_ai_autonomy_allowed<S: TeamScope + ?Sized>(&self, scope: &S) -> bool {
-        let settings = self.ai_autonomy_settings(scope);
-        let all_settings_none = settings.apply_code_diffs_setting.is_none()
-            && settings.read_files_setting.is_none()
-            && settings.read_files_allowlist.is_none()
-            && settings.execute_commands_setting.is_none()
-            && settings.execute_commands_allowlist.is_none()
-            && settings.execute_commands_denylist.is_none();
-
-        if !all_settings_none {
-            return true;
-        }
-
-        self.current_workspace().is_none_or(|workspace| {
-            workspace
-                .billing_metadata
-                .tier
-                .ai_autonomy_policy
-                .is_some_and(|policy| policy.is_enabled)
-        })
     }
 
     /// Whether AI is allowed in remote sessions under `scope`'s team. See

@@ -181,9 +181,6 @@ mod pending_email_invites_conversion {
 mod team_settings_conversion {
     use warp_graphql::workspace as gqlws;
 
-    use crate::ai::execution_profiles::{
-        ActionPermission, ComputerUsePermission, WriteToPtyPermission,
-    };
     use crate::workspaces::gql_convert::team_settings_from_gql;
     use crate::workspaces::workspace::{
         AdminEnablementSetting, TeamSettings, UgcCollectionEnablementSetting,
@@ -355,42 +352,11 @@ mod team_settings_conversion {
             "ws-secret"
         );
 
-        // AI autonomy maps effective values to permissions (RespectUserSetting ->
-        // None) while preserving the enforcement bit.
-        assert_eq!(
-            settings.ai_autonomy.apply_code_diffs.value,
-            Some(ActionPermission::AlwaysAllow)
-        );
-        assert!(
-            settings
-                .ai_autonomy
-                .apply_code_diffs
-                .is_enforced_by_workspace
-        );
-        assert_eq!(settings.ai_autonomy.read_files.value, None);
-        assert_eq!(
-            settings.ai_autonomy.execute_commands.value,
-            Some(ActionPermission::AlwaysAsk)
-        );
-        assert_eq!(
-            settings.ai_autonomy.write_to_pty.value,
-            Some(WriteToPtyPermission::AlwaysAsk)
-        );
-        assert_eq!(
-            settings.ai_autonomy.computer_use.value,
-            Some(ComputerUsePermission::Never)
-        );
-        assert_eq!(
-            settings.ai_autonomy.read_files_allowlist.values,
-            vec!["/allowed".to_string()]
-        );
-
         // Link sharing keeps each boolean value.
         assert!(settings.link_sharing.anyone_with_link_sharing_enabled.value);
         assert!(!settings.link_sharing.direct_link_sharing_enabled.value);
 
         // Passthrough groups map directly.
-        assert!(settings.llm_settings.enabled);
         assert!(settings.telemetry_settings.force_enabled);
         assert!(settings.usage_based_pricing_settings.enabled);
         assert_eq!(
@@ -407,12 +373,6 @@ mod team_settings_conversion {
             AdminEnablementSetting::Enable
         );
         assert_eq!(settings.default_host_slug.as_deref(), Some("my-host"));
-
-        // Sandboxed agent denylist is populated from the effective list.
-        assert_eq!(
-            settings.sandboxed_agent.execute_commands_denylist.values,
-            vec!["danger".to_string()]
-        );
     }
 
     #[test]
@@ -437,17 +397,13 @@ mod team_settings_conversion {
 
     #[test]
     fn team_settings_from_gql_uses_team_payload() {
-        // The team payload carries distinctive values (llm enabled, codebase
-        // context Enable, ugc enforced). `team_settings_from_gql` derives
+        // The team payload carries distinctive values (codebase context Enable,
+        // ugc enforced). `team_settings_from_gql` derives
         // `Team.settings` from this payload only — it takes just the team settings,
         // so it structurally cannot clone workspace settings. This is the parse
         // boundary replacing the old `Team::organization_settings` clone.
         let settings = team_settings_from_gql(sample_gql_team_settings());
 
-        assert!(
-            settings.llm_settings.enabled,
-            "Team.settings must be sourced from the team payload"
-        );
         assert_eq!(
             settings.codebase_context.value,
             AdminEnablementSetting::Enable,

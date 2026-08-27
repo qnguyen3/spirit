@@ -59,8 +59,7 @@ use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
 use crate::cloud_object::model::view::{CloudViewModel, CloudViewModelEvent, UpdateTimestamp};
 use crate::cloud_object::{
     CloudObject, CloudObjectEventEntrypoint, CloudObjectLocation, CloudObjectSyncStatus,
-    GenericCloudObject, GenericStringObjectFormat, JsonObjectType, NumInFlightRequests, ObjectType,
-    Space,
+    GenericStringObjectFormat, JsonObjectType, NumInFlightRequests, ObjectType, Space,
 };
 use crate::drive::panel::DrivePanelAction;
 use crate::editor::{EditorView, Event as EditorEvent, SingleLineEditorOptions};
@@ -68,11 +67,10 @@ use crate::env_vars::CloudEnvVarCollection;
 use crate::features::FeatureFlag;
 use crate::menu::{Event, Menu, MenuItem, MenuItemFields};
 use crate::network::NetworkStatus;
-use crate::notebooks::CloudNotebookModel;
 use crate::server::cloud_objects::update_manager::{
     FetchSingleObjectOption, InitiatedBy, UpdateManager,
 };
-use crate::server::ids::{ClientId, ObjectUid, ServerId, SyncId};
+use crate::server::ids::{ObjectUid, ServerId, SyncId};
 use crate::server::sync_queue::SyncQueue;
 use crate::server::telemetry::{
     AnonymousUserSignupEntrypoint, SharingDialogSource, TelemetryEvent,
@@ -158,12 +156,10 @@ const OFFLINE_BANNER_PADDING_VERTICAL: f32 = 4.;
 const FOLDER_LABEL: &str = "Folder";
 const NOTEBOOK_LABEL: &str = "Notebook";
 const WORKFLOW_LABEL: &str = "Workflow";
-const AGENT_MODE_WORKFLOW_LABEL: &str = "Prompt";
 const ENV_VAR_COLLECTION_LABEL: &str = "Environment variables";
 const INDEX_FOLDER_LABEL: &str = "New folder";
 const INDEX_NOTEBOOK_LABEL: &str = "New notebook";
 const INDEX_WORKFLOW_LABEL: &str = "New workflow";
-const INDEX_AGENT_MODE_WORKFLOW_LABEL: &str = "New prompt";
 const INDEX_ENV_VAR_COLLECTION_LABEL: &str = "New environment variables";
 
 const IMPORT_LABEL: &str = "Import";
@@ -251,8 +247,6 @@ pub enum DriveIndexAction {
         space: Space,
         initial_folder_id: Option<SyncId>,
     },
-    OpenAIFactCollection,
-    OpenMCPServerCollection,
     CreateObject {
         object_type: DriveObjectType,
         space: Space,
@@ -372,7 +366,6 @@ pub enum DriveIndexAction {
         banner_kind: SharedObjectLimitBannerKind,
     },
     SetCurrentWorkspace(WorkspaceUid),
-    AttachPlanAsContext(AIDocumentId),
 }
 
 impl DriveIndexAction {
@@ -452,13 +445,6 @@ pub enum DriveIndexEvent {
         /// Pre-populated content for the workflow (e.g. saved from a conversation prompt)
         content: Option<String>,
     },
-    CreateAIFact {
-        space: Space,
-        fact: AIFact,
-        initial_folder_id: Option<SyncId>,
-    },
-    OpenAIFactCollection,
-    OpenMCPServerCollection,
     OpenObject(CloudObjectTypeAndId),
     OpenWorkflowInPane {
         cloud_object_type_and_id: CloudObjectTypeAndId,
@@ -480,7 +466,6 @@ pub enum DriveIndexEvent {
     OpenWorkflowModalWithCloudWorkflow(SyncId),
     FocusWarpDrive,
     OpenSharedObjectsCreationDeniedModal(DriveObjectType, ServerId),
-    AttachPlanAsContext(AIDocumentId),
 }
 
 #[derive(Clone, Default)]
@@ -568,16 +553,6 @@ pub struct DriveIndex {
     num_errored_objects: usize,
 
     workspace_dropdown: ViewHandle<Dropdown<DriveIndexAction>>,
-
-    /// Drive item to represent collection of AI facts.
-    /// Special-cased to always render at the top of the Personal space section.
-    ai_fact_collection: WarpDriveAIFactCollection,
-    ai_fact_collection_item_mouse_states: ItemStates,
-
-    /// Drive item to represent collection of MCP servers.
-    /// Special-cased to always render at the top of the Personal space section.
-    mcp_server_collection: WarpDriveMCPServerCollection,
-    mcp_server_collection_item_mouse_states: ItemStates,
 }
 
 pub fn init(app: &mut AppContext) {
@@ -784,12 +759,6 @@ impl DriveIndex {
         };
 
         let mut items = vec![];
-        // Add the AI fact collection object + MCP server collection object for personal space
-        if matches!(location, CloudObjectLocation::Space(Space::Personal)) {
-            items.push(self.mcp_server_collection.id().to_string());
-            items.push(self.ai_fact_collection.id().to_string());
-        }
-
         items.extend(
             item_iter
                 .map(|object| {
@@ -850,16 +819,6 @@ impl DriveIndex {
                     .get_mut(&DriveIndexSection::Space(space))
                     && !section_state.collapsed
                 {
-                    // Add AI fact collection object + MCP server collection object for personal space
-                    if matches!(space, Space::Personal) {
-                        if FeatureFlag::McpServer.is_enabled()
-                            && ContextFlag::ShowMCPServers.is_enabled()
-                        {
-                            self.ordered_items
-                                .push(WarpDriveItemId::MCPServerCollection);
-                        }
-                        self.ordered_items.push(WarpDriveItemId::AIFactCollection);
-                    }
                     // Sort and add the rest of the items in the space
                     let Some(uids) = self
                         .sorted_orders_by_location
@@ -1005,9 +964,6 @@ impl DriveIndex {
             dropdown
         });
 
-        let ai_fact_collection = WarpDriveAIFactCollection::new(ClientId::default());
-        let mcp_server_collection = WarpDriveMCPServerCollection::new(ClientId::default());
-
         Self {
             window_id: ctx.window_id(),
             menu,
@@ -1037,10 +993,6 @@ impl DriveIndex {
             share_dialog_open_for_object: None,
             should_show_personal_object_limit_status: true,
             workspace_dropdown,
-            ai_fact_collection,
-            ai_fact_collection_item_mouse_states: Default::default(),
-            mcp_server_collection,
-            mcp_server_collection_item_mouse_states: Default::default(),
         }
     }
 
@@ -1892,77 +1844,6 @@ impl DriveIndex {
         .finish()
     }
 
-    fn render_ai_fact_collection_item(
-        &self,
-        space: Space,
-        appearance: &Appearance,
-        app: &AppContext,
-    ) -> Option<Box<dyn Element>> {
-        let warp_drive_item_id = WarpDriveItemId::AIFactCollection;
-        let is_selected = self.selected == Some(warp_drive_item_id);
-        let mut is_focused = false;
-        if let Some(focused_index) = self.focused_index
-            && let Some(&WarpDriveItemId::AIFactCollection) = self.ordered_items.get(focused_index)
-        {
-            is_focused = true;
-        }
-
-        let row = WarpDriveRow::new(
-            Box::new(self.ai_fact_collection.clone()),
-            self.ai_fact_collection_item_mouse_states.clone(),
-            space,
-            0,
-            self.menu.clone(),
-            false, /* can_move */
-            !self.menu_items(&space, &warp_drive_item_id, app).is_empty(),
-            false,
-            false, /* share_dialog_open */
-            is_selected,
-            is_focused,
-            false, /* sync_queue_is_dequeueing */
-            tools_panel_menu_direction(app),
-            appearance,
-        )?;
-
-        Some(row.build().finish())
-    }
-
-    fn render_mcp_server_collection_item(
-        &self,
-        space: Space,
-        appearance: &Appearance,
-        app: &AppContext,
-    ) -> Option<Box<dyn Element>> {
-        let warp_drive_item_id = WarpDriveItemId::MCPServerCollection;
-        let is_selected = self.selected == Some(warp_drive_item_id);
-        let mut is_focused = false;
-        if let Some(focused_index) = self.focused_index
-            && let Some(&WarpDriveItemId::MCPServerCollection) =
-                self.ordered_items.get(focused_index)
-        {
-            is_focused = true;
-        }
-
-        let row = WarpDriveRow::new(
-            Box::new(self.mcp_server_collection.clone()),
-            self.mcp_server_collection_item_mouse_states.clone(),
-            space,
-            0,
-            self.menu.clone(),
-            false, /* can_move */
-            !self.menu_items(&space, &warp_drive_item_id, app).is_empty(),
-            false,
-            false, /* share_dialog_open */
-            is_selected,
-            is_focused,
-            false, /* sync_queue_is_dequeueing */
-            tools_panel_menu_direction(app),
-            appearance,
-        )?;
-
-        Some(row.build().finish())
-    }
-
     fn render_space_items(
         &self,
         space: Space,
@@ -2309,24 +2190,6 @@ impl DriveIndex {
                                     .is_hovered()
                             })
                         });
-
-                        // If the space is personal, always render the MCP Servers and Rules first
-                        if matches!(space, Space::Personal)
-                            && matches!(self.index_variant, DriveIndexVariant::MainIndex)
-                        {
-                            if FeatureFlag::McpServer.is_enabled()
-                                && ContextFlag::ShowMCPServers.is_enabled()
-                                && let Some(mcp_server_collection_item) =
-                                    self.render_mcp_server_collection_item(space, appearance, app)
-                            {
-                                rendered_space.push(mcp_server_collection_item);
-                            }
-                            if let Some(ai_fact_collection_item) =
-                                self.render_ai_fact_collection_item(space, appearance, app)
-                            {
-                                rendered_space.push(ai_fact_collection_item);
-                            }
-                        }
 
                         rendered_space.extend(
                             self.item_mouse_states
@@ -3471,24 +3334,10 @@ impl DriveIndex {
                     content: None,
                 })
             }
-            DriveObjectType::AIFact => {
-                if let Some(fact) = title {
-                    ctx.emit(DriveIndexEvent::CreateAIFact {
-                        space,
-                        fact: AIFact::Memory(AIMemory {
-                            name: None,
-                            content: fact,
-                            is_autogenerated: false,
-                            suggested_logging_id: None,
-                        }),
-                        initial_folder_id,
-                    })
-                }
-            }
-            DriveObjectType::MCPServer => {
-                todo!()
-            }
-            DriveObjectType::AIFactCollection | DriveObjectType::MCPServerCollection => {}
+            DriveObjectType::AIFact
+            | DriveObjectType::MCPServer
+            | DriveObjectType::AIFactCollection
+            | DriveObjectType::MCPServerCollection => {}
         }
 
         self.cloud_object_naming_dialog.close(ctx);
@@ -3716,19 +3565,6 @@ impl DriveIndex {
                     .with_icon(Icon::Workflow)
                     .into_item(),
             );
-
-            if FeatureFlag::AgentModeWorkflows.is_enabled() {
-                menu_items.push(
-                    MenuItemFields::new(AGENT_MODE_WORKFLOW_LABEL)
-                        .with_on_select_action(DriveIndexAction::create_object(
-                            DriveObjectType::AgentModeWorkflow,
-                            *space,
-                            None,
-                        ))
-                        .with_icon(Icon::Prompt)
-                        .into_item(),
-                );
-            }
 
             menu_items.push(
                 MenuItemFields::new(NOTEBOOK_LABEL)
@@ -4469,19 +4305,6 @@ impl DriveIndex {
                                 .into_item(),
                         );
 
-                        if FeatureFlag::AgentModeWorkflows.is_enabled() {
-                            menu_items.push(
-                                MenuItemFields::new(INDEX_AGENT_MODE_WORKFLOW_LABEL)
-                                    .with_on_select_action(DriveIndexAction::create_object(
-                                        DriveObjectType::AgentModeWorkflow,
-                                        *space,
-                                        Some(*folder_id),
-                                    ))
-                                    .with_icon(Icon::Prompt)
-                                    .into_item(),
-                            );
-                        }
-
                         menu_items.push(
                             MenuItemFields::new(INDEX_NOTEBOOK_LABEL)
                                 .with_on_select_action(DriveIndexAction::create_object(
@@ -4610,22 +4433,6 @@ impl DriveIndex {
                 let env_var_collection: Option<&CloudEnvVarCollection> = object.into();
 
                 if self.edit_object_enabled(cloud_object_type_and_id, app) {
-                    if let Some(notebook) =
-                        <GenericCloudObject<_, CloudNotebookModel> as CloudObject>::as_model_type::<
-                            _,
-                            CloudNotebookModel,
-                        >(object)
-                        && let Some(ai_document_id) = notebook.model().ai_document_id
-                    {
-                        menu_items.push(
-                            MenuItemFields::new("Attach to active session")
-                                .with_on_select_action(DriveIndexAction::AttachPlanAsContext(
-                                    ai_document_id,
-                                ))
-                                .with_icon(Icon::Paperclip)
-                                .into_item(),
-                        );
-                    }
                     if let Some(_workflow) = workflow {
                         menu_items.push(
                             Self::pane_menu_item(
@@ -5060,16 +4867,7 @@ impl DriveIndex {
                 return;
             };
             match focused_item_id {
-                WarpDriveItemId::AIFactCollection => {
-                    if let DriveIndexAction::EnterKey = key {
-                        ctx.emit(DriveIndexEvent::OpenAIFactCollection);
-                    }
-                }
-                WarpDriveItemId::MCPServerCollection => {
-                    if let DriveIndexAction::EnterKey = key {
-                        ctx.emit(DriveIndexEvent::OpenMCPServerCollection);
-                    }
-                }
+                WarpDriveItemId::AIFactCollection | WarpDriveItemId::MCPServerCollection => {}
                 WarpDriveItemId::Object(cloud_id) => match cloud_id {
                     CloudObjectTypeAndId::Notebook(_) => {
                         if let DriveIndexAction::EnterKey = key {
@@ -5343,12 +5141,6 @@ impl TypedActionView for DriveIndex {
             DriveIndexAction::RenameFolder { folder_id } => {
                 self.rename_folder(*folder_id, ctx);
             }
-            DriveIndexAction::OpenAIFactCollection => {
-                ctx.emit(DriveIndexEvent::OpenAIFactCollection);
-            }
-            DriveIndexAction::OpenMCPServerCollection => {
-                ctx.emit(DriveIndexEvent::OpenMCPServerCollection);
-            }
             DriveIndexAction::OpenObject(cloud_object_type_and_id) => {
                 if !matches!(self.index_variant, DriveIndexVariant::Trash) {
                     self.set_selected_object(
@@ -5489,16 +5281,10 @@ impl TypedActionView for DriveIndex {
                     DriveObjectType::EnvVarCollection => {
                         report_error!("Creation of EnvVarCollections is not yet supported")
                     }
-                    DriveObjectType::AIFact | DriveObjectType::AIFactCollection => {
-                        report_error!(
-                            "Use DriveIndexAction::OpenAIFactCollection to open the pane view instead"
-                        );
-                    }
-                    DriveObjectType::MCPServer | DriveObjectType::MCPServerCollection => {
-                        report_error!(
-                            "Use DriveIndexAction::OpenMCPServerCollection to open the pane view instead"
-                        );
-                    }
+                    DriveObjectType::AIFact
+                    | DriveObjectType::AIFactCollection
+                    | DriveObjectType::MCPServer
+                    | DriveObjectType::MCPServerCollection => {}
                 }
 
                 ctx.notify();
@@ -5725,9 +5511,6 @@ impl TypedActionView for DriveIndex {
                 TeamUpdateManager::handle(ctx).update(ctx, |manager, ctx| {
                     manager.set_current_workspace_uid(*workspace_uid, ctx)
                 });
-            }
-            DriveIndexAction::AttachPlanAsContext(id) => {
-                ctx.emit(DriveIndexEvent::AttachPlanAsContext(*id))
             }
         }
     }

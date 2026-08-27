@@ -3,9 +3,8 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use warp_core::features::FeatureFlag;
-use warp_core::settings::{ChangeEventReason, Setting};
+use warp_core::settings::ChangeEventReason;
 use warp_errors::report_error;
-use warp_graphql::workspace::FeatureModelChoice;
 use warpui::{
     AppContext, Entity, ModelContext, SingletonEntity, Tracked, ViewContext, WeakViewHandle,
     WindowId,
@@ -17,8 +16,8 @@ use super::team::{DiscoverableTeam, MembershipRole, Team};
 #[cfg(test)]
 use super::workspace::WorkspaceMemberUsageInfo;
 use super::workspace::{
-    AdminEnablementSetting, EnterpriseSecretRegex, HostEnablementSetting,
-    UgcCollectionEnablementSetting, Workspace, WorkspaceUid,
+    AdminEnablementSetting, EnterpriseSecretRegex, UgcCollectionEnablementSetting, Workspace,
+    WorkspaceUid,
 };
 use crate::auth::{AuthStateProvider, UserUid};
 use crate::channel::ChannelState;
@@ -31,19 +30,15 @@ use crate::server::server_api::team::TeamClient;
 use crate::server::server_api::workspace::{PurchaseAddonCreditsOutcome, WorkspaceClient};
 #[cfg(test)]
 use crate::server::server_api::{team::MockTeamClient, workspace::MockWorkspaceClient};
-use crate::settings::{
-    CodeSettings, CodeSettingsChangedEvent, PrivacySettings,
-};
+use crate::settings::{CodeSettings, CodeSettingsChangedEvent, PrivacySettings};
 #[cfg(test)]
-use crate::workspaces::workspace::{
-    AIAutonomyPolicy, AiAutonomySettings, BillingMetadata, CustomerType, SplitListSetting,
-    WorkspaceMember, WorkspaceSettings,
-};
+use crate::workspaces::workspace::{BillingMetadata, WorkspaceMember, WorkspaceSettings};
 use crate::workspaces::workspace::{
     AiOverages, PurchaseAddOnCreditsPolicy, UsageBasedPricingSettings,
 };
 pub(crate) mod billing_workspace_settings;
 pub(crate) mod team_workspace_settings;
+#[cfg(test)]
 pub(crate) use team_workspace_settings::TeamContextForOperation;
 #[cfg(test)]
 pub(crate) use team_workspace_settings::TeamlessScopeForTest;
@@ -134,14 +129,6 @@ pub struct WorkspacesMetadataResponse {
     pub joinable_teams: Vec<DiscoverableTeam>,
     /// The list of experiments applicable to the user.
     pub experiments: Option<Vec<ServerExperiment>>,
-    /// TODO(Tyler): Post-workspaces, move this into the workspace object.
-    /// Feature model choices may change from user to user and while the app is open, so we need to periodically update this list.
-    /// It makes most sense to fetch this in workspaces which is queried every 10 minutes.
-    /// This is list of available LLM models for the user.
-    pub feature_model_choices: Option<FeatureModelChoice>,
-    /// The server-authoritative AI credit availability decision, piggybacked
-    /// on the metadata query so every refresh keeps the shared state fresh.
-    pub ai_credit_availability: Option<AICreditAvailability>,
     /// The user-level add-on credits purchase policy; the teamless-purchase
     /// fallback (see [`UserWorkspaces::purchase_policy`]).
     pub user_purchase_policy: Option<PurchaseAddOnCreditsPolicy>,
@@ -222,12 +209,6 @@ impl UserWorkspaces {
                 _ => {}
             },
         );
-
-        ctx.subscribe_to_model(&AISettings::handle(ctx), |_, _, ai_settings_event, ctx| {
-            if let AISettingsChangedEvent::IsAnyAIEnabled { .. } = ai_settings_event {
-                ctx.emit(UserWorkspacesEvent::CodebaseContextEnablementChanged);
-            }
-        });
 
         Self {
             current_workspace_uid: current_workspace_uid.into(),
@@ -620,112 +601,6 @@ impl UserWorkspaces {
         }
     }
 
-    pub fn aws_bedrock_host_settings(&self) -> Option<&super::workspace::LlmHostSettings> {
-        self.current_workspace().and_then(|workspace| {
-            workspace
-                .settings
-                .llm_settings
-                .host_configs
-                .get(&LLMModelHost::AwsBedrock)
-        })
-    }
-
-    /// Did the admin enable AWS Bedrock for the current workspace?
-    pub fn is_aws_bedrock_available_from_workspace(&self) -> bool {
-        self.current_workspace().is_some_and(|workspace| {
-            workspace.settings.llm_settings.enabled
-                && self
-                    .aws_bedrock_host_settings()
-                    .is_some_and(|settings| settings.enabled)
-        })
-    }
-    pub fn aws_bedrock_host_enablement_setting(&self) -> HostEnablementSetting {
-        self.aws_bedrock_host_settings()
-            .map(|settings| settings.enablement_setting.clone())
-            .unwrap_or_default()
-    }
-
-    pub fn is_aws_bedrock_credentials_toggleable(&self) -> bool {
-        matches!(
-            self.aws_bedrock_host_enablement_setting(),
-            HostEnablementSetting::RespectUserSetting
-        )
-    }
-
-    pub fn is_aws_bedrock_credentials_enabled(&self, app: &AppContext) -> bool {
-        // i.e. did the admin go and toggle on aws bedrock in the admin panel?
-        if !self.is_aws_bedrock_available_from_workspace() {
-            return false;
-        }
-
-        match self.aws_bedrock_host_enablement_setting() {
-            HostEnablementSetting::Enforce => true,
-            HostEnablementSetting::RespectUserSetting => *AISettings::as_ref(app)
-                .aws_bedrock_credentials_enabled
-                .value(),
-        }
-    }
-
-    pub fn gemini_enterprise_host_settings(&self) -> Option<&super::workspace::LlmHostSettings> {
-        self.current_workspace().and_then(|workspace| {
-            workspace
-                .settings
-                .llm_settings
-                .host_configs
-                .get(&LLMModelHost::GeminiEnterprise)
-        })
-    }
-
-    /// Did the admin enable Gemini Enterprise (GEAP) for the current workspace?
-    pub fn is_gemini_enterprise_available_from_workspace(&self) -> bool {
-        self.current_workspace().is_some_and(|workspace| {
-            workspace.settings.llm_settings.enabled
-                && self
-                    .gemini_enterprise_host_settings()
-                    .is_some_and(|settings| settings.enabled)
-        })
-    }
-
-    pub fn gemini_enterprise_host_enablement_setting(&self) -> HostEnablementSetting {
-        self.gemini_enterprise_host_settings()
-            .map(|settings| settings.enablement_setting.clone())
-            .unwrap_or_default()
-    }
-
-    pub fn is_gemini_enterprise_credentials_toggleable(&self) -> bool {
-        matches!(
-            self.gemini_enterprise_host_enablement_setting(),
-            HostEnablementSetting::RespectUserSetting
-        )
-    }
-
-    /// Whether Gemini Enterprise (GEAP) credentials should be minted and attached for the
-    /// current user. Anonymous/logged-out guard from [`Self::is_byo_api_key_enabled`]:
-    /// a GEAP credential mint is rooted in the user's Warp session, so without one
-    /// there is nothing to mint from.
-    pub fn is_gemini_enterprise_credentials_enabled(&self, app: &AppContext) -> bool {
-        if !FeatureFlag::GeminiEnterprise.is_enabled() {
-            return false;
-        }
-        if AuthStateProvider::as_ref(app)
-            .get()
-            .is_anonymous_or_logged_out()
-        {
-            return false;
-        }
-        // i.e. did the admin toggle on Gemini Enterprise in the admin panel?
-        if !self.is_gemini_enterprise_available_from_workspace() {
-            return false;
-        }
-
-        match self.gemini_enterprise_host_enablement_setting() {
-            HostEnablementSetting::Enforce => true,
-            HostEnablementSetting::RespectUserSetting => *AISettings::as_ref(app)
-                .gemini_enterprise_credentials_enabled
-                .value(),
-        }
-    }
-
     // Returns a Vec of the user's active spaces, based on their
     // team membership.
     pub fn team_spaces(&self) -> Vec<Space> {
@@ -928,12 +803,6 @@ impl UserWorkspaces {
                 if let Some(pricing_info) = response.pricing_info {
                     PricingInfoModel::handle(ctx).update(ctx, |model, ctx| {
                         model.update_pricing_info(pricing_info, ctx);
-                    });
-                }
-
-                if let Some(availability) = response.metadata.ai_credit_availability {
-                    AIRequestUsageModel::handle(ctx).update(ctx, |usage_model, ctx| {
-                        usage_model.apply_server_availability(Ok(availability), ctx);
                     });
                 }
 
@@ -1612,18 +1481,6 @@ impl UserWorkspaces {
             .unwrap_or(false)
     }
 
-    /// Returns whether codebase context is enabled across all of the user's teams.
-    pub fn is_codebase_context_enabled(&self, app: &AppContext) -> bool {
-        let ai_globally_enabled = AISettings::as_ref(app).is_any_ai_enabled(app);
-        match self.teams_allow_codebase_context() {
-            AdminEnablementSetting::Enable => ai_globally_enabled,
-            AdminEnablementSetting::Disable => false,
-            AdminEnablementSetting::RespectUserSetting => {
-                ai_globally_enabled && *CodeSettings::as_ref(app).codebase_context_enabled.value()
-            }
-        }
-    }
-
     pub fn teams_allow_codebase_context(&self) -> AdminEnablementSetting {
         let mut team_settings = self
             .workspaces
@@ -1684,18 +1541,6 @@ impl UserWorkspaces {
             .map(|policy| policy.is_enabled)
             .unwrap_or(true);
         FeatureFlag::CreatingSharedSessions.set_enabled(is_session_sharing_enabled_via_tier_policy);
-    }
-}
-
-#[cfg(test)]
-fn split_test_list(values: Option<Vec<String>>) -> SplitListSetting<String> {
-    match values {
-        Some(values) => SplitListSetting {
-            team_entries: values.clone(),
-            values,
-            ..Default::default()
-        },
-        None => Default::default(),
     }
 }
 
@@ -1774,69 +1619,6 @@ impl UserWorkspaces {
         }
     }
 
-    /// Sets the sandboxed-agent command denylist on [`Self::setup_test_workspace`]'s team, the
-    /// team [`Self::sandboxed_agent_execute_commands_denylist_for_scope`] reads for a scope on
-    /// it.
-    pub fn update_team_sandboxed_agent_denylist<F>(&mut self, f: F, ctx: &mut ModelContext<Self>)
-    where
-        F: FnOnce(&mut SplitListSetting<String>),
-    {
-        self.update_current_workspace(
-            |workspace| {
-                f(&mut workspace
-                    .teams
-                    .first_mut()
-                    .expect("test workspace should have a team")
-                    .settings
-                    .sandboxed_agent
-                    .execute_commands_denylist);
-            },
-            ctx,
-        );
-    }
-
-    pub fn update_ai_autonomy_settings<F>(&mut self, f: F, ctx: &mut ModelContext<Self>)
-    where
-        F: FnOnce(&mut AiAutonomySettings),
-    {
-        self.update_current_workspace(
-            |workspace| {
-                f(&mut workspace.settings.ai_autonomy_settings);
-                let settings = &workspace.settings.ai_autonomy_settings;
-                let team_settings = &mut workspace
-                    .teams
-                    .first_mut()
-                    .expect("test workspace should have a team")
-                    .settings
-                    .ai_autonomy;
-                team_settings.apply_code_diffs.value = settings.apply_code_diffs_setting;
-                team_settings.read_files.value = settings.read_files_setting;
-                team_settings.execute_commands.value = settings.execute_commands_setting;
-                team_settings.write_to_pty.value = settings.write_to_pty_setting;
-                team_settings.computer_use.value = settings.computer_use_setting;
-                team_settings.read_files_allowlist =
-                    split_test_list(settings.read_files_allowlist.as_ref().map(|items| {
-                        items
-                            .iter()
-                            .map(|path| path.display().to_string())
-                            .collect()
-                    }));
-                team_settings.execute_commands_allowlist = split_test_list(
-                    settings
-                        .execute_commands_allowlist
-                        .as_ref()
-                        .map(|items| items.iter().map(ToString::to_string).collect()),
-                );
-                team_settings.execute_commands_denylist = split_test_list(
-                    settings
-                        .execute_commands_denylist
-                        .as_ref()
-                        .map(|items| items.iter().map(ToString::to_string).collect()),
-                );
-            },
-            ctx,
-        );
-    }
 }
 
 impl Entity for UserWorkspaces {

@@ -20,9 +20,7 @@ use super::items::WarpDriveItemId;
 use super::{CloudObjectTypeAndId, DriveObjectType};
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::cloud_object::model::view::CloudViewModel;
-use crate::cloud_object::{
-    CloudObjectEventEntrypoint, GenericStringObjectFormat, JsonObjectType, Owner, Space,
-};
+use crate::cloud_object::{GenericStringObjectFormat, JsonObjectType, Owner, Space};
 use crate::env_vars::CloudEnvVarCollection;
 use crate::env_vars::manager::EnvVarCollectionSource;
 use crate::notebooks::CloudNotebook;
@@ -71,8 +69,6 @@ pub enum DrivePanelEvent {
     OpenSearch,
     OpenSharedObjectsCreationDeniedModal(DriveObjectType, ServerId),
     OpenTeamSettingsPage,
-    OpenAIFactCollection,
-    OpenMCPServerCollection,
     OpenImportModal {
         owner: Owner,
         initial_folder_id: Option<SyncId>,
@@ -86,7 +82,6 @@ pub enum DrivePanelEvent {
     OpenEnvVarCollection(EnvVarCollectionSource),
     OpenWorkflowInPane(WorkflowOpenSource, WorkflowViewMode),
     FocusWarpDrive,
-    AttachPlanAsContext(AIDocumentId),
 }
 
 impl DrivePanel {
@@ -239,12 +234,6 @@ impl DrivePanel {
                     );
                 }
             },
-            DriveIndexEvent::OpenAIFactCollection => {
-                self.open_ai_fact_collection_pane(ctx);
-            }
-            DriveIndexEvent::OpenMCPServerCollection => {
-                self.open_mcp_server_collection_pane(ctx);
-            }
             DriveIndexEvent::OpenWorkflowInPane {
                 cloud_object_type_and_id,
                 open_mode,
@@ -333,38 +322,6 @@ impl DrivePanel {
                         self.invoke_environment_variables(env_var_collection.clone(), true, ctx);
                     }
                 }
-            }
-            DriveIndexEvent::CreateAIFact {
-                space,
-                fact,
-                initial_folder_id,
-            } => match Self::new_object_owner(*space, initial_folder_id.as_ref(), ctx) {
-                Some(owner) => {
-                    let client_id = ClientId::default();
-                    UpdateManager::handle(ctx).update(ctx, |update_manager, ctx| {
-                        update_manager.create_object(
-                            CloudAIFactModel::new(fact.clone()),
-                            owner,
-                            client_id,
-                            CloudObjectEventEntrypoint::Blocklist,
-                            true,
-                            *initial_folder_id,
-                            // When adding the initiated_by parameter to this function call, InitiatedBy::User was set as a default value.
-                            // It can be changed to InitiatedBy::System if this action was automatically kicked off and does not require toasts to notify the user of completion.
-                            InitiatedBy::User,
-                            ctx,
-                        );
-                    });
-                }
-                None => {
-                    report_error!(
-                        "Cannot identify an AI rule owner",
-                        extra: { "space" => ?space }
-                    );
-                }
-            },
-            DriveIndexEvent::AttachPlanAsContext(id) => {
-                ctx.emit(DrivePanelEvent::AttachPlanAsContext(*id))
             }
         }
     }
@@ -590,14 +547,6 @@ impl DrivePanel {
             )
         });
         ctx.notify();
-    }
-
-    pub fn open_ai_fact_collection_pane(&mut self, ctx: &mut ViewContext<Self>) {
-        ctx.emit(DrivePanelEvent::OpenAIFactCollection);
-    }
-
-    pub fn open_mcp_server_collection_pane(&mut self, ctx: &mut ViewContext<Self>) {
-        ctx.emit(DrivePanelEvent::OpenMCPServerCollection);
     }
 
     /// Recomputes and initializes the section states for the WD Index. This is needed after
