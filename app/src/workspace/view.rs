@@ -18544,7 +18544,6 @@ impl TypedActionView for Workspace {
             DismissSessionConfigTabConfigChip => {
                 self.dismiss_session_config_tab_config_chip(ctx);
             }
-            #[cfg(debug_assertions)]
             SaveCurrentTabAsNewConfig(tab_index) => {
                 self.save_current_tab_as_new_config(*tab_index, ctx)
             }
