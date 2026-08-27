@@ -1,5 +1,6 @@
 pub mod buffer_model;
 mod classic;
+pub mod cli_agent_plugin_chip;
 mod common;
 pub mod decorations;
 pub mod inline_history;
@@ -164,6 +165,7 @@ use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 #[cfg(not(target_family = "wasm"))]
 use crate::terminal::cli_agent_sessions::plugin_manager::PluginModalKind;
 use crate::terminal::input::buffer_model::InputBufferModel;
+use crate::terminal::input::cli_agent_plugin_chip::{CliAgentPluginChip, CliAgentPluginChipEvent};
 use crate::terminal::input::inline_history::InlineHistoryMenuView;
 use crate::terminal::input::inline_menu::InlineMenuPositioner;
 use crate::terminal::input::slash_command_model::SlashCommandModel;
@@ -1115,6 +1117,7 @@ pub struct Input {
     conn: Option<Arc<Mutex<SqliteConnection>>>,
 
     terminal_input_message_bar: ViewHandle<TerminalInputMessageBar>,
+    cli_agent_plugin_chip: ViewHandle<CliAgentPluginChip>,
 
     inline_slash_commands_view: ViewHandle<InlineSlashCommandView>,
     slash_command_data_source: ModelHandle<GuiSlashCommandDataSource>,
@@ -1587,6 +1590,16 @@ impl Input {
             TerminalInputMessageBar::new(suggestions_mode_model.clone(), inline_history_model, ctx)
         });
 
+        let cli_agent_plugin_chip = ctx.add_typed_action_view(|ctx| {
+            CliAgentPluginChip::new(terminal_view_id, model.clone(), ctx)
+        });
+        ctx.subscribe_to_view(&cli_agent_plugin_chip, |_, _, event, ctx| match event {
+            #[cfg(not(target_family = "wasm"))]
+            CliAgentPluginChipEvent::OpenInstructionsPane(agent, kind) => {
+                ctx.emit(Event::OpenPluginInstructionsPane(*agent, *kind));
+            }
+        });
+
         current_prompt.update(ctx, |prompt_type, ctx| {
             if let PromptType::Dynamic { prompt } = prompt_type {
                 prompt.update(ctx, |current_prompt, ctx| {
@@ -1763,6 +1776,7 @@ impl Input {
             completions_abort_handle: None,
             menu_positioning_provider,
             terminal_input_message_bar,
+            cli_agent_plugin_chip,
             prompt_render_helper,
             prompt_type: current_prompt,
             enable_autosuggestions_setting: *editor_settings_handle

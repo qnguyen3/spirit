@@ -1,6 +1,3 @@
-// Retained per spec for agent-launcher integration; the UI that drove it was deleted.
-#![allow(dead_code)]
-
 pub(crate) mod claude;
 pub(crate) mod codex;
 pub(crate) mod gemini;

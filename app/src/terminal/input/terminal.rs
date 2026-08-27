@@ -57,6 +57,8 @@ impl Input {
                 .finish(),
         );
 
+        column.add_child(ChildView::new(&self.cli_agent_plugin_chip).finish());
+
         if should_show_terminal_input_message_bar(app) {
             column.add_child(
                 Clipped::new(ChildView::new(&self.terminal_input_message_bar).finish()).finish(),
