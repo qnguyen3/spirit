@@ -6938,7 +6938,6 @@ dependencies = [
  "warp-workflows",
  "warp_cli",
  "warp_core",
- "warp_multi_agent_api",
  "warpui",
  "warpui_core",
  "warpui_extras",
@@ -9769,13 +9768,11 @@ dependencies = [
 name = "persistence"
 version = "0.0.0"
 dependencies = [
- "ai_types",
  "chrono",
  "diesel",
  "diesel_migrations",
  "serde",
  "serde_json",
- "warp_multi_agent_api",
 ]
 
 [[package]]
