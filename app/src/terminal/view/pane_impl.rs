@@ -510,10 +510,7 @@ impl TerminalView {
             .filter(|session| session.listener.is_some())?;
 
         if *TabSettings::as_ref(ctx).use_latest_user_prompt_as_conversation_title_in_tab_names {
-            session
-                .session_context
-                .latest_user_prompt()
-                .or_else(|| session.session_context.title_like_text())
+            session.session_context.display_title()
         } else {
             session.session_context.title_like_text()
         }

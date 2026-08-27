@@ -350,13 +350,6 @@ where
         ctx.notify();
     }
 
-    pub fn set_menu_header_text_override<F>(&mut self, formatter: F)
-    where
-        F: Fn(&str) -> String + 'static,
-    {
-        self.menu_header_text_override = Some(Box::new(formatter));
-    }
-
     pub fn set_menu_position(
         &mut self,
         element_anchor: PositionedElementAnchor,

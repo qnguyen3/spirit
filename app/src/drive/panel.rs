@@ -526,29 +526,6 @@ impl DrivePanel {
         ctx.notify();
     }
 
-    pub fn create_workflow_with_content(
-        &mut self,
-        space: Space,
-        initial_folder_id: Option<SyncId>,
-        content: String,
-        is_for_agent_mode: bool,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        self.save_and_clear_child_view(ctx);
-        self.index_view.update(ctx, |index_view, ctx| {
-            index_view.handle_action(
-                &DriveIndexAction::CreateWorkflowWithContent {
-                    space,
-                    initial_folder_id,
-                    content,
-                    is_for_agent_mode,
-                },
-                ctx,
-            )
-        });
-        ctx.notify();
-    }
-
     /// Recomputes and initializes the section states for the WD Index. This is needed after
     /// we directly change anything about the state of the index (such as folders being open/closed).
     ///

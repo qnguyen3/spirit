@@ -3093,6 +3093,9 @@ impl UpdateManager {
         });
     }
 
+    /// Awaited create path. Its production callers were AI Drive surfaces; kept because the
+    /// non-AI update-manager tests still cover it and Drive may re-wire an awaited path.
+    #[allow(dead_code)]
     /// Create a new cloud object as an online-only operation.
     ///
     /// This is intended for creating objects where the caller will await completion and
@@ -3223,6 +3226,8 @@ impl UpdateManager {
         completion
     }
 
+    /// Awaited update path. See `create_object_online`.
+    #[allow(dead_code)]
     /// Update an existing cloud object as an online-only operation.
     ///
     /// This is intended for updating objects where the caller will await completion and

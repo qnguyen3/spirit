@@ -119,9 +119,6 @@ impl Display for CodeReviewPaneEntrypoint {
 /// Origin of an "Add to context" action.
 #[derive(Clone, Copy, Debug, Serialize)]
 pub enum AddToContextOrigin {
-    /// User selected text and added it to context.
-    #[serde(rename = "selected_text")]
-    SelectedText,
     /// User clicked the gutter to add a line/hunk to context.
     #[serde(rename = "gutter")]
     Gutter,

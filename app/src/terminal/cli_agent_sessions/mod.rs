@@ -71,6 +71,7 @@ pub enum CLIAgentInputState {
     /// The rich input editor is not open.
     Closed,
     /// The rich input editor is open.
+    #[allow(dead_code)]
     Open {
         /// How this session was opened (for telemetry).
         entrypoint: CLIAgentInputEntrypoint,
@@ -150,6 +151,7 @@ pub struct CLIAgentSession {
     pub remote_host: Option<String>,
     /// Draft text saved from the rich input composer when it was closed.
     /// Restored into the editor when the composer is reopened.
+    #[allow(dead_code)]
     pub draft_text: Option<String>,
     /// When the session was detected via a custom toolbar command pattern,
     /// the first word of the command (the binary/alias the user typed).
@@ -162,6 +164,9 @@ pub struct CLIAgentSession {
 }
 
 impl CLIAgentSession {
+    /// Remote sessions cannot have their plugin auto-installed: the plugin files live on the
+    /// far side of the SSH connection. Retained for agent-launcher plugin integration.
+    #[allow(dead_code)]
     pub fn is_remote(&self) -> bool {
         self.remote_host.is_some()
     }
@@ -350,6 +355,10 @@ pub struct CLIAgentSessionsModel {
     sessions: HashMap<EntityId, CLIAgentSession>,
     /// Tracks (agent, remote_host) pairs where an auto plugin operation (install or update) has failed.
     /// Shared across all views so failure in one tab is reflected everywhere.
+    ///
+    /// Retained with the plugin managers for agent-launcher integration; the chip that consumed
+    /// it lived in the removed agent footer, so nothing reads it yet.
+    #[allow(dead_code)]
     plugin_auto_failures: HashSet<(CLIAgent, Option<String>)>,
     /// Ctrl-C pending-cancel state, keyed by terminal view. See `observe_ctrl_c_write`.
     ctrl_c_cancel_state: HashMap<EntityId, CtrlCCancelState>,
@@ -729,11 +738,13 @@ impl CLIAgentSessionsModel {
     /// Records that an auto plugin operation (install or update) failed for the given agent/host.
     /// `remote_host` is `None` for local sessions, `Some("user@hostname")` for remote.
     #[cfg(not(target_family = "wasm"))]
+    #[allow(dead_code)]
     pub fn record_plugin_auto_failure(&mut self, agent: CLIAgent, remote_host: Option<String>) {
         self.plugin_auto_failures.insert((agent, remote_host));
     }
 
     /// Whether an auto plugin operation has previously failed for this agent on this host.
+    #[allow(dead_code)]
     pub fn has_plugin_auto_failed(&self, agent: CLIAgent, remote_host: &Option<String>) -> bool {
         self.plugin_auto_failures
             .contains(&(agent, remote_host.clone()))
