@@ -1218,10 +1218,7 @@ impl TerminalManager<TerminalView> {
                 } => UniversalDeveloperInputContextUpdate {
                     cli_agent_session: Some(CLIAgentSessionState::Active {
                         cli_agent: agent.to_serialized_name(),
-                        is_rich_input_open: matches!(
-                            new_input_state,
-                            &CLIAgentInputState::Open { .. }
-                        ),
+                        is_rich_input_open: matches!(new_input_state, &CLIAgentInputState::Open),
                     }),
                     ..Default::default()
                 },

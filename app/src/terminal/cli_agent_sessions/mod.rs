@@ -72,37 +72,7 @@ pub enum CLIAgentInputState {
     Closed,
     /// The rich input editor is open.
     #[allow(dead_code)]
-    Open {
-        /// How this session was opened (for telemetry).
-        entrypoint: CLIAgentInputEntrypoint,
-    },
-}
-
-/// Why the CLI agent rich input was closed (for telemetry).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
-pub enum CLIAgentRichInputCloseReason {
-    /// User explicitly closed (Escape, Ctrl-G, footer button).
-    Manual,
-    /// Auto-closed due to agent status change (e.g. Blocked).
-    AutoToggle,
-    /// Auto-dismissed after submitting a prompt.
-    Submit,
-    /// Closed for another reason (chip removed, session ended, shared session sync).
-    Other,
-}
-
-/// How a [`CLIAgentInputState`] was opened.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
-pub enum CLIAgentInputEntrypoint {
-    /// User pressed Ctrl-G while a CLI agent was active.
-    CtrlG,
-    /// User clicked the rich input button in the CLI agent footer.
-    FooterButton,
-    /// Automatically opened when the CLI agent resumed work (left a blocked state)
-    /// and the auto-show setting is enabled.
-    AutoShow,
-    /// Rich input was opened to mirror a shared-session participant's state.
-    SharedSessionSync,
+    Open,
 }
 
 impl CLIAgentSessionContext {
@@ -391,7 +361,7 @@ impl CLIAgentSessionsModel {
     pub fn is_input_open(&self, terminal_view_id: EntityId) -> bool {
         self.sessions
             .get(&terminal_view_id)
-            .is_some_and(|s| matches!(s.input_state, CLIAgentInputState::Open { .. }))
+            .is_some_and(|s| matches!(s.input_state, CLIAgentInputState::Open))
     }
 
     /// Registers a plugin-backed listener on the session for this terminal.

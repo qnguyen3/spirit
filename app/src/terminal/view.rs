@@ -13572,7 +13572,7 @@ impl TerminalView {
     fn should_hide_cli_agent_cursor_cell(&self, app: &AppContext) -> bool {
         CLIAgentSessionsModel::as_ref(app)
             .session(self.view_id)
-            .is_some_and(|s| matches!(s.input_state, CLIAgentInputState::Open { .. }))
+            .is_some_and(|s| matches!(s.input_state, CLIAgentInputState::Open))
     }
 
     fn render_block_list_element(

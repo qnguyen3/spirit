@@ -370,10 +370,7 @@ impl TerminalManager {
                     match sessions_model.session(view_id_for_cli) {
                         Some(session) => CLIAgentSessionState::Active {
                             cli_agent: session.agent.to_serialized_name(),
-                            is_rich_input_open: matches!(
-                                new_input_state,
-                                CLIAgentInputState::Open { .. }
-                            ),
+                            is_rich_input_open: matches!(new_input_state, CLIAgentInputState::Open),
                         },
                         None => CLIAgentSessionState::Inactive,
                     }
