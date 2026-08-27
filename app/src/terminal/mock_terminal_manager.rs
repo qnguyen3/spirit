@@ -16,7 +16,6 @@ use crate::terminal::model::block::SerializedBlock;
 
 pub struct MockTerminalManager {
     model: Arc<FairMutex<TerminalModel>>,
-    view: ViewHandle<TerminalView>,
 }
 pub struct MockTerminalManagerInit {
     pub(crate) manager: ModelHandle<Box<dyn TerminalManager>>,
@@ -88,15 +87,14 @@ impl MockTerminalManager {
             });
         });
 
-        let terminal_view = view.clone();
-        let terminal_manager = Self { model, view };
+        let terminal_manager = Self { model };
         let manager_model = ctx.add_model(|_ctx| {
             let manager: Box<dyn TerminalManager> = Box::new(terminal_manager);
             manager
         });
         MockTerminalManagerInit {
             manager: manager_model,
-            view: terminal_view,
+            view,
         }
     }
 }
@@ -104,13 +102,6 @@ impl MockTerminalManager {
 impl TerminalManager for MockTerminalManager {
     fn model(&self) -> Arc<FairMutex<TerminalModel>> {
         self.model.clone()
-    }
-
-    fn on_view_detached(
-        &self,
-        _detach_type: crate::pane_group::pane::DetachType,
-        app: &mut AppContext,
-    ) {
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

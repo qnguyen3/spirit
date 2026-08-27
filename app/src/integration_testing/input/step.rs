@@ -3,7 +3,6 @@ use warpui::SingletonEntity;
 use warpui::integration::TestStep;
 use warpui::windowing::WindowManager;
 
-use crate::integration_testing::input::{inline_model_selector_is_open, input_is_empty};
 use crate::integration_testing::step::new_step_with_default_assertions;
 use crate::integration_testing::terminal::assert_context_menu_is_open;
 use crate::integration_testing::view_getters::{

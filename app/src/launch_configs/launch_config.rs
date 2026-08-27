@@ -84,9 +84,11 @@ pub enum PaneMode {
     /// A standard terminal shell session.
     #[default]
     Terminal,
-    /// A terminal that immediately enters Agent Mode.
+    /// Legacy value from removed agent mode. Retained so existing launch configs still
+    /// parse; opens a terminal.
     Agent,
-    /// A cloud-mode (ambient agent) pane with no local shell.
+    /// Legacy value from removed cloud (ambient agent) mode. Retained so existing launch
+    /// configs still parse; opens a terminal.
     Cloud,
 }
 

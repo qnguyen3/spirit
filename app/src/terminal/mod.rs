@@ -3,7 +3,6 @@ use model::alt_screen::AltScreen;
 use model::blocks::BlockList;
 pub use model::terminal_model::TerminalModel;
 use ordered_float::Float;
-mod package_installers;
 pub use history::{
     History, HistoryEntry, HistoryEvent, LinkedWorkflowData, ShellHost, UpArrowHistoryConfig,
 };

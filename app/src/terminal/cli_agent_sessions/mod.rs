@@ -675,29 +675,6 @@ impl CLIAgentSessionsModel {
             .is_some_and(|state| state.pending_cancel.is_some())
     }
 
-    pub fn open_input(
-        &mut self,
-        terminal_view_id: EntityId,
-        entrypoint: CLIAgentInputEntrypoint,
-        should_auto_toggle_input: bool,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let Some(session) = self.sessions.get_mut(&terminal_view_id) else {
-            return;
-        };
-
-        let previous_input_state = session.input_state;
-        session.input_state = CLIAgentInputState::Open { entrypoint };
-        session.should_auto_toggle_input = should_auto_toggle_input;
-
-        ctx.emit(CLIAgentSessionsModelEvent::InputSessionChanged {
-            terminal_view_id,
-            agent: session.agent,
-            previous_input_state,
-            new_input_state: session.input_state,
-        });
-    }
-
     pub fn close_input(
         &mut self,
         terminal_view_id: EntityId,
@@ -754,32 +731,6 @@ impl CLIAgentSessionsModel {
     #[cfg(not(target_family = "wasm"))]
     pub fn record_plugin_auto_failure(&mut self, agent: CLIAgent, remote_host: Option<String>) {
         self.plugin_auto_failures.insert((agent, remote_host));
-    }
-
-    /// Saves draft text from the rich input composer for the given terminal.
-    /// Stores `None` for empty or whitespace-only text.
-    pub fn set_draft(&mut self, terminal_view_id: EntityId, text: String) {
-        if let Some(session) = self.sessions.get_mut(&terminal_view_id) {
-            session.draft_text = if text.trim().is_empty() {
-                None
-            } else {
-                Some(text)
-            };
-        }
-    }
-
-    /// Clears any saved draft text for the given terminal.
-    pub fn clear_draft(&mut self, terminal_view_id: EntityId) {
-        if let Some(session) = self.sessions.get_mut(&terminal_view_id) {
-            session.draft_text = None;
-        }
-    }
-
-    /// Returns and clears the draft text for the given terminal, if any.
-    pub fn take_draft(&mut self, terminal_view_id: EntityId) -> Option<String> {
-        self.sessions
-            .get_mut(&terminal_view_id)
-            .and_then(|s| s.draft_text.take())
     }
 
     /// Whether an auto plugin operation has previously failed for this agent on this host.

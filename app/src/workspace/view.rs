@@ -1942,8 +1942,6 @@ impl Workspace {
         // Save and open the tab config. The user's `default_session_mode`
         // is intentionally left untouched: creating a tab config should not
         // change the global default for new tabs.
-        // Agent view entry for Oz is handled by PaneMode::Agent in the tab config,
-        // so no manual enter_agent_view call is needed.
         let dir = crate::user_config::tab_configs_dir();
         if let Err(e) = write_tab_config(&config, &dir, "startup_config") {
             log::warn!("Failed to write startup tab config: {e:?}");

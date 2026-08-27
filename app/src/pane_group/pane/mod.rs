@@ -135,7 +135,6 @@ pub(crate) enum IPaneType {
     GetStarted,
     AgentPicker,
     NetworkLog,
-    DeferredPlaceholder,
     /// A pane type only for tests.
     #[cfg(test)]
     Dummy,
@@ -155,7 +154,6 @@ impl Display for IPaneType {
             IPaneType::GetStarted => write!(f, "GetStarted"),
             IPaneType::AgentPicker => write!(f, "Agent Picker"),
             IPaneType::NetworkLog => write!(f, "Network Log"),
-            IPaneType::DeferredPlaceholder => write!(f, "Placeholder"),
             #[cfg(test)]
             IPaneType::Dummy => write!(f, "Dummy"),
         }
@@ -308,14 +306,6 @@ impl PaneId {
         Self::new(IPaneType::NetworkLog, network_log_pane_view)
     }
 
-    #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
-    pub(super) fn deferred_placeholder_pane_id() -> Self {
-        Self(IPaneId {
-            pane_type: IPaneType::DeferredPlaceholder,
-            pane_view_id: warpui::EntityId::new(),
-        })
-    }
-
     /// Creates a [`PaneId`] for a dummy pane.
     #[cfg(test)]
     pub fn dummy_pane_id() -> Self {
@@ -408,7 +398,6 @@ impl PaneId {
             IPaneType::NetworkLog => {
                 ChildView::<PaneView<NetworkLogView>>::with_id(self.0.pane_view_id).finish()
             }
-            IPaneType::DeferredPlaceholder => warpui::elements::Empty::new().finish(),
             #[cfg(test)]
             IPaneType::Dummy => warpui::elements::Empty::new().finish(),
         };

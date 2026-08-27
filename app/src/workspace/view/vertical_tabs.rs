@@ -4212,10 +4212,9 @@ impl PaneGroup {
             IPaneType::Settings => TypedPane::Settings,
             IPaneType::EnvVarCollection => TypedPane::EnvVarCollection,
             IPaneType::EnvironmentManagement => TypedPane::EnvironmentManagement,
-            IPaneType::GetStarted
-            | IPaneType::AgentPicker
-            | IPaneType::NetworkLog
-            | IPaneType::DeferredPlaceholder => TypedPane::Other,
+            IPaneType::GetStarted | IPaneType::AgentPicker | IPaneType::NetworkLog => {
+                TypedPane::Other
+            }
             #[cfg(test)]
             IPaneType::Dummy => TypedPane::Other,
         }

@@ -628,7 +628,6 @@ fn test_warp_tui_does_not_match_other_commands() {
 
 #[test]
 fn test_warp_tui_variant_properties() {
-    assert!(CLIAgent::Claude.supports_cli_agent_footer());
     assert_eq!(CLIAgent::WarpTui.command_prefix(), "warp");
     assert_eq!(
         CLIAgent::WarpTui.command_prefixes(),
@@ -647,7 +646,6 @@ fn test_warp_tui_variant_properties() {
     assert_eq!(CLIAgent::WarpTui.brand_icon_color(), ColorU::white());
     assert!(CLIAgent::WarpTui.supported_skill_providers().is_empty());
     assert!(!CLIAgent::WarpTui.supports_bash_mode());
-    assert!(!CLIAgent::WarpTui.supports_cli_agent_footer());
     assert!(matches!(
         crate::server::telemetry::CLIAgentType::from(CLIAgent::WarpTui),
         crate::server::telemetry::CLIAgentType::WarpTui

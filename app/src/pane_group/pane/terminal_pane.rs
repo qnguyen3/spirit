@@ -51,25 +51,6 @@ pub struct TerminalPane {
     view: ViewHandle<TerminalPaneView>,
 }
 
-/// Returns the host terminal's `SharedSessionSource`, or `None` if it is
-/// not currently a shared-session creator. Reads the underlying
-/// `TerminalModel` directly via the host's `TerminalView`.
-#[cfg(not(target_family = "wasm"))]
-pub(in crate::pane_group) fn host_terminal_shared_session_source_type(
-    parent_terminal_view: &ViewHandle<TerminalView>,
-    ctx: &AppContext,
-) -> Option<SharedSessionSource> {
-    let model = parent_terminal_view.as_ref(ctx).model.lock();
-    if let Some(source) = model.shared_session_source() {
-        return Some(source.clone());
-    }
-    if let SharedSessionStatus::SharePendingPreBootstrap { source } = model.shared_session_status()
-    {
-        return Some(source.clone());
-    }
-    None
-}
-
 impl TerminalPane {
     pub(in crate::pane_group) fn new(
         uuid: Vec<u8>,
@@ -351,34 +332,6 @@ fn retrieve_shared_session_link(manager: &Manager, terminal_view_id: &EntityId) 
     None
 }
 
-
-fn terminal_view_for_owner_in_group(
-    group: &PaneGroup,
-    owner_terminal_view_id: EntityId,
-    ctx: &AppContext,
-) -> Option<ViewHandle<TerminalView>> {
-    let pane_id = group.find_pane_id_for_terminal_view(owner_terminal_view_id, ctx)?;
-    group.terminal_view_from_pane_id(pane_id, ctx)
-}
-
-fn pane_group_and_terminal_view_for_owner(
-    owner_terminal_view_id: EntityId,
-    ctx: &AppContext,
-) -> Option<(ViewHandle<PaneGroup>, ViewHandle<TerminalView>)> {
-    WorkspaceRegistry::as_ref(ctx)
-        .all_workspaces(ctx)
-        .into_iter()
-        .find_map(|(_, workspace)| {
-            workspace.as_ref(ctx).tab_views().find_map(|pane_group| {
-                terminal_view_for_owner_in_group(
-                    pane_group.as_ref(ctx),
-                    owner_terminal_view_id,
-                    ctx,
-                )
-                .map(|terminal_view| (pane_group.clone(), terminal_view))
-            })
-        })
-}
 
 /// Attaches a terminal view to the pane group by subscribing to its events
 /// and setting the file tree code model.

@@ -926,18 +926,6 @@ type InitialLayoutCallback = Box<
     ) -> (PaneData, InitialFocus),
 >;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AIDocumentPaneVisibilityAction {
-    /// Ensure the requested AI document pane is visible.
-    ///
-    /// If the requested pane is already open, this will keep it open.
-    Open,
-    /// Toggle visibility of the requested AI document pane.
-    ///
-    /// If the requested pane is open, this will close it. Otherwise it will open it.
-    Toggle,
-}
-
 impl PaneGroup {
     /// Executes the provided callback for each TerminalView contained within
     /// this pane group.
@@ -1778,12 +1766,6 @@ impl PaneGroup {
     ) -> impl Iterator<Item = (PaneId, ViewHandle<FileNotebookView>)> + 'a {
         self.panes_of::<FilePane>()
             .map(move |pane| (pane.id(), pane.file_view(app)))
-    }
-
-    fn close_panes(&mut self, pane_ids: Vec<PaneId>, ctx: &mut ViewContext<Self>) {
-        for pane_id in pane_ids {
-            self.close_pane(pane_id, ctx);
-        }
     }
 
     /// Whether the focused pane is a code pane whose active tab should show
@@ -4906,21 +4888,6 @@ impl PaneGroup {
         true
     }
 
-    fn focus_pane_preserving_maximized_state(
-        &mut self,
-        id: PaneId,
-        focus_pane_contents: bool,
-        ctx: &mut ViewContext<Self>,
-    ) -> bool {
-        let was_maximized = self.is_focused_pane_maximized(ctx);
-        let focused = self.focus_pane(id, focus_pane_contents, ctx);
-        if focused && was_maximized {
-            self.focus_state.update(ctx, |focus_state, ctx| {
-                focus_state.set_focused_pane_maximized(true, ctx);
-            });
-        }
-        focused
-    }
     fn focus_pane_and_record_in_history(
         &mut self,
         id: PaneId,
