@@ -3941,7 +3941,7 @@ impl CodeReviewView {
             .with_cross_axis_alignment(CrossAxisAlignment::Start)
             .with_main_axis_alignment(MainAxisAlignment::Start)
             .with_child(self.render_header(state, appearance, is_in_split_pane, app))
-            .with_child(self.render_content(state, appearance, app));
+            .with_child(self.render_content(state, appearance));
 
         let top_section_with_margin = ConstrainedBox::new(
             Container::new(Shrinkable::new(1., top_section.finish()).finish())
@@ -4349,12 +4349,7 @@ impl CodeReviewView {
     }
 
     /// Renders the content area with all file diffs
-    fn render_content(
-        &self,
-        state: &LoadedState,
-        appearance: &Appearance,
-        _app: &AppContext,
-    ) -> Box<dyn Element> {
+    fn render_content(&self, state: &LoadedState, appearance: &Appearance) -> Box<dyn Element> {
         if state.file_states.is_empty() {
             return self.render_no_changes_state(appearance);
         }

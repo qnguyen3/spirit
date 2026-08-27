@@ -69,7 +69,16 @@ impl SkillProvider {
     pub fn icon_fill(&self, fallback: Fill) -> Fill {
         match self {
             SkillProvider::Claude => Fill::Solid(CLAUDE_ORANGE),
-            _ => fallback,
+            SkillProvider::Warp
+            | SkillProvider::Agents
+            | SkillProvider::Codex
+            | SkillProvider::Cursor
+            | SkillProvider::Gemini
+            | SkillProvider::Copilot
+            | SkillProvider::Droid
+            | SkillProvider::Github
+            | SkillProvider::OpenCode
+            | SkillProvider::Kiro => fallback,
         }
     }
 }
