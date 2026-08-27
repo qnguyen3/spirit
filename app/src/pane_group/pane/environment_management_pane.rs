@@ -17,12 +17,7 @@ pub struct EnvironmentManagementPane {
 
 impl EnvironmentManagementPane {
     pub fn new(ctx: &mut ViewContext<PaneGroup>) -> Self {
-        // Create the EnvironmentsPageView
-        let environments_page_view = ctx.add_typed_action_view(|ctx| {
-            let mut view = EnvironmentsPageView::new(ctx);
-            view.set_github_auth_redirect_target(GithubAuthRedirectTarget::FocusCloudMode, ctx);
-            view
-        });
+        let environments_page_view = ctx.add_typed_action_view(EnvironmentsPageView::new);
 
         Self::from_view(environments_page_view, ctx)
     }
@@ -88,16 +83,6 @@ impl PaneContent for EnvironmentManagementPane {
                         PaneEventWrapper::Close => PaneEvent::Close,
                     };
                     pane_group.handle_pane_event(pane_id, &pane_event, ctx);
-                }
-                SettingsPageEvent::EnvironmentSetupModeSelectorToggled { is_open } => {
-                    pane_group.pane_with_open_environment_setup_mode_selector =
-                        is_open.then_some(pane_id);
-                    ctx.notify();
-                }
-                SettingsPageEvent::AgentAssistedEnvironmentModalToggled { is_open } => {
-                    pane_group.pane_with_open_agent_assisted_environment_modal =
-                        is_open.then_some(pane_id);
-                    ctx.notify();
                 }
                 SettingsPageEvent::FocusModal => {
                     // Not applicable when hosted in a pane.

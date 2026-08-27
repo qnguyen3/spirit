@@ -10,8 +10,6 @@
 //! used to render a [`PaneView`] which internally renders the pane, including the [`BackingView`].
 pub(super) mod agent_picker_pane;
 pub(super) mod agent_picker_view;
-pub(super) mod code_diff_pane;
-pub(super) mod code_diff_pane_model;
 pub(super) mod code_pane;
 pub(super) mod env_var_collection_pane;
 pub(crate) mod environment_management_pane;
@@ -358,10 +356,6 @@ impl PaneId {
 
     pub fn is_file_pane(&self) -> bool {
         matches!(self.0.pane_type, IPaneType::File)
-    }
-
-    pub fn is_code_diff_pane(&self) -> bool {
-        matches!(self.0.pane_type, IPaneType::CodeDiff)
     }
 
     pub fn is_environment_management_pane(&self) -> bool {
