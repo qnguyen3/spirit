@@ -4652,8 +4652,6 @@ fn test_tools_panel_warp_drive_toggle_updates_available_views() {
 
 #[test]
 fn add_agent_picker_tab_opens_a_single_picker_tab_per_window() {
-    let _agent_launcher_guard = FeatureFlag::AgentLauncher.override_enabled(true);
-
     App::test((), |mut app| async move {
         initialize_app(&mut app);
         let workspace = mock_workspace(&mut app);
@@ -4701,8 +4699,6 @@ fn add_agent_picker_tab_opens_a_single_picker_tab_per_window() {
 
 #[test]
 fn launch_agent_from_picker_stages_the_agent_command_and_closes_the_picker() {
-    let _agent_launcher_guard = FeatureFlag::AgentLauncher.override_enabled(true);
-
     App::test((), |mut app| async move {
         initialize_app(&mut app);
         let workspace = mock_workspace(&mut app);

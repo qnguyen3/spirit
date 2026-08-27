@@ -5089,18 +5089,16 @@ impl Workspace {
             keybinding_name_to_display_string("app:reopen_closed_session", ctx);
 
         // 1. Agent
-        if FeatureFlag::AgentLauncher.is_enabled() {
-            menu_items.push(
-                MenuItemFields::new("New Agent…")
-                    .with_on_select_action(WorkspaceAction::AddAgentPickerTab)
-                    .with_icon(icons::Icon::Agent)
-                    .with_key_shortcut_label(keybinding_name_to_display_string(
-                        NEW_AGENT_PICKER_BINDING_NAME,
-                        ctx,
-                    ))
-                    .into_item(),
-            );
-        }
+        menu_items.push(
+            MenuItemFields::new("New Agent…")
+                .with_on_select_action(WorkspaceAction::AddAgentPickerTab)
+                .with_icon(icons::Icon::Agent)
+                .with_key_shortcut_label(keybinding_name_to_display_string(
+                    NEW_AGENT_PICKER_BINDING_NAME,
+                    ctx,
+                ))
+                .into_item(),
+        );
 
         // 2. Terminal (+ individual shells on Windows)
         {
@@ -10355,9 +10353,6 @@ impl Workspace {
     }
 
     fn add_agent_picker_tab(&mut self, ctx: &mut ViewContext<Self>) {
-        if !FeatureFlag::AgentLauncher.is_enabled() {
-            return;
-        }
         if let Some(locator) = AgentPickerPaneManager::handle(ctx)
             .as_ref(ctx)
             .find_pane(ctx.window_id())
@@ -10379,9 +10374,6 @@ impl Workspace {
     }
 
     fn launch_agent_from_picker(&mut self, catalog_index: usize, ctx: &mut ViewContext<Self>) {
-        if !FeatureFlag::AgentLauncher.is_enabled() {
-            return;
-        }
         let Some(agent) = agent_catalog().get(catalog_index) else {
             log::warn!("Agent launcher: no catalog entry at index {catalog_index}");
             return;
@@ -17845,12 +17837,6 @@ impl Workspace {
                 .insert(flags::LEFT_PANEL_VISIBILITY_ACROSS_TABS_FLAG);
         }
 
-        if *font_settings.match_ai_font_to_terminal_font {
-            context
-                .set
-                .insert(flags::MATCH_AI_FONT_TO_TERMINAL_FONT_FLAG);
-        }
-
         if *font_settings.match_notebook_to_monospace_font_size {
             context
                 .set
@@ -17938,21 +17924,10 @@ impl Workspace {
             context.set.insert(flags::CODE_AS_DEFAULT_EDITOR);
         }
 
-        if *code_settings.codebase_context_enabled.value() {
-            context.set.insert(flags::IS_CODEBASE_INDEXING_ENABLED);
-        }
-
-        if *code_settings.auto_indexing_enabled.value() {
-            context.set.insert(flags::IS_AUTOINDEXING_ENABLED);
-        }
-
         if *input_settings.show_hint_text.value() {
             context.set.insert(flags::SHOW_INPUT_HINT_TEXT_CONTEXT_FLAG);
         }
 
-        if *input_settings.show_agent_tips.value() {
-            context.set.insert(flags::SHOW_AGENT_TIPS_FLAG);
-        }
         if *editor_settings.enable_autosuggestions {
             context.set.insert(flags::AUTOSUGGESTIONS_ENABLED_FLAG);
         }

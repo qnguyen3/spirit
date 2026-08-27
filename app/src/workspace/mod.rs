@@ -584,8 +584,7 @@ pub fn init(app: &mut AppContext) {
             WorkspaceAction::AddAgentPickerTab,
         )
         .with_custom_action(CustomAction::NewAgentPicker)
-        .with_context_predicate(id!("Workspace") & !id!("Workspace_PaneDragging"))
-        .with_enabled(|| FeatureFlag::AgentLauncher.is_enabled()),
+        .with_context_predicate(id!("Workspace") & !id!("Workspace_PaneDragging")),
         EditableBinding::new(
             "workspace:toggle_left_panel",
             BindingDescription::new("Open Left Panel"),
@@ -1274,7 +1273,7 @@ fn add_open_setting_pages_as_editable_binding(app: &mut AppContext) {
         EditableBinding::new(
             "workspace:show_settings_about_page",
             BindingDescription::new("Open Settings: About")
-                .with_custom_description(bindings::MAC_MENUS_CONTEXT, "About Warp"),
+                .with_custom_description(bindings::MAC_MENUS_CONTEXT, "About Spirit"),
             WorkspaceAction::ShowSettingsPage(SettingsSection::About),
         )
         .with_group(bindings::BindingGroup::Settings.as_str())

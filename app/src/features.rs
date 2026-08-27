@@ -183,8 +183,6 @@ fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::MultiProfile,
         #[cfg(feature = "get_started_tab")]
         FeatureFlag::GetStartedTab,
-        #[cfg(feature = "agent_launcher")]
-        FeatureFlag::AgentLauncher,
         #[cfg(feature = "projects")]
         FeatureFlag::Projects,
         #[cfg(feature = "pr_comments_v2")]
@@ -241,8 +239,6 @@ fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::AgentView,
         #[cfg(feature = "warp_managed_secrets")]
         FeatureFlag::WarpManagedSecrets,
-        #[cfg(feature = "agent_tips")]
-        FeatureFlag::AgentTips,
         #[cfg(feature = "local_claude_codex_child_harnesses")]
         FeatureFlag::LocalClaudeCodexChildHarnesses,
         #[cfg(feature = "team_api_keys")]

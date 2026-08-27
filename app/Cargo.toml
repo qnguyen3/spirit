@@ -523,7 +523,6 @@ default = [
     "revert_diff_hunk",
     "code_review_save_changes",
     "get_started_tab",
-    "agent_launcher",
     "file_tree",
     "vim_code_editor",
     "code_launch_modal",
@@ -549,7 +548,6 @@ default = [
     "force_classic_completions",
     "team_api_keys",
     "named_agents",
-    "agent_tips",
     "pluggable_notifications",
     "agent_onboarding",
     "account_first_onboarding",
@@ -629,7 +627,6 @@ grab_the_baton_editing = []
 gui = []
 msys2_shells = []
 get_started_tab = []
-agent_launcher = []
 github_pr_prompt_chip = []
 ambient_agents_command_line = []
 scheduled_ambient_agents = []
@@ -802,7 +799,6 @@ file_and_diff_set_comments = []
 revert_to_checkpoints = []
 agent_view = []
 warp_managed_secrets = []
-agent_tips = []
 cloud_conversations = []
 team_api_keys = []
 named_agents = []
@@ -846,7 +842,7 @@ ctrl_c_cancels_third_party_harness = []
 category = "public.app-category.developer-tools"
 copyright = "© 2025, Denver Technologies, Inc"
 identifier = "dev.warp.WarpOss"
-name = "WarpOss"
+name = "Spirit"
 resources = ["assets/onboarding"]
 icon = ["channels/oss/icon/no-padding/512x512.png", "channels/oss/icon/no-padding/icon.ico"]
 short_description = "The open-source, cloud-backed terminal for individuals and teams."

@@ -206,7 +206,7 @@ fn make_new_app_menu(ctx: &AppContext) -> Menu {
     menu_items.push(MenuItem::Standard(StandardAction::ShowAllApps));
     menu_items.push(MenuItem::Separator);
     menu_items.push(MenuItem::Custom(CustomMenuItem::new(
-        "Set Warp as Default Terminal",
+        "Set Spirit as Default Terminal",
         move |ctx| {
             DefaultTerminal::handle(ctx).update(ctx, |default_terminal, ctx| {
                 default_terminal.make_warp_default(ctx)
@@ -241,7 +241,7 @@ fn make_new_app_menu(ctx: &AppContext) -> Menu {
         None,
     )));
     menu_items.push(MenuItem::Standard(StandardAction::Quit));
-    Menu::new("Warp", menu_items)
+    Menu::new("Spirit", menu_items)
 }
 
 fn make_new_file_menu(ctx: &AppContext) -> Menu {
@@ -962,10 +962,6 @@ fn make_new_elements_menu_items(ctx: &AppContext) -> Vec<MenuItem> {
             open_new_agent_picker_or_window,
             move |_props: &MenuItemProperties, ctx: &mut AppContext| {
                 let mut changes = MenuItemPropertyChanges::default();
-                if !FeatureFlag::AgentLauncher.is_enabled() {
-                    changes.disabled = Some(true);
-                    return changes;
-                }
                 let trigger = Trigger::Custom(CustomAction::NewAgentPicker.into());
                 let binding = ctx
                     .get_key_bindings()

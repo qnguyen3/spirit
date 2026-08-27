@@ -72,7 +72,7 @@ The GUI desktop app is the `app/` crate on the WarpUI pixel/GPU framework (`warp
 
 **Main app** (`app/`) — the GUI desktop app:
 - Terminal emulation and shell management (`terminal/`)
-- AI integration including Agent Mode (`ai/`)
+- Agent Launcher (`agent_launcher/`): picker tab that spawns third-party CLI agents (Claude Code, Codex, Gemini, ...) in a terminal. The catalog lives in `agent_launcher/catalog.rs`; launching injects the agent's command into a fresh terminal tab via `execute_command_or_set_pending`, which waits for shell bootstrap.
 - Cloud synchronization and Drive features (`drive/`)
 - Authentication and user management (`auth/`)
 - Settings and preferences (`settings/`)
@@ -90,8 +90,7 @@ The GUI desktop app is the `app/` crate on the WarpUI pixel/GPU framework (`warp
 1. **Entity-Handle System**: Views reference other views via handles, not direct ownership
 2. **Modular Structure**: Workspace contains multiple workspace configurations, each with terminals, notebooks, etc.
 3. **Cross-Platform**: Native implementations for macOS, Windows, Linux, plus WASM target
-4. **AI Integration**: Built-in AI assistant with context awareness and codebase indexing
-5. **Cloud Sync**: Objects can be synchronized across devices via Warp Drive
+4. **Cloud Sync**: Objects can be synchronized across devices via Warp Drive
 
 ### Development Guidelines
 

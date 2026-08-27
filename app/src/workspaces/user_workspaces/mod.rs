@@ -30,7 +30,7 @@ use crate::server::server_api::team::TeamClient;
 use crate::server::server_api::workspace::{PurchaseAddonCreditsOutcome, WorkspaceClient};
 #[cfg(test)]
 use crate::server::server_api::{team::MockTeamClient, workspace::MockWorkspaceClient};
-use crate::settings::{CodeSettings, CodeSettingsChangedEvent, PrivacySettings};
+use crate::settings::PrivacySettings;
 use crate::workspaces::workspace::{
     AiOverages, PurchaseAddOnCreditsPolicy, UsageBasedPricingSettings,
 };
@@ -196,17 +196,6 @@ impl UserWorkspaces {
             let ServerExperimentsEvent::ExperimentsUpdated = event;
             me.update_session_sharing_enablement(ctx);
         });
-
-        ctx.subscribe_to_model(
-            &CodeSettings::handle(ctx),
-            |_, _, code_settings_event, ctx| match code_settings_event {
-                CodeSettingsChangedEvent::CodebaseContextEnabled { .. }
-                | CodeSettingsChangedEvent::AutoIndexingEnabled { .. } => {
-                    ctx.emit(UserWorkspacesEvent::CodebaseContextEnablementChanged);
-                }
-                _ => {}
-            },
-        );
 
         Self {
             current_workspace_uid: current_workspace_uid.into(),
