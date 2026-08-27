@@ -63,7 +63,7 @@ use crate::server::server_api::ServerApiProvider;
 use crate::server::server_api::team::{MockTeamClient, TeamClient};
 use crate::server::sync_queue::SyncQueue;
 use crate::server::telemetry::context_provider::AppTelemetryContextProvider;
-use crate::settings::{CodeSettings, FocusedTerminalInfo};
+use crate::settings::CodeSettings;
 use crate::system::SystemStats;
 use crate::workflows::workflow::Workflow;
 use crate::workflows::{CloudWorkflow, CloudWorkflowModel};
@@ -133,7 +133,6 @@ fn initialize_app_with_auth(
     });
 
     app.add_singleton_model(CodeSettings::new_with_defaults);
-    app.add_singleton_model(FocusedTerminalInfo::new);
 
     // The start of polling is normally triggered by authentication completion, but
     // we need to do it manually for tests.

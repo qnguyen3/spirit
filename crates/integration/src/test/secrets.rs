@@ -1,6 +1,6 @@
 use warp::integration_testing::clipboard::assert_clipboard_contains_string;
 use warp::integration_testing::secret_redaction::{
-    assert_secret_tooltip_open, assert_secrets_redacted_for_ai,
+    assert_secret_tooltip_open, assert_secrets_redacted,
 };
 use warp::integration_testing::settings::toggle_setting;
 use warp::integration_testing::step::new_step_with_default_assertions;
@@ -264,7 +264,7 @@ pub fn test_secrets_are_always_redacted_in_ai_inputs() -> Builder {
         ))
         .with_step(
             new_step_with_default_assertions("Test strikethrough mode redaction").add_assertion(
-                assert_secrets_redacted_for_ai(
+                assert_secrets_redacted(
                     test_output.to_string(),
                     expected_redacted_phone.to_string(),
                     expected_redacted_api_key.to_string(),
@@ -279,7 +279,7 @@ pub fn test_secrets_are_always_redacted_in_ai_inputs() -> Builder {
         ))) // Enable full hiding (Yes mode)
         .with_step(
             new_step_with_default_assertions("Test full obfuscation mode redaction").add_assertion(
-                assert_secrets_redacted_for_ai(
+                assert_secrets_redacted(
                     test_output.to_string(),
                     expected_redacted_phone.to_string(),
                     expected_redacted_api_key.to_string(),

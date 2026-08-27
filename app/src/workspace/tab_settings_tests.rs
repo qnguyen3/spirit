@@ -95,17 +95,12 @@ fn header_toolbar_chip_selection_default_contains_code_review() {
 #[test]
 fn header_toolbar_chip_selection_custom_without_code_review_reports_absent() {
     let config = HeaderToolbarChipSelection::Custom {
-        left: vec![
-            HeaderToolbarItemKind::TabsPanel,
-            HeaderToolbarItemKind::ToolsPanel,
-        ],
-        right: vec![HeaderToolbarItemKind::NotificationsMailbox],
+        left: vec![HeaderToolbarItemKind::TabsPanel],
+        right: vec![HeaderToolbarItemKind::ToolsPanel],
     };
     assert!(!config.contains_item(&HeaderToolbarItemKind::CodeReview));
     assert!(config.contains_item(&HeaderToolbarItemKind::TabsPanel));
     assert!(config.contains_item(&HeaderToolbarItemKind::ToolsPanel));
-    assert!(config.contains_item(&HeaderToolbarItemKind::NotificationsMailbox));
-    assert!(!config.contains_item(&HeaderToolbarItemKind::AgentManagement));
 }
 
 #[test]

@@ -2,6 +2,7 @@ use warpui::App;
 use warpui::platform::WindowStyle;
 
 use super::*;
+use crate::auth::{AuthManager, AuthStateProvider};
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::network::NetworkStatus;
 use crate::server::cloud_objects::listener::Listener;
@@ -35,8 +36,6 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(|_| ResizableData::default());
     app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
-    #[cfg(feature = "voice_input")]
-    app.add_singleton_model(voice_input::VoiceInput::new);
 }
 
 #[test]
@@ -44,9 +43,8 @@ fn test_render_view() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
 
-        let (_window_id, _view) = app.add_window(WindowStyle::NotStealFocus, |ctx| {
-            CommandSearchView::new(ServerApiProvider::as_ref(ctx).get_ai_client(), ctx)
-        });
+        let (_window_id, _view) =
+            app.add_window(WindowStyle::NotStealFocus, CommandSearchView::new);
 
         app.update(|_| {
             // This will force a redraw of the window, which lays out the

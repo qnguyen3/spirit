@@ -39,7 +39,6 @@ use crate::server::server_api::workspace::MockWorkspaceClient;
 use crate::settings::FontSettings;
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
 use crate::terminal::ShellLaunchData;
-use crate::terminal::keys::TerminalKeybindings;
 use crate::terminal::model::session::Session;
 use crate::terminal::shell::ShellType;
 use crate::test_util::assert_eventually;
@@ -88,7 +87,6 @@ fn initialize_editor(
     app.add_singleton_model(repo_metadata::RepoMetadataModel::new);
     app.add_singleton_model(FileSearchModel::new);
     app.add_singleton_model(NotebookKeybindings::new);
-    app.add_singleton_model(TerminalKeybindings::new);
     app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
     #[cfg(feature = "voice_input")]

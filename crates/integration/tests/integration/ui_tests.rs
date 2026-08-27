@@ -188,7 +188,6 @@ integration_tests! {
     // For some reason, disabling the `AgentMode` flag does not actually disable Agent Mode in the test
     // run. Ignore for now.
     #[ignore]
-    test_ask_warp_ai_keybinding_for_selected_block,
 
     test_create_folder_from_command_palette,
 
@@ -267,8 +266,6 @@ integration_tests! {
     test_latest_buffer_operations,
 
     test_pass_control_sequences_to_long_running_block,
-    test_execution_profiles_load_from_settings_file,
-    test_execution_profile_model_persists_and_hot_reloads_settings_file,
     test_settings_file_migration_from_native_store,
     test_settings_file_hot_reload_applies_new_values,
 
@@ -288,47 +285,25 @@ integration_tests! {
     test_settings_search_clear_restores_umbrella_state,
     test_settings_search_preserved_on_sidebar_click,
 
-    test_copy_selection_within_ai_block,
     #[ignore = "Affected by agent_view feature flag UI changes"]
-    test_selection_first_to_last_through_ai_simple,
     #[ignore = "Affected by agent_view feature flag UI changes"]
-    test_copy_on_select_first_to_last_through_ai_simple,
     #[ignore = "Affected by agent_view feature flag UI changes"]
-    test_selection_first_to_last_through_ai_semantic,
     #[ignore = "Affected by agent_view feature flag UI changes"]
-    test_selection_first_to_last_through_ai_lines,
     #[ignore = "Affected by agent_view feature flag UI changes"]
-    test_selection_last_to_first_through_ai_simple,
     #[ignore = "Affected by agent_view feature flag UI changes"]
-    test_selection_last_to_first_through_ai_semantic,
     #[ignore = "Affected by agent_view feature flag UI changes"]
-    test_selection_last_to_first_through_ai_lines,
     #[ignore = "Affected by agent_view feature flag UI changes"]
-    test_selection_first_to_ai_simple,
     #[ignore = "Affected by agent_view feature flag UI changes"]
-    test_selection_first_to_ai_semantic,
     #[ignore = "Affected by agent_view feature flag UI changes"]
-    test_selection_first_to_ai_lines,
     #[ignore = "Affected by agent_view feature flag UI changes"]
-    test_selection_ai_to_first_simple,
     #[ignore = "Affected by agent_view feature flag UI changes"]
-    test_selection_ai_to_first_semantic,
     #[ignore = "Affected by agent_view feature flag UI changes"]
-    test_selection_ai_to_first_lines,
     #[ignore = "Affected by agent_view feature flag UI changes"]
-    test_selection_ai_to_last_simple,
     #[ignore = "Affected by agent_view feature flag UI changes"]
-    test_selection_ai_to_last_semantic,
     #[ignore = "Affected by agent_view feature flag UI changes"]
-    test_selection_ai_to_last_lines,
     #[ignore = "Affected by agent_view feature flag UI changes"]
-    test_selection_last_to_ai_simple,
     #[ignore = "Affected by agent_view feature flag UI changes"]
-    test_selection_last_to_ai_semantic,
     #[ignore = "Affected by agent_view feature flag UI changes"]
-    test_selection_last_to_ai_lines,
-    test_restored_ai_block_renders_mermaid_and_local_images,
-    test_cancelled_run_agents_card_renders_cancelled_state,
 
     // Middle-click-paste is only implemented for Linux right now.
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
@@ -377,7 +352,5 @@ integration_tests! {
     test_video_recording,
 
     // Rich Input Ctrl+Enter submit toggle (issue #11588)
-    test_rich_input_toggle_on_enter_inserts_newline_and_ctrl_enter_submits,
     // Regression: Enter must accept inline menus (not insert newline) when toggle=true
-    test_rich_input_enter_accepts_menu_item_when_toggle_is_true,
 }

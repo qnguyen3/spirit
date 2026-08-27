@@ -1,13 +1,7 @@
-//! Source-facing helpers that centralize the derivation of the agent-icon shape
+//! Source-facing helpers that centralize the derivation of the CLI-agent icon shape
 //! ([`IconWithStatusVariant`]) from the underlying state models. The invariant the
-//! helpers enforce: any single logical agent run renders as the same brand color, glyph,
-//! and ambient-vs-local treatment regardless of which surface is rendering it (vertical
-//! tabs, pane header, conversation list, notifications mailbox).
-//!
-//! Each helper is a thin adapter over one data source. Surfaces call the helper for
-//! whichever source they hold and feed the resulting variant into
-//! [`render_icon_with_status`]. The pure inner functions in this module are exercised
-//! directly by the cross-surface consistency tests in `agent_icon_tests.rs`.
+//! helpers enforce: any single logical agent run renders as the same brand color and
+//! glyph regardless of which surface is rendering it (vertical tabs, pane header).
 use warpui::{AppContext, SingletonEntity};
 
 use crate::terminal::CLIAgent;

@@ -1,9 +1,8 @@
 use warpui::async_assert_eq;
 use warpui::integration::{AssertionCallback, AssertionOutcome};
 
-use crate::ai::agent::redaction::redact_secrets;
-use crate::ai::blocklist::block::secret_redaction::find_secrets_in_text;
 use crate::integration_testing::view_getters::single_terminal_view;
+use crate::terminal::model::secrets::{find_secrets_in_text, redact_secrets};
 use crate::terminal::safe_mode_settings::get_secret_obfuscation_mode;
 
 pub fn assert_secret_tooltip_open(open: bool) -> AssertionCallback {
@@ -20,8 +19,8 @@ pub fn assert_secret_tooltip_open(open: bool) -> AssertionCallback {
     })
 }
 
-/// Assert that secrets are properly redacted for AI conversations in both modes
-pub fn assert_secrets_redacted_for_ai(
+/// Assert that detected secrets are redacted according to the active obfuscation mode.
+pub fn assert_secrets_redacted(
     test_text: String,
     expected_phone_redaction: String,
     expected_api_key_redaction: String,
@@ -33,7 +32,6 @@ pub fn assert_secrets_redacted_for_ai(
         terminal_view.read(app, |_view, ctx| {
             let secret_redaction_mode = get_secret_obfuscation_mode(ctx);
 
-            // Test that we properly detect secrets in the input
             let detected_secrets = find_secrets_in_text(&test_text);
             if detected_secrets.is_empty() {
                 return AssertionOutcome::failure(format!(
@@ -41,19 +39,18 @@ pub fn assert_secrets_redacted_for_ai(
                 ));
             }
 
-            // Test that redaction works for both modes when sending to AI
             if secret_redaction_mode.should_redact_secret() {
                 let mut redacted_text = test_text.clone();
                 redact_secrets(&mut redacted_text);
 
                 if !redacted_text.contains(&expected_phone_redaction) {
                     return AssertionOutcome::failure(format!(
-                        "Phone number should be redacted in text sent to AI: {redacted_text}"
+                        "Phone number should be redacted: {redacted_text}"
                     ));
                 }
                 if !redacted_text.contains(&expected_api_key_redaction) {
                     return AssertionOutcome::failure(format!(
-                        "API key should be redacted in text sent to AI: {redacted_text}"
+                        "API key should be redacted: {redacted_text}"
                     ));
                 }
                 if redacted_text.contains(&original_phone) {

@@ -28,7 +28,7 @@ use crate::server::server_api::ServerApiProvider;
 use crate::server::server_api::team::MockTeamClient;
 use crate::server::server_api::workspace::MockWorkspaceClient;
 use crate::server::sync_queue::SyncQueue;
-use crate::settings::{AISettings, PrivacySettings};
+use crate::settings::PrivacySettings;
 use crate::system::SystemStats;
 use crate::workflows::workflow::Workflow;
 use crate::workflows::{CloudWorkflowModel, WorkflowId};
@@ -157,7 +157,6 @@ fn initialize_app(app: &mut App, workspaces: Vec<Workspace>) {
     app.add_singleton_model(|_| SettingsManager::default());
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
     app.update(crate::settings::init_and_register_user_preferences);
-    app.update(AISettings::register_and_subscribe_to_events);
 }
 
 #[test]
