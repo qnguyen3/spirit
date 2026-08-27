@@ -388,7 +388,6 @@ if [[ $RELEASE_CHANNEL = "local" ]]; then
     BUNDLE_ID="dev.warp.Warp-Local"
     WARP_APP_NAME="WarpLocal"
     WARP_SCHEME_NAME="warplocal"
-    FEATURES="$FEATURES,agent_mode_debug"
     # For local builds, use different versions of our bundled frameworks (e.g.:
     # Sentry).  This needs to be exported so it can be referenced by
     # app/build.rs later, while running `cargo bundle`.
@@ -398,7 +397,6 @@ elif [[ $RELEASE_CHANNEL = "dev" ]]; then
     BUNDLE_ID="dev.warp.Warp-Dev"
     WARP_APP_NAME="WarpDev"
     WARP_SCHEME_NAME="warpdev"
-    FEATURES="$FEATURES,agent_mode_debug"
     # Enable heap usage tracking & profiling using jemalloc through pprof.
     FEATURES="$FEATURES,jemalloc_pprof,heap_usage_tracking"
     # Enable the Warp Control CLI wrapper for local scripting/automation.

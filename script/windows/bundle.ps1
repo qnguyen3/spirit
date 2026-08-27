@@ -120,7 +120,6 @@ if ("$CHANNEL" -eq 'local') {
     $WARP_BIN = 'dev'
     $BINARY_NAME = 'dev.exe'
     $APP_NAME = 'WarpDev'
-    $FEATURES = "$FEATURES,agent_mode_debug"
 } elseif ("$CHANNEL" -eq 'preview') {
     $WARP_BIN = 'preview'
     $BINARY_NAME = 'preview.exe'
