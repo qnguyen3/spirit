@@ -130,15 +130,10 @@ pub(crate) enum IPaneType {
     Notebook,
     File,
     Code,
-    CodeDiff,
     EnvVarCollection,
     EnvironmentManagement,
     Workflow,
     Settings,
-    AIFact,
-    AIDocument,
-    CustomRouterEditor,
-    ExecutionProfileEditor,
     GetStarted,
     AgentPicker,
     NetworkLog,
@@ -155,15 +150,10 @@ impl Display for IPaneType {
             IPaneType::Notebook => write!(f, "Notebook"),
             IPaneType::File => write!(f, "File"),
             IPaneType::Code => write!(f, "Code"),
-            IPaneType::CodeDiff => write!(f, "Code Diff"),
             IPaneType::EnvVarCollection => write!(f, "Environment Variable Collection"),
             IPaneType::EnvironmentManagement => write!(f, "Environment Management"),
             IPaneType::Workflow => write!(f, "Workflow"),
             IPaneType::Settings => write!(f, "Settings"),
-            IPaneType::AIFact => write!(f, "AI Fact"),
-            IPaneType::AIDocument => write!(f, "AI Document"),
-            IPaneType::CustomRouterEditor => write!(f, "Custom Router Editor"),
-            IPaneType::ExecutionProfileEditor => write!(f, "Execution Profile Editor"),
             IPaneType::GetStarted => write!(f, "GetStarted"),
             IPaneType::AgentPicker => write!(f, "Agent Picker"),
             IPaneType::NetworkLog => write!(f, "Network Log"),
@@ -228,38 +218,9 @@ impl PaneId {
         Self::new_from_ctx(IPaneType::Code, ctx)
     }
 
-    /// Creates a [`PaneId`] from a [`ViewContext<PaneView<CodeDiffView>>`]
-    pub fn from_code_diff_pane_ctx(ctx: &ViewContext<PaneView<CodeDiffView>>) -> Self {
-        Self::new_from_ctx(IPaneType::CodeDiff, ctx)
-    }
-
     /// Creates a [`PaneId`] from a [`ViewContext<PaneView<SettingsView>>`]
     pub fn from_settings_pane_ctx(ctx: &ViewContext<PaneView<SettingsView>>) -> Self {
         Self::new_from_ctx(IPaneType::Settings, ctx)
-    }
-
-    /// Creates a [`PaneId`] from a [`ViewContext<PaneView<AIFactView>>`]
-    pub fn from_ai_fact_pane_ctx(ctx: &ViewContext<PaneView<AIFactView>>) -> Self {
-        Self::new_from_ctx(IPaneType::AIFact, ctx)
-    }
-
-    /// Creates a [`PaneId`] from a [`ViewContext<PaneView<AIDocumentView>>`]
-    pub fn from_ai_document_pane_ctx(ctx: &ViewContext<PaneView<AIDocumentView>>) -> Self {
-        Self::new_from_ctx(IPaneType::AIDocument, ctx)
-    }
-
-    /// Creates a [`PaneId`] from a [`ViewContext<PaneView<CustomRouterEditorView>>`]
-    pub fn from_custom_router_editor_pane_ctx(
-        ctx: &ViewContext<PaneView<crate::ai::custom_model_router_editor::CustomRouterEditorView>>,
-    ) -> Self {
-        Self::new_from_ctx(IPaneType::CustomRouterEditor, ctx)
-    }
-
-    /// Creates a [`PaneId`] from a [`ViewContext<PaneView<ExecutionProfileEditorView>>`]
-    pub fn from_execution_profile_editor_pane_ctx(
-        ctx: &ViewContext<PaneView<ExecutionProfileEditorView>>,
-    ) -> Self {
-        Self::new_from_ctx(IPaneType::ExecutionProfileEditor, ctx)
     }
 
     pub fn from_get_started_pane_ctx(ctx: &ViewContext<PaneView<GetStartedView>>) -> Self {
@@ -299,13 +260,6 @@ impl PaneId {
         Self::new(IPaneType::Code, code_pane_view)
     }
 
-    /// Creates a [`PaneId`] from a [`PaneView<CodeDiffView>`] entity ID.
-    pub fn from_code_diff_pane_view(
-        code_diff_pane_view: &ViewHandle<PaneView<CodeDiffView>>,
-    ) -> Self {
-        Self::new(IPaneType::CodeDiff, code_diff_pane_view)
-    }
-
     /// Creates a [`PaneId`] from a [`PaneView<EnvVarCollection>`] entity ID.
     pub fn from_env_var_collection_view(
         env_var_collection_view: &ViewHandle<PaneView<EnvVarCollectionView>>,
@@ -335,35 +289,6 @@ impl PaneId {
         settings_pane_view: &ViewHandle<PaneView<SettingsView>>,
     ) -> Self {
         Self::new(IPaneType::Settings, settings_pane_view)
-    }
-
-    /// Creates a [`PaneId`] from a [`PaneView<AIFactView>`] entity ID.
-    pub fn from_ai_fact_pane_view(ai_fact_pane_view: &ViewHandle<PaneView<AIFactView>>) -> Self {
-        Self::new(IPaneType::AIFact, ai_fact_pane_view)
-    }
-
-    /// Creates a [`PaneId`] from a [`PaneView<AIDocumentView>`] entity ID.
-    pub fn from_ai_document_pane_view(
-        ai_document_pane_view: &ViewHandle<PaneView<AIDocumentView>>,
-    ) -> Self {
-        Self::new(IPaneType::AIDocument, ai_document_pane_view)
-    }
-
-    /// Creates a [`PaneId`] from a [`PaneView<CustomRouterEditorView>`] entity ID.
-    pub fn from_custom_router_editor_pane_view(
-        view: &ViewHandle<PaneView<crate::ai::custom_model_router_editor::CustomRouterEditorView>>,
-    ) -> Self {
-        Self::new(IPaneType::CustomRouterEditor, view)
-    }
-
-    /// Creates a [`PaneId`] from a [`PaneView<ExecutionProfileEditorView>`] entity ID.
-    pub fn from_execution_profile_editor_pane_view(
-        execution_profile_editor_pane_view: &ViewHandle<PaneView<ExecutionProfileEditorView>>,
-    ) -> Self {
-        Self::new(
-            IPaneType::ExecutionProfileEditor,
-            execution_profile_editor_pane_view,
-        )
     }
 
     pub fn from_get_started_pane_view(
@@ -450,7 +375,6 @@ impl PaneId {
             IPaneType::Notebook
                 | IPaneType::Workflow
                 | IPaneType::EnvVarCollection
-                | IPaneType::AIFact
         )
     }
 
@@ -469,9 +393,6 @@ impl PaneId {
             IPaneType::Code => {
                 ChildView::<PaneView<CodeView>>::with_id(self.0.pane_view_id).finish()
             }
-            IPaneType::CodeDiff => {
-                ChildView::<PaneView<CodeDiffView>>::with_id(self.0.pane_view_id).finish()
-            }
             IPaneType::EnvVarCollection => {
                 ChildView::<PaneView<EnvVarCollectionView>>::with_id(self.0.pane_view_id).finish()
             }
@@ -483,20 +404,6 @@ impl PaneId {
             }
             IPaneType::Settings => {
                 ChildView::<PaneView<SettingsView>>::with_id(self.0.pane_view_id).finish()
-            }
-            IPaneType::AIFact => {
-                ChildView::<PaneView<AIFactView>>::with_id(self.0.pane_view_id).finish()
-            }
-            IPaneType::AIDocument => {
-                ChildView::<PaneView<AIDocumentView>>::with_id(self.0.pane_view_id).finish()
-            }
-            IPaneType::CustomRouterEditor => ChildView::<
-                PaneView<crate::ai::custom_model_router_editor::CustomRouterEditorView>,
-            >::with_id(self.0.pane_view_id)
-            .finish(),
-            IPaneType::ExecutionProfileEditor => {
-                ChildView::<PaneView<ExecutionProfileEditorView>>::with_id(self.0.pane_view_id)
-                    .finish()
             }
             IPaneType::GetStarted => {
                 ChildView::<PaneView<GetStartedView>>::with_id(self.0.pane_view_id).finish()

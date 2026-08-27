@@ -41,29 +41,6 @@ pub enum ConfigurableItem {
 }
 
 impl ConfigurableItem {
-    pub fn from_toolbar_item(kind: AgentToolbarItemKind, appearance: &Appearance) -> Option<Self> {
-        match kind {
-            AgentToolbarItemKind::ContextChip(chip_kind) => {
-                ContextChipRenderer::default_from_kind_with_agent_view(
-                    chip_kind,
-                    ChipAvailability::Enabled,
-                    true,
-                    appearance,
-                )
-                .map(Box::new)
-                .map(Self::ContextChip)
-            }
-            control => Some(Self::Control(ControlItemRenderer::new(control))),
-        }
-    }
-
-    pub fn item_kind(&self) -> Option<AgentToolbarItemKind> {
-        match self {
-            Self::ContextChip(r) => Some(AgentToolbarItemKind::ContextChip(r.chip_kind().clone())),
-            Self::Control(r) => r.kind.clone(),
-        }
-    }
-
     pub fn chip_kind(&self) -> Option<&ContextChipKind> {
         match self {
             Self::ContextChip(r) => Some(r.chip_kind()),
@@ -120,7 +97,6 @@ impl ConfigurableItem {
 /// voice input, image attach, file explorer, view changes, compose, etc.)
 /// inside the configurator.
 pub struct ControlItemRenderer {
-    kind: Option<AgentToolbarItemKind>,
     custom_label: Option<String>,
     custom_icon: Option<crate::ui_components::icons::Icon>,
     /// An opaque string identifier for round-tripping items through the configurator.
@@ -133,22 +109,8 @@ pub struct ControlItemRenderer {
 }
 
 impl ControlItemRenderer {
-    pub fn new(kind: AgentToolbarItemKind) -> Self {
-        Self {
-            kind: Some(kind),
-            custom_label: None,
-            custom_icon: None,
-            identifier: None,
-            removable: true,
-            draggable_state: Default::default(),
-            tooltip_state_handle: Default::default(),
-            remove_button_state_handle: Default::default(),
-        }
-    }
-
     pub fn new_with_label_and_icon(label: String, icon: crate::ui_components::icons::Icon) -> Self {
         Self {
-            kind: None,
             custom_label: Some(label),
             custom_icon: Some(icon),
             identifier: None,
@@ -196,21 +158,11 @@ impl ControlItemRenderer {
     }
 
     pub(crate) fn display_label(&self) -> &str {
-        if let Some(label) = &self.custom_label {
-            label
-        } else if let Some(kind) = &self.kind {
-            kind.display_label()
-        } else {
-            "Unknown"
-        }
+        self.custom_label.as_deref().unwrap_or("Unknown")
     }
 
     fn display_icon(&self) -> Option<crate::ui_components::icons::Icon> {
-        if let Some(icon) = self.custom_icon {
-            Some(icon)
-        } else {
-            self.kind.as_ref().and_then(|k| k.icon())
-        }
+        self.custom_icon
     }
 
     fn render_internal(
@@ -380,38 +332,6 @@ impl ChipConfigurator {
             .collect();
     }
 
-    /// Initialize for `LeftRightZones` layout with `AgentToolbarItemKind` lists.
-    pub fn open_left_right_zones_with_items(
-        &mut self,
-        left_items: Vec<AgentToolbarItemKind>,
-        right_items: Vec<AgentToolbarItemKind>,
-        available: Vec<AgentToolbarItemKind>,
-        appearance: &Appearance,
-    ) {
-        self.reset();
-        self.left_chips = left_items
-            .iter()
-            .filter_map(|kind| ConfigurableItem::from_toolbar_item(kind.clone(), appearance))
-            .collect();
-        self.right_chips = right_items
-            .iter()
-            .filter_map(|kind| ConfigurableItem::from_toolbar_item(kind.clone(), appearance))
-            .collect();
-        let used_set: Vec<_> = left_items
-            .iter()
-            .chain(right_items.iter())
-            .cloned()
-            .collect();
-        self.unused_chips = available
-            .into_iter()
-            .filter_map(|kind| {
-                (!used_set.contains(&kind))
-                    .then(|| ConfigurableItem::from_toolbar_item(kind, appearance))
-                    .flatten()
-            })
-            .collect();
-    }
-
     pub fn reset(&mut self) {
         self.used_chips.clear();
         self.left_chips.clear();
@@ -427,20 +347,6 @@ impl ChipConfigurator {
             || !self.left_chips.is_empty()
             || !self.right_chips.is_empty()
             || !self.unused_chips.is_empty()
-    }
-
-    pub fn left_item_kinds(&self) -> Vec<AgentToolbarItemKind> {
-        self.left_chips
-            .iter()
-            .filter_map(|r| r.item_kind())
-            .collect()
-    }
-
-    pub fn right_item_kinds(&self) -> Vec<AgentToolbarItemKind> {
-        self.right_chips
-            .iter()
-            .filter_map(|r| r.item_kind())
-            .collect()
     }
 
     pub fn handle_action<V: View>(
