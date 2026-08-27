@@ -1,6 +1,4 @@
-use onboarding::SelectedSettings;
-
-use crate::terminal::view::OnboardingIntention;
+use onboarding::{OnboardingIntention, SelectedSettings};
 
 /// Configuration for starting the agent onboarding tutorial.
 #[derive(Debug, Clone)]

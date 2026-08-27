@@ -3,7 +3,6 @@ use std::ops::Range;
 use std::path::PathBuf;
 
 use command_corrections::Correction;
-pub use onboarding::OnboardingIntention;
 use pathfinder_geometry::vector::Vector2F;
 use session_sharing_protocol::common::Role;
 use session_sharing_protocol::sharer::RoleUpdateReason;
@@ -36,23 +35,6 @@ use crate::terminal::model::terminal_model::{BlockIndex, WithinModel};
 use crate::terminal::shared_session::SharedSessionActionSource;
 use crate::terminal::view::RichContentSecretTooltipInfo;
 use crate::workflows::workflow::Workflow;
-
-/// Version of the agent onboarding flow (non-legacy).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AgentOnboardingVersion {
-    UniversalInput {
-        has_project: bool,
-    },
-    AgentModality {
-        has_project: bool,
-        intention: OnboardingIntention,
-    },
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum OnboardingVersion {
-    Agent(AgentOnboardingVersion),
-}
 
 /// This represents whether entering a subshell for a particular command should become automatic in
 /// the future, or to ask again.
@@ -243,7 +225,6 @@ pub enum TerminalAction {
     AliasExpansionBanner(AliasExpansionBannerAction),
     OpenInWarpBanner(OpenInWarpBannerAction),
     OpenBlockFilterEditor(BlockIndex),
-    OnboardingFlow(OnboardingVersion),
     ImportSettings,
     StopSharingCurrentSession {
         source: SharedSessionActionSource,
@@ -266,9 +247,6 @@ pub enum TerminalAction {
     OpenSharedSessionViewerRoleMenu,
     RequestSharedSessionRole(Role),
     DragAndDropFiles(Vec<String>),
-    /// Toggle voice input for CLI agent footer (dispatched from alt screen/blocklist when footer is visible)
-    #[cfg(feature = "voice_input")]
-
     HyperlinkClick(HyperlinkUrl),
     AttemptLoginGatedFeature,
     StartFileDropTarget,
@@ -453,7 +431,6 @@ impl fmt::Debug for TerminalAction {
             OpenBlockFilterEditor(block_index) => {
                 write!(f, "OpenBlockFilterEditor({block_index:?})")
             }
-            OnboardingFlow(version) => write!(f, "OnboardingFlow({version:?})"),
             ImportSettings => write!(f, "ImportSettings"),
             StopSharingCurrentSession { source } => {
                 write!(f, "StopSharingCurrentSession({source:?})")
@@ -478,7 +455,6 @@ impl fmt::Debug for TerminalAction {
             }
             MiddleClickOnInput => write!(f, "MiddleClickOnInput"),
             DragAndDropFiles(_) => write!(f, "DragAndDropFiles"),
-            #[cfg(feature = "voice_input")]
             HyperlinkClick(hyperlink_url) => write!(f, "HyperlinkClick({hyperlink_url:?})"),
             AttemptLoginGatedFeature => write!(f, "AttemptLoginGatedFeature"),
             StartFileDropTarget => write!(f, "StartFileDropTarget"),

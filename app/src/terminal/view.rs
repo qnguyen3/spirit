@@ -44,7 +44,7 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use action::RememberForWarpification;
-pub use action::{AgentOnboardingVersion, OnboardingIntention, OnboardingVersion, TerminalAction};
+pub use action::TerminalAction;
 use ai::api_keys::{ApiKeyManager, AwsCredentialsState};
 use ai::index::full_source_code_embedding::manager::{BuildSource, CodebaseIndexManager};
 use async_channel::{Receiver, Sender};
@@ -110,7 +110,7 @@ use warpui::accessibility::{AccessibilityContent, ActionAccessibilityContent, Wa
 use warpui::assets::asset_cache::{AssetCache, AssetCacheEvent};
 use warpui::r#async::executor::Background;
 use warpui::r#async::{SpawnedFutureHandle, Timer};
-use warpui::clipboard::ClipboardContent;
+use warpui::clipboard::{ClipboardContent, ImageData};
 use warpui::clipboard_utils::get_image_filepaths_from_paths;
 use warpui::elements::new_scrollable::{
     AxisConfiguration, ClippedAxisConfiguration, DualAxisConfig, NewScrollableElement,
@@ -1781,6 +1781,20 @@ pub struct TerminalViewStateChange {
     pub state: TerminalViewState,
     pub timestamp: Instant,
 }
+const CLI_AGENT_IMAGE_PASTE_DELAY: Duration = Duration::from_millis(300);
+
+/// Bytes that simulate a "paste image from clipboard" keystroke for the
+/// foreground CLI agent. `0x16` is `Ctrl+V` (SYN); on Windows Claude Code
+/// listens for `Alt+V` (`ESC` + `'v'`) instead. Mirrored from the equivalent
+/// branch in `TerminalView::paste`.
+fn cli_agent_paste_keystroke_bytes() -> Vec<u8> {
+    if cfg!(windows) {
+        vec![0x1b, b'v']
+    } else {
+        vec![0x16]
+    }
+}
+
 #[derive(Clone, Copy)]
 struct CtrlCActiveBlockState {
     is_long_running: bool,
@@ -5639,10 +5653,8 @@ impl TerminalView {
                             // `block_completed_callbacks` are scheduled via
                             // `on_next_block_completed` and expect the block
                             // to have finished. OSC 7 fires mid-block, so
-                            // draining them here would run callbacks like
-                            // `maybe_set_pending_repo_init_path`'s project
-                            // init before the actual command (e.g. `git
-                            // clone`) finishes.
+                            // draining them here would run callbacks before
+                            // the actual command (e.g. `git clone`) finishes.
                             if source == BlockMetadataUpdateSource::Precmd {
                                 let callbacks =
                                     me.block_completed_callbacks.drain(..).collect_vec();
@@ -6050,78 +6062,76 @@ impl TerminalView {
                             ));
                     }
                 } else {
-                    if !has_ai_metadata {
-                        if let Some(ssh_host) =
-                            parse_interactive_ssh_command(warpify_command).map(|cmd| cmd.host)
-                        {
-                            self.warpify_state
-                                .set_pending_ssh_host(warpify_command.to_string(), ssh_host);
-                            self.model.lock().start_notify_on_end_of_ssh_login();
-                            ctx.emit(Event::TerminalViewStateChanged);
-                        } else {
-                            self.warpify_state.clear_pending_ssh_host();
+                    if let Some(ssh_host) =
+                        parse_interactive_ssh_command(warpify_command).map(|cmd| cmd.host)
+                    {
+                        self.warpify_state
+                            .set_pending_ssh_host(warpify_command.to_string(), ssh_host);
+                        self.model.lock().start_notify_on_end_of_ssh_login();
+                        ctx.emit(Event::TerminalViewStateChanged);
+                    } else {
+                        self.warpify_state.clear_pending_ssh_host();
 
-                            ctx.spawn(
-                                Timer::after(Duration::from_millis(
-                                    LONG_RUNNING_COMMAND_DURATION_MS,
-                                )),
-                                move |me, _, ctx| {
-                                    // Detect CLI agent and create session before
-                                    // showing the footer, so the session drives
-                                    // the footer rather than the other way around.
-                                    let detection = {
-                                        let model = me.model.lock();
-                                        me.detect_cli_agent_from_model(&model, ctx)
-                                    };
-                                    let view_id = me.view_id;
-                                    CLIAgentSessionsModel::handle(ctx).update(
+                        ctx.spawn(
+                            Timer::after(Duration::from_millis(
+                                LONG_RUNNING_COMMAND_DURATION_MS,
+                            )),
+                            move |me, _, ctx| {
+                                // Detect CLI agent and create session before
+                                // showing the footer, so the session drives
+                                // the footer rather than the other way around.
+                                let detection = {
+                                    let model = me.model.lock();
+                                    me.detect_cli_agent_from_model(&model, ctx)
+                                };
+                                let view_id = me.view_id;
+                                CLIAgentSessionsModel::handle(ctx).update(
+                                    ctx,
+                                    |sessions_model, ctx| match detection {
+                                        Some((agent, ref custom_command_prefix))
+                                            if !sessions_model
+                                                .session(view_id)
+                                                .is_some_and(|s| s.agent == agent) =>
+                                        {
+                                            let remote_host =
+                                                me.active_session_remote_host(ctx);
+                                            let should_auto_toggle_input = false;
+                                            sessions_model.set_session(
+                                                view_id,
+                                                CLIAgentSession {
+                                                    agent,
+                                                    status: CLIAgentSessionStatus::InProgress,
+                                                    session_context:
+                                                        CLIAgentSessionContext::default(),
+                                                    input_state: CLIAgentInputState::Closed,
+                                                    should_auto_toggle_input,
+                                                    listener: None,
+                                                    plugin_version: None,
+                                                    remote_host,
+                                                    draft_text: None,
+                                                    custom_command_prefix:
+                                                        custom_command_prefix.clone(),
+                                                    received_rich_notification: false,
+                                                },
+                                                ctx,
+                                            );
+                                        }
+                                        _ => {}
+                                    },
+                                );
+
+                                // Codex doesn't use the sentinel-based plugin protocol,
+                                // so create the listener proactively on command detection
+                                // (rather than waiting for a SessionStart event).
+                                if matches!(detection, Some((CLIAgent::Codex, _))) {
+                                    me.register_cli_agent_listener_without_session_start_event(
+                                        CLIAgent::Codex,
                                         ctx,
-                                        |sessions_model, ctx| match detection {
-                                            Some((agent, ref custom_command_prefix))
-                                                if !sessions_model
-                                                    .session(view_id)
-                                                    .is_some_and(|s| s.agent == agent) =>
-                                            {
-                                                let remote_host =
-                                                    me.active_session_remote_host(ctx);
-                                                let should_auto_toggle_input = false;
-                                                sessions_model.set_session(
-                                                    view_id,
-                                                    CLIAgentSession {
-                                                        agent,
-                                                        status: CLIAgentSessionStatus::InProgress,
-                                                        session_context:
-                                                            CLIAgentSessionContext::default(),
-                                                        input_state: CLIAgentInputState::Closed,
-                                                        should_auto_toggle_input,
-                                                        listener: None,
-                                                        plugin_version: None,
-                                                        remote_host,
-                                                        draft_text: None,
-                                                        custom_command_prefix:
-                                                            custom_command_prefix.clone(),
-                                                        received_rich_notification: false,
-                                                    },
-                                                    ctx,
-                                                );
-                                            }
-                                            _ => {}
-                                        },
                                     );
+                                }
 
-                                    // Codex doesn't use the sentinel-based plugin protocol,
-                                    // so create the listener proactively on command detection
-                                    // (rather than waiting for a SessionStart event).
-                                    if matches!(detection, Some((CLIAgent::Codex, _))) {
-                                        me.register_cli_agent_listener_without_session_start_event(
-                                            CLIAgent::Codex,
-                                            ctx,
-                                        );
-                                    }
-
-                                },
-                            );
-                        }
+                            },
+                        );
                     }
 
                     self.set_current_state(TerminalViewState::LongRunning, ctx);
@@ -7680,11 +7690,6 @@ impl TerminalView {
             },
             ctx,
         );
-
-        #[cfg(feature = "voice_input")]
-        voice_input::VoiceInput::handle(ctx).update(ctx, |voice_input, _| {
-            voice_input.should_suppress_new_feature_popup = true;
-        });
     }
 
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
@@ -7704,14 +7709,6 @@ impl TerminalView {
             ctx,
         );
 
-        if self.block_onboarding_active {
-            #[cfg(feature = "voice_input")]
-            {
-                voice_input::VoiceInput::handle(ctx).update(ctx, |voice_input, _| {
-                    voice_input.should_suppress_new_feature_popup = true;
-                });
-            }
-        }
     }
 
     pub fn interrupt_onboarding_blocks(&mut self, ctx: &mut ViewContext<Self>) {
@@ -7733,41 +7730,13 @@ impl TerminalView {
     }
 
     /// Opens a folder that the user may or may not have opened in the past
-    pub fn open_repo_folder(
-        &mut self,
-        path: String,
-        should_init_repo: bool,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        let path_buf = PathBuf::from(&path);
-
-        if should_init_repo {
-            self.maybe_set_pending_repo_init_path(path_buf);
-        }
-
+    pub fn open_repo_folder(&mut self, path: String, ctx: &mut ViewContext<Self>) {
         let escaped = self.shell_family(ctx).shell_escape(&path);
         self.input.update(ctx, |input, ctx| {
             input.try_execute_command(&format!("cd {escaped}"), ctx);
         });
 
         self.toggle_left_panel_file_tree(true, ctx);
-    }
-
-    pub fn create_new_project(&mut self, prompt: String, ctx: &mut ViewContext<Self>) {
-        self.input.update(ctx, |input, ctx| {
-            input.initiate_create_new_project(prompt, ctx);
-        });
-    }
-
-    pub fn maybe_set_pending_repo_init_path(&mut self, path: PathBuf) {
-        self.on_next_block_completed(move |me, ctx| {
-            if me
-                .current_local_repo_path()
-                .is_some_and(|repo_path| repo_path == path)
-            {
-                me.init_project_and_suppress_banners(path, ctx);
-            }
-        });
     }
 
     /// Open the Environment Management pane.
@@ -7779,11 +7748,6 @@ impl TerminalView {
         self.block_onboarding_active = false;
         self.onboarding_prompt_block = None;
         self.settings_import_onboarding_block = None;
-
-        #[cfg(feature = "voice_input")]
-        voice_input::VoiceInput::handle(ctx).update(ctx, |voice_input, _| {
-            voice_input.should_suppress_new_feature_popup = false;
-        });
         let _ = ctx;
     }
 
@@ -7809,22 +7773,6 @@ impl TerminalView {
             .as_ref(ctx)
             .selected_text(ctx);
         if text.is_empty() { None } else { Some(text) }
-    }
-}
-
-/// Builds the context-menu label for forking an AI conversation from a given query.
-fn fork_label_for_query(query: &str) -> String {
-    if query.is_empty() {
-        "Fork from last query".to_string()
-    } else {
-        let first_line = query.lines().next().unwrap_or(query).trim();
-        let chars: Vec<char> = first_line.chars().take(21).collect();
-        let (truncated, suffix) = if chars.len() > 20 {
-            (chars[..20].iter().collect::<String>(), "…")
-        } else {
-            (chars.iter().collect::<String>(), "")
-        };
-        format!("Fork from \"{truncated}{suffix}\"")
     }
 }
 
@@ -8037,6 +7985,38 @@ impl TerminalView {
         }
     }
 
+    fn after_command_correction_generation(
+        &mut self,
+        corrections: Vec<Correction>,
+        ctx: &mut ViewContext<TerminalView>,
+    ) {
+        if let Some(correction) = corrections.into_iter().next() {
+            // Set the autosuggestion only if the input is still empty
+            self.input.update(ctx, |input, ctx| {
+                if input.buffer_text(ctx).is_empty() {
+                    input.set_autosuggestion(
+                        correction.command.as_str(),
+                        AutosuggestionType::Command {
+                            was_intelligent_autosuggestion: false,
+                        },
+                        ctx,
+                    );
+                }
+            });
+
+            let a11y_content = AccessibilityContent::new(
+                format!("Suggested corrected command: {}", correction.command),
+                "Press right arrow to insert or keep editing to ignore",
+                WarpA11yRole::HelpRole,
+            );
+            ctx.emit_a11y_content(a11y_content);
+
+            self.most_recent_command_correction = Some(correction);
+
+            ctx.notify();
+        }
+    }
+
     fn can_suggest_alias_expansion(&mut self, ctx: &mut ViewContext<TerminalView>) -> bool {
         let has_user_seen_banner: bool = ctx
             .private_user_preferences()
@@ -8192,6 +8172,54 @@ impl TerminalView {
                         ctx
                     );
                 }
+            }
+            _ => {}
+        }
+    }
+
+    /// Shared logic for sending a desktop notification (or showing a discovery banner)
+    /// for a CLI agent status change.
+    fn send_agent_desktop_notification_or_show_banner(
+        &mut self,
+        trigger: NotificationsTrigger,
+        title: String,
+        description: String,
+        agent_variant: Option<NotificationAgentVariant>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let notification_settings = SessionSettings::as_ref(ctx).notifications.value().clone();
+
+        match notification_settings.mode {
+            NotificationsMode::Unset => {
+                if let NotificationsDiscoveryBanner::Triggered(trigger) =
+                    self.inline_banners_state.notifications_discovery_banner
+                {
+                    // if the banner is not yet open, but there is some trigger,
+                    // we were likely waiting on the block to finish so insert it now
+                    self.insert_notifications_discovery_banner(trigger, ctx);
+                } else {
+                    // otherwise, insert a discovery banner for the current trigger
+                    self.insert_notifications_discovery_banner(trigger, ctx);
+                }
+            }
+            NotificationsMode::Enabled => {
+                let success = matches!(trigger, NotificationsTrigger::AgentTaskCompleted(true));
+                if success {
+                    if !notification_settings.is_agent_task_completed_enabled {
+                        return;
+                    }
+                } else if !notification_settings.is_needs_attention_enabled {
+                    return;
+                }
+                let notification_content = trigger.create_notification_content(title, description);
+                ctx.emit(Event::SendNotification(notification_content));
+                send_telemetry_from_ctx!(
+                    TelemetryEvent::NotificationSent {
+                        trigger,
+                        agent_variant,
+                    },
+                    ctx
+                );
             }
             _ => {}
         }
@@ -8477,15 +8505,6 @@ impl TerminalView {
     /// size of the entire terminal (block_list + input OR alt-grid OR shared session viewer loading) as its
     /// argument.
     fn after_terminal_view_layout(&mut self, size: Vector2F, ctx: &mut ViewContext<Self>) {
-        // A pending `jump_to_latest_agent_message` enters the agent view, which
-        // mounts the target block over this layout. Now that layout is done the
-        // block exists, so scroll to it — once. Doing it here (after layout, after
-        // the agent view's own entry scroll) means a single shot lands without any
-        // retry loop. Each agent turn is one block, so this lands on its top.
-        if let Some(exchange_id) = self.pending_agent_scroll_target.take() {
-            self.scroll_to_exchange(exchange_id, ctx);
-        }
-
         let size_update = SizeUpdateBuilder::after_layout(*self.size_info, size).build(self, ctx);
         self.resize_internal(size_update, ctx);
 
@@ -8655,6 +8674,118 @@ impl TerminalView {
                         .shell_family()
                 })
             })
+    }
+
+    /// Mirrors the CLI-agent Cmd+V image-paste path in [`Self::paste`]
+    /// for dropped image files: reads each file, writes its bytes to the
+    /// system clipboard as image data, and sends the agent's paste keystroke
+    /// to the PTY so the agent reads the image directly.
+    fn paste_dropped_images_to_cli_agent(
+        &mut self,
+        image_filepaths: Vec<String>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        use crate::util::image::{
+            MAX_IMAGE_SIZE_BYTES_FOR_CLI_AGENT, MIME_SNIFF_BYTES, infer_mime_type,
+        };
+
+        if image_filepaths.is_empty() {
+            return;
+        }
+        let spawner = ctx.spawner();
+        ctx.spawn(
+            async move {
+                for path_str in image_filepaths {
+                    // Stat first so a multi-GB drop doesn't load into memory
+                    // before we reject it. CLI agents handle their own
+                    // compression, so the cap only exists to bound memory use.
+                    match async_fs::metadata(&path_str).await {
+                        Ok(meta) if (meta.len() as usize) > MAX_IMAGE_SIZE_BYTES_FOR_CLI_AGENT => {
+                            let filename = Path::new(&path_str)
+                                .file_name()
+                                .map(|n| n.to_string_lossy().into_owned())
+                                .unwrap_or_else(|| path_str.clone());
+                            let limit_mb = MAX_IMAGE_SIZE_BYTES_FOR_CLI_AGENT / 1_000_000;
+                            let msg = format!(
+                                "{filename} is too large to send to the agent (limit {limit_mb}MB)."
+                            );
+                            let _ = spawner
+                                .spawn(move |me, ctx| {
+                                    me.show_error_toast(msg, ctx);
+                                })
+                                .await;
+                            continue;
+                        }
+                        Ok(_) => {}
+                        Err(e) => {
+                            report_error!(
+                                anyhow::Error::new(e).context("Failed to stat dropped image"),
+                                extra: { "path" => %path_str }
+                            );
+                            continue;
+                        }
+                    }
+
+                    let bytes = match async_fs::read(&path_str).await {
+                        Ok(b) => b,
+                        Err(e) => {
+                            report_error!(
+                                anyhow::Error::new(e).context("Failed to read dropped image"),
+                                extra: { "path" => %path_str }
+                            );
+                            continue;
+                        }
+                    };
+                    let path = Path::new(&path_str);
+                    let filename = path.file_name().map(|n| n.to_string_lossy().into_owned());
+                    let sniff_len = bytes.len().min(MIME_SNIFF_BYTES);
+                    let mime_type = infer_mime_type(path, &bytes[..sniff_len]);
+
+                    // Hop back to the view to write the clipboard + paste
+                    // keystroke. Bail if the CLI agent session disappeared,
+                    // OR if the agent's long-running block exited while we
+                    // were reading off-thread — without that second check
+                    // the paste byte would leak into the shell after the
+                    // agent quit, since the session entry can outlive its
+                    // foreground block.
+                    let should_continue = spawner
+                        .spawn(move |me, ctx| {
+                            if !me.has_active_cli_agent_session(ctx) {
+                                return false;
+                            }
+                            let still_long_running = me
+                                .model
+                                .lock()
+                                .block_list()
+                                .active_block()
+                                .is_active_and_long_running();
+                            if !still_long_running {
+                                return false;
+                            }
+                            ctx.clipboard().write(ClipboardContent {
+                                images: Some(vec![ImageData {
+                                    data: bytes,
+                                    mime_type,
+                                    filename,
+                                }]),
+                                ..Default::default()
+                            });
+                            me.write_user_bytes_to_pty(cli_agent_paste_keystroke_bytes(), ctx);
+                            true
+                        })
+                        .await;
+
+                    if !matches!(should_continue, Ok(true)) {
+                        return;
+                    }
+
+                    // Give the CLI agent time to read from the clipboard
+                    // before we overwrite it with the next image.
+                    Timer::after(CLI_AGENT_IMAGE_PASTE_DELAY).await;
+                }
+            },
+            |_, _, _| {},
+        );
     }
 
     fn paste(&mut self, middle_click: bool, ctx: &mut ViewContext<Self>) {
@@ -8835,18 +8966,6 @@ impl TerminalView {
         if !self.selected_blocks.is_empty() {
             self.copy_blocks(BlockEntity::FilteredOutput, ctx);
         }
-    }
-
-    /// Returns the rich-content link currently hovered inside the AI block view whose view id is
-    /// `rich_content_view_id`, if any. Used to surface a link-specific right-click context menu.
-    fn hovered_rich_content_link_for_view(
-        &self,
-        rich_content_view_id: EntityId,
-        ctx: &AppContext,
-    ) -> Option<RichContentLink> {
-        self.ai_block_handle_by_view_id(rich_content_view_id)?
-            .as_ref(ctx)
-            .hovered_rich_content_link()
     }
 
     fn context_menu_items(
@@ -9474,8 +9593,6 @@ impl TerminalView {
         self.close_context_menu(ctx, false);
         self.close_block_filter_editor(ctx);
         self.close_find_bar(ctx);
-        self.close_environment_setup_mode_selector(ctx);
-
         self.input.update(ctx, |input, ctx| {
             input.close_overlays(true, ctx);
         });
@@ -10214,10 +10331,9 @@ impl TerminalView {
             let model = self.model.lock();
             model.secret_at_point(position).map(|(handle, _)| handle)
         };
-        let is_in_agent_mode_block = self.is_position_in_agent_mode_conversation(position);
         if let Some(handle) = handle {
             self.open_secret_tool_tip = Some(SecretTooltip::Grid {
-                is_agent_mode: is_in_agent_mode_block,
+                is_agent_mode: false,
                 tooltip: position.replace_inner(handle),
             });
             self.focus_terminal(ctx);
@@ -10394,21 +10510,6 @@ impl TerminalView {
         show_secret: bool,
         ctx: &mut ViewContext<Self>,
     ) {
-        for rich_content in self.rich_content_views.iter() {
-            if let Some(ai_metadata) = rich_content.ai_block_metadata()
-                && ai_metadata.ai_block_handle.id() == tooltip_info.view_id
-            {
-                ai_metadata.ai_block_handle.update(ctx, |view, _ctx| {
-                    view.set_secret_redaction_state(
-                        &tooltip_info.location,
-                        &tooltip_info.secret_range,
-                        !show_secret,
-                    );
-                });
-                break;
-            }
-        }
-
         self.dismiss_tooltips(ctx);
         send_telemetry_from_ctx!(
             TelemetryEvent::ToggleObfuscateSecret {
@@ -11364,24 +11465,11 @@ impl TerminalView {
         ctx.notify();
     }
 
-    fn rerender_rich_content_blocks(&mut self, ctx: &mut ViewContext<Self>) {
-        for rich_content in self.rich_content_views.iter() {
-            if let Some(ai_metadata) = rich_content.ai_block_metadata() {
-                ai_metadata
-                    .ai_block_handle
-                    .update(ctx, |_ai_block, ctx| ctx.notify());
-            }
-        }
-    }
-
     fn reset_selection_to_single_block(
         &mut self,
         block_index: BlockIndex,
         ctx: &mut ViewContext<Self>,
     ) {
-        self.agent_transcript_selection =
-            Some(AgentTranscriptNavigableItem::ShellBlock(block_index));
-        self.sync_agent_transcript_navigation_target(ctx);
         self.change_block_selections(
             |selected_blocks| {
                 selected_blocks.reset_to_single(block_index);
@@ -11392,8 +11480,6 @@ impl TerminalView {
     }
 
     fn clear_selected_blocks(&mut self, ctx: &mut ViewContext<Self>) {
-        self.agent_transcript_selection = None;
-        self.sync_agent_transcript_navigation_target(ctx);
         self.change_block_selections(
             |selected_blocks| {
                 selected_blocks.reset();
@@ -11472,16 +11558,6 @@ impl TerminalView {
         // except for the rich content block with a matching view ID.
         for rich_content in self.rich_content_views.iter() {
             match rich_content.metadata() {
-                Some(RichContentMetadata::AIBlock(ai_metadata)) => {
-                    if exempt_rich_content_view_id
-                        .is_some_and(|view_id| ai_metadata.ai_block_handle.id() == view_id)
-                    {
-                        continue;
-                    }
-                    ai_metadata
-                        .ai_block_handle
-                        .update(ctx, |ai_block, ctx| ai_block.clear_all_selections(ctx));
-                }
                 Some(RichContentMetadata::EnvVarCollectionBlock {
                     env_var_collection_block_handle,
                     ..
@@ -12058,18 +12134,7 @@ impl TerminalView {
                 ctx.emit(Event::Escape)
             }
             InputEvent::InputStateChanged(_) => {}
-            InputEvent::InputEmptyStateChanged { is_empty, reason } => {
-                // Update the universal developer input button bar with the new empty state
-                let universal_developer_input_button_bar = self
-                    .input
-                    .as_ref(ctx)
-                    .universal_developer_input_button_bar()
-                    .clone();
-                universal_developer_input_button_bar.update(ctx, |button_bar, ctx| {
-                    button_bar.update_input_empty_state(*is_empty, ctx);
-                });
-
-            }
+            InputEvent::InputEmptyStateChanged { .. } => {}
             InputEvent::SyncInput(input) => {
                 if !SyncedInputState::as_ref(ctx).is_syncing_any_inputs(ctx.window_id()) {
                     return;
@@ -12156,9 +12221,7 @@ impl TerminalView {
             InputEvent::OpenFilesPalette { source } => {
                 ctx.emit(Event::OpenFilesPalette { source: *source })
             }
-            InputEvent::SubmitCLIAgentInput { text } => {
-                self.submit_cli_agent_rich_input(text.clone(), ctx);
-            }
+            InputEvent::SubmitCLIAgentInput { .. } => {}
             InputEvent::ShowToast { message, flavor } => {
                 ctx.emit(Event::ShowToast {
                     message: message.clone(),
@@ -12176,20 +12239,13 @@ impl TerminalView {
                 self.open_share_session_modal(SharedSessionActionSource::FooterChip, ctx);
             }
             InputEvent::StartRemoteControl => {
-                let source = SharedSessionSource::user(
-                    self.active_conversation_task_id(ctx).map(|t| t.to_string()),
-                );
+                let source = SharedSessionSource::user(None);
                 self.attempt_to_share_session(
                     SharedSessionScrollbackType::All,
                     Some(SharedSessionActionSource::FooterChip),
                     source,
                     true,
                     ctx,
-                );
-            }
-            InputEvent::OpenCloudModeV2EnvironmentCreationModal => {
-                ctx.dispatch_typed_action(
-                    &WorkspaceAction::ShowCloudModeV2EnvironmentCreationModal,
                 );
             }
         }
@@ -12917,15 +12973,6 @@ impl TerminalView {
             .map(|range| range.pivot())
     }
 
-    pub fn auth_secret_delete_confirmation_dialog_element(
-        &self,
-        ctx: &AppContext,
-    ) -> Option<Box<dyn Element>> {
-        self.input
-            .as_ref(ctx)
-            .auth_secret_delete_confirmation_dialog_element(ctx)
-    }
-
     /// Returns the CLI agent currently active in this terminal, if any.
     pub fn active_cli_agent(&self, ctx: &AppContext) -> Option<super::CLIAgent> {
         if !FeatureFlag::HoaCodeReview.is_enabled() {
@@ -13105,12 +13152,6 @@ impl TerminalView {
             )
         };
 
-        // On Local and Dev channels, append an indicator when NLD was overridden.
-        // Skip the honor_ps1 case since there's no good place to display the extra text.
-        if !block.honor_ps1() && block.nld_overridden() && ChannelState::enable_debug_features() {
-            prompt.push_str(" (nld overridden)");
-        }
-
         prompt
     }
 
@@ -13289,7 +13330,6 @@ impl TerminalView {
             obfuscate_secrets: get_secret_obfuscation_mode(app),
             hovered_secret: self.hovered_secret,
             horizontal_clipped_scroll_state: self.horizontal_clipped_scroll_state.clone(),
-            ai_render_context: self.ai_render_context.clone(),
         }
     }
 
@@ -13673,7 +13713,7 @@ impl TerminalView {
             && ContextFlag::CreateSharedSession.is_enabled())
             || FeatureFlag::ViewingSharedSessions.is_enabled()
         {
-            let is_shared_ambient_agent_session = model.is_shared_ambient_agent_session();
+            let is_shared_ambient_agent_session = false;
             match &self.inline_banners_state.shared_session_banner_state {
                 SharedSessionBanners::ActiveShare {
                     started_banner_id,
@@ -13795,18 +13835,6 @@ impl TerminalView {
         }
         alt_screen_element =
             alt_screen_element.with_shared_session_presence(self.shared_session_presence_manager());
-
-        // Pass voice input toggle key if the CLI agent footer should be rendered
-        #[cfg(feature = "voice_input")]
-        if self.should_render_use_agent_footer(app)
-            && self.use_agent_footer.as_ref(app).has_cli_agent(app)
-        {
-            let voice_key = AISettings::as_ref(app)
-                .voice_input_toggle_key
-                .value()
-                .to_key_code();
-            alt_screen_element = alt_screen_element.with_voice_input_toggle_key(voice_key);
-        }
 
         let required_terminal_height = self.size_info.cell_height_px.as_f32() * (rows as f32)
             + 2. * self.size_info.padding_y_px().as_f32();
@@ -14058,18 +14086,6 @@ impl TerminalView {
 
         if self.should_hide_cli_agent_cursor_cell(app) {
             element = element.with_hide_cursor_cell();
-        }
-
-        // Pass voice input toggle key if the CLI agent footer should be rendered
-        #[cfg(feature = "voice_input")]
-        if self.should_render_use_agent_footer(app)
-            && self.use_agent_footer.as_ref(app).has_cli_agent(app)
-        {
-            let voice_key = AISettings::as_ref(app)
-                .voice_input_toggle_key
-                .value()
-                .to_key_code();
-            element = element.with_voice_input_toggle_key(voice_key);
         }
 
         element = element.with_filtered_blocks(filtered_blocks);
@@ -15150,39 +15166,18 @@ impl TerminalView {
         let image_filepaths = get_image_filepaths_from_paths(paths);
 
         // CLI-agent paste path: when a CLI agent (e.g. Claude Code) is the
-        // foreground long-running process and the user is interacting with its
-        // TUI directly (rich input closed), hand image drops to the agent the
+        // foreground long-running process, hand image drops to the agent the
         // same way Cmd+V does at `TerminalView::paste` — write each image to
         // the system clipboard and send the agent's paste keystroke to the
         // PTY. Without this branch the path string would be shell-escaped and
-        // typed into the agent's prompt. When the rich input is open we leave
-        // the existing chip-attach flow alone, since that's where the user
-        // explicitly asked the drop to land.
+        // typed into the agent's prompt.
         if !image_filepaths.is_empty()
             && image_filepaths.len() == paths.len()
             && is_in_long_running_command
             && self.has_active_cli_agent_session(ctx)
-            && !CLIAgentSessionsModel::as_ref(ctx).is_input_open(self.view_id)
         {
             self.paste_dropped_images_to_cli_agent(image_filepaths, ctx);
             return;
-        }
-
-        if !is_in_long_running_command {
-            // Check for image file paths to be auto-attached
-            let num_images = image_filepaths.len();
-
-            // If we have image file paths, try to process them for attachment
-            if num_images > 0 {
-                let num_attached = self.input.update(ctx, |input, ctx| {
-                    input.handle_pasted_or_dragdropped_image_filepaths(image_filepaths, ctx)
-                });
-
-                // If dropped only image file paths, we are done
-                if num_attached == paths.len() {
-                    return; // Return early, don't insert file paths
-                }
-            }
         }
 
         let Some(session) = self
@@ -15360,10 +15355,7 @@ impl TerminalView {
         let model = self.model.lock();
 
         // Shared session viewers can't initiate warpification currently.
-        // Don't show the warpify footer when an agent is monitoring the command either.
-        if model.shared_session_status().is_viewer()
-            || model.block_list().active_block().is_agent_monitoring()
-        {
+        if model.shared_session_status().is_viewer() {
             return;
         }
         drop(model);
@@ -15762,7 +15754,6 @@ impl TypedActionView for TerminalView {
             | InsertMostRecentCommandCorrection
             | StopSharingCurrentSession { .. }
             | RequestSharedSessionRole(_)
-            | OnboardingFlow(_)
             | ImportSettings
             | DragAndDropFiles(_)
             | ToggleBlockFilterOnSelectedOrLastBlock(_)
@@ -15775,7 +15766,6 @@ impl TypedActionView for TerminalView {
                 "Use file picker to select a git repository".to_owned(),
                 WarpA11yRole::PopoverRole,
             )),
-            #[cfg(feature = "voice_input")]
             // Below are actions that are most likely irrelevant to users or are very noisy and the
             // debug version shouldn't be announced.
             Scroll { .. }
@@ -16094,29 +16084,6 @@ impl TypedActionView for TerminalView {
                 self.open_block_filter_editor(*block_index, OpenedFromClick::Yes, ctx)
             }
             VimModeBanner(action) => self.handle_vim_banner_action(*action, ctx),
-            OnboardingFlow(version) => {
-                // Don't show onboarding if it's already active or if this is a shared session or if user is anonymous
-                if self
-                    .model
-                    .lock()
-                    .shared_session_status()
-                    .is_sharer_or_viewer()
-                    || self.auth_state.is_anonymous_or_logged_out()
-                {
-                    return;
-                };
-
-                match version {
-                    OnboardingVersion::Agent(agent_version) => {
-                        // The first Agent Modality callout expects terminal mode. If the
-                        // default session mode is Agent (e.g. cloud-synced settings),
-                        // the tab may already be in agent view — exit it first.
-                        // This also removes any zero-state welcome blocks.
-                        self.exit_agent_view(ctx);
-                        self.start_agent_onboarding_tutorial(*agent_version, ctx);
-                    }
-                }
-            }
             ImportSettings => {
                 #[cfg(feature = "local_fs")]
                 {
@@ -16144,7 +16111,6 @@ impl TypedActionView for TerminalView {
             DragAndDropFiles(paths) => {
                 self.drag_and_drop_files(paths, ctx);
             }
-            #[cfg(feature = "voice_input")]
             HyperlinkClick(hyperlink) => {
                 self.open_hyperlink_uri(&hyperlink.url, ctx);
             }
@@ -16673,29 +16639,7 @@ impl View for TerminalView {
             element
         };
 
-        // Wrap with conversation details panel on the right if open.
-        // On WASM, the panel is rendered in the wasm_view instead.
-        //
-        // Use the `_from_model` variant since `render` already holds
-        // `self.model.lock()` and the task-id lookup would otherwise re-lock.
-        let should_show_panel = !cfg!(target_family = "wasm")
-            && self.is_conversation_details_panel_open
-            && self.can_show_conversation_details_ui_from_model(&model, app);
-
-        if should_show_panel {
-            Container::new(
-                Flex::row()
-                    .with_main_axis_size(warpui::elements::MainAxisSize::Max)
-                    .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-                    .with_child(Shrinkable::new(1., final_element).finish())
-                    .with_child(ChildView::new(&self.conversation_details_panel).finish())
-                    .finish(),
-            )
-            .with_border(Border::top(1.0).with_border_fill(appearance.theme().outline()))
-            .finish()
-        } else {
-            final_element
-        }
+        final_element
     }
 
     fn on_focus(&mut self, focus_ctx: &FocusContext, ctx: &mut ViewContext<Self>) {
@@ -16711,7 +16655,6 @@ impl View for TerminalView {
 
             ctx.notify();
         }
-        self.update_focused_terminal_info(ctx);
     }
 
     fn on_blur(&mut self, blur_ctx: &BlurContext, ctx: &mut ViewContext<Self>) {
@@ -16764,17 +16707,6 @@ impl View for TerminalView {
                 context.set.insert("LongRunningCommand");
             }
 
-            if active_block.is_agent_monitoring() {
-                context
-                    .set
-                    .insert(LONG_RUNNING_AGENT_REQUESTED_COMMAND_CONTEXT_KEY);
-
-                if active_block.is_eligible_for_agent_handoff() {
-                    context
-                        .set
-                        .insert(LONG_RUNNING_AGENT_REQUESTED_COMMAND_USER_TOOK_OVER_CONTEXT_KEY);
-                }
-            }
         }
 
         // Add keyboard protocol context if enabled.
