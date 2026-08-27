@@ -134,12 +134,7 @@ impl ServerApi {
         iap_token_provider: Option<Arc<dyn http_client::iap::IapTokenProvider>>,
         telemetry_api: TelemetryApi,
     ) -> Self {
-        let graphql_routing = GraphqlRoutingConfig {
-            #[cfg(feature = "agent_mode_evals")]
-            path_prefix: Some("/agent-mode-evals".to_string()),
-            #[cfg(not(feature = "agent_mode_evals"))]
-            path_prefix: None,
-        };
+        let graphql_routing = GraphqlRoutingConfig { path_prefix: None };
         let authenticated_graphql = AuthenticatedGraphqlConfig::default();
         let base_client = Arc::new(BaseClient::new(
             client,

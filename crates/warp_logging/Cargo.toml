@@ -35,4 +35,3 @@ tempfile.workspace = true
 
 [features]
 crash_reporting = ["dep:sentry", "dep:sentry-log", "warp_errors/crash_reporting"]
-agent_mode_evals = []

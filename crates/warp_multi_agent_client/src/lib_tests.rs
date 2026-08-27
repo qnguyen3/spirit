@@ -28,11 +28,7 @@ fn detects_passive_suggestion_requests() {
 
 #[test]
 fn routes_regular_and_passive_requests_to_distinct_endpoints() {
-    let prefix = if cfg!(feature = "agent_mode_evals") {
-        "agent-mode-evals"
-    } else {
-        "ai"
-    };
+    let prefix = "ai";
 
     assert!(endpoint_url(false).ends_with(&format!("/{prefix}/multi-agent")));
     assert!(endpoint_url(true).ends_with(&format!("/{prefix}/passive-suggestions")));

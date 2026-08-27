@@ -11,22 +11,15 @@ use diesel::SqliteConnection;
 use diesel::result::Error;
 
 use crate::{
-    CloudAIExecutionProfile, CloudAIExecutionProfileModel, CloudAIFact, CloudAIFactModel,
     CloudAmbientAgentEnvironment, CloudAmbientAgentEnvironmentModel, CloudEnvVarCollection,
-    CloudEnvVarCollectionModel, CloudMCPServer, CloudMCPServerModel, CloudPreference,
-    CloudPreferenceModel, CloudScheduledAmbientAgent, CloudScheduledAmbientAgentModel,
-    CloudTemplatableMCPServer, CloudTemplatableMCPServerModel, CloudWorkflowEnum,
-    CloudWorkflowEnumModel,
+    CloudEnvVarCollectionModel, CloudPreference, CloudPreferenceModel, CloudScheduledAmbientAgent,
+    CloudScheduledAmbientAgentModel, CloudWorkflowEnum, CloudWorkflowEnumModel,
 };
 
 pub enum PersistedGenericStringObject {
     Preference(CloudPreference),
     EnvVarCollection(CloudEnvVarCollection),
     WorkflowEnum(CloudWorkflowEnum),
-    AIFact(CloudAIFact),
-    MCPServer(CloudMCPServer),
-    TemplatableMCPServer(CloudTemplatableMCPServer),
-    AIExecutionProfile(CloudAIExecutionProfile),
     CloudEnvironment(CloudAmbientAgentEnvironment),
     ScheduledAmbientAgent(CloudScheduledAmbientAgent),
 }
@@ -87,54 +80,6 @@ pub fn read_generic_string_objects(
                         ))
                     })
                 }
-                JsonObjectType::AIFact => {
-                    let model = CloudAIFactModel::deserialize_owned(&object.data);
-                    model.ok().map(|model| {
-                        PersistedGenericStringObject::AIFact(CloudAIFact::new(
-                            object_id,
-                            model,
-                            to_cloud_object_metadata(metadata),
-                            cloud_object_permissions,
-                        ))
-                    })
-                }
-                JsonObjectType::MCPServer => {
-                    let model = CloudMCPServerModel::deserialize_owned(&object.data);
-                    model.ok().map(|model| {
-                        PersistedGenericStringObject::MCPServer(CloudMCPServer::new(
-                            object_id,
-                            model,
-                            to_cloud_object_metadata(metadata),
-                            cloud_object_permissions,
-                        ))
-                    })
-                }
-                JsonObjectType::TemplatableMCPServer => {
-                    let model = CloudTemplatableMCPServerModel::deserialize_owned(&object.data);
-                    model.ok().map(|model| {
-                        PersistedGenericStringObject::TemplatableMCPServer(
-                            CloudTemplatableMCPServer::new(
-                                object_id,
-                                model,
-                                to_cloud_object_metadata(metadata),
-                                cloud_object_permissions,
-                            ),
-                        )
-                    })
-                }
-                JsonObjectType::AIExecutionProfile => {
-                    let model = CloudAIExecutionProfileModel::deserialize_owned(&object.data);
-                    model.ok().map(|model| {
-                        PersistedGenericStringObject::AIExecutionProfile(
-                            CloudAIExecutionProfile::new(
-                                object_id,
-                                model,
-                                to_cloud_object_metadata(metadata),
-                                cloud_object_permissions,
-                            ),
-                        )
-                    })
-                }
                 JsonObjectType::CloudEnvironment => {
                     let model = CloudAmbientAgentEnvironmentModel::deserialize_owned(&object.data);
                     model.ok().map(|model| {
@@ -161,8 +106,13 @@ pub fn read_generic_string_objects(
                         )
                     })
                 }
-                // TODO: Implement CloudAgentConfig model when full sync support is added
-                JsonObjectType::CloudAgentConfig => None,
+                // Object kinds this client build no longer models; other clients may
+                // still create them, so skip rather than fail the whole read.
+                JsonObjectType::AIFact
+                | JsonObjectType::MCPServer
+                | JsonObjectType::TemplatableMCPServer
+                | JsonObjectType::AIExecutionProfile
+                | JsonObjectType::CloudAgentConfig => None,
             }
         })
         .collect())

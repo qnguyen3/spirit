@@ -291,32 +291,6 @@ pub enum MCPServerTelemetryError {
     TransportError(String),
 }
 
-#[cfg(not(target_family = "wasm"))]
-impl From<rmcp::RmcpError> for MCPServerTelemetryError {
-    fn from(err: rmcp::RmcpError) -> Self {
-        match err {
-            rmcp::RmcpError::ClientInitialize(err) => Self::Initialization(err.to_string()),
-            rmcp::RmcpError::ServerInitialize(err) => Self::Initialization(err.to_string()),
-            rmcp::RmcpError::TransportCreation { error, .. } => {
-                Self::TransportError(error.to_string())
-            }
-            rmcp::RmcpError::Runtime(err) => Self::InternalError(err.to_string()),
-            rmcp::RmcpError::Service(err) => match err {
-                rmcp::ServiceError::McpError(_) => Self::ResponseError(err.to_string()),
-                rmcp::ServiceError::TransportSend(_) => Self::TransportError(err.to_string()),
-                rmcp::ServiceError::TransportClosed => Self::TransportError(err.to_string()),
-                rmcp::ServiceError::UnexpectedResponse => Self::ResponseError(err.to_string()),
-                rmcp::ServiceError::Cancelled { .. } => Self::InternalError(err.to_string()),
-                rmcp::ServiceError::Timeout { .. } => Self::TransportError(err.to_string()),
-                // The enum is marked as non-exhaustive, so we need a catch-all.
-                _ => Self::InternalError(err.to_string()),
-            },
-            // The enum is marked as non-exhaustive, so we need a catch-all.
-            _ => Self::InternalError(err.to_string()),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenedSharingDialogEvent {
     pub source: SharingDialogSource,

@@ -128,11 +128,7 @@ fn endpoint_url(is_passive: bool) -> String {
     format!(
         "{}/{}/{}",
         ChannelState::server_root_url(),
-        if cfg!(feature = "agent_mode_evals") {
-            "agent-mode-evals"
-        } else {
-            "ai"
-        },
+        "ai",
         if is_passive {
             "passive-suggestions"
         } else {

@@ -2953,30 +2953,21 @@ dependencies = [
 name = "cloud_object_models"
 version = "0.1.0"
 dependencies = [
- "ai",
  "anyhow",
- "cfg-if",
  "chrono",
  "cloud_object_persistence",
  "cloud_objects",
  "diesel",
- "handlebars",
- "lazy_static",
  "log",
  "persistence",
- "regex",
- "schemars 1.0.4",
  "serde",
  "serde_json",
- "serde_regex",
  "session-sharing-protocol",
  "settings",
- "settings_value",
  "uuid",
  "warp-workflows",
  "warp_cli",
  "warp_core",
- "warp_errors",
  "warp_graphql",
  "warp_util",
 ]
@@ -8057,39 +8048,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mcp"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-channel",
- "async-trait",
- "axum",
- "cfg-if",
- "cloud_object_models",
- "futures",
- "http 1.4.0",
- "log",
- "oauth2",
- "pin-project-lite",
- "reqwest",
- "rmcp",
- "serde",
- "serde_json",
- "simple_logger",
- "sse-stream",
- "thiserror 2.0.17",
- "tokio",
- "tracing",
- "url",
- "uuid",
- "warp_core",
- "warp_errors",
- "warpui",
- "warpui_extras",
- "windows 0.62.2",
-]
-
-[[package]]
 name = "measure_time"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8599,18 +8557,6 @@ dependencies = [
  "cfg_aliases 0.2.1",
  "libc",
  "memoffset 0.9.0",
-]
-
-[[package]]
-name = "nix"
-version = "0.31.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d6d0705320c1e6ba1d912b5e37cf18071b6c2e9b7fa8215a1e8a7651966f5d3"
-dependencies = [
- "bitflags 2.13.0",
- "cfg-if",
- "cfg_aliases 0.2.1",
- "libc",
 ]
 
 [[package]]
@@ -10296,20 +10242,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "process-wrap"
-version = "9.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e842efad9119158434d193c6682e2ebee4b44d6ad801d7b349623b3f57cdf55"
-dependencies = [
- "futures",
- "indexmap 2.12.0",
- "nix 0.31.2",
- "tokio",
- "tracing",
- "windows 0.62.2",
-]
-
-[[package]]
 name = "procfs-core"
 version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11274,23 +11206,16 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "futures",
- "http 1.4.0",
- "oauth2",
  "pastey 0.2.1",
  "pin-project-lite",
- "process-wrap",
- "reqwest",
  "rmcp-macros",
  "schemars 1.0.4",
  "serde",
  "serde_json",
- "sse-stream",
  "thiserror 2.0.17",
  "tokio",
- "tokio-stream",
  "tokio-util",
  "tracing",
- "url",
 ]
 
 [[package]]
@@ -12734,19 +12659,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sse-stream"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb4dc4d33c68ec1f27d386b5610a351922656e1fdf5c05bbaad930cd1519479a"
-dependencies = [
- "bytes",
- "futures-util",
- "http-body 1.0.1",
- "http-body-util",
- "pin-project-lite",
-]
-
-[[package]]
 name = "stable_deref_trait"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13714,17 +13626,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1729aa945f29d91ba541258c8df89027d5792d85a8841fb65e8bf0f4ede4ef61"
 dependencies = [
  "rustls",
- "tokio",
-]
-
-[[package]]
-name = "tokio-stream"
-version = "0.1.17"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eca58d7bba4a75707817a2c44174253f9236b2d5fbd055602e9d5c07c139a047"
-dependencies = [
- "futures-core",
- "pin-project-lite",
  "tokio",
 ]
 
@@ -14827,7 +14728,6 @@ dependencies = [
  "lz4_flex 0.11.6",
  "mach2 0.5.0",
  "markdown_parser",
- "mcp",
  "memchr",
  "memo-map",
  "mermaid_to_svg",
@@ -14876,7 +14776,6 @@ dependencies = [
  "remote_server",
  "repo_metadata",
  "reqwest",
- "rmcp",
  "rquickjs",
  "rust-embed 8.7.2",
  "rustc-hash 2.1.1",
@@ -15525,7 +15424,6 @@ dependencies = [
  "oauth2",
  "parking_lot",
  "pathfinder_geometry",
- "rand 0.8.6",
  "reqwest",
  "schemars 1.0.4",
  "serde",

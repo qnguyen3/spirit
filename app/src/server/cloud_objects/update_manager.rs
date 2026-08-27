@@ -1690,10 +1690,6 @@ impl UpdateManager {
             // folders and preferences are last-write-wins, no need to do anything here
             ServerCloudObject::Folder(_)
             | ServerCloudObject::Preference(_)
-            | ServerCloudObject::AIFact(_)
-            | ServerCloudObject::MCPServer(_)
-            | ServerCloudObject::AIExecutionProfile(_)
-            | ServerCloudObject::TemplatableMCPServer(_)
             | ServerCloudObject::AmbientAgentEnvironment(_)
             | ServerCloudObject::ScheduledAmbientAgent(_)
             | ServerCloudObject::CloudAgentConfig(_) => {}

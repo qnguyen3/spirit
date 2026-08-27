@@ -2017,11 +2017,7 @@ fn box_persisted_generic_string_object(
         PersistedGenericStringObject::EnvVarCollection(object) => Some(Box::new(object)),
         PersistedGenericStringObject::WorkflowEnum(object) => Some(Box::new(object)),
         PersistedGenericStringObject::CloudEnvironment(object) => Some(Box::new(object)),
-        PersistedGenericStringObject::AIFact(_)
-        | PersistedGenericStringObject::MCPServer(_)
-        | PersistedGenericStringObject::TemplatableMCPServer(_)
-        | PersistedGenericStringObject::AIExecutionProfile(_)
-        | PersistedGenericStringObject::ScheduledAmbientAgent(_) => {
+        PersistedGenericStringObject::ScheduledAmbientAgent(_) => {
             log::debug!("Skipping unsupported persisted cloud object kind");
             None
         }

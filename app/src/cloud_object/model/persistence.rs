@@ -516,11 +516,7 @@ impl CloudModel {
             ServerCloudObject::AmbientAgentEnvironment(ambient_agent_environment) => {
                 self.upsert_from_server_object(ambient_agent_environment, ctx);
             }
-            ServerCloudObject::AIFact(_)
-            | ServerCloudObject::MCPServer(_)
-            | ServerCloudObject::AIExecutionProfile(_)
-            | ServerCloudObject::TemplatableMCPServer(_)
-            | ServerCloudObject::ScheduledAmbientAgent(_)
+            ServerCloudObject::ScheduledAmbientAgent(_)
             | ServerCloudObject::CloudAgentConfig(_) => {
                 log::debug!("Skipping unsupported cloud object kind from server");
             }
