@@ -275,7 +275,6 @@ impl CodeManager {
             })
             .map(|(_, data)| data.locator)
     }
-
 }
 
 impl Entity for CodeManager {

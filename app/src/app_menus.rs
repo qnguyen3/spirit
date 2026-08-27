@@ -22,6 +22,7 @@ use crate::auth;
 use crate::auth::AuthStateProvider;
 use crate::default_terminal::DefaultTerminal;
 use crate::features::{FeatureFlag, runtime_flags_menu_items};
+use crate::persisted_workspace::PersistedWorkspace;
 use crate::root_view::OpenLaunchConfigArg;
 use crate::server::telemetry::LaunchConfigUiLocation;
 use crate::settings::{
@@ -939,9 +940,6 @@ fn make_launch_config_menu_items(ctx: &mut AppContext) -> Vec<MenuItem> {
 }
 
 fn make_new_elements_menu_items(ctx: &AppContext) -> Vec<MenuItem> {
-    // Dynamically assign the workspace:new_tab keystroke (cmd-t) to whichever item
-    // matches the user's "Default mode for new sessions" setting. The non-default item
-    // shows its dedicated keystroke instead.
     let mut new_elements_menu = vec![
         MenuItem::Custom(CustomMenuItem::new(
             "New Window",
@@ -954,16 +952,7 @@ fn make_new_elements_menu_items(ctx: &AppContext) -> Vec<MenuItem> {
             open_new_default_tab_or_window,
             move |_props: &MenuItemProperties, ctx: &mut AppContext| {
                 let mut changes = MenuItemPropertyChanges::default();
-                let is_default_session_mode_agent =
-                    AISettings::handle(ctx).read(ctx, |ai_settings, ctx| {
-                        ai_settings.is_any_ai_enabled(ctx)
-                            && ai_settings.default_session_mode() == DefaultSessionMode::Agent
-                    });
-                let trigger = if is_default_session_mode_agent {
-                    Trigger::Custom(CustomAction::NewTerminalTab.into())
-                } else {
-                    Trigger::Custom(CustomAction::NewTab.into())
-                };
+                let trigger = Trigger::Custom(CustomAction::NewTab.into());
                 let binding = ctx
                     .get_key_bindings()
                     .find(|b| b.trigger == &trigger || b.original_trigger == Some(&trigger));

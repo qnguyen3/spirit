@@ -166,7 +166,6 @@ use super::warpify::success_block::{WarpifySuccessBlock, WarpifySuccessBlockEven
 use super::warpify::trigger_state::{SshBlockState, WarpifyState};
 use super::{CLIAgent, GridType, cli_agent, should_right_click_paste};
 #[cfg(any(test, feature = "integration_tests"))]
-use crate::ai::agent::UserQueryMode;
 use crate::antivirus::AntivirusInfo;
 use crate::appearance::{Appearance, AppearanceEvent};
 use crate::auth::auth_manager::AuthManager;

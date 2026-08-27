@@ -82,7 +82,9 @@ use crate::code::local_code_editor::{
 };
 use crate::code::view::PendingSaveIntent;
 use crate::code_review::DiffSetScope;
-use crate::code_review::agent_handoff::{AgentReviewCommentBatch, CurrentHead, DiffBase, DiffSetHunk};
+use crate::code_review::agent_handoff::{
+    AgentReviewCommentBatch, CurrentHead, DiffBase, DiffSetHunk,
+};
 use crate::code_review::comments::{
     AttachedReviewCommentTarget, CommentId, ReviewCommentBatch, ReviewCommentBatchEvent,
 };
@@ -729,7 +731,6 @@ impl CodeReviewView {
             // UI after LSP installation succeeds or fails.
             #[cfg(feature = "local_fs")]
             {
-
                 // PersistedWorkspace handles spawning the server after install;
                 // we only subscribe to refresh the footer UI.
                 ctx.subscribe_to_model(&PersistedWorkspace::handle(ctx), |me, _, event, ctx| {
@@ -862,7 +863,6 @@ impl CodeReviewView {
         server_type: Option<lsp::supported_servers::LSPServerType>,
         ctx: &mut ViewContext<Self>,
     ) {
-
         let server_type =
             server_type.or_else(|| lsp::LanguageId::from_path(path).map(|id| id.server_type()));
         let Some(server_type) = server_type else {
@@ -906,7 +906,6 @@ impl CodeReviewView {
         server_type: Option<lsp::supported_servers::LSPServerType>,
         ctx: &mut ViewContext<Self>,
     ) {
-
         let server_type =
             server_type.or_else(|| lsp::LanguageId::from_path(path).map(|id| id.server_type()));
         let Some(server_type) = server_type else {

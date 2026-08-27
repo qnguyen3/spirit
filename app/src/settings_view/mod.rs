@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use about_page::AboutPageView;
 use appearance_page::{AppearancePageAction, AppearanceSettingsPageView};
 use billing_and_usage_dispatch::BillingAndUsageDispatchView;
@@ -36,7 +34,7 @@ use warpui::elements::{
     ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, DispatchEventResult, Empty,
     EventHandler, Expanded, Fill, Flex, MainAxisSize, OffsetPositioning, ParentAnchor,
     ParentElement, ParentOffsetBounds, Radius, SavePosition, ScrollbarWidth, Shrinkable, Stack,
-    Text, Wrap,
+    Text,
 };
 use warpui::fonts::{Properties, Weight};
 use warpui::keymap::{ContextPredicate, EnabledPredicate, FixedBinding};
@@ -64,7 +62,7 @@ use crate::util::bindings::{BindingGroup, CustomAction, keybinding_name_to_displ
 use crate::view_components::ToastFlavor;
 use crate::workspace::WorkspaceAction;
 use crate::workspaces::workspace::{BillingMetadata, CustomerType};
-use crate::{GlobalResourceHandlesProvider, TelemetryEvent};
+use crate::GlobalResourceHandlesProvider;
 
 mod about_page;
 mod admin_actions;

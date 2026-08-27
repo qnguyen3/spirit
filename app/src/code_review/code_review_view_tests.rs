@@ -15,8 +15,6 @@ use warpui::{App, ViewHandle};
 
 use super::*;
 use crate::NotebookKeybindings;
-use crate::persisted_workspace::PersistedWorkspace;
-use crate::ai::request_usage_model::AIRequestUsageModel;
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::code::buffer_location::LocalOrRemotePath;
@@ -33,6 +31,7 @@ use crate::code_review::diff_state::{DiffStateModel, FileDiff, GitFileStatus};
 use crate::code_review::editor_state::CodeReviewEditorState;
 use crate::code_review::git_repo_model::GitRepoModels;
 use crate::pane_group::WorkingDirectoriesModel;
+use crate::persisted_workspace::PersistedWorkspace;
 use crate::server::server_api::ServerApiProvider;
 use crate::server::server_api::team::MockTeamClient;
 use crate::server::server_api::workspace::MockWorkspaceClient;
@@ -95,9 +94,6 @@ fn initialize_test_app(app: &mut App) {
     app.add_singleton_model(|_| ActiveSession::default());
     app.add_singleton_model(NotebookKeybindings::new);
     app.add_singleton_model(|_| ServerApiProvider::new_for_test());
-    app.add_singleton_model(|ctx| {
-        AIRequestUsageModel::new_for_test(ServerApiProvider::as_ref(ctx).get_ai_client(), ctx)
-    });
 }
 
 /// Creates a LocalCodeEditorView with the given content

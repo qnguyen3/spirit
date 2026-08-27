@@ -66,9 +66,9 @@ use crate::settings::{
     AtContextMenuInTerminalMode, AutocompleteSymbols, AutosuggestionKeybindingHint,
     ChangelogSettings, CloudPreferencesSettings, CodeSettings, CommandCorrections,
     CompletionsOpenWhileTyping, CopyOnSelect, CtrlTabBehavior, DEFAULT_QUAKE_MODE_SIZE_PERCENTAGES,
-    EnableSlashCommandsInTerminal, ErrorUnderliningEnabled, ExtraMetaKeys,
-    GPUSettings, GlobalHotkeyMode, InputSettings, InputSettingsChangedEvent,
-    LinuxSelectionClipboard, MiddleClickPasteEnabled, MouseScrollMultiplier,
+    DefaultSessionMode, ErrorUnderliningEnabled, ExtraMetaKeys, GPUSettings, GlobalHotkeyMode,
+    InputSettings, InputSettingsChangedEvent, LinuxSelectionClipboard, MiddleClickPasteEnabled,
+    MouseScrollMultiplier, NewSessionSettings, NewSessionSettingsChangedEvent,
     OutlineCodebaseSymbolsForAtContextMenu, PreferLowPowerGPU, PreferredGraphicsBackend,
     QUAKE_WINDOW_AUTOHIDE_SUPPORTED, QuakeModeSettings, RightClickBehavior,
     RightClickBehaviorSetting, ScrollSettings, ScrollSettingsChangedEvent, SelectionSettings,
@@ -382,18 +382,6 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
     );
     toggle_binding_pairs.push(
         ToggleSettingActionPair::new(
-            "in-app agent notifications",
-            builder(SettingsAction::FeaturesPageToggle(
-                FeaturesPageAction::ToggleAgentInAppNotifications,
-            )),
-            context,
-            flags::AGENT_IN_APP_NOTIFICATIONS_FLAG,
-        )
-        .with_enabled(|| FeatureFlag::HOANotifications.is_enabled()),
-    );
-
-    toggle_binding_pairs.push(
-        ToggleSettingActionPair::new(
             "quit warning modal",
             builder(SettingsAction::FeaturesPageToggle(
                 FeaturesPageAction::ToggleShowWarningBeforeQuitting,
@@ -559,24 +547,6 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
         context,
         flags::SMART_SELECT_FLAG,
     ));
-    if FeatureFlag::AgentView.is_enabled() && AISettings::as_ref(app).is_any_ai_enabled(app) {
-        toggle_binding_pairs.push(
-            ToggleSettingActionPair::new(
-                "help block in new sessions",
-                builder(SettingsAction::FeaturesPageToggle(
-                    FeaturesPageAction::ToggleShowTerminalZeroStateBlock,
-                )),
-                context,
-                flags::SHOW_TERMINAL_ZERO_STATE_BLOCK_FLAG,
-            )
-            .is_supported_on_current_platform(
-                TerminalSettings::as_ref(app)
-                    .show_terminal_zero_state_block
-                    .is_supported_on_current_platform(),
-            ),
-        );
-    }
-
     toggle_binding_pairs.push(
         ToggleSettingActionPair::new(
             "terminal input message line",
@@ -613,23 +583,6 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
         flags::PRESERVE_INPUT_FOCUS_ON_BLOCK_SELECTION_FLAG,
     ));
 
-    if FeatureFlag::AgentView.is_enabled() && AISettings::as_ref(app).is_any_ai_enabled(app) {
-        toggle_binding_pairs.push(
-            ToggleSettingActionPair::new(
-                "slash commands in terminal mode",
-                builder(SettingsAction::FeaturesPageToggle(
-                    FeaturesPageAction::ToggleSlashCommandsInTerminalMode,
-                )),
-                context,
-                flags::SLASH_COMMANDS_IN_TERMINAL_FLAG,
-            )
-            .is_supported_on_current_platform(
-                InputSettings::as_ref(app)
-                    .enable_slash_commands_in_terminal
-                    .is_supported_on_current_platform(),
-            ),
-        );
-    }
     if FeatureFlag::AIContextMenuCode.is_enabled() {
         toggle_binding_pairs.push(
             ToggleSettingActionPair::new(
@@ -744,7 +697,6 @@ pub enum FeaturesPageAction {
     ToggleCodeAsDefaultEditor,
     ToggleShowInputHintText,
     ToggleUseAudibleBell,
-    ToggleShowTerminalZeroStateBlock,
     TogglePreferLowPowerGPU,
     ToggleVimMode,
     ToggleVimUnnamedSystemClipboard,
@@ -778,7 +730,6 @@ pub enum FeaturesPageAction {
     ToggleAgentTaskCompletedNotifications,
     ToggleNeedsAttentionNotifications,
     ToggleNotificationSound,
-    SetNotificationToastDuration,
     ToggleShowWarningBeforeQuitting,
     ToggleLoginItem,
     ToggleQuitOnLastWindowClosed,
@@ -803,12 +754,10 @@ pub enum FeaturesPageAction {
     ToggleAutosuggestionKeybindingHint,
     ToggleShowAutosuggestionIgnoreButton,
     ToggleAtContextMenuInTerminalMode,
-    ToggleSlashCommandsInTerminalMode,
     ToggleOutlineCodebaseSymbolsForAtContextMenu,
     ToggleAutoOpenCodeReviewPane,
     ToggleShowTerminalInputMessageLine,
     TogglePreserveInputFocusOnBlockSelection,
-    ToggleAgentInAppNotifications,
     MakeWarpDefaultTerminal,
 }
 

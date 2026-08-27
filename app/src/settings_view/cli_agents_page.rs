@@ -1,7 +1,7 @@
 //! The "Third party CLI agents" settings page, shown under the Agents umbrella.
 
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
-use warpui::elements::{Element, FormattedTextElement, HighlightedHyperlink, ParentElement};
+use warpui::elements::{Element, FormattedTextElement, HighlightedHyperlink};
 use warpui::{AppContext, Entity, View, ViewContext, ViewHandle};
 
 use super::SettingsSection;

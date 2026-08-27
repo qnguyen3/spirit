@@ -5,8 +5,7 @@ use ai::diff_validation::DiffType;
 #[cfg(not(target_family = "wasm"))]
 use futures::FutureExt;
 #[cfg(not(target_family = "wasm"))]
-use warp_files::FileModel;
-use warp_files::SaveFuture;
+use warp_files::{FileModel, SaveFuture};
 use warp_util::file::FileId;
 #[cfg(not(target_family = "wasm"))]
 use warp_util::file::FileSaveError;
@@ -155,18 +154,10 @@ impl InlineDiffView {
 
     /// Accepts the diff by saving the editor content to the backing file,
     /// returning the save's completion future. `None` when no file is
-    /// registered (WASM / restored conversations), in which case nothing is
-    /// dispatched.
+    /// registered, in which case nothing is dispatched.
+    #[cfg(not(target_family = "wasm"))]
     pub fn accept_and_save_diff(&self, ctx: &mut ViewContext<Self>) -> Option<SaveFuture> {
-        #[cfg(not(target_family = "wasm"))]
-        {
-            self.save_content(ctx)
-        }
-        #[cfg(target_family = "wasm")]
-        {
-            let _ = ctx;
-            None
-        }
+        self.save_content(ctx)
     }
 }
 

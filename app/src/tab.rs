@@ -46,9 +46,11 @@ use crate::themes::theme::{AnsiColorIdentifier, Fill as ThemeFill, VerticalGradi
 use crate::ui_components::buttons::icon_button;
 use crate::ui_components::color_dot::{TAB_COLOR_OPTIONS, render_color_dot};
 use crate::ui_components::icons::{ICON_DIMENSIONS, Icon};
+use crate::ui_components::status_icons::{
+    ConversationStatus, STATUS_ELEMENT_PADDING, render_status_element,
+};
 use crate::util::bindings::{keybinding_name_to_display_string, keybinding_name_to_keystroke};
 use crate::util::color::{Opacity, coloru_with_opacity};
-use crate::util::truncation::truncate_from_end;
 use crate::window_settings::WindowSettings;
 use crate::workspace::sync_inputs::SyncedInputState;
 use crate::workspace::tab_group::{TabGroup, TabGroupId};
@@ -259,7 +261,6 @@ const WARP_2_TAB_COLOR_OPACITY: Opacity = 25;
 const WARP_2_HOVERED_TAB_COLOR_OPACITY: Opacity = 50;
 const TAB_CLOSE_BUTTON_OPACITY: Opacity = 60;
 const TAB_CLOSE_BUTTON_WIDTH: f32 = 20.0;
-const MAX_TOOLTIP_LENGTH: usize = 80;
 pub(crate) const TAB_PIN_INDICATOR_ICON_SIZE: f32 = 16.0;
 
 /// Color of the synchronized-inputs indicator, shared by the horizontal tab bar
