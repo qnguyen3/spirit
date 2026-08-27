@@ -149,16 +149,8 @@ use warp_errors::report_error;
 
 pub use super::diff_viewer::DisplayMode;
 
-type TerminalTargetFn = dyn Fn(WindowId, &AppContext) -> Option<ViewHandle<TerminalView>>;
-
-struct SelectionAsContextTooltip {
-    mouse_state: MouseStateHandle,
-    terminal_target_fn: Box<TerminalTargetFn>,
-}
-
 #[derive(Debug, Clone)]
 pub enum LocalCodeEditorAction {
-    InsertSelectedTextToInput,
     SaveFile,
     DiscardUnsavedChanges,
     NavigateToTarget(FileLocation),
@@ -245,7 +237,6 @@ pub struct LocalCodeEditorView {
     enable_diff_nav_by_default: bool,
     is_new_file: bool,
     diff_type: Option<DiffType>,
-    selection_as_context_tooltip: Option<SelectionAsContextTooltip>,
     /// A marker for when the backing file has first been loaded. This is used to prevent applying
     /// a diff before it can be properly calculated.
     file_loaded: Condition,
@@ -489,7 +480,6 @@ impl LocalCodeEditorView {
             metadata: None,
             enable_diff_nav_by_default,
             file_loaded: Condition::new(),
-            selection_as_context_tooltip: None,
             was_edited: false,
             base_content_version: None,
             has_remote_conflict: false,
@@ -1380,18 +1370,6 @@ impl LocalCodeEditorView {
             .unwrap_or(false)
     }
 
-    /// Enables the selection-as-context tooltip. For now, we only want this to be rendered within editors in code panes.
-    pub(crate) fn with_selection_as_context(
-        mut self,
-        terminal_target_fn: Box<TerminalTargetFn>,
-    ) -> Self {
-        self.selection_as_context_tooltip = Some(SelectionAsContextTooltip {
-            mouse_state: Default::default(),
-            terminal_target_fn,
-        });
-        self
-    }
-
     /// Sets the find references card provider on the underlying editor.
     pub(crate) fn with_find_references_provider(
         self,
@@ -1410,9 +1388,6 @@ impl LocalCodeEditorView {
             let footer =
                 ctx.add_typed_action_view(|ctx| CodeFooterView::new(path.to_path_buf(), ctx));
             ctx.subscribe_to_view(&footer, |_, _, event, ctx| match event {
-                CodeFooterViewEvent::RunTabConfigSkill { path } => {
-                    ctx.emit(LocalCodeEditorEvent::RunTabConfigSkill { path: path.clone() });
-                }
                 CodeFooterViewEvent::EnableLSP { path, .. } => {
                     Self::enable_lsp_for_path(path, ctx);
                 }
@@ -1489,7 +1464,6 @@ impl LocalCodeEditorView {
     /// 5. Starting the LSP server via PersistedWorkspace
     #[cfg(feature = "local_fs")]
     fn enable_lsp_for_path(path: &Path, ctx: &mut ViewContext<Self>) {
-
         // Get the language ID from the file path
         let Some(language_id) = LanguageId::from_path(path) else {
             log::warn!("Enable lsp for path should only work for supported file paths");
@@ -1533,7 +1507,6 @@ impl LocalCodeEditorView {
     /// and emits events that are handled by handle_persisted_workspace_event.
     #[cfg(feature = "local_fs")]
     fn install_and_enable_lsp_for_path(path: &Path, ctx: &mut ViewContext<Self>) {
-
         let Some(language_id) = LanguageId::from_path(path) else {
             log::warn!("Install and enable lsp for path should only work for supported file paths");
             return;
@@ -1914,159 +1887,6 @@ impl LocalCodeEditorView {
         });
     }
 
-    /// If a single terminal view exists in the active window, returns the active file path's relative to to the terminal's session.
-    fn file_path_relative_to_terminal_view(&self, app: &AppContext) -> Option<String> {
-        if let Some(terminal_target_fn) = self
-            .selection_as_context_tooltip
-            .as_ref()
-            .map(|tooltip| &tooltip.terminal_target_fn)
-        {
-            app.windows().active_window().and_then(|window_id| {
-                terminal_target_fn(window_id, app).and_then(|terminal_view| {
-                    terminal_view
-                        .as_ref(app)
-                        .active_session_path_if_local(app)
-                        .and_then(|cwd| {
-                            let is_wsl = terminal_view
-                                .as_ref(app)
-                                .active_session_wsl_distro(app)
-                                .is_some();
-                            self.file_path()
-                                .and_then(|file_path| to_relative_path(is_wsl, file_path, &cwd))
-                        })
-                })
-            })
-        } else {
-            None
-        }
-    }
-
-    fn render_selection_tooltip(&self, app: &AppContext) -> Option<Box<dyn Element>> {
-        // If there's a single selection and an active terminal view, we want to give the user an option to add the selection as context.
-        self.selection_as_context_tooltip
-            .as_ref()
-            .and_then(|selection_as_context_tooltip| {
-                if self.editor.as_ref(app).selected_lines(app).is_some()
-                    && self.file_path_relative_to_terminal_view(app).is_some()
-                {
-                    let appearance = Appearance::as_ref(app);
-                    let theme = appearance.theme();
-                    let modifier_keys = if cfg!(target_os = "macos") {
-                        "⌘L"
-                    } else {
-                        "Ctrl-L"
-                    };
-
-                    let mut row = Flex::row()
-                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                        .with_main_axis_alignment(MainAxisAlignment::Center)
-                        .with_main_axis_size(MainAxisSize::Min);
-                    row.add_child(
-                        Shrinkable::new(
-                            1.,
-                            Text::new_inline(
-                                "Add as context",
-                                appearance.ui_font_family(),
-                                appearance.ui_font_size(),
-                            )
-                            .with_color(theme.active_ui_text_color().into())
-                            .finish(),
-                        )
-                        .finish(),
-                    );
-                    row.add_child(
-                        Container::new(
-                            Text::new_inline(
-                                modifier_keys,
-                                appearance.ui_font_family(),
-                                appearance.ui_font_size() * 0.75,
-                            )
-                            .with_color(theme.disabled_ui_text_color().into())
-                            .finish(),
-                        )
-                        .with_margin_left(8.)
-                        .finish(),
-                    );
-
-                    Some(
-                        Hoverable::new(selection_as_context_tooltip.mouse_state.clone(), |state| {
-                            let background_color = if state.is_hovered() {
-                                theme.surface_2()
-                            } else {
-                                theme.surface_1()
-                            };
-                            let internal_container = Container::new(row.finish())
-                                .with_padding_left(12.)
-                                .with_padding_right(12.)
-                                .with_padding_top(4.)
-                                .with_padding_bottom(4.)
-                                .finish();
-                            Container::new(internal_container)
-                                .with_background(background_color)
-                                .with_padding_top(4.)
-                                .with_padding_bottom(4.)
-                                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
-                                .with_border(Border::all(1.5).with_border_fill(theme.surface_2()))
-                                .with_drop_shadow(DropShadow::new_with_standard_offset_and_spread(
-                                    DROP_SHADOW_COLOR,
-                                ))
-                                .finish()
-                        })
-                        .on_click(move |ctx, _app, _pos| {
-                            ctx.dispatch_typed_action(
-                                LocalCodeEditorAction::InsertSelectedTextToInput,
-                            );
-                        })
-                        .finish(),
-                    )
-                } else {
-                    None
-                }
-            })
-    }
-
-    fn insert_selected_text_to_input(&mut self, ctx: &mut ViewContext<Self>) {
-        let Some(relative_file_path) = self.file_path_relative_to_terminal_view(ctx) else {
-            return;
-        };
-
-        let mut line_range: Option<Range<LineCount>> = None;
-        let mut selected_text: Option<String> = None;
-        self.editor.update(ctx, |editor, ctx| {
-            // If we have a vim visual selection, update the editor model to use that as a selection range
-            let has_vim_visual = matches!(editor.vim_mode(ctx), Some(VimMode::Visual(_)));
-            if has_vim_visual {
-                editor.model.update(ctx, |model, ctx| {
-                    model.vim_visual_selection_range(MotionType::Linewise, false, ctx);
-                });
-            }
-
-            if let Some((start, end)) = editor.selected_lines(ctx) {
-                // selected_lines() returns 1-indexed row numbers.
-                line_range = Some(LineCount::from(start as usize)..LineCount::from(end as usize));
-                selected_text = Some(editor.selected_text(ctx).unwrap_or_default());
-            }
-
-            // Enter normal mode
-            if has_vim_visual {
-                editor.enter_vim_normal_mode(ctx);
-            }
-        });
-
-        let (Some(line_range), Some(selected_text)) = (line_range, selected_text) else {
-            return;
-        };
-
-        ctx.emit(LocalCodeEditorEvent::SelectionAddedAsContext {
-            relative_file_path,
-            line_range,
-            selected_text,
-        });
-        self.editor.update(ctx, |editor, ctx| {
-            editor.clear_selection(ctx);
-        });
-    }
-
     pub fn diff(&self) -> Option<&DiffType> {
         self.diff_type.as_ref()
     }
@@ -2328,21 +2148,6 @@ impl View for LocalCodeEditorView {
             .with_child(base_with_handler);
 
         let editor = self.editor().as_ref(app);
-        if self.selection_as_context_tooltip.is_some() {
-            // When a single terminal exists in the window and the user has made a selection (but isn't currently selecting),
-            // we render a tooltip that allows them to add the selected text to the terminal context.
-            let is_ai_enabled = AISettings::as_ref(app).is_any_ai_enabled(app);
-            if is_ai_enabled
-                && FeatureFlag::SelectionAsContext.is_enabled()
-                && !editor.is_selecting()
-            {
-                let tooltip = self.render_selection_tooltip(app);
-                if let Some(tooltip) = tooltip {
-                    stack.add_positioned_child(tooltip, editor.selection_position_anchor(app))
-                }
-            }
-        }
-
         // Render context menu if open
         if self.context_menu_state.is_open {
             stack.add_positioned_child(
@@ -2412,9 +2217,6 @@ impl TypedActionView for LocalCodeEditorView {
 
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
         match action {
-            LocalCodeEditorAction::InsertSelectedTextToInput => {
-                self.insert_selected_text_to_input(ctx);
-            }
             LocalCodeEditorAction::SaveFile => {
                 if let Err(ImmediateSaveError::FailedToSave(err)) = self.save_local(ctx) {
                     report_error!(&err);

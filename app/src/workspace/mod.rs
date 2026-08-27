@@ -1,6 +1,5 @@
 mod action;
 mod active_session;
-pub mod bonus_grant_notification_model;
 #[cfg(target_os = "macos")]
 pub(crate) mod cli_install;
 mod close_session_confirmation_dialog;
@@ -8,11 +7,9 @@ pub(crate) mod cross_window_tab_drag;
 mod global_actions;
 pub mod header_toolbar_editor;
 pub mod header_toolbar_item;
-pub mod hoa_onboarding;
 mod home;
 mod lightbox_view;
 mod native_modal;
-mod one_time_modal_model;
 mod registry;
 pub mod sync_inputs;
 pub mod tab_group;
@@ -22,13 +19,10 @@ pub mod util;
 pub mod view;
 
 pub use action::{
-    AutoCloudHandoffTrigger, CommandSearchOptions, InitContent, RestoreConversationLayout,
-    TabContextMenuAnchor, VerticalTabsPaneContextMenuTarget, WorkspaceAction,
+    CommandSearchOptions, InitContent, TabContextMenuAnchor, VerticalTabsPaneContextMenuTarget,
+    WorkspaceAction,
 };
 pub use active_session::ActiveSession;
-pub use global_actions::{
-    ForkAIConversationParams, ForkFromExchange, ForkedConversationDestination,
-};
 use serde::{Deserialize, Serialize};
 pub use util::{PaneViewLocator, TabMovement, active_terminal_in_window};
 pub use view::{
@@ -55,7 +49,6 @@ pub fn panel_header_corner_radius() -> warpui::elements::CornerRadius {
     warpui::elements::CornerRadius::with_top(warpui::elements::Radius::Pixels(8.))
 }
 
-pub use one_time_modal_model::OneTimeModalModel;
 pub use registry::WorkspaceRegistry;
 pub use toast_stack::{ToastStack, ToastStackEvent};
 
@@ -77,24 +70,12 @@ pub fn init(app: &mut AppContext) {
     modal::init(app);
     native_modal::init(app);
     lightbox_view::init(app);
-    rewind_confirmation_dialog::init(app);
-    delete_conversation_confirmation_dialog::init(app);
     crate::tab_configs::remove_confirmation_dialog::init(app);
-    hoa_onboarding::init(app);
     tab_configs::session_config_modal::init(app);
-    view::launch_modal::oz_launch::init(app);
-    view::openwarp_launch_modal::init(app);
-    view::orchestration_launch_modal::init(app);
-    view::agent_cli_launch_modal::init(app);
-    view::feature_intro_modal::init(app);
-    view::auto_handoff_sleep_modal::init(app);
-    view::cloud_agent_capacity_modal::init(app);
     view::codex_modal::init(app);
-    view::free_ai_removal_modal::init(app);
     view::global_search::view::GlobalSearchView::init(app);
     view::right_panel::RightPanelView::init(app);
     header_toolbar_editor::init(app);
-    view::conversation_list::view::register_conversation_list_view_bindings(app);
 
     settings_view::init_actions_from_parent_view(app, &id!("Workspace"), |settings_action| {
         WorkspaceAction::DispatchToSettingsTab(settings_action)
@@ -120,13 +101,6 @@ pub fn init(app: &mut AppContext) {
             "enter",
             WorkspaceAction::DismissSessionConfigTabConfigChip,
             id!("Workspace") & id!(flags::SESSION_CONFIG_TAB_CONFIG_CHIP_OPEN),
-        ),
-        // Feature intro never steals focus, so Escape must be handled at the workspace
-        // level while the popover is open rather than on FeatureIntroModal itself.
-        FixedBinding::new(
-            "escape",
-            WorkspaceAction::DismissFeatureIntroModal,
-            id!("Workspace") & id!(flags::FEATURE_INTRO_MODAL_OPEN),
         ),
     ]);
 
@@ -168,114 +142,6 @@ pub fn init(app: &mut AppContext) {
             // Debug actions for build plan migration modal (command palette only)
             app.register_editable_bindings([
                 EditableBinding::new(
-                    "workspace:open_build_plan_migration_modal",
-                    "[Debug] Open Build Plan Migration Modal",
-                    WorkspaceAction::OpenBuildPlanMigrationModal,
-                )
-                .with_context_predicate(id!("Workspace")),
-                EditableBinding::new(
-                    "workspace:reset_build_plan_migration_modal_state",
-                    "[Debug] Reset Build Plan Migration Modal State",
-                    WorkspaceAction::ResetBuildPlanMigrationModalState,
-                )
-                .with_context_predicate(id!("Workspace")),
-                EditableBinding::new(
-                    "workspace:debug_reset_aws_bedrock_login_banner_dismissed",
-                    "[Debug] Un-dismiss AWS login banner",
-                    WorkspaceAction::DebugResetAwsBedrockLoginBannerDismissed,
-                )
-                .with_context_predicate(id!("Workspace")),
-                EditableBinding::new(
-                    "workspace:open_oz_launch_modal",
-                    "[Debug] Open Oz Launch Modal",
-                    WorkspaceAction::OpenOzLaunchModal,
-                )
-                .with_context_predicate(id!("Workspace")),
-                EditableBinding::new(
-                    "workspace:reset_oz_launch_modal_state",
-                    "[Debug] Reset Oz Launch Modal State",
-                    WorkspaceAction::ResetOzLaunchModalState,
-                )
-                .with_context_predicate(id!("Workspace")),
-                EditableBinding::new(
-                    "workspace:open_openwarp_launch_modal",
-                    "[Debug] Open OpenWarp Launch Modal",
-                    WorkspaceAction::OpenOpenWarpLaunchModal,
-                )
-                .with_context_predicate(id!("Workspace")),
-                EditableBinding::new(
-                    "workspace:reset_openwarp_launch_modal_state",
-                    "[Debug] Reset OpenWarp Launch Modal State",
-                    WorkspaceAction::ResetOpenWarpLaunchModalState,
-                )
-                .with_context_predicate(id!("Workspace")),
-                EditableBinding::new(
-                    "workspace:open_orchestration_launch_modal",
-                    "[Debug] Open Orchestration Launch Modal",
-                    WorkspaceAction::OpenOrchestrationLaunchModal,
-                )
-                .with_context_predicate(id!("Workspace")),
-                EditableBinding::new(
-                    "workspace:reset_orchestration_launch_modal_state",
-                    "[Debug] Reset Orchestration Launch Modal State",
-                    WorkspaceAction::ResetOrchestrationLaunchModalState,
-                )
-                .with_context_predicate(id!("Workspace")),
-                EditableBinding::new(
-                    "workspace:open_agent_cli_launch_modal",
-                    "[Debug] Open Warp Agent CLI Launch Modal",
-                    WorkspaceAction::OpenAgentCliLaunchModal,
-                )
-                .with_context_predicate(id!("Workspace")),
-                EditableBinding::new(
-                    "workspace:reset_agent_cli_launch_modal_state",
-                    "[Debug] Reset Warp Agent CLI Launch Modal State",
-                    WorkspaceAction::ResetAgentCliLaunchModalState,
-                )
-                .with_context_predicate(id!("Workspace")),
-                EditableBinding::new(
-                    "workspace:open_feature_intro_modal",
-                    "[Debug] Open Feature Intro Modal",
-                    WorkspaceAction::OpenFeatureIntroModal,
-                )
-                .with_context_predicate(id!("Workspace")),
-                EditableBinding::new(
-                    "workspace:reset_feature_intro_modal_state",
-                    "[Debug] Reset Feature Intro Modal State",
-                    WorkspaceAction::ResetFeatureIntroModalState,
-                )
-                .with_context_predicate(id!("Workspace")),
-                EditableBinding::new(
-                    "workspace:open_auto_handoff_sleep_modal",
-                    "[Debug] Open Auto-Handoff Sleep Modal",
-                    WorkspaceAction::OpenAutoHandoffSleepModal,
-                )
-                .with_context_predicate(id!("Workspace")),
-                EditableBinding::new(
-                    "workspace:reset_auto_handoff_sleep_modal_state",
-                    "[Debug] Reset Auto-Handoff Sleep Modal State",
-                    WorkspaceAction::ResetAutoHandoffSleepModalState,
-                )
-                .with_context_predicate(id!("Workspace")),
-                EditableBinding::new(
-                    "workspace:trigger_auto_handoff_to_cloud",
-                    "[Debug] Trigger Auto-Handoff to Cloud",
-                    WorkspaceAction::TriggerAutoHandoffToCloud,
-                )
-                .with_context_predicate(id!("Workspace")),
-                EditableBinding::new(
-                    "workspace:open_free_ai_removal_modal",
-                    "[Debug] Open Free AI Removal Modal",
-                    WorkspaceAction::OpenFreeAiRemovalModal,
-                )
-                .with_context_predicate(id!("Workspace")),
-                EditableBinding::new(
-                    "workspace:reset_free_ai_removal_modal_state",
-                    "[Debug] Reset Free AI Removal Modal State",
-                    WorkspaceAction::ResetFreeAiRemovalModalState,
-                )
-                .with_context_predicate(id!("Workspace")),
-                EditableBinding::new(
                     "workspace:install_opencode_warp_plugin",
                     "[Debug] Install OpenCode Warp plugin",
                     WorkspaceAction::InstallOpenCodeWarpPlugin,
@@ -291,12 +157,6 @@ pub fn init(app: &mut AppContext) {
                     "workspace:open_session_config_modal",
                     "[Debug] Open Session Config Modal",
                     WorkspaceAction::ShowSessionConfigModal,
-                )
-                .with_context_predicate(id!("Workspace")),
-                EditableBinding::new(
-                    "workspace:show_hoa_onboarding_flow",
-                    "[Debug] Start HOA Onboarding Flow",
-                    WorkspaceAction::ShowHoaOnboardingFlow,
                 )
                 .with_context_predicate(id!("Workspace")),
             ]);
