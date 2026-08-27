@@ -4,7 +4,7 @@ use about_page::AboutPageView;
 use appearance_page::{AppearancePageAction, AppearanceSettingsPageView};
 use billing_and_usage_dispatch::BillingAndUsageDispatchView;
 use billing_and_usage_page::BillingAndUsagePageEvent;
-use cli_agents_page::{CLIAgentsPageAction, CLIAgentsPageEvent, CLIAgentsPageView};
+use cli_agents_page::CLIAgentsPageView;
 use code_editor_review_page::{EditorAndCodeReviewPageAction, EditorAndCodeReviewPageView};
 use environments_page::EnvironmentsPageView;
 use features_page::{FeaturesPageView, FeaturesSettingsPageEvent};
@@ -589,11 +589,6 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
     features_page::init_actions_from_parent_view(app, context, builder);
     warpify_page::init_actions_from_parent_view(app, context, builder);
     privacy_page::init_actions_from_parent_view(app, context, builder);
-    warp_agent_page::init_actions_from_parent_view(app, context, builder);
-    agent_profiles_page::init_actions_from_parent_view(app, context, builder);
-    knowledge_page::init_actions_from_parent_view(app, context, builder);
-    cli_agents_page::init_actions_from_parent_view(app, context, builder);
-    code_indexing_page::init_actions_from_parent_view(app, context, builder);
     code_editor_review_page::init_actions_from_parent_view(app, context, builder);
     warp_drive_page::init_actions_from_parent_view(app, context, builder);
 
@@ -897,7 +892,6 @@ pub enum SettingsAction {
     AppearancePageToggle(AppearancePageAction),
     FeaturesPageToggle(FeaturesPageAction),
     PrivacyPageToggle(PrivacyPageAction),
-    CLIAgents(CLIAgentsPageAction),
     EditorAndCodeReview(EditorAndCodeReviewPageAction),
     WarpDrive(warp_drive_page::WarpDriveSettingsPageAction),
     WarpifyPageToggle(WarpifyPageAction),
@@ -1136,10 +1130,7 @@ impl SettingsView {
         let about_page_handle = ctx.add_view(AboutPageView::new);
 
         // Third party CLI agents page, under the Agents umbrella
-        let cli_agents_page_handle = ctx.add_typed_action_view(CLIAgentsPageView::new);
-        ctx.subscribe_to_view(&cli_agents_page_handle, |me, _, event, ctx| {
-            me.handle_cli_agents_page_event(event, ctx);
-        });
+        let cli_agents_page_handle = ctx.add_view(|_| CLIAgentsPageView::new());
 
         // Environments page
         let environments_page_handle = ctx.add_typed_action_view(EnvironmentsPageView::new);
@@ -1750,16 +1741,6 @@ impl SettingsView {
             warp_drive_page::WarpDriveSettingsPageEvent::SignUp => {
                 ctx.emit(SettingsViewEvent::SignupAnonymousUser)
             }
-        }
-    }
-
-    fn handle_cli_agents_page_event(
-        &mut self,
-        event: &CLIAgentsPageEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            CLIAgentsPageEvent::FocusModal => ctx.focus(&self.search_editor),
         }
     }
 
@@ -2440,15 +2421,6 @@ impl TypedActionView for SettingsView {
                 {
                     view.update(ctx, |view, ctx| {
                         view.handle_action(privacy_action, ctx);
-                    })
-                }
-            }
-            SettingsAction::CLIAgents(cli_agents_action) => {
-                if let Some(page) = self.settings_page(SettingsSection::ThirdPartyCLIAgents)
-                    && let SettingsPageViewHandle::CLIAgents(view) = &page.view_handle
-                {
-                    view.update(ctx, |view, ctx| {
-                        view.handle_action(cli_agents_action, ctx);
                     })
                 }
             }

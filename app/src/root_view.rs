@@ -7,9 +7,10 @@ use anyhow::Result;
 use cfg_if::cfg_if;
 use itertools::Itertools;
 use lazy_static::lazy_static;
+use ai::LLMId;
 use onboarding::{
-    AgentOnboardingEvent, AgentOnboardingView, OfferVariant, OnboardingEvent, OnboardingIntention,
-    SelectedSettings,
+    AgentOnboardingEvent, AgentOnboardingView, OfferVariant, OnboardingAuthState, OnboardingEvent,
+    OnboardingIntention, SelectedSettings,
 };
 use parking_lot::Mutex;
 use pathfinder_geometry::rect::RectF;
@@ -85,13 +86,13 @@ use crate::terminal::keys_settings::KeysSettings;
 use crate::terminal::shell::ShellType;
 use crate::terminal::view::{TerminalAction, cell_size_and_padding};
 use crate::themes::onboarding_theme_picker_themes;
+use crate::terminal::model::block::SerializedBlock;
 use crate::themes::theme::{AnsiColorIdentifier, Blend, Fill, ThemeKind, WarpThemeConfig};
 use crate::uri::{OpenMCPSettingsArgs, OpenSettingsArgs, url_reports_checkout_success};
 use crate::util::bindings::{self, is_binding_pty_compliant};
 use crate::util::traffic_lights::{TrafficLightData, TrafficLightMouseStates, traffic_light_data};
 use crate::view_components::DismissibleToast;
 use crate::window_settings::WindowSettings;
-use crate::workspace::hoa_onboarding::mark_hoa_onboarding_completed;
 use crate::workspace::tab_settings::TabSettings;
 use crate::workspace::view::OnboardingTutorial;
 use crate::workspace::{PaneViewLocator, Workspace, WorkspaceAction, WorkspaceRegistry};
@@ -136,12 +137,27 @@ fn offer_variant_for_account_class(account_class: FtueAccountClass) -> Option<Of
 
 /// Whether the team selected in `ctx`'s window imposes any AI autonomy policy, which is
 /// what decides whether onboarding offers the user an autonomy choice at all.
-fn team_enforces_autonomy(ctx: &ViewContext<RootView>) -> bool {
-    let user_workspaces = UserWorkspaces::as_ref(ctx);
-    let scope = user_workspaces.team_context(&ctx.handle(), ctx);
-    user_workspaces
-        .ai_autonomy_settings(&scope)
-        .has_any_overrides()
+
+fn current_onboarding_auth_state(ctx: &AppContext) -> OnboardingAuthState {
+    let auth_state = AuthStateProvider::as_ref(ctx).get();
+    if auth_state.is_anonymous_or_logged_out() {
+        return OnboardingAuthState::LoggedOut;
+    }
+    let is_on_paid_plan = UserWorkspaces::as_ref(ctx)
+        .current_workspace()
+        .map(|w| w.billing_metadata.is_user_on_paid_plan())
+        .unwrap_or(false);
+    if is_on_paid_plan {
+        OnboardingAuthState::PayingUser
+    } else {
+        OnboardingAuthState::FreeUser
+    }
+}
+
+fn onboarding_pricing_promotion_message(ctx: &AppContext) -> Option<String> {
+    PricingInfoModel::as_ref(ctx)
+        .promotion_message()
+        .map(str::to_owned)
 }
 
 /// Re-reads the account state onboarding decides on once the user has been out
@@ -150,12 +166,6 @@ fn team_enforces_autonomy(ctx: &ViewContext<RootView>) -> bool {
 /// advances off, so every path that could follow a purchase goes through here
 /// rather than refreshing its own subset.
 fn refresh_onboarding_account_state(ctx: &mut ViewContext<RootView>) {
-    AIRequestUsageModel::handle(ctx).update(ctx, |usage, ctx| {
-        usage.request_availability_refresh(ctx);
-    });
-    LLMPreferences::handle(ctx).update(ctx, |prefs, ctx| {
-        prefs.refresh_available_models(ctx);
-    });
     TeamUpdateManager::handle(ctx).update(ctx, |manager, ctx| {
         drop(manager.refresh_workspace_metadata(ctx));
     });
@@ -374,24 +384,7 @@ pub fn init(app: &mut AppContext) {
         );
     }
 
-    app.add_global_action(
-        "root_view:open_conversation_viewer",
-        open_conversation_viewer,
-    );
-    app.add_action(
-        "root_view:open_cloud_conversation_in_existing_window",
-        RootView::open_cloud_conversation_in_existing_window,
-    );
 
-    app.add_global_action("root_view:create_environment", create_environment);
-    app.add_global_action(
-        "root_view:create_environment_and_run",
-        create_environment_and_run,
-    );
-    app.add_action(
-        "root_view:create_environment_in_existing_window",
-        RootView::create_environment_in_existing_window,
-    );
     app.add_action(
         "root_view:create_environment_in_existing_window_and_run",
         RootView::create_environment_in_existing_window_and_run,
@@ -430,15 +423,6 @@ pub fn init(app: &mut AppContext) {
     app.add_action(
         "root_view:open_settings_in_existing_window",
         RootView::open_settings_in_existing_window,
-    );
-
-    app.add_global_action(
-        "root_view:open_mcp_settings_in_new_window",
-        open_mcp_settings_in_new_window,
-    );
-    app.add_action(
-        "root_view:open_mcp_settings_in_existing_window",
-        RootView::open_mcp_settings_in_existing_window,
     );
 
     app.add_action("root_view:add_file_pane", RootView::add_file_pane);
@@ -923,84 +907,6 @@ fn open_shared_session_as_viewer(session_id: &SessionId, ctx: &mut AppContext) {
     );
 }
 
-/// Opens a new window to view a persisted view-only cloud conversation.
-/// The conversation data is loaded via GraphQL API.
-fn open_conversation_viewer(conversation_id: &ServerConversationToken, ctx: &mut AppContext) {
-    // Trigger the workspace loading mechanism by dispatching the LoadConversationData event
-    // This will open a new window with a loading state, fetch data via GraphQL, and display it
-    open_new_with_workspace_source(
-        NewWorkspaceSource::FromCloudConversationId {
-            conversation_id: conversation_id.clone(),
-        },
-        ctx,
-    );
-}
-
-/// Opens a new window and starts the guided `/create-environment` setup flow.
-fn create_environment(arg: &CreateEnvironmentArg, ctx: &mut AppContext) {
-    let repos = arg.repos.clone();
-    let (window_id, root_handle) = open_new_with_workspace_source(
-        NewWorkspaceSource::Session {
-            options: Box::default(),
-        },
-        ctx,
-    );
-
-    root_handle.update(ctx, |root_view, ctx| {
-        if let AuthOnboardingState::Terminal(workspace_handle) = &root_view.auth_onboarding_state {
-            workspace_handle.update(ctx, |workspace, ctx| {
-                workspace
-                    .active_tab_pane_group()
-                    .update(ctx, |pane_group, ctx| {
-                        pane_group.set_title("Create Environment", ctx);
-
-                        if let Some(terminal_view) = pane_group.active_session_view(ctx) {
-                            terminal_view.update(ctx, |_, ctx| {
-                                ctx.dispatch_typed_action_deferred(
-                                    TerminalAction::SetupCloudEnvironment(repos.clone()),
-                                );
-                            });
-                        }
-                    });
-            });
-        }
-    });
-
-    ctx.windows().show_window_and_focus_app(window_id);
-}
-
-/// Opens a new window and starts the guided `/create-environment` setup flow immediately.
-fn create_environment_and_run(arg: &CreateEnvironmentArg, ctx: &mut AppContext) {
-    let repos = arg.repos.clone();
-    let (window_id, root_handle) = open_new_with_workspace_source(
-        NewWorkspaceSource::Session {
-            options: Box::default(),
-        },
-        ctx,
-    );
-
-    root_handle.update(ctx, |root_view, ctx| {
-        if let AuthOnboardingState::Terminal(workspace_handle) = &root_view.auth_onboarding_state {
-            workspace_handle.update(ctx, |workspace, ctx| {
-                workspace
-                    .active_tab_pane_group()
-                    .update(ctx, |pane_group, ctx| {
-                        pane_group.set_title("Create Environment", ctx);
-
-                        if let Some(terminal_view) = pane_group.active_session_view(ctx) {
-                            terminal_view.update(ctx, |_, ctx| {
-                                ctx.dispatch_typed_action_deferred(
-                                    TerminalAction::SetupCloudEnvironmentAndStart(repos.clone()),
-                                );
-                            });
-                        }
-                    });
-            });
-        }
-    });
-
-    ctx.windows().show_window_and_focus_app(window_id);
-}
 fn open_team_settings_with_email_invite_in_new_window(
     arg: &OpenTeamsSettingsModalArgs,
     ctx: &mut AppContext,
@@ -1061,29 +967,6 @@ fn open_settings_in_new_window(args: &OpenSettingsArgs, ctx: &mut AppContext) {
         {
             let window_id = ctx.window_id();
             ctx.dispatch_typed_action_for_view(window_id, workspace_view_handle.id(), &action);
-        }
-    });
-}
-
-/// MCP servers need to wait for initial load to complete, so we have this action in addition
-/// to the general-purpose [`open_settings_page_in_new_window`].
-fn open_mcp_settings_in_new_window(args: &OpenMCPSettingsArgs, ctx: &mut AppContext) {
-    let autoinstall = args.autoinstall.clone();
-    let root_handle = open_new_window_get_handles(None, ctx).1;
-    root_handle.update(ctx, |root_view, ctx| {
-        if let AuthOnboardingState::Terminal(workspace_view_handle) =
-            &root_view.auth_onboarding_state
-        {
-            let initial_load_complete = UpdateManager::as_ref(ctx).initial_load_complete();
-            workspace_view_handle.update(ctx, |_, ctx| {
-                let _ = ctx.spawn(initial_load_complete, move |workspace, _, ctx| {
-                    workspace.open_mcp_servers_page(
-                        MCPServersSettingsPage::List,
-                        autoinstall.as_deref(),
-                        ctx,
-                    )
-                });
-            });
         }
     });
 }
@@ -1530,9 +1413,6 @@ pub enum NewWorkspaceSource {
     SharedSessionAsViewer {
         session_id: SessionId,
     },
-    FromCloudConversationId {
-        conversation_id: ServerConversationToken,
-    },
     NotebookFromFilePath {
         file_path: Option<PathBuf>,
     },
@@ -1609,7 +1489,6 @@ impl NewWorkspaceSource {
             Self::FromTemplate { .. }
             | Self::Session { .. }
             | Self::SharedSessionAsViewer { .. }
-            | Self::FromCloudConversationId { .. }
             | Self::NotebookFromFilePath { .. }
             | Self::NotebookById { .. }
             | Self::WorkflowById { .. }
@@ -2070,26 +1949,16 @@ impl RootView {
     fn create_agent_onboarding_view(
         ctx: &mut ViewContext<Self>,
     ) -> ViewHandle<AgentOnboardingView> {
-        LLMPreferences::handle(ctx).update(ctx, |prefs, ctx| {
-            prefs.refresh_available_models(ctx);
-        });
-
         let themes = onboarding_theme_picker_themes();
-        // Resolved against the root view rather than inside the closure below: the view being
-        // constructed there is not in a window yet, so it cannot resolve its own team.
-        let enforces_autonomy = team_enforces_autonomy(ctx);
         let onboarding_view = ctx.add_typed_action_view(move |ctx| {
-            let (models, default_model_id) =
-                build_onboarding_models(LLMPreferences::as_ref(ctx), ctx);
-
             let auth_state = current_onboarding_auth_state(ctx);
 
             let mut view = AgentOnboardingView::new(
                 themes.clone(),
                 false, // Always use unskippable onboarding.
-                models,
-                default_model_id,
-                enforces_autonomy,
+                Vec::new(),
+                LLMId::from("auto"),
+                false,
                 auth_state,
                 ctx,
             );
@@ -2109,55 +1978,15 @@ impl RootView {
             },
         );
 
-        let onboarding_view_clone = onboarding_view.clone();
-        ctx.subscribe_to_model(
-            &LLMPreferences::handle(ctx),
-            move |_, llm_preferences, event, ctx| match event {
-                LLMPreferencesEvent::UpdatedAvailableLLMs => {
-                    let (models, default_model_id) =
-                        build_onboarding_models(llm_preferences.as_ref(ctx), ctx);
-                    onboarding_view_clone.update(ctx, |onboarding_view, ctx| {
-                        onboarding_view.set_onboarding_models(models, default_model_id, ctx);
-                    })
-                }
-
-                LLMPreferencesEvent::UpdatedActiveAgentModeLLM
-                | LLMPreferencesEvent::UpdatedActiveCodingLLM => {}
-            },
-        );
-
         // Subscribe to workspace changes to update autonomy enforcement state and auth/billing
         // state (e.g. a free→paid upgrade reflected by the workspace/billing metadata poll).
         let onboarding_view_for_workspaces = onboarding_view.clone();
         ctx.subscribe_to_model(
             &UserWorkspaces::handle(ctx),
             move |_, _user_workspaces, event, ctx| {
-                if matches!(event, UserWorkspacesEvent::UpdateWorkspaceSettingsSuccess) {
-                    let workspace_enforces_autonomy = team_enforces_autonomy(ctx);
-                    onboarding_view_for_workspaces.update(ctx, |onboarding_view, ctx| {
-                        onboarding_view
-                            .set_workspace_enforces_autonomy(workspace_enforces_autonomy, ctx);
-                    });
-                }
                 let auth_state = current_onboarding_auth_state(ctx);
                 onboarding_view_for_workspaces.update(ctx, |onboarding_view, ctx| {
                     onboarding_view.set_auth_state(auth_state, ctx);
-                });
-            },
-        );
-
-        // Browser checkout doesn't report back to the app, so the offer is only
-        // satisfied once the user can actually make an AI request.
-        let onboarding_view_for_usage = onboarding_view.clone();
-        ctx.subscribe_to_model(
-            &AIRequestUsageModel::handle(ctx),
-            move |_, _usage, event, ctx| {
-                if !matches!(event, AIRequestUsageModelEvent::CreditAvailabilityUpdated) {
-                    return;
-                }
-                let available = AIRequestUsageModel::as_ref(ctx).has_any_ai_remaining(ctx);
-                onboarding_view_for_usage.update(ctx, |onboarding_view, ctx| {
-                    onboarding_view.on_ai_credit_availability_observed(available, ctx);
                 });
             },
         );
@@ -2265,12 +2094,10 @@ impl RootView {
         self.account_first_refresh_in_flight = true;
         let workspace_refresh = TeamUpdateManager::handle(ctx)
             .update(ctx, |manager, ctx| manager.refresh_workspace_metadata(ctx));
-        let request_limit_refresh = AIRequestUsageModel::handle(ctx)
-            .update(ctx, |model, ctx| model.refresh_request_usage(ctx));
         let _ = ctx.spawn(
             async move {
                 let _ = workspace_refresh.await;
-                request_limit_refresh.await.unwrap_or(None)
+                None
             },
             |me, fresh_request_limit, ctx| {
                 me.account_first_refresh_in_flight = false;
@@ -2381,9 +2208,6 @@ impl RootView {
         };
 
         mark_local_onboarding_completed(ctx);
-        if FeatureFlag::HOAOnboardingFlow.is_enabled() {
-            mark_hoa_onboarding_completed(ctx);
-        }
         if AuthStateProvider::as_ref(ctx).get().is_logged_in() {
             AuthManager::handle(ctx).update(ctx, |model, ctx| model.set_user_onboarded(ctx));
         }
@@ -2525,9 +2349,6 @@ impl RootView {
                 let account_first = FeatureFlag::AccountFirstOnboarding.is_enabled();
                 if !account_first {
                     mark_local_onboarding_completed(ctx);
-                    if FeatureFlag::HOAOnboardingFlow.is_enabled() {
-                        mark_hoa_onboarding_completed(ctx);
-                    }
                 }
 
                 let is_logged_in = AuthStateProvider::as_ref(ctx).get().is_logged_in();
@@ -2631,10 +2452,6 @@ impl RootView {
                 };
 
                 mark_local_onboarding_completed(ctx);
-                if FeatureFlag::HOAOnboardingFlow.is_enabled() {
-                    mark_hoa_onboarding_completed(ctx);
-                }
-
                 if AuthStateProvider::as_ref(ctx).get().is_logged_in() {
                     AuthManager::handle(ctx)
                         .update(ctx, |model, ctx| model.set_user_onboarded(ctx));
@@ -2773,7 +2590,7 @@ impl RootView {
                 let target = target.clone();
                 let onboarding_view = onboarding_view.clone();
 
-                let ai_enabled = AISettings::as_ref(ctx).is_any_ai_enabled(ctx);
+                let ai_enabled = false;
                 let appearance = Appearance::as_ref(ctx);
                 let theme_name = appearance
                     .theme()
@@ -3095,266 +2912,6 @@ impl RootView {
             log::warn!("Auth not complete before trying to join shared session");
             false
         }
-    }
-
-    /// Opens a cloud conversation in an existing window.
-    /// If the user owns the conversation, restores or navigates to it directly.
-    /// Otherwise, opens a read-only transcript viewer.
-    pub fn open_cloud_conversation_in_existing_window(
-        &mut self,
-        conversation_id: &ServerConversationToken,
-        ctx: &mut ViewContext<Self>,
-    ) -> bool {
-        if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
-            handle.update(ctx, |workspace, ctx| {
-                workspace.open_cloud_conversation_from_server_token(conversation_id.clone(), ctx);
-            });
-            let window_id = ctx.window_id();
-            ctx.windows().show_window_and_focus_app(window_id);
-            ctx.notify();
-            true
-        } else {
-            log::warn!("Auth not complete before trying to open conversation viewer");
-            false
-        }
-    }
-
-    /// Adds a tab and starts the guided `/create-environment` setup flow.
-    fn create_environment_in_existing_window(
-        &mut self,
-        arg: &CreateEnvironmentArg,
-        ctx: &mut ViewContext<Self>,
-    ) -> bool {
-        if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
-            let repos = arg.repos.clone();
-
-            handle.update(ctx, |workspace, ctx| {
-                workspace.add_tab_with_pane_layout(
-                    PanesLayout::SingleTerminal(Box::default()),
-                    Arc::new(HashMap::new()),
-                    None,
-                    ctx,
-                );
-
-                workspace
-                    .active_tab_pane_group()
-                    .update(ctx, |pane_group, ctx| {
-                        pane_group.set_title("Create Environment", ctx);
-
-                        if let Some(terminal_view) = pane_group.active_session_view(ctx) {
-                            terminal_view.update(ctx, |_, ctx| {
-                                ctx.dispatch_typed_action_deferred(
-                                    TerminalAction::SetupCloudEnvironment(repos.clone()),
-                                );
-                            });
-                        }
-                    });
-            });
-            let window_id = ctx.window_id();
-            ctx.windows().show_window_and_focus_app(window_id);
-            ctx.notify();
-            true
-        } else {
-            log::warn!("Auth not complete before trying to create environment");
-            false
-        }
-    }
-
-    /// Adds a tab and starts the guided `/create-environment` setup flow immediately.
-    fn create_environment_in_existing_window_and_run(
-        &mut self,
-        arg: &CreateEnvironmentArg,
-        ctx: &mut ViewContext<Self>,
-    ) -> bool {
-        let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state else {
-            log::warn!("Auth not complete before trying to create environment");
-            return false;
-        };
-
-        let repos = arg.repos.clone();
-
-        handle.update(ctx, |workspace, ctx| {
-            workspace.add_tab_with_pane_layout(
-                PanesLayout::SingleTerminal(Box::default()),
-                Arc::new(HashMap::new()),
-                None,
-                ctx,
-            );
-
-            workspace
-                .active_tab_pane_group()
-                .update(ctx, |pane_group, ctx| {
-                    pane_group.set_title("Create Environment", ctx);
-
-                    if let Some(terminal_view) = pane_group.active_session_view(ctx) {
-                        terminal_view.update(ctx, |_, ctx| {
-                            ctx.dispatch_typed_action_deferred(
-                                crate::terminal::view::TerminalAction::SetupCloudEnvironmentAndStart(
-                                    repos.clone(),
-                                ),
-                            );
-                        });
-                    }
-                });
-        });
-
-        let window_id = ctx.window_id();
-        ctx.windows().show_window_and_focus_app(window_id);
-        ctx.notify();
-        true
-    }
-
-    pub fn add_file_pane(&mut self, path: &PathBuf, ctx: &mut ViewContext<Self>) -> bool {
-        if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
-            handle.update(ctx, |workspace, ctx| {
-                workspace.add_tab_for_file_notebook(Some(path.to_owned()), ctx);
-            });
-            let window_id = ctx.window_id();
-            ctx.windows().show_window_and_focus_app(window_id);
-            ctx.notify();
-        } else {
-            log::warn!("Auth not complete before trying to open file pane");
-        }
-        true
-    }
-
-    /// Insert a command that should create a subshell. If we support bootstrapping AKA
-    /// "warpifying" its [`ShellType`], set a flag to automatically bootstrap it when the command's
-    /// block receives the [`AfterBlockStarted`] event.
-    pub fn insert_subshell_command_and_bootstrap_if_supported(
-        &mut self,
-        arg: &SubshellCommandArg,
-        ctx: &mut ViewContext<Self>,
-    ) -> bool {
-        let window_id = ctx.window_id();
-        if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
-            handle.update(ctx, |workspace, ctx| {
-                workspace.insert_subshell_command_and_bootstrap_if_supported(
-                    &arg.command,
-                    arg.shell_type,
-                    ctx,
-                );
-                ctx.windows().show_window_and_focus_app(window_id);
-            })
-        } else {
-            log::warn!("Auth not complete before trying to fill input");
-        }
-        true
-    }
-
-    /// Shows the user the settings view of their newly joined team
-    /// within the app.
-    pub fn handle_team_intent_link_action(&mut self, _: &(), ctx: &mut ViewContext<Self>) -> bool {
-        // Force-open warp drive.
-        let window_id = ctx.window_id();
-        if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
-            ctx.dispatch_typed_action_for_view(
-                window_id,
-                handle.id(),
-                &WorkspaceAction::OpenWarpDrive,
-            );
-            ctx.windows().show_window_and_focus_app(window_id);
-        } else {
-            report_error!("Auth not complete before trying to open warp drive");
-        }
-
-        // Use the team tester model to notify relevant subscribers to refresh their data.
-        TeamTesterStatus::handle(ctx).update(ctx, |model, ctx| {
-            model.initiate_data_pollers(true, ctx);
-        });
-        true
-    }
-
-    pub fn open_team_settings_page(&mut self, _: &(), ctx: &mut ViewContext<Self>) -> bool {
-        let window_id = ctx.window_id();
-        if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
-            ctx.dispatch_typed_action_for_view(
-                window_id,
-                handle.id(),
-                &WorkspaceAction::ShowSettingsPage(SettingsSection::Teams),
-            );
-            ctx.windows().show_window_and_focus_app(window_id);
-        } else {
-            report_error!("Auth not complete before trying to open team settings page");
-        }
-        true
-    }
-
-    pub fn open_settings_page_in_existing_window(
-        &mut self,
-        section: &SettingsSection,
-        ctx: &mut ViewContext<Self>,
-    ) -> bool {
-        let window_id = ctx.window_id();
-        if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
-            let handle = handle.clone();
-            ctx.dispatch_typed_action_for_view(
-                window_id,
-                handle.id(),
-                &WorkspaceAction::ShowSettingsPage(*section),
-            );
-            ctx.windows().show_window_and_focus_app(window_id);
-            return true;
-        }
-
-        // A checkout confirmation that predates the unified success hand-off
-        // still returns the user through the Billing & Usage deeplink. Landing
-        // it mid-onboarding would interrupt the flow, so onboarding takes it as
-        // the purchase succeeding and moves on instead.
-        if *section == SettingsSection::BillingAndUsage
-            && self.notify_onboarding_checkout_succeeded(ctx)
-        {
-            return true;
-        }
-
-        report_error!(
-            "Auth not complete before trying to open settings page",
-            extra: { "section" => ?section }
-        );
-        true
-    }
-
-    pub fn open_settings_in_existing_window(
-        &mut self,
-        args: &OpenSettingsArgs,
-        ctx: &mut ViewContext<Self>,
-    ) -> bool {
-        let window_id = ctx.window_id();
-        if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
-            let action = workspace_action_for_open_settings(args);
-            ctx.dispatch_typed_action_for_view(window_id, handle.id(), &action);
-            ctx.windows().show_window_and_focus_app(window_id);
-        } else {
-            report_error!("Auth not complete before trying to open settings");
-        }
-        true
-    }
-
-    /// Opens the MCP servers settings page in an existing window, optionally triggering auto-install.
-    /// Waits for `initial_load_complete` before opening so gallery data is available for autoinstall.
-    pub fn open_mcp_settings_in_existing_window(
-        &mut self,
-        args: &OpenMCPSettingsArgs,
-        ctx: &mut ViewContext<Self>,
-    ) -> bool {
-        if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
-            let autoinstall = args.autoinstall.clone();
-            let initial_load_complete = UpdateManager::as_ref(ctx).initial_load_complete();
-            handle.update(ctx, |_, ctx| {
-                let _ = ctx.spawn(initial_load_complete, move |workspace, _, ctx| {
-                    workspace.open_mcp_servers_page(
-                        MCPServersSettingsPage::List,
-                        autoinstall.as_deref(),
-                        ctx,
-                    )
-                });
-            });
-            let window_id = ctx.window_id();
-            ctx.windows().show_window_and_focus_app(window_id);
-        } else {
-            report_error!("Auth not complete before trying to open MCP settings page");
-        }
-        true
     }
 
     /// Syncs the local "onboarding completed" flag to the server if the user

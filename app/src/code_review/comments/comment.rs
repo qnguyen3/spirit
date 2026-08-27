@@ -7,6 +7,7 @@ use warp_multi_agent_api::{self as api};
 use crate::code::buffer_location::LocalOrRemotePath;
 use crate::code::editor::EditorReviewComment;
 use crate::code::editor::line::EditorLineLocation;
+use crate::code_review::agent_handoff::{CurrentHead, DiffBase};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum CommentOrigin {

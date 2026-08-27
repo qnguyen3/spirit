@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 use std::ops::Range;
-use std::sync::Arc;
 use std::time::Duration;
 
 use async_channel::Sender;
@@ -12,7 +11,7 @@ use warp_errors::report_error;
 use warpui::accessibility::{AccessibilityContent, WarpA11yRole};
 use warpui::elements::{
     Align, AnchorPair, Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
-    Dismiss, Fill, Flex, MouseStateHandle, OffsetPositioning, OffsetType, ParentElement,
+    Dismiss, Fill, Flex, OffsetPositioning, OffsetType, ParentElement,
     ParentOffsetBounds, PositionedElementOffsetBounds, PositioningAxis, Radius, Resizable,
     ResizableStateHandle, SavePosition, ScrollStateHandle, Scrollable, ScrollableElement,
     Shrinkable, Stack, UniformList, UniformListState, XAxisAnchor, YAxisAnchor,

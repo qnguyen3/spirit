@@ -393,10 +393,6 @@ impl UpdateManager {
                                         self.save_to_db([workflow_object.upsert_event()]);
                                     }
                                 });
-                        } else if cloud_model.get_ai_execution_profile(&server_id).is_some() {
-                            AIExecutionProfilesModel::handle(ctx).update(ctx, |model, ctx| {
-                                model.replace_client_id_with_server_id(server_id, client_id, ctx);
-                            });
                         }
                     }
                 });

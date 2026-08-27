@@ -4,6 +4,7 @@ use itertools::Itertools;
 use warpui::{AppContext, Entity, SingletonEntity};
 
 use super::RepoSearchItem;
+use crate::persisted_workspace::PersistedWorkspace;
 use crate::search::command_palette::mixer::CommandPaletteItemAction;
 use crate::search::data_source::{Query, QueryResult};
 use crate::search::mixer::{DataSourceRunErrorWrapper, SyncDataSource};

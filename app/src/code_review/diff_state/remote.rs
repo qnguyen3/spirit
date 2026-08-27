@@ -197,14 +197,6 @@ impl RemoteDiffStateModel {
             } if self.remote_path.matches(host_id, repo_path) => {
                 self.handle_create_pr_response(result, ctx);
             }
-            RemoteServerManagerEvent::GenerateCommitMessageResponse {
-                host_id,
-                repo_path,
-                result,
-            } if self.remote_path.matches(host_id, repo_path) => {
-                // AI ran on the daemon; just relay the result to the dialog.
-                ctx.emit(DiffStateModelEvent::CommitMessageGenerated(result.clone()));
-            }
             RemoteServerManagerEvent::GetCommittedBranchFilesResponse {
                 host_id,
                 repo_path,
