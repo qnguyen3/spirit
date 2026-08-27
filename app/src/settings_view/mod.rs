@@ -56,7 +56,6 @@ use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::pane_group::pane::view;
 use crate::pane_group::{BackingView, Direction, PaneConfiguration, PaneEvent, SplitPaneState};
 use crate::server::server_api::ServerApiProvider;
-use crate::server::telemetry::MCPServerCollectionPaneEntrypoint;
 use crate::settings::{BlockVisibilitySettings, SettingsFileError};
 use crate::terminal::SizeInfo;
 use crate::terminal::model::blockgrid::BlockGrid;
@@ -90,7 +89,6 @@ mod platform_page;
 mod privacy;
 mod privacy_page;
 mod referrals_page;
-mod remove_custom_endpoint_confirmation_dialog;
 mod scripting_page;
 mod settings_file_footer;
 pub(crate) mod settings_page;
@@ -226,37 +224,6 @@ pub(super) fn render_beta_chip(appearance: &Appearance) -> Box<dyn Element> {
     .finish()
 }
 
-/// Renders a wrapping row of pill-shaped chips for model labels, which flow
-/// onto additional lines instead of overflowing the container horizontally.
-/// Used by custom inference endpoint cards and the remove confirmation dialog.
-pub(super) fn render_model_chips(
-    labels: impl IntoIterator<Item = String>,
-    appearance: &Appearance,
-    text_color: warp_core::ui::theme::Fill,
-) -> Box<dyn Element> {
-    use warpui::ui_components::chip::Chip;
-    use warpui::ui_components::components::{UiComponent, UiComponentStyles};
-
-    let theme = appearance.theme();
-    let chip_border = internal_colors::neutral_4(theme).into();
-    let chip_style = UiComponentStyles {
-        background: None,
-        border_color: Some(chip_border),
-        border_width: Some(1.),
-        border_radius: Some(CornerRadius::with_all(Radius::Pixels(5.))),
-        font_family_id: Some(appearance.ui_font_family()),
-        font_size: Some(appearance.ui_font_size()),
-        font_color: Some(text_color.into_solid()),
-        ..Default::default()
-    };
-
-    let mut chips = Wrap::row().with_spacing(8.).with_run_spacing(8.);
-    for label in labels {
-        chips.add_child(Chip::new(label, chip_style).build().finish());
-    }
-    chips.finish()
-}
-
 #[derive(PartialEq)]
 pub enum SettingsViewEvent {
     Pane(PaneEvent),
@@ -268,17 +235,6 @@ pub enum SettingsViewEvent {
     ShowToast {
         message: String,
         flavor: ToastFlavor,
-    },
-    OpenAIFactCollection,
-    OpenMCPServerCollection,
-    OpenCustomRouterEditor(Option<CustomModelRouter>),
-    OpenCustomRouterFile(PathBuf),
-    OpenExecutionProfileEditor(ExecutionProfileId),
-    OpenLspLogs {
-        log_path: PathBuf,
-    },
-    OpenProjectRulesPane {
-        rule_paths: Vec<PathBuf>,
     },
 }
 
@@ -300,13 +256,8 @@ pub enum SettingsSection {
     WarpDrive,
     Warpify,
     // ── Agents umbrella subpages ──
-    WarpAgent,
-    AgentProfiles,
-    AgentMCPServers,
-    Knowledge,
     ThirdPartyCLIAgents,
     // ── Code umbrella subpages ──
-    CodeIndexing,
     EditorAndCodeReview,
     // ── Cloud platform umbrella subpages ──
     CloudEnvironments,
@@ -325,12 +276,7 @@ impl Display for SettingsSection {
             SettingsSection::SharedBlocks => write!(f, "Shared blocks"),
             SettingsSection::Scripting => write!(f, "Scripting"),
             SettingsSection::WarpDrive => write!(f, "Warp Drive"),
-            SettingsSection::WarpAgent => write!(f, "Warp Agent"),
-            SettingsSection::AgentProfiles => write!(f, "Profiles"),
-            SettingsSection::AgentMCPServers => write!(f, "MCP servers"),
-            SettingsSection::Knowledge => write!(f, "Knowledge"),
             SettingsSection::ThirdPartyCLIAgents => write!(f, "Third party CLI agents"),
-            SettingsSection::CodeIndexing => write!(f, "Indexing and projects"),
             SettingsSection::EditorAndCodeReview => write!(f, "Editor and Code Review"),
             SettingsSection::CloudEnvironments => write!(f, "Environments"),
             SettingsSection::WarpCloudAgentAPIKeys => write!(f, "API keys"),
@@ -368,12 +314,7 @@ impl SettingsSection {
             Self::Teams => "Teams",
             Self::WarpDrive => "Warp Drive",
             Self::Warpify => "Warpify",
-            Self::WarpAgent => "Warp Agent",
-            Self::AgentProfiles => "Profiles",
-            Self::AgentMCPServers => "MCP servers",
-            Self::Knowledge => "Knowledge",
             Self::ThirdPartyCLIAgents => "Third party CLI agents",
-            Self::CodeIndexing => "Indexing and projects",
             Self::EditorAndCodeReview => "Editor and Code Review",
             Self::CloudEnvironments => "Environments",
             // Keeps the "Oz" spelling the slug was seeded from; only the
@@ -404,16 +345,7 @@ impl SettingsSection {
             "Teams" => Self::Teams,
             "Warp Drive" | "WarpDrive" => Self::WarpDrive,
             "Warpify" => Self::Warpify,
-            // "Oz" and "AI" are older names for what is now the Warp Agent page.
-            "Warp Agent" | "Oz" | "AI" => Self::WarpAgent,
-            "Profiles" | "AgentProfiles" => Self::AgentProfiles,
-            // "MCP Servers" named the standalone page before it moved under the
-            // Agents umbrella; it differs from the current slug only by casing.
-            "MCP servers" | "MCP Servers" | "AgentMCPServers" => Self::AgentMCPServers,
-            "Knowledge" => Self::Knowledge,
             "Third party CLI agents" | "ThirdPartyCLIAgents" => Self::ThirdPartyCLIAgents,
-            // "Code" named the combined page before it split in two.
-            "Indexing and projects" | "CodeIndexing" | "Code" => Self::CodeIndexing,
             "Editor and Code Review" | "EditorAndCodeReview" => Self::EditorAndCodeReview,
             "Environments" | "CloudEnvironments" => Self::CloudEnvironments,
             "Oz Cloud API Keys" | "OzCloudAPIKeys" => Self::WarpCloudAgentAPIKeys,
@@ -436,7 +368,6 @@ pub fn settings_widget_deeplink_target(slug: &str) -> Option<(SettingsSection, &
             SettingsSection::Features,
             features_page::global_hotkey_widget_id(),
         )),
-        "custom_router" => Some((SettingsSection::WarpAgent, custom_model_routers_widget_id())),
         #[cfg(not(target_family = "wasm"))]
         "cli_agents" => Some((
             SettingsSection::ThirdPartyCLIAgents,
@@ -966,11 +897,7 @@ pub enum SettingsAction {
     AppearancePageToggle(AppearancePageAction),
     FeaturesPageToggle(FeaturesPageAction),
     PrivacyPageToggle(PrivacyPageAction),
-    WarpAgent(WarpAgentPageAction),
-    AgentProfiles(AgentProfilesPageAction),
-    Knowledge(KnowledgePageAction),
     CLIAgents(CLIAgentsPageAction),
-    CodeIndexing(CodeIndexingPageAction),
     EditorAndCodeReview(EditorAndCodeReviewPageAction),
     WarpDrive(warp_drive_page::WarpDriveSettingsPageAction),
     WarpifyPageToggle(WarpifyPageAction),
@@ -1126,18 +1053,13 @@ macro_rules! update_page {
             SettingsPageViewHandle::Privacy(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Referrals(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Scripting(handle) => $ctx.update_view(handle, $update),
-            SettingsPageViewHandle::WarpAgent(handle) => $ctx.update_view(handle, $update),
-            SettingsPageViewHandle::AgentProfiles(handle) => $ctx.update_view(handle, $update),
-            SettingsPageViewHandle::Knowledge(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::CLIAgents(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::CloudEnvironments(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::About(handle) => $ctx.update_view(handle, $update),
-            SettingsPageViewHandle::CodeIndexing(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::EditorAndCodeReview(handle) => {
                 $ctx.update_view(handle, $update)
             }
             SettingsPageViewHandle::BillingAndUsage(handle) => $ctx.update_view(handle, $update),
-            SettingsPageViewHandle::MCPServers(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::WarpDrive(handle) => $ctx.update_view(handle, $update),
         }
     };
@@ -1213,24 +1135,6 @@ impl SettingsView {
         // About page
         let about_page_handle = ctx.add_view(AboutPageView::new);
 
-        // Warp Agent page
-        let warp_agent_page_handle = ctx.add_typed_action_view(WarpAgentPageView::new);
-        ctx.subscribe_to_view(&warp_agent_page_handle, |me, _, event, ctx| {
-            me.handle_warp_agent_page_event(event, ctx);
-        });
-
-        // Agent profiles page, under the Agents umbrella
-        let agent_profiles_page_handle = ctx.add_typed_action_view(AgentProfilesPageView::new);
-        ctx.subscribe_to_view(&agent_profiles_page_handle, |me, _, event, ctx| {
-            me.handle_agent_profiles_page_event(event, ctx);
-        });
-
-        // Knowledge page, under the Agents umbrella
-        let knowledge_page_handle = ctx.add_typed_action_view(KnowledgePageView::new);
-        ctx.subscribe_to_view(&knowledge_page_handle, |me, _, event, ctx| {
-            me.handle_knowledge_page_event(event, ctx);
-        });
-
         // Third party CLI agents page, under the Agents umbrella
         let cli_agents_page_handle = ctx.add_typed_action_view(CLIAgentsPageView::new);
         ctx.subscribe_to_view(&cli_agents_page_handle, |me, _, event, ctx| {
@@ -1254,10 +1158,6 @@ impl SettingsView {
         let keybindings_handle = ctx.add_typed_action_view(KeybindingsView::new);
 
         // Code umbrella pages
-        let code_indexing_page_handle = ctx.add_typed_action_view(CodeIndexingPageView::new);
-        ctx.subscribe_to_view(&code_indexing_page_handle, |me, _, event, ctx| {
-            me.handle_code_indexing_page_event(event, ctx);
-        });
         let editor_review_page_handle = ctx.add_typed_action_view(EditorAndCodeReviewPageView::new);
 
         // Teams page, adding unconditionally, as `should_render` later on decides whether it
@@ -1309,12 +1209,6 @@ impl SettingsView {
             me.handle_platform_page_event(event, ctx);
         });
 
-        // MCP Servers page
-        let mcp_servers_page_handle = ctx.add_typed_action_view(MCPServersSettingsPageView::new);
-        ctx.subscribe_to_view(&mcp_servers_page_handle, |me, _, event, ctx| {
-            me.handle_mcp_servers_page_event(event, ctx);
-        });
-
         let font_family = Appearance::as_ref(ctx).ui_font_family();
         let search_editor = ctx.add_typed_action_view(|ctx| {
             let options = SingleLineEditorOptions {
@@ -1345,12 +1239,8 @@ impl SettingsView {
 
         let mut settings_pages = vec![
             SettingsPage::new(main_page_handle),
-            SettingsPage::new(warp_agent_page_handle),
-            SettingsPage::new(agent_profiles_page_handle),
-            SettingsPage::new(knowledge_page_handle),
             SettingsPage::new(cli_agents_page_handle),
             billing_and_usage_page,
-            SettingsPage::new(code_indexing_page_handle),
             SettingsPage::new(editor_review_page_handle),
             SettingsPage::new(teams_page_handle),
             SettingsPage::new(appearance_page_handle),
@@ -1368,7 +1258,6 @@ impl SettingsView {
         }
 
         settings_pages.extend(vec![
-            SettingsPage::new(mcp_servers_page_handle),
             SettingsPage::new(environments_page_handle.clone()),
             SettingsPage::new(privacy_page_handle),
             SettingsPage::new(about_page_handle),
@@ -1380,21 +1269,12 @@ impl SettingsView {
             SettingsNavItem::Page(SettingsSection::Account),
             SettingsNavItem::Umbrella(SettingsUmbrella::new(
                 "Agents",
-                vec![
-                    SettingsSection::WarpAgent,
-                    SettingsSection::AgentProfiles,
-                    SettingsSection::AgentMCPServers,
-                    SettingsSection::Knowledge,
-                    SettingsSection::ThirdPartyCLIAgents,
-                ],
+                vec![SettingsSection::ThirdPartyCLIAgents],
             )),
             SettingsNavItem::Page(SettingsSection::BillingAndUsage),
             SettingsNavItem::Umbrella(SettingsUmbrella::new(
                 "Code",
-                vec![
-                    SettingsSection::CodeIndexing,
-                    SettingsSection::EditorAndCodeReview,
-                ],
+                vec![SettingsSection::EditorAndCodeReview],
             )),
             SettingsNavItem::Umbrella(SettingsUmbrella::new(
                 "Cloud platform",
@@ -1746,9 +1626,7 @@ impl SettingsView {
     ) {
         match event {
             SettingsPageEvent::FocusModal => ctx.focus(&self.search_editor),
-            SettingsPageEvent::Pane(_)
-            | SettingsPageEvent::EnvironmentSetupModeSelectorToggled { .. }
-            | SettingsPageEvent::AgentAssistedEnvironmentModalToggled { .. } => {
+            SettingsPageEvent::Pane(_) => {
                 // These events are not handled in standalone settings - only used
                 // when the view is hosted inside a pane.
             }
@@ -1762,11 +1640,6 @@ impl SettingsView {
     ) {
         match event {
             SettingsPageEvent::FocusModal => ctx.focus(&self.search_editor),
-            SettingsPageEvent::EnvironmentSetupModeSelectorToggled { .. }
-            | SettingsPageEvent::AgentAssistedEnvironmentModalToggled { .. } => {
-                // Re-render so the modal overlay is shown/hidden.
-                ctx.notify();
-            }
             SettingsPageEvent::Pane(_) => {
                 // Not applicable in standalone settings view.
             }
@@ -1793,9 +1666,7 @@ impl SettingsView {
     ) {
         match event {
             SettingsPageEvent::FocusModal => ctx.focus(&self.search_editor),
-            SettingsPageEvent::Pane(_)
-            | SettingsPageEvent::EnvironmentSetupModeSelectorToggled { .. }
-            | SettingsPageEvent::AgentAssistedEnvironmentModalToggled { .. } => {
+            SettingsPageEvent::Pane(_) => {
                 // These events are not handled in standalone settings - only used
                 // when the view is hosted inside a pane.
             }
@@ -1833,23 +1704,6 @@ impl SettingsView {
                 ctx.notify();
             }
             platform_page::PlatformPageViewEvent::HideCreateApiKeyModal => {
-                // Modal rendering is handled in get_modal_content_for_page
-                ctx.notify();
-            }
-        }
-    }
-
-    fn handle_mcp_servers_page_event(
-        &mut self,
-        event: &MCPServersSettingsPageEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            MCPServersSettingsPageEvent::ShowModal => {
-                // Modal rendering is handled in get_modal_content_for_page
-                ctx.notify();
-            }
-            MCPServersSettingsPageEvent::HideModal => {
                 // Modal rendering is handled in get_modal_content_for_page
                 ctx.notify();
             }
@@ -1899,61 +1753,6 @@ impl SettingsView {
         }
     }
 
-    fn handle_warp_agent_page_event(
-        &mut self,
-        event: &WarpAgentPageEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            WarpAgentPageEvent::FocusModal => ctx.focus(&self.search_editor),
-            #[cfg(feature = "local_fs")]
-            WarpAgentPageEvent::OpenCustomRouterEditor(router) => {
-                ctx.emit(SettingsViewEvent::OpenCustomRouterEditor(router.clone()));
-            }
-            #[cfg(feature = "local_fs")]
-            WarpAgentPageEvent::OpenCustomRouterFile(path) => {
-                ctx.emit(SettingsViewEvent::OpenCustomRouterFile(path.clone()));
-            }
-            WarpAgentPageEvent::SignupAnonymousUser => {
-                ctx.emit(SettingsViewEvent::SignupAnonymousUser)
-            }
-            WarpAgentPageEvent::ShowModal | WarpAgentPageEvent::HideModal => {
-                // Modal rendering is handled in get_modal_content_for_page
-                ctx.notify();
-            }
-        }
-    }
-
-    fn handle_agent_profiles_page_event(
-        &mut self,
-        event: &AgentProfilesPageEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            AgentProfilesPageEvent::FocusModal => ctx.focus(&self.search_editor),
-            AgentProfilesPageEvent::OpenMCPServerCollection => {
-                ctx.emit(SettingsViewEvent::OpenMCPServerCollection)
-            }
-            AgentProfilesPageEvent::OpenExecutionProfileEditor(profile_id) => {
-                ctx.emit(SettingsViewEvent::OpenExecutionProfileEditor(
-                    profile_id.clone(),
-                ));
-            }
-        }
-    }
-
-    fn handle_knowledge_page_event(
-        &mut self,
-        event: &KnowledgePageEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            KnowledgePageEvent::OpenAIFactCollection => {
-                ctx.emit(SettingsViewEvent::OpenAIFactCollection)
-            }
-        }
-    }
-
     fn handle_cli_agents_page_event(
         &mut self,
         event: &CLIAgentsPageEvent,
@@ -1961,28 +1760,6 @@ impl SettingsView {
     ) {
         match event {
             CLIAgentsPageEvent::FocusModal => ctx.focus(&self.search_editor),
-        }
-    }
-
-    fn handle_code_indexing_page_event(
-        &mut self,
-        event: &CodeIndexingPageEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            CodeIndexingPageEvent::SignupAnonymousUser => {
-                ctx.emit(SettingsViewEvent::SignupAnonymousUser)
-            }
-            CodeIndexingPageEvent::OpenLspLogs { log_path } => {
-                ctx.emit(SettingsViewEvent::OpenLspLogs {
-                    log_path: log_path.clone(),
-                });
-            }
-            CodeIndexingPageEvent::OpenProjectRules { rule_paths } => {
-                ctx.emit(SettingsViewEvent::OpenProjectRulesPane {
-                    rule_paths: rule_paths.clone(),
-                });
-            }
         }
     }
 
@@ -2097,13 +1874,8 @@ impl SettingsView {
             SettingsPageViewHandle::Warpify(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Referrals(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Scripting(v) => v.as_ref(app).should_render(app),
-            SettingsPageViewHandle::WarpAgent(v) => v.as_ref(app).should_render(app),
-            SettingsPageViewHandle::AgentProfiles(v) => v.as_ref(app).should_render(app),
-            SettingsPageViewHandle::Knowledge(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::CLIAgents(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::CloudEnvironments(v) => v.as_ref(app).should_render(app),
-            SettingsPageViewHandle::MCPServers(v) => v.as_ref(app).should_render(app),
-            SettingsPageViewHandle::CodeIndexing(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::EditorAndCodeReview(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::WarpDrive(v) => v.as_ref(app).should_render(app),
         }
@@ -2120,29 +1892,6 @@ impl SettingsView {
         {
             view.update(ctx, |view, ctx| {
                 view.open_team_members(email, ctx);
-            })
-        }
-    }
-
-    /// Open the MCP servers page, optionally to list page or edit page.
-    /// If `autoinstall_gallery_title` is provided, triggers auto-install of the specified gallery MCP.
-    pub fn open_mcp_servers_page(
-        &mut self,
-        page: MCPServersSettingsPage,
-        autoinstall_gallery_title: Option<&str>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        // Callers reach this through `Workspace::open_mcp_servers_page`, which
-        // has already navigated to the page; only the sub-view selection is
-        // left to do.
-        if let Some(mcp_page) = self.settings_page(SettingsSection::AgentMCPServers)
-            && let SettingsPageViewHandle::MCPServers(view) = &mcp_page.view_handle
-        {
-            view.update(ctx, |view, ctx| {
-                view.update_page(page, ctx);
-                if let Some(title) = autoinstall_gallery_title {
-                    view.autoinstall_from_gallery(title, ctx);
-                }
             })
         }
     }
@@ -2318,12 +2067,6 @@ impl SettingsView {
             }
             SettingsPageViewHandle::WarpCloudAgentAPIKeys(view) => {
                 view.read(app, |view, _| view.get_modal_content())
-            }
-            SettingsPageViewHandle::MCPServers(view) => {
-                view.read(app, |view, _| view.get_modal_content(app))
-            }
-            SettingsPageViewHandle::WarpAgent(view) => {
-                view.read(app, |view, _| view.get_modal_content(app))
             }
             _ => None,
         }
@@ -2644,24 +2387,6 @@ impl View for SettingsView {
             );
         }
 
-        // Render environment setup mode selector overlay when open.
-        if let Some(selector_handle) = self
-            .environments_page_handle
-            .as_ref(app)
-            .environment_setup_mode_selector_handle()
-        {
-            stack.add_child(ChildView::new(selector_handle).finish());
-        }
-
-        // Render agent-assisted environment modal overlay when open.
-        if let Some(modal_handle) = self
-            .environments_page_handle
-            .as_ref(app)
-            .agent_assisted_environment_modal_handle(app)
-        {
-            stack.add_child(ChildView::new(modal_handle).finish());
-        }
-
         SavePosition::new(stack.finish(), POSITION_ID).finish()
     }
 }
@@ -2673,15 +2398,6 @@ impl TypedActionView for SettingsView {
         match action {
             SettingsAction::SelectAndRefresh(section) => {
                 self.set_and_refresh_current_page_internal(*section, false, true, ctx);
-
-                if *section == SettingsSection::AgentMCPServers {
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::MCPServerCollectionPaneOpened {
-                            entrypoint: MCPServerCollectionPaneEntrypoint::MCPSettingsTab,
-                        },
-                        ctx
-                    );
-                }
             }
             SettingsAction::ToggleUmbrella(nav_index) => {
                 if let Some(SettingsNavItem::Umbrella(umbrella)) =
@@ -2727,48 +2443,12 @@ impl TypedActionView for SettingsView {
                     })
                 }
             }
-            SettingsAction::WarpAgent(ai_action) => {
-                if let Some(warp_agent_page) = self.settings_page(SettingsSection::WarpAgent)
-                    && let SettingsPageViewHandle::WarpAgent(view) = &warp_agent_page.view_handle
-                {
-                    view.update(ctx, |view, ctx| {
-                        view.handle_action(ai_action, ctx);
-                    })
-                }
-            }
-            SettingsAction::AgentProfiles(profiles_action) => {
-                if let Some(page) = self.settings_page(SettingsSection::AgentProfiles)
-                    && let SettingsPageViewHandle::AgentProfiles(view) = &page.view_handle
-                {
-                    view.update(ctx, |view, ctx| {
-                        view.handle_action(profiles_action, ctx);
-                    })
-                }
-            }
-            SettingsAction::Knowledge(knowledge_action) => {
-                if let Some(page) = self.settings_page(SettingsSection::Knowledge)
-                    && let SettingsPageViewHandle::Knowledge(view) = &page.view_handle
-                {
-                    view.update(ctx, |view, ctx| {
-                        view.handle_action(knowledge_action, ctx);
-                    })
-                }
-            }
             SettingsAction::CLIAgents(cli_agents_action) => {
                 if let Some(page) = self.settings_page(SettingsSection::ThirdPartyCLIAgents)
                     && let SettingsPageViewHandle::CLIAgents(view) = &page.view_handle
                 {
                     view.update(ctx, |view, ctx| {
                         view.handle_action(cli_agents_action, ctx);
-                    })
-                }
-            }
-            SettingsAction::CodeIndexing(code_action) => {
-                if let Some(page) = self.settings_page(SettingsSection::CodeIndexing)
-                    && let SettingsPageViewHandle::CodeIndexing(view) = &page.view_handle
-                {
-                    view.update(ctx, |view, ctx| {
-                        view.handle_action(code_action, ctx);
                     })
                 }
             }

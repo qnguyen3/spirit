@@ -13408,7 +13408,7 @@ impl Workspace {
                 if pane_group.id() == self.active_tab_pane_group().id() {
                     self.left_panel_open = *is_open;
                     self.left_panel_view.update(ctx, |left_panel, ctx| {
-                        left_panel.on_left_panel_visibility_changed(*is_open, ctx);
+                        left_panel.on_left_panel_visibility_changed(ctx);
                     });
                 }
             }

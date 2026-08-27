@@ -109,7 +109,6 @@ pub enum SettingsPageViewHandle {
     SharedBlocks(ViewHandle<ShowBlocksView>),
     Keybindings(ViewHandle<KeybindingsView>),
     About(ViewHandle<AboutPageView>),
-    CodeIndexing(ViewHandle<CodeIndexingPageView>),
     EditorAndCodeReview(ViewHandle<EditorAndCodeReviewPageView>),
     Teams(ViewHandle<TeamsPageView>),
     WarpCloudAgentAPIKeys(ViewHandle<super::platform_page::PlatformPageView>),
@@ -117,13 +116,9 @@ pub enum SettingsPageViewHandle {
     Warpify(ViewHandle<WarpifyPageView>),
     Referrals(ViewHandle<ReferralsPageView>),
     Scripting(ViewHandle<ScriptingSettingsPageView>),
-    WarpAgent(ViewHandle<WarpAgentPageView>),
-    AgentProfiles(ViewHandle<AgentProfilesPageView>),
-    Knowledge(ViewHandle<KnowledgePageView>),
     CLIAgents(ViewHandle<CLIAgentsPageView>),
     CloudEnvironments(ViewHandle<EnvironmentsPageView>),
     BillingAndUsage(ViewHandle<BillingAndUsageDispatchView>),
-    MCPServers(ViewHandle<MCPServersSettingsPageView>),
     WarpDrive(ViewHandle<WarpDriveSettingsPageView>),
 }
 
@@ -137,7 +132,6 @@ impl SettingsPageViewHandle {
             SharedBlocks(view_handle) => ChildView::new(view_handle).finish(),
             Keybindings(view_handle) => ChildView::new(view_handle).finish(),
             About(view_handle) => ChildView::new(view_handle).finish(),
-            CodeIndexing(view_handle) => ChildView::new(view_handle).finish(),
             EditorAndCodeReview(view_handle) => ChildView::new(view_handle).finish(),
             Teams(view_handle) => ChildView::new(view_handle).finish(),
             WarpCloudAgentAPIKeys(view_handle) => ChildView::new(view_handle).finish(),
@@ -145,21 +139,11 @@ impl SettingsPageViewHandle {
             Warpify(view_handle) => ChildView::new(view_handle).finish(),
             Referrals(view_handle) => ChildView::new(view_handle).finish(),
             Scripting(view_handle) => ChildView::new(view_handle).finish(),
-            WarpAgent(view_handle) => ChildView::new(view_handle).finish(),
-            AgentProfiles(view_handle) => ChildView::new(view_handle).finish(),
-            Knowledge(view_handle) => ChildView::new(view_handle).finish(),
             CLIAgents(view_handle) => ChildView::new(view_handle).finish(),
             CloudEnvironments(view_handle) => ChildView::new(view_handle).finish(),
             BillingAndUsage(view_handle) => ChildView::new(view_handle).finish(),
-            MCPServers(view_handle) => ChildView::new(view_handle).finish(),
             WarpDrive(view_handle) => ChildView::new(view_handle).finish(),
         }
-    }
-}
-
-impl From<ViewHandle<MCPServersSettingsPageView>> for SettingsPageViewHandle {
-    fn from(view_handle: ViewHandle<MCPServersSettingsPageView>) -> Self {
-        SettingsPageViewHandle::MCPServers(view_handle)
     }
 }
 
@@ -207,8 +191,6 @@ impl SettingsPage {
 pub enum SettingsPageEvent {
     FocusModal,
     Pane(PaneEventWrapper),
-    EnvironmentSetupModeSelectorToggled { is_open: bool },
-    AgentAssistedEnvironmentModalToggled { is_open: bool },
 }
 
 /// Wrapper for pane events to avoid circular dependency with pane module.
@@ -470,86 +452,6 @@ pub fn render_banner(
         .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
         .with_uniform_padding(12.)
         .finish()
-}
-
-pub fn render_full_pane_width_ai_button(
-    text: &str,
-    is_any_ai_enabled: bool,
-    mouse_state: MouseStateHandle,
-    action: impl Action + Clone,
-    appearance: &Appearance,
-) -> Box<dyn Element> {
-    let (text_color, bg, icon_bg) = if is_any_ai_enabled {
-        (
-            appearance
-                .theme()
-                .main_text_color(appearance.theme().background())
-                .into(),
-            internal_colors::neutral_3(appearance.theme()),
-            appearance.theme().background(),
-        )
-    } else {
-        (
-            appearance.theme().disabled_ui_text_color().into(),
-            internal_colors::neutral_2(appearance.theme()),
-            appearance.theme().disabled_ui_text_color(),
-        )
-    };
-
-    let mut button = Hoverable::new(mouse_state, |_| {
-        Container::new(
-            Flex::row()
-                .with_main_axis_size(MainAxisSize::Max)
-                .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
-                .with_child(
-                    Expanded::new(
-                        1.,
-                        appearance
-                            .ui_builder()
-                            .wrappable_text(text.to_string(), true)
-                            .with_style(UiComponentStyles {
-                                font_size: Some(CONTENT_FONT_SIZE),
-                                font_color: Some(text_color),
-                                ..Default::default()
-                            })
-                            .build()
-                            .finish(),
-                    )
-                    .finish(),
-                )
-                .with_child(
-                    ConstrainedBox::new(
-                        Icon::ChevronRight
-                            .to_warpui_icon(appearance.theme().main_text_color(icon_bg))
-                            .finish(),
-                    )
-                    .with_width(16.)
-                    .with_height(16.)
-                    .finish(),
-                )
-                .finish(),
-        )
-        .with_background(bg)
-        .with_border(
-            Border::new(1.).with_border_fill(internal_colors::neutral_4(appearance.theme())),
-        )
-        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
-        .with_horizontal_padding(16.)
-        .with_vertical_padding(11.)
-        .with_margin_bottom(12.)
-        .finish()
-    });
-
-    if is_any_ai_enabled {
-        button = button
-            .on_click(move |ctx, _, _| {
-                ctx.dispatch_typed_action(action.clone());
-            })
-            .with_cursor(Cursor::PointingHand);
-    }
-
-    button.finish()
 }
 
 #[derive(Default)]

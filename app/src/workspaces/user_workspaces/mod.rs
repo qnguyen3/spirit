@@ -31,10 +31,12 @@ use crate::server::server_api::workspace::{PurchaseAddonCreditsOutcome, Workspac
 #[cfg(test)]
 use crate::server::server_api::{team::MockTeamClient, workspace::MockWorkspaceClient};
 use crate::settings::{CodeSettings, CodeSettingsChangedEvent, PrivacySettings};
-#[cfg(test)]
-use crate::workspaces::workspace::{BillingMetadata, WorkspaceMember, WorkspaceSettings};
 use crate::workspaces::workspace::{
     AiOverages, PurchaseAddOnCreditsPolicy, UsageBasedPricingSettings,
+};
+#[cfg(test)]
+use crate::workspaces::workspace::{
+    BillingMetadata, CustomerType, WorkspaceMember, WorkspaceSettings,
 };
 pub(crate) mod billing_workspace_settings;
 pub(crate) mod team_workspace_settings;
@@ -1618,7 +1620,6 @@ impl UserWorkspaces {
             panic!("No workspace found. Did you call setup_test_workspace()?");
         }
     }
-
 }
 
 impl Entity for UserWorkspaces {

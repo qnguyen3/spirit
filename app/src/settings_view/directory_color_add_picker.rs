@@ -16,6 +16,7 @@ use warpui::{
 };
 
 use crate::appearance::Appearance;
+use crate::persisted_workspace::{PersistedWorkspace, PersistedWorkspaceEvent};
 use crate::ui_components::icons;
 use crate::view_components::action_button::{ActionButton, SecondaryTheme};
 use crate::view_components::{DropdownItem, FilterableDropdown};

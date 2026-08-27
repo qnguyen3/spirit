@@ -63,12 +63,14 @@ use crate::themes::theme::Fill as ThemeFill;
 use crate::ui_components::agent_icon::terminal_view_agent_icon_variant;
 use crate::ui_components::buttons::combo_inner_button;
 use crate::ui_components::icon_with_status::{IconWithStatusVariant, render_icon_with_status};
+use crate::ui_components::status_icons::{
+    ConversationStatus, StatusColorStyle, render_status_element,
+};
 use crate::ui_components::icons::Icon as UiIcon;
 use crate::util::bindings::keybinding_name_to_display_string;
 use crate::util::color::Opacity;
 use crate::workspace::action::{NewSessionMenuAnchor, WorkspaceAction};
 use crate::workspace::cross_window_tab_drag::CrossWindowTabDrag;
-use crate::workspace::hoa_onboarding::HoaOnboardingStep;
 use crate::workspace::sync_inputs::SyncedInputState;
 use crate::workspace::tab_group::{TabGroup, TabGroupId};
 use crate::workspace::tab_settings::{
@@ -947,7 +949,6 @@ struct VerticalTabsSummaryData {
     primary_labels: Vec<VerticalTabsSummaryPrimaryLabel>,
     working_directories: Vec<String>,
     branch_entries: Vec<VerticalTabsSummaryBranchEntry>,
-    has_unread_activity: bool,
 }
 
 impl TabGroupColorMode {
@@ -1059,20 +1060,10 @@ fn summary_conversation_status_for_terminal(
     app: &AppContext,
 ) -> Option<ConversationStatus> {
     let cli_agent_session = CLIAgentSessionsModel::as_ref(app).session(terminal_view.id());
-    if let Some(session) = cli_agent_session
+    cli_agent_session
         .filter(|s| s.supports_rich_status())
         .filter(|s| !matches!(s.agent, CLIAgent::Unknown))
-    {
-        return Some(session.status.to_conversation_status());
-    }
-
-    let is_ambient = terminal_view.is_ambient_agent_session(app);
-    let has_conversation = terminal_view
-        .selected_conversation_display_title(app)
-        .is_some();
-    (has_conversation || is_ambient)
-        .then(|| terminal_view.selected_conversation_status_for_display(app))
-        .flatten()
+        .map(|session| session.status.to_conversation_status())
 }
 
 fn coalesce_summary_branch_entries(
@@ -1457,28 +1448,7 @@ fn render_detail_kind_badge_icon(
                 return icon.to_warpui_icon(color).finish();
             }
 
-            let icon = if terminal_view.is_ambient_agent_session(app) {
-                WarpIcon::CloudFilled
-            } else if terminal_view
-                .selected_conversation_display_title(app)
-                .is_some()
-            {
-                // Local agent conversation: use the Warp agent logo glyph to
-                // match the icon-with-status rendering for the tab row.
-                WarpIcon::Agent
-            } else {
-                WarpIcon::Terminal
-            };
-            let color = match icon {
-                WarpIcon::CloudFilled => theme.main_text_color(theme.background()),
-                // Theme-adaptive fill: no black chip behind this glyph in the
-                // sidecar context, so use the main text color to stay visible
-                // on both dark and light themes.
-                WarpIcon::Agent => theme.main_text_color(theme.background()),
-                WarpIcon::Terminal => disabled_text,
-                _ => sub_text,
-            };
-            icon.to_warpui_icon(color).finish()
+            WarpIcon::Terminal.to_warpui_icon(disabled_text).finish()
         }
         TypedPane::Code(_) => icon_from_file_path(&props.title, appearance)
             .unwrap_or_else(|| WarpIcon::Code2.to_warpui_icon(sub_text).finish()),
@@ -1578,10 +1548,7 @@ fn render_new_tab_button(
     let is_active = matches!(
         workspace.show_new_session_dropdown_menu,
         Some(NewSessionMenuAnchor::AddTabButton(_))
-    ) || workspace
-        .hoa_onboarding_flow
-        .as_ref()
-        .is_some_and(|flow| flow.as_ref(app).step() == HoaOnboardingStep::TabConfig);
+    );
 
     Hoverable::new(state.new_tab_hover_state.clone(), move |hover_state| {
         let plus_button = combo_inner_button(
@@ -3372,20 +3339,6 @@ fn resolve_icon_with_status_variant(
     }
 }
 
-fn has_unread_activity(typed: &TypedPane<'_>, app: &AppContext) -> bool {
-    let TypedPane::Terminal(terminal_pane) = typed else {
-        return false;
-    };
-    let terminal_view = terminal_pane.terminal_view(app);
-    has_unread_activity_for_terminal_view(terminal_view.as_ref(app).id(), app)
-}
-
-fn has_unread_activity_for_terminal_view(terminal_view_id: EntityId, app: &AppContext) -> bool {
-    AgentNotificationsModel::as_ref(app)
-        .notifications()
-        .has_unread_for_terminal_view(terminal_view_id)
-}
-
 const INDICATOR_DOT_SIZE: f32 = 8.;
 
 fn render_title_indicator(theme: &WarpTheme) -> Box<dyn Element> {
@@ -3457,11 +3410,9 @@ fn render_shortcut_hint(label: &str, appearance: &Appearance) -> Box<dyn Element
 fn render_row_title_line(
     title: Box<dyn Element>,
     shows_synced_inputs: bool,
-    shows_activity_indicator: bool,
     shortcut_hint: Option<Box<dyn Element>>,
-    theme: &WarpTheme,
 ) -> Box<dyn Element> {
-    if !shows_synced_inputs && !shows_activity_indicator && shortcut_hint.is_none() {
+    if !shows_synced_inputs && shortcut_hint.is_none() {
         return title;
     }
 
@@ -3471,9 +3422,6 @@ fn render_row_title_line(
         .with_spacing(4.);
     if shows_synced_inputs {
         indicators.add_child(render_synced_inputs_indicator());
-    }
-    if shows_activity_indicator {
-        indicators.add_child(render_title_indicator(theme));
     }
     if let Some(hint) = shortcut_hint {
         indicators.add_child(hint);
@@ -3521,7 +3469,7 @@ fn render_pane_row(props: PaneProps<'_>, app: &AppContext) -> Box<dyn Element> {
         )
     } else {
         let has_indicator =
-            props.typed.badge(app).is_some() || has_unread_activity(&props.typed, app);
+            props.typed.badge(app).is_some();
         let mut title_row = Flex::row()
             .with_main_axis_size(MainAxisSize::Max)
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
@@ -3759,7 +3707,6 @@ fn build_vertical_tabs_summary_data(
     let mut working_directories = Vec::new();
     let mut working_directory_seen = HashMap::new();
     let mut branch_entries = Vec::new();
-    let mut has_unread_activity = false;
 
     for pane_id in visible_pane_ids {
         let Some(pane) = pane_group.pane_by_id(*pane_id) else {
@@ -3778,8 +3725,6 @@ fn build_vertical_tabs_summary_data(
             TypedPane::Terminal(terminal_pane) => {
                 let terminal_view = terminal_pane.terminal_view(app);
                 let terminal_view = terminal_view.as_ref(app);
-                has_unread_activity |=
-                    has_unread_activity_for_terminal_view(terminal_view.id(), app);
                 let title_text = terminal_view.terminal_title_from_shell();
                 let working_directory = resolved_terminal_working_directory(terminal_view, app);
                 let working_directory_text = working_directory
@@ -3876,7 +3821,6 @@ fn build_vertical_tabs_summary_data(
         primary_labels,
         working_directories,
         branch_entries: coalesce_summary_branch_entries(branch_entries),
-        has_unread_activity,
     }
 }
 
@@ -4380,36 +4324,7 @@ fn resolved_terminal_working_directory(
     let working_directory = terminal_view
         .display_working_directory(app)
         .filter(|wd| !wd.trim().is_empty());
-    cloud_agent_working_directory_and_env(terminal_view, working_directory.as_deref(), app)
-        .or(working_directory)
-}
-
-/// For cloud agent panes, builds a composite string from the environment name,
-/// setup status, and/or working directory. Returns `None` for non-cloud sessions.
-fn cloud_agent_working_directory_and_env(
-    terminal_view: &TerminalView,
-    working_directory: Option<&str>,
-    app: &AppContext,
-) -> Option<String> {
-    if !terminal_view.is_ambient_agent_session(app) {
-        return None;
-    }
-    let model_ref = terminal_view.ambient_agent_view_model()?.as_ref(app);
-
-    let env_name = model_ref
-        .selected_environment_id()
-        .and_then(|id| CloudAmbientAgentEnvironment::get_by_id(id, app))
-        .map(|env| env.model().string_model.display_name());
-
-    let setup_status: Option<&str> = model_ref.agent_progress().map(|p| p.setup_status_text());
-
-    match (env_name, setup_status, working_directory) {
-        (Some(env), Some(status), _) => Some(format!("{env} · {status}")),
-        (Some(env), None, Some(wd)) => Some(format!("{env} · {wd}")),
-        (Some(env), None, None) => Some(env),
-        (None, Some(status), _) => Some(status.to_string()),
-        (None, None, _) => None,
-    }
+    working_directory
 }
 
 fn render_terminal_row_content(
@@ -4521,9 +4436,7 @@ fn render_terminal_row_content(
     let first_line_element = render_row_title_line(
         first_line,
         row_shows_synced_inputs_indicator(props, app),
-        has_unread_activity(&props.typed, app),
         shortcut_hint_label(props, app).map(|label| render_shortcut_hint(&label, appearance)),
-        theme,
     );
 
     let mut content = Flex::column()
@@ -4812,9 +4725,7 @@ fn render_summary_tab_item(
     text_col.add_child(render_row_title_line(
         title_region.finish(),
         row_shows_synced_inputs_indicator(&props, app),
-        summary.has_unread_activity,
         shortcut_hint_label(&props, app).map(|label| render_shortcut_hint(&label, appearance)),
-        theme,
     ));
 
     // Working-directory region.
@@ -7251,7 +7162,7 @@ fn render_compact_pane_row(props: PaneProps<'_>, app: &AppContext) -> Box<dyn El
     let main_text_color = theme.main_text_color(theme.background());
     let sub_text_color = theme.sub_text_color(theme.background());
     let font_family = appearance.ui_font_family();
-    let has_indicator = props.typed.badge(app).is_some() || has_unread_activity(&props.typed, app);
+    let has_indicator = props.typed.badge(app).is_some();
 
     let icon = render_pane_icon_with_status(
         resolve_icon_with_status_variant(&props.typed, &props.title, appearance, app),

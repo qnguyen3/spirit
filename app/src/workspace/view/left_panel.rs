@@ -22,7 +22,6 @@ use warpui::{
 
 use crate::TelemetryEvent;
 use crate::appearance::Appearance;
-use crate::auth::AuthStateProvider;
 use crate::code::buffer_location::LocalOrRemotePath;
 #[cfg(feature = "local_fs")]
 use crate::code::file_tree::FileTreeEvent;
@@ -41,7 +40,6 @@ use crate::pane_group::{
 #[cfg(feature = "local_fs")]
 use crate::server::telemetry::CodePanelsFileOpenEntrypoint;
 use crate::server::telemetry::{FileTreeSource, WarpDriveSource};
-use crate::settings::AISettings;
 use crate::settings_view::keybindings::{KeybindingChangedEvent, KeybindingChangedNotifier};
 use crate::terminal::resizable_data::{ModalType, ResizableData};
 use crate::ui_components::buttons::{icon_button, icon_button_with_color};
@@ -59,16 +57,14 @@ use crate::workspace::view::global_search::view::{
     Event as GlobalSearchViewEvent, GlobalSearchEntryFocus, GlobalSearchView,
 };
 use crate::workspace::view::{
-    LEFT_PANEL_AGENT_CONVERSATIONS_BINDING_NAME, LEFT_PANEL_GLOBAL_SEARCH_BINDING_NAME,
-    LEFT_PANEL_PROJECT_EXPLORER_BINDING_NAME, LEFT_PANEL_WARP_DRIVE_BINDING_NAME,
-    OPEN_GLOBAL_SEARCH_BINDING_NAME, TOGGLE_CONVERSATION_LIST_VIEW_BINDING_NAME,
+    LEFT_PANEL_GLOBAL_SEARCH_BINDING_NAME, LEFT_PANEL_PROJECT_EXPLORER_BINDING_NAME,
+    LEFT_PANEL_WARP_DRIVE_BINDING_NAME, OPEN_GLOBAL_SEARCH_BINDING_NAME,
     TOGGLE_PROJECT_EXPLORER_BINDING_NAME, TOGGLE_WARP_DRIVE_BINDING_NAME,
 };
 
 #[derive(Default)]
 struct MouseStateHandles {
     project_explorer_button: MouseStateHandle,
-    conversation_list_view_button: MouseStateHandle,
     global_search_button: MouseStateHandle,
     warp_drive_button: MouseStateHandle,
     sign_in_button: MouseStateHandle,
@@ -79,7 +75,6 @@ pub enum LeftPanelAction {
     ProjectExplorer,
     GlobalSearch { entry_focus: GlobalSearchEntryFocus },
     WarpDrive,
-    ConversationListView,
     SignIn,
 }
 
@@ -87,7 +82,6 @@ pub enum LeftPanelAction {
 pub(crate) enum ToolPanelAvailability {
     Available,
     RequiresAccount,
-    RequiresAi,
 }
 
 impl ToolPanelView {
@@ -101,18 +95,6 @@ impl ToolPanelView {
                     ToolPanelAvailability::Available
                 } else {
                     ToolPanelAvailability::RequiresAccount
-                }
-            }
-            ToolPanelView::ConversationListView => {
-                if AuthStateProvider::as_ref(app)
-                    .get()
-                    .is_anonymous_or_logged_out()
-                {
-                    ToolPanelAvailability::RequiresAccount
-                } else if AISettings::as_ref(app).is_conversation_history_available(app) {
-                    ToolPanelAvailability::Available
-                } else {
-                    ToolPanelAvailability::RequiresAi
                 }
             }
         }
@@ -130,12 +112,6 @@ pub enum LeftPanelEvent {
         target: FileTarget,
         line_col: Option<LineAndColumnArg>,
     },
-    NewConversationInNewTab,
-    ShowDeleteConfirmationDialog {
-        conversation_id: AIConversationId,
-        conversation_title: String,
-        terminal_view_id: Option<warpui::EntityId>,
-    },
     SignInRequested,
 }
 
@@ -144,7 +120,6 @@ pub enum ToolPanelView {
     ProjectExplorer,
     GlobalSearch { entry_focus: GlobalSearchEntryFocus },
     WarpDrive,
-    ConversationListView,
 }
 
 /// Encapsulates the active view state to enforce that all mutations go through
@@ -171,18 +146,9 @@ mod active_view_state {
         new_view: ToolPanelView,
         ctx: &mut ViewContext<super::LeftPanelView>,
     ) {
-        let previous = left_panel.active_view.0;
         left_panel.active_view.0 = new_view;
         left_panel.update_button_active_states();
         ctx.notify();
-
-        let was_conversation_list_open = previous == ToolPanelView::ConversationListView;
-        let is_conversation_list_open = new_view == ToolPanelView::ConversationListView;
-        if was_conversation_list_open && !is_conversation_list_open {
-            left_panel.on_conversation_list_view_visibility_changed(false, ctx);
-        } else if !was_conversation_list_open && is_conversation_list_open {
-            left_panel.on_conversation_list_view_visibility_changed(true, ctx);
-        }
 
         left_panel.update_active_file_tree_subscription_state(ctx);
     }
@@ -211,13 +177,11 @@ pub struct LeftPanelView {
     mouse_state_handles: MouseStateHandles,
     close_button_mouse_state: MouseStateHandle,
     warp_drive_view: ViewHandle<DrivePanel>,
-    conversation_list_view: ViewHandle<ConversationListView>,
     active_view: active_view_state::ActiveViewState,
     toolbelt_buttons: Vec<ToolbeltButtonConfig>,
     active_pane_group: Option<WeakViewHandle<PaneGroup>>,
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     working_directories_model: ModelHandle<WorkingDirectoriesModel>,
-    is_agent_management_view_open: bool,
     panel_position: super::PanelPosition,
 }
 
@@ -253,21 +217,7 @@ impl LeftPanelView {
                 "Sign in to access Warp Drive",
                 "Create an account to save and share workflows, notebooks, prompts, and more.",
             ),
-            (ToolPanelView::ConversationListView, ToolPanelAvailability::RequiresAccount) => (
-                "Sign in to access Agent conversations",
-                "Create an account and enable AI to access your conversation history.",
-            ),
-            (ToolPanelView::ConversationListView, ToolPanelAvailability::RequiresAi) => (
-                "Turn on AI to access Agent conversations",
-                "Enable Warp AI to access your conversation history.",
-            ),
             (
-                ToolPanelView::ProjectExplorer
-                | ToolPanelView::GlobalSearch { .. }
-                | ToolPanelView::WarpDrive,
-                ToolPanelAvailability::RequiresAi,
-            )
-            | (
                 ToolPanelView::ProjectExplorer | ToolPanelView::GlobalSearch { .. },
                 ToolPanelAvailability::RequiresAccount,
             )
@@ -346,27 +296,9 @@ impl LeftPanelView {
             }
         };
         let warp_drive_view = ctx.add_typed_action_view(DrivePanel::new);
-        let conversation_list_view = ctx.add_typed_action_view(ConversationListView::new);
 
         ctx.subscribe_to_view(&warp_drive_view, |_me, _, event, ctx| {
             ctx.emit(LeftPanelEvent::WarpDrive(event.clone()));
-        });
-
-        ctx.subscribe_to_view(&conversation_list_view, |_me, _, event, ctx| match event {
-            ConversationListViewEvent::NewConversationInNewTab => {
-                ctx.emit(LeftPanelEvent::NewConversationInNewTab);
-            }
-            ConversationListViewEvent::ShowDeleteConfirmationDialog {
-                conversation_id,
-                conversation_title,
-                terminal_view_id,
-            } => {
-                ctx.emit(LeftPanelEvent::ShowDeleteConfirmationDialog {
-                    conversation_id: *conversation_id,
-                    conversation_title: conversation_title.clone(),
-                    terminal_view_id: *terminal_view_id,
-                });
-            }
         });
 
         let active_view = views.first().copied().unwrap_or(ToolPanelView::WarpDrive);
@@ -461,22 +393,15 @@ impl LeftPanelView {
             mouse_state_handles: Default::default(),
             close_button_mouse_state: Default::default(),
             warp_drive_view,
-            conversation_list_view,
             active_view: active_view_state::new(active_view),
             toolbelt_buttons,
             active_pane_group: None,
             working_directories_model,
-            is_agent_management_view_open: false,
             panel_position: super::PanelPosition::Left,
         };
         view.update_button_active_states();
 
         view
-    }
-
-    pub fn set_agent_management_view_open(&mut self, is_open: bool, ctx: &mut ViewContext<Self>) {
-        self.is_agent_management_view_open = is_open;
-        ctx.notify();
     }
 
     pub fn set_panel_position(
@@ -521,15 +446,6 @@ impl LeftPanelView {
         }
         // The selected tab can remain the same while its account/AI
         // availability changes. Reconcile the real conversation view's open
-        // registration so a locked placeholder never polls, and enabling AI
-        // while the panel is open starts polling without another click.
-        let is_left_panel_open = self
-            .active_pane_group
-            .as_ref()
-            .and_then(|pane_group| pane_group.upgrade(ctx))
-            .is_some_and(|pane_group| pane_group.as_ref(ctx).left_panel_open);
-        self.on_conversation_list_view_visibility_changed(is_left_panel_open, ctx);
-
         ctx.notify();
     }
 
@@ -583,22 +499,6 @@ impl LeftPanelView {
                     active_icon: None,
                     tooltip_text: "Warp Drive".to_string(),
                     action: LeftPanelAction::WarpDrive,
-                    render_with_active_state: false,
-                    tooltip_keybinding: toolbelt_tooltip_keybinding(&tooltip_keybinding_names, ctx),
-                    tooltip_keybinding_names,
-                }
-            }
-            ToolPanelView::ConversationListView => {
-                let tooltip_keybinding_names = vec![
-                    LEFT_PANEL_AGENT_CONVERSATIONS_BINDING_NAME,
-                    TOGGLE_CONVERSATION_LIST_VIEW_BINDING_NAME,
-                ];
-
-                ToolbeltButtonConfig {
-                    icon: Icon::Conversation,
-                    active_icon: Some(Icon::Conversation),
-                    tooltip_text: "Agent conversations".to_string(),
-                    action: LeftPanelAction::ConversationListView,
                     render_with_active_state: false,
                     tooltip_keybinding: toolbelt_tooltip_keybinding(&tooltip_keybinding_names, ctx),
                     tooltip_keybinding_names,
@@ -863,11 +763,6 @@ impl LeftPanelView {
                     view.reset_focused_index_in_warp_drive(true, ctx);
                 });
             }
-            ToolPanelView::ConversationListView => {
-                self.conversation_list_view.update(ctx, |view, ctx| {
-                    view.on_left_panel_focused(ctx);
-                });
-            }
         }
     }
 
@@ -1031,9 +926,6 @@ impl LeftPanelView {
                     matches!(self.active_view.get(), ToolPanelView::GlobalSearch { .. })
                 }
                 LeftPanelAction::WarpDrive => self.active_view.get() == ToolPanelView::WarpDrive,
-                LeftPanelAction::ConversationListView => {
-                    self.active_view.get() == ToolPanelView::ConversationListView
-                }
                 LeftPanelAction::SignIn => false,
             };
         }
@@ -1174,23 +1066,13 @@ impl LeftPanelView {
                     }
                 }
             }
-            LeftPanelAction::ConversationListView => {
-                active_view_state::set(self, ToolPanelView::ConversationListView, ctx);
-                if self.active_view_availability(ctx) == ToolPanelAvailability::Available {
-                    send_telemetry_from_ctx!(TelemetryEvent::ConversationListViewOpened, ctx);
-                }
-            }
             LeftPanelAction::SignIn => {
                 ctx.emit(LeftPanelEvent::SignInRequested);
             }
         }
     }
 
-    pub fn on_left_panel_visibility_changed(&self, is_now_open: bool, ctx: &mut ViewContext<Self>) {
-        if ToolPanelView::ConversationListView == self.active_view.get() {
-            self.on_conversation_list_view_visibility_changed(is_now_open, ctx);
-        }
-
+    pub fn on_left_panel_visibility_changed(&self, ctx: &mut ViewContext<Self>) {
         self.update_active_file_tree_subscription_state(ctx);
     }
 
@@ -1233,26 +1115,6 @@ impl LeftPanelView {
         }
     }
 
-    /// When the conversation list view's visibility changes,
-    /// we need to update the conversation and tasks model to reflect the new state
-    /// (this information is used to decide whether or not we should poll for new tasks).
-    fn on_conversation_list_view_visibility_changed(
-        &self,
-        is_now_open: bool,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        let is_available = self.active_view.get() == ToolPanelView::ConversationListView
-            && self.active_view_availability(ctx) == ToolPanelAvailability::Available;
-        let window_id = ctx.window_id();
-        let view_id = self.conversation_list_view.id();
-        AgentConversationsModel::handle(ctx).update(ctx, |model, ctx| {
-            if is_now_open && is_available {
-                model.register_view_open(window_id, view_id, ctx);
-            } else {
-                model.register_view_closed(window_id, view_id, ctx);
-            }
-        });
-    }
 }
 
 impl TypedActionView for LeftPanelView {
@@ -1285,7 +1147,6 @@ impl View for LeftPanelView {
                     }
                 }
                 ToolPanelView::WarpDrive => ctx.focus(&self.warp_drive_view),
-                ToolPanelView::ConversationListView => ctx.focus(&self.conversation_list_view),
             }
         }
     }
@@ -1295,9 +1156,6 @@ impl View for LeftPanelView {
 
         let mouse_state_handles = vec![
             self.mouse_state_handles.project_explorer_button.clone(),
-            self.mouse_state_handles
-                .conversation_list_view_button
-                .clone(),
             self.mouse_state_handles.global_search_button.clone(),
             self.mouse_state_handles.warp_drive_button.clone(),
         ];
@@ -1360,10 +1218,6 @@ impl View for LeftPanelView {
                         .finish(),
                 )
                 .finish(),
-                ToolPanelView::ConversationListView => {
-                    Shrinkable::new(1.0, ChildView::new(&self.conversation_list_view).finish())
-                        .finish()
-                }
             }
         };
 

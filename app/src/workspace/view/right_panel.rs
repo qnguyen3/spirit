@@ -25,6 +25,7 @@ use warpui::{
 
 use crate::appearance::{Appearance, AppearanceEvent};
 use crate::code::buffer_location::LocalOrRemotePath;
+use crate::code_review::agent_handoff::AgentReviewCommentBatch;
 use crate::code_review::code_review_header::HEADER_BUTTON_PADDING;
 #[cfg(feature = "local_fs")]
 use crate::code_review::code_review_view::CodeReviewAction;
@@ -133,9 +134,8 @@ impl ReviewActionTargetProvider for RightPanelReviewActionTargetProvider {
         let right_panel = self.right_panel.upgrade(app)?;
         right_panel.read(app, |panel, app| {
             let pane_group = panel.active_pane_group.as_ref()?;
-            let ai_enabled = AISettings::as_ref(app).is_any_ai_enabled(app);
             panel
-                .find_review_terminal(pane_group, repo_path, ai_enabled, app)
+                .find_review_terminal(pane_group, repo_path, app)
                 .or_else(|| {
                     // No terminal is available (e.g. all candidates are
                     // executing). Fall back to the focused terminal when it is
@@ -143,12 +143,8 @@ impl ReviewActionTargetProvider for RightPanelReviewActionTargetProvider {
                     // terminals still targets the focused conversation.
                     let focused = pane_group
                         .read(app, |pane_group, app| pane_group.focused_session_view(app))?;
-                    let status = RightPanelView::review_terminal_status(
-                        &focused,
-                        Some(repo_path),
-                        ai_enabled,
-                        app,
-                    );
+                    let status =
+                        RightPanelView::review_terminal_status(&focused, Some(repo_path), app);
                     let in_repo = !status.unavailable_reasons.iter().any(|reason| {
                         matches!(
                             reason,
@@ -479,14 +475,6 @@ impl RightPanelView {
         // Recompute terminal availability when CLI agent sessions start or end.
         ctx.subscribe_to_model(&CLIAgentSessionsModel::handle(ctx), |me, _, _, ctx| {
             me.recompute_terminal_availability(ctx);
-        });
-
-        // Recompute terminal availability when AI is toggled on or off, so the
-        // send button and tooltip update immediately.
-        ctx.subscribe_to_model(&AISettings::handle(ctx), |me, _, event, ctx| {
-            if matches!(event, AISettingsChangedEvent::IsAnyAIEnabled { .. }) {
-                me.recompute_terminal_availability(ctx);
-            }
         });
 
         let maximize_button = ctx.add_typed_action_view(|ctx| {
@@ -1324,8 +1312,7 @@ impl RightPanelView {
             return;
         };
 
-        let ai_enabled = AISettings::as_ref(ctx).is_any_ai_enabled(ctx);
-        let chosen = self.find_review_terminal(pane_group, repo_path, ai_enabled, ctx);
+        let chosen = self.find_review_terminal(pane_group, repo_path, ctx);
 
         let Some(terminal_view) = chosen else {
             log::warn!("No available terminal found for submitting review comments");
@@ -1398,7 +1385,6 @@ impl RightPanelView {
     fn review_terminal_status(
         tv: &ViewHandle<TerminalView>,
         repo_path: Option<&LocalOrRemotePath>,
-        ai_enabled: bool,
         ctx: &AppContext,
     ) -> ReviewTerminalStatus {
         tv.read(ctx, |t, ctx| {
@@ -1436,9 +1422,7 @@ impl RightPanelView {
             }
 
             if active_cli_agent.is_none() {
-                if !ai_enabled {
-                    unavailable_reasons.push(ReviewTerminalUnavailableReason::AIDisabled);
-                }
+                unavailable_reasons.push(ReviewTerminalUnavailableReason::AIDisabled);
                 if is_executing {
                     unavailable_reasons.push(ReviewTerminalUnavailableReason::TerminalExecuting);
                 }
@@ -1476,7 +1460,6 @@ impl RightPanelView {
 
     pub fn log_review_comment_send_status_for_active_tab(&self, ctx: &AppContext) {
         let selected_repo_path = self.selected_repo_path().cloned();
-        let ai_enabled = AISettings::as_ref(ctx).is_any_ai_enabled(ctx);
         let code_review_debug_state =
             self.get_active_code_review_view(ctx)
                 .map(|code_review_view| {
@@ -1485,9 +1468,8 @@ impl RightPanelView {
 
         let Some(pane_group) = &self.active_pane_group else {
             log::info!(
-                "Review comment send status for active tab: no active pane group, selected_repo_path={}, ai_enabled={}",
+                "Review comment send status for active tab: no active pane group, selected_repo_path={}",
                 Self::format_optional_location(selected_repo_path.as_ref()),
-                ai_enabled,
             );
             if let Some(debug_state) = &code_review_debug_state {
                 Self::log_code_review_debug_state(debug_state);
@@ -1505,14 +1487,13 @@ impl RightPanelView {
                 .get_terminal_id_for_root_path(pane_group_id, repo_path)
         });
         let chosen_terminal_id = selected_repo_path.as_ref().and_then(|repo_path| {
-            self.find_review_terminal(pane_group, repo_path, ai_enabled, ctx)
+            self.find_review_terminal(pane_group, repo_path, ctx)
                 .map(|terminal_view| terminal_view.id())
         });
 
         log::info!(
-            "Review comment send status for active tab: pane_group_id={pane_group_id}, selected_repo_path={}, ai_enabled={}, focused_pane_id={focused_pane_id}, preferred_terminal_id={preferred_terminal_id:?}, chosen_terminal_id={chosen_terminal_id:?}, visible_pane_count={}",
+            "Review comment send status for active tab: pane_group_id={pane_group_id}, selected_repo_path={}, focused_pane_id={focused_pane_id}, preferred_terminal_id={preferred_terminal_id:?}, chosen_terminal_id={chosen_terminal_id:?}, visible_pane_count={}",
             Self::format_optional_location(selected_repo_path.as_ref()),
-            ai_enabled,
             visible_pane_ids.len(),
         );
 
@@ -1546,12 +1527,8 @@ impl RightPanelView {
             };
 
             let terminal_id = terminal_view.id();
-            let terminal_status = Self::review_terminal_status(
-                &terminal_view,
-                selected_repo_path.as_ref(),
-                ai_enabled,
-                ctx,
-            );
+            let terminal_status =
+                Self::review_terminal_status(&terminal_view, selected_repo_path.as_ref(), ctx);
             let unavailable_reasons = if terminal_status.unavailable_reasons.is_empty() {
                 "<none>".to_string()
             } else {
@@ -1586,15 +1563,12 @@ impl RightPanelView {
     /// and has its input box visible, OR if it has an active CLI agent
     /// (CLI agents are long-running commands that accept review input).
     ///
-    /// When `ai_enabled` is `false`, only terminals with an active CLI agent are
-    /// considered available (non-CLI Warp terminals require AI to be on).
     fn is_terminal_available_for_review(
         tv: &ViewHandle<TerminalView>,
         repo_path: &LocalOrRemotePath,
-        ai_enabled: bool,
         ctx: &AppContext,
     ) -> bool {
-        Self::review_terminal_status(tv, Some(repo_path), ai_enabled, ctx).is_available()
+        Self::review_terminal_status(tv, Some(repo_path), ctx).is_available()
     }
 
     /// Finds the best terminal to send review comments to.
@@ -1605,12 +1579,10 @@ impl RightPanelView {
         focused_terminal: Option<&ViewHandle<TerminalView>>,
         preferred_terminal_id: Option<EntityId>,
         repo_path: &LocalOrRemotePath,
-        ai_enabled: bool,
         ctx: &AppContext,
     ) -> Option<ViewHandle<TerminalView>> {
-        let is_available = |tv: &ViewHandle<TerminalView>| {
-            Self::is_terminal_available_for_review(tv, repo_path, ai_enabled, ctx)
-        };
+        let is_available =
+            |tv: &ViewHandle<TerminalView>| Self::is_terminal_available_for_review(tv, repo_path, ctx);
 
         // Try the focused terminal first.
         if let Some(tv) = focused_terminal
@@ -1638,7 +1610,6 @@ impl RightPanelView {
         &self,
         pane_group: &ViewHandle<PaneGroup>,
         repo_path: &LocalOrRemotePath,
-        ai_enabled: bool,
         ctx: &AppContext,
     ) -> Option<ViewHandle<TerminalView>> {
         let terminal_views = pane_group.read(ctx, |pg, ctx| pg.visible_terminal_views(ctx));
@@ -1654,7 +1625,6 @@ impl RightPanelView {
             focused_terminal.as_ref(),
             preferred_terminal_id,
             repo_path,
-            ai_enabled,
             ctx,
         )
     }
@@ -1682,9 +1652,8 @@ impl RightPanelView {
             return;
         };
 
-        let ai_enabled = AISettings::as_ref(ctx).is_any_ai_enabled(ctx);
         let destination = self
-            .find_review_terminal(pane_group, &repo_path, ai_enabled, ctx)
+            .find_review_terminal(pane_group, &repo_path, ctx)
             .map(|tv| {
                 tv.read(ctx, |t, ctx| {
                     t.active_cli_agent(ctx)
