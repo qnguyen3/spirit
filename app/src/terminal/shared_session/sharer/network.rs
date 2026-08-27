@@ -18,8 +18,8 @@ use futures_util::{SinkExt, StreamExt};
 use instant::Instant;
 use parking_lot::FairMutex;
 use session_sharing_protocol::common::{
-    ActivePrompt, ActivePromptUpdate, AgentPromptFailureReason, AgentPromptRequest,
-    AgentPromptRequestId, CommandExecutionFailureReason, CommandExecutionRequestId, ControlAction,
+    ActivePrompt, ActivePromptUpdate, AgentPromptFailureReason, AgentPromptRequestId,
+    CommandExecutionFailureReason, CommandExecutionRequestId, ControlAction,
     ControlActionFailureReason, ControlActionRequestId, FeatureSupport, InputOperationId,
     InputOperationSeqNo, InputUpdate, OrderedTerminalEvent, OrderedTerminalEventType,
     ParticipantId, ParticipantList, ParticipantPresenceUpdate, Role, RoleRequestId,
@@ -1475,13 +1475,9 @@ impl Network {
             DownstreamMessage::AgentPromptRequested {
                 id,
                 participant_id,
-                request,
+                ..
             } => {
-                ctx.emit(NetworkEvent::AgentPromptRequested {
-                    id,
-                    participant_id,
-                    request,
-                });
+                ctx.emit(NetworkEvent::AgentPromptRequested { id, participant_id });
             }
             DownstreamMessage::LinkAccessLevelUpdateResponse(response) => {
                 ctx.emit(NetworkEvent::LinkAccessLevelUpdateResponse { response })
@@ -1855,7 +1851,6 @@ pub enum NetworkEvent {
     AgentPromptRequested {
         id: AgentPromptRequestId,
         participant_id: ParticipantId,
-        request: AgentPromptRequest,
     },
     LinkAccessLevelUpdateResponse {
         response: LinkAccessLevelUpdateResponse,

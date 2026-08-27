@@ -9,9 +9,9 @@ use warp_core::features::FeatureFlag;
 use warp_core::ui::appearance::Appearance;
 use warp_graphql::billing::AddonCreditsOption;
 use warpui::elements::{
-    Align, Border, Clipped, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty,
-    Flex, FormattedTextElement, HighlightedHyperlink, MainAxisAlignment, MainAxisSize,
-    MouseStateHandle, ParentElement, Radius, Shrinkable, Text, Wrap,
+    Align, Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Flex,
+    FormattedTextElement, HighlightedHyperlink, MainAxisAlignment, MainAxisSize, MouseStateHandle,
+    ParentElement, Radius, Shrinkable, Text, Wrap,
 };
 use warpui::fonts::{Properties, Weight};
 use warpui::prelude::ChildView;
@@ -1540,95 +1540,6 @@ fn should_show_open_admin_panel_link(
     is_enterprise_plan: bool,
 ) -> bool {
     (is_team_admin || is_workspace_admin) && is_enterprise_plan
-}
-
-fn render_balance_card(
-    appearance: &Appearance,
-    dot_color: ColorU,
-    label: &str,
-    date: &str,
-    remaining: i64,
-    total: Option<i64>,
-    border_color: ColorU,
-) -> Box<dyn Element> {
-    let theme = appearance.theme();
-    let sub_color = blended_colors::text_sub(theme, theme.background());
-
-    let status_dot = ConstrainedBox::new(
-        Container::new(Empty::new().finish())
-            .with_background_color(dot_color)
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
-            .finish(),
-    )
-    .with_width(8.)
-    .with_height(8.)
-    .finish();
-
-    let label_text = Text::new_inline(label.to_string(), appearance.ui_font_family(), 12.)
-        .with_color(sub_color)
-        .with_style(Properties::default().weight(Weight::Semibold))
-        .finish();
-
-    let date_text = Clipped::new(
-        Text::new_inline(date.to_string(), appearance.ui_font_family(), 10.)
-            .with_color(sub_color)
-            .finish(),
-    )
-    .finish();
-
-    let header = Flex::row()
-        .with_child(status_dot)
-        .with_child(
-            Container::new(Shrinkable::new(1., label_text).finish())
-                .with_margin_left(8.)
-                .with_margin_right(8.)
-                .finish(),
-        )
-        .with_child(Shrinkable::new(1., Align::new(date_text).right().finish()).finish())
-        .with_cross_axis_alignment(CrossAxisAlignment::Center)
-        .with_main_axis_size(MainAxisSize::Max)
-        .finish();
-
-    let credit_count = Text::new_inline(
-        remaining.separate_with_commas(),
-        appearance.ui_font_family(),
-        24.,
-    )
-    .with_color(theme.active_ui_text_color().into())
-    .with_style(Properties::default().weight(Weight::Semibold))
-    .finish();
-
-    let remaining_label_text = match total {
-        Some(limit) => format!("/ {} remaining", limit.separate_with_commas()),
-        None => "remaining".to_string(),
-    };
-    let remaining_label = Text::new_inline(remaining_label_text, appearance.ui_font_family(), 14.)
-        .with_color(sub_color)
-        .finish();
-
-    let value_row = Flex::row()
-        .with_child(credit_count)
-        .with_child(
-            Container::new(remaining_label)
-                .with_margin_left(4.)
-                .with_padding_bottom(1.)
-                .finish(),
-        )
-        .with_cross_axis_alignment(CrossAxisAlignment::End);
-
-    Container::new(
-        Flex::column()
-            .with_child(header)
-            .with_child(value_row.finish())
-            .with_spacing(8.)
-            .with_main_axis_alignment(MainAxisAlignment::Center)
-            .finish(),
-    )
-    .with_border(Border::all(1.).with_border_color(border_color))
-    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
-    .with_horizontal_padding(16.)
-    .with_vertical_padding(12.)
-    .finish()
 }
 
 #[cfg(test)]

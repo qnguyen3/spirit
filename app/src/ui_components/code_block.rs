@@ -27,14 +27,12 @@ const CODE_BLOCK_CORNER_RADIUS: f32 = 8.0;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProgrammingLanguage {
     Shell(ShellType),
-    Other(String),
 }
 
 impl ProgrammingLanguage {
     pub fn display_name(&self) -> String {
         match self {
             Self::Shell(shell_type) => shell_type.name().to_owned(),
-            Self::Other(language) => language.to_lowercase(),
         }
     }
 
@@ -48,15 +46,6 @@ pub struct CodeSnippetButtonHandles {
     pub open_button: MouseStateHandle,
     pub copy_button: MouseStateHandle,
     pub insert_button: MouseStateHandle,
-}
-
-impl CodeSnippetButtonHandles {
-    // Resets the hover state of all buttons that trigger a focus change.
-    pub fn reset_hover_state_on_focus_change(&self) {
-        if let Ok(mut state) = self.open_button.lock() {
-            state.reset_hover_state();
-        }
-    }
 }
 
 pub type HandleCode = Box<dyn FnMut(String, &mut EventContext)>;

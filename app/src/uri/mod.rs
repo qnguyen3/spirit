@@ -48,13 +48,6 @@ use crate::{
 
 const DESKTOP_REDIRECT_URI_PATH: &str = "/desktop_redirect";
 
-/// Args for opening the MCP settings page via deeplink, with optional auto-install.
-/// The `autoinstall` value is the raw query param string; it is matched case-insensitively
-/// against gallery titles in `autoinstall_from_gallery`.
-pub struct OpenMCPSettingsArgs {
-    pub autoinstall: Option<String>,
-}
-
 /// Args for the `warp://settings` deeplink family, dispatched to the
 /// `root_view:open_settings_in_{existing,new}_window` actions.
 pub enum OpenSettingsArgs {
@@ -368,19 +361,6 @@ impl UriHost {
                                 ctx,
                             );
                         }
-                    }
-                    Some("mcp") => {
-                        // warp://settings/mcp?autoinstall=<name> auto-installs a gallery MCP server.
-                        // The value is matched case-insensitively against gallery titles.
-                        let autoinstall = query_string.get("autoinstall").map(|v| v.to_string());
-                        let args = OpenMCPSettingsArgs { autoinstall };
-                        dispatch_action_in_new_or_existing_window(
-                            primary_window_id,
-                            "root_view:open_mcp_settings_in_existing_window",
-                            "root_view:open_mcp_settings_in_new_window",
-                            &args,
-                            ctx,
-                        );
                     }
                     // No special sub-page: route the bare host, the `q` (search) and
                     // `widget` (scroll-to) query params, and the simple section

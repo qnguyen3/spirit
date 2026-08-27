@@ -429,10 +429,5 @@ impl InlineItem {
         self.score = score;
         self
     }
-
-    pub(crate) fn with_compact_layout(mut self, compact: bool) -> Self {
-        self.compact_layout = compact;
-        self
-    }
 }
 

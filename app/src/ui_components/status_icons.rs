@@ -6,20 +6,6 @@ use warp_core::ui::theme::{AnsiColorIdentifier, WarpTheme};
 use crate::ui_components::blended_colors;
 use crate::ui_components::icons::Icon;
 
-pub fn todo_list_icon(appearance: &Appearance) -> warpui::elements::Icon {
-    warpui::elements::Icon::new(
-        Icon::BulletedListBlock.into(),
-        blended_colors::neutral_7(appearance.theme()),
-    )
-}
-
-pub fn pending_icon(appearance: &Appearance) -> warpui::elements::Icon {
-    warpui::elements::Icon::new(
-        Icon::Queued.into(),
-        blended_colors::neutral_5(appearance.theme()),
-    )
-}
-
 pub fn in_progress_icon(appearance: &Appearance) -> warpui::elements::Icon {
     warpui::elements::Icon::new(
         Icon::Circle.into(),
@@ -30,13 +16,6 @@ pub fn in_progress_icon(appearance: &Appearance) -> warpui::elements::Icon {
 pub fn succeeded_icon(appearance: &Appearance) -> warpui::elements::Icon {
     warpui::elements::Icon::new(
         Icon::Check.into(),
-        AnsiColorIdentifier::Green.to_ansi_color(&appearance.theme().terminal_colors().normal),
-    )
-}
-
-pub fn addressed_comment_icon(appearance: &Appearance) -> warpui::elements::Icon {
-    warpui::elements::Icon::new(
-        Icon::AddressedComment.into(),
         AnsiColorIdentifier::Green.to_ansi_color(&appearance.theme().terminal_colors().normal),
     )
 }
@@ -56,22 +35,6 @@ pub fn gray_stop_icon(appearance: &Appearance) -> warpui::elements::Icon {
     )
 }
 
-/// Agent is waiting for user to follow-up with next prompt.
-pub fn gray_clock_icon(appearance: &Appearance) -> warpui::elements::Icon {
-    warpui::elements::Icon::new(
-        Icon::ClockSnooze.into(),
-        blended_colors::neutral_5(appearance.theme()),
-    )
-}
-
-/// Loading but not actionable yet.
-pub fn gray_circle_icon(appearance: &Appearance) -> warpui::elements::Icon {
-    warpui::elements::Icon::new(
-        Icon::Circle.into(),
-        blended_colors::neutral_5(appearance.theme()),
-    )
-}
-
 /// Not running, requires user's attention
 pub fn yellow_stop_icon(appearance: &Appearance) -> warpui::elements::Icon {
     warpui::elements::Icon::new(
@@ -86,11 +49,6 @@ pub fn yellow_running_icon(appearance: &Appearance) -> warpui::elements::Icon {
         Icon::Circle.into(),
         AnsiColorIdentifier::Yellow.to_ansi_color(&appearance.theme().terminal_colors().normal),
     )
-}
-
-/// Used for buttons that stop the current task
-pub fn red_stop_icon(appearance: &Appearance) -> warpui::elements::Icon {
-    warpui::elements::Icon::new(Icon::StopFilled.into(), appearance.theme().ansi_fg_red())
 }
 
 #[derive(Clone, Copy)]
@@ -112,20 +70,11 @@ pub enum ConversationStatus {
     /// The last turn of the agent completed with error.
     Error,
 
-    /// The last turn failed transiently and an automatic recovery (retry or resume)
-    /// is pending. Non-terminal: returns to `InProgress` when the recovery request
-    /// sends, or falls to `Error` if recovery is exhausted.
-    TransientError,
-
     /// The last turn of the agent was cancelled by the user.
     Cancelled,
 
     /// The last turn of the agent resulted in an action whose execution is blocked by the user.
     Blocked { blocked_action: String },
-
-    /// Agent yielded via wait_for_events and is listening for inbound
-    /// input. Quiescent but not terminal.
-    WaitingForEvents,
 }
 
 impl std::fmt::Display for ConversationStatus {
@@ -134,10 +83,8 @@ impl std::fmt::Display for ConversationStatus {
             ConversationStatus::InProgress => write!(f, "In progress"),
             ConversationStatus::Success => write!(f, "Done"),
             ConversationStatus::Error => write!(f, "Error"),
-            ConversationStatus::TransientError => write!(f, "Reconnecting"),
             ConversationStatus::Cancelled => write!(f, "Cancelled"),
             ConversationStatus::Blocked { .. } => write!(f, "Blocked"),
-            ConversationStatus::WaitingForEvents => write!(f, "Waiting"),
         }
     }
 }
@@ -149,10 +96,7 @@ impl ConversationStatus {
             ConversationStatus::Success => succeeded_icon(appearance),
             ConversationStatus::Blocked { .. } => yellow_stop_icon(appearance),
             ConversationStatus::Error => failed_icon(appearance),
-            // Recovery pending: keep the in-progress treatment rather than an error one.
-            ConversationStatus::TransientError => in_progress_icon(appearance),
             ConversationStatus::Cancelled => gray_stop_icon(appearance),
-            ConversationStatus::WaitingForEvents => in_progress_icon(appearance),
         }
     }
 
@@ -183,13 +127,6 @@ impl ConversationStatus {
                     StatusColorStyle::Cloud => theme.ansi_bg_red(),
                 },
             ),
-            ConversationStatus::TransientError => (
-                Icon::ClockLoader,
-                match color_style {
-                    StatusColorStyle::Standard => theme.ansi_fg_yellow(),
-                    StatusColorStyle::Cloud => theme.ansi_bg_yellow(),
-                },
-            ),
             ConversationStatus::Cancelled => (Icon::StopFilled, internal_colors::neutral_5(theme)),
             ConversationStatus::Blocked { .. } => (
                 Icon::StopFilled,
@@ -198,49 +135,7 @@ impl ConversationStatus {
                     StatusColorStyle::Cloud => theme.ansi_bg_yellow(),
                 },
             ),
-            ConversationStatus::WaitingForEvents => (
-                Icon::ClockLoader,
-                match color_style {
-                    StatusColorStyle::Standard => theme.ansi_fg_magenta(),
-                    StatusColorStyle::Cloud => theme.ansi_bg_magenta(),
-                },
-            ),
         }
-    }
-
-    pub fn is_in_progress(&self) -> bool {
-        matches!(self, ConversationStatus::InProgress)
-    }
-
-    /// True while a transient failure is being automatically recovered.
-    pub fn is_transient_error(&self) -> bool {
-        matches!(self, ConversationStatus::TransientError)
-    }
-
-    pub fn is_blocked(&self) -> bool {
-        matches!(self, ConversationStatus::Blocked { .. })
-    }
-
-    pub fn is_cancelled(&self) -> bool {
-        matches!(self, ConversationStatus::Cancelled)
-    }
-
-    /// True iff the run is finished and cannot resume on its own.
-    pub fn is_done(&self) -> bool {
-        matches!(
-            self,
-            ConversationStatus::Success | ConversationStatus::Error | ConversationStatus::Cancelled
-        )
-    }
-
-    /// True iff the agent has yielded via `wait_for_events` and is listening
-    /// for inbound input.
-    pub fn is_waiting_for_events(&self) -> bool {
-        matches!(self, ConversationStatus::WaitingForEvents)
-    }
-
-    pub fn is_error(&self) -> bool {
-        matches!(self, ConversationStatus::Error)
     }
 }
 

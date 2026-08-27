@@ -9,7 +9,6 @@ use warpui::fonts::{Properties, Weight};
 use warpui::keymap::Keystroke;
 use warpui::prelude::{ConstrainedBox, Cursor, Empty, Hoverable, MouseStateHandle, vec2f};
 use warpui::scene::Border;
-use warpui::ui_components::components::UiComponent;
 use warpui::{
     AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
 };

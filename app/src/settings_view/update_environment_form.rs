@@ -919,14 +919,6 @@ impl UpdateEnvironmentForm {
         });
     }
 
-    fn selected_repos_as_remote_repo_args(&self) -> Vec<String> {
-        self.form_state
-            .selected_repos
-            .iter()
-            .map(|repo| format!("{}/{}", repo.owner.trim(), repo.repo.trim()))
-            .collect()
-    }
-
     fn create_single_line_editor(
         placeholder: &'static str,
         ctx: &mut ViewContext<Self>,

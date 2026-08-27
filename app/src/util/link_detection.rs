@@ -2,13 +2,8 @@ use std::collections::HashMap;
 use std::ops::Range;
 
 use string_offset::ByteOffset;
-use urlocator::{UrlLocation, UrlLocator};
-use warpui::Action;
-use warpui::elements::MouseStateHandle;
-use warpui::text::char_slice;
 
-use crate::terminal::ShellLaunchData;
-use crate::terminal::model::grid::grid_handler::{is_file_link_separator, is_url_link_separator};
+use crate::terminal::model::grid::grid_handler::is_file_link_separator;
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "local_fs")] {
@@ -16,197 +11,17 @@ cfg_if::cfg_if! {
         use std::path::Path;
         use std::path::PathBuf;
         use warp_util::path::CleanPathResult;
+        use crate::terminal::ShellLaunchData;
     }
 }
 
-pub const RICH_CONTENT_LINK_FIRST_CHAR_POSITION_ID: &str =
-    "ai_block:rich_content_link_first_char_position";
-
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum TextLocation {
-    Output {
-        section_index: usize,
-        /// Note that this does ***not*** correspond to the frame index of a text frame after layout;
-        /// Instead, it represents the line index of the `FormattedTextLine` after markdown parsing.
-        line_index: usize,
-    },
-    Query {
-        input_index: usize,
-    },
-    Action {
-        action_index: usize,
-        line_index: usize,
-    },
-}
-
-#[derive(Debug, Eq, PartialEq)]
-pub(crate) struct LinkLocation {
-    pub(crate) link_range: Range<usize>,
-    pub(crate) location: TextLocation,
-}
-
-#[derive(Debug, Default)]
-pub(crate) struct DetectedLinksState {
-    pub(crate) detected_links_by_location: HashMap<TextLocation, DetectedLinksInTextLocation>,
-    // The link that the mouse is currently hovered over.
-    pub(crate) currently_hovered_link_location: Option<LinkLocation>,
-    // The link that a tooltip is currently open for.
-    // This is separate from currently_hovered_link because after clicking
-    // on a link to open the tooltip, this link should remain highlighted and the tooltip in place
-    // even if we hover over other links.
-    pub(crate) link_location_open_tooltip: Option<LinkLocation>,
-    // Per-view-unique save-position id used to anchor the link tooltip overlay. Unique per AI
-    // block so that multiple blocks' tooltips don't collide on a single shared anchor id (which
-    // caused the tooltip to fail to position in multi-block conversations).
-    pub(crate) tooltip_position_id: String,
-}
-
-impl DetectedLinksState {
-    /// Returns the per-view save-position id used to anchor this block's link tooltip overlay,
-    /// falling back to the shared constant if one hasn't been set yet (only happens when no
-    /// tooltip is open, in which case the id is never consumed).
-    pub(crate) fn resolved_tooltip_position_id(&self) -> String {
-        if self.tooltip_position_id.is_empty() {
-            RICH_CONTENT_LINK_FIRST_CHAR_POSITION_ID.to_owned()
-        } else {
-            self.tooltip_position_id.clone()
-        }
-    }
-
-    /// Given a text location and char range, returns the detected link there if any.
-    pub fn link_at(
-        &self,
-        location: &TextLocation,
-        range: &Range<usize>,
-    ) -> Option<&DetectedLinkType> {
-        Some(
-            &self
-                .detected_links_by_location
-                .get(location)?
-                .detected_links
-                .get(range)?
-                .link,
-        )
-    }
-
-    pub fn update_hovered_link(
-        &mut self,
-        is_hovering: bool,
-        is_selecting: bool,
-        link_range: &Range<usize>,
-        location: &TextLocation,
-    ) {
-        if is_hovering && !is_selecting {
-            self.currently_hovered_link_location = Some(LinkLocation {
-                link_range: link_range.clone(),
-                location: *location,
-            });
-        } else if self.currently_hovered_link_location.as_ref().is_some_and(
-            |currently_hovered_link| {
-                currently_hovered_link.link_range == *link_range
-                    && currently_hovered_link.location == *location
-            },
-        ) {
-            self.currently_hovered_link_location = None;
-        }
-    }
-
-    /// Replaces all detected links with the given background detection results.
-    pub(crate) fn replace_all_links(
-        &mut self,
-        all_links: HashMap<TextLocation, HashMap<Range<usize>, DetectedLinkType>>,
-    ) {
-        self.detected_links_by_location.clear();
-        self.currently_hovered_link_location = None;
-        self.link_location_open_tooltip = None;
-        for (location, links) in all_links {
-            let entry = self.detected_links_by_location.entry(location).or_default();
-            for (range, link) in links {
-                entry.detected_links.insert(
-                    range,
-                    HoverableDetectedLink {
-                        link,
-                        mouse_state: Default::default(),
-                    },
-                );
-            }
-        }
-    }
-}
-
+#[cfg(feature = "local_fs")]
 #[derive(Clone, Debug)]
 pub(crate) enum DetectedLinkType {
-    Url(String),
-    #[cfg(feature = "local_fs")]
     FilePath {
         absolute_path: PathBuf,
         line_and_column_num: Option<warp_util::path::LineAndColumnArg>,
     },
-}
-
-#[derive(Debug)]
-pub(crate) struct HoverableDetectedLink {
-    pub(crate) link: DetectedLinkType,
-    pub(crate) mouse_state: MouseStateHandle,
-}
-
-#[derive(Debug, Default)]
-pub(crate) struct DetectedLinksInTextLocation {
-    pub(crate) detected_links: HashMap<Range<usize>, HoverableDetectedLink>,
-}
-
-/// Returns the char ranges of detected URLs in the given text.
-fn detect_urls(text: &str) -> Vec<Range<usize>> {
-    fn push_url_range(
-        url_ranges: &mut Vec<Range<usize>>,
-        text: &str,
-        start: Option<usize>,
-        end: Option<usize>,
-    ) {
-        let Some((start, mut end)) = start.zip(end) else {
-            return;
-        };
-
-        while end > start && text.chars().nth(end - 1).is_some_and(is_url_link_separator) {
-            end -= 1;
-        }
-
-        if start < end {
-            url_ranges.push(start..end);
-        }
-    }
-
-    let mut locator = UrlLocator::new();
-    let mut url_ranges = vec![];
-    let (mut start, mut end) = (None, None);
-    for (i, c) in text.chars().enumerate() {
-        if is_url_link_separator(c) {
-            push_url_range(&mut url_ranges, text, start, end);
-            start = None;
-            end = None;
-            locator = UrlLocator::new();
-            continue;
-        }
-
-        // Reference to https://docs.rs/urlocator/latest/urlocator/#example-url-boundaries
-        // We know we have fully parsed an url when the locator advances from the `UrlLocation::Url`
-        // to the `UrlLocation::Reset` stage.
-        match locator.advance(c) {
-            UrlLocation::Url(length, end_offset) => {
-                end = Some(1 + i - end_offset as usize);
-                start = Some(end.unwrap() - length as usize);
-            }
-            UrlLocation::Reset => {
-                push_url_range(&mut url_ranges, text, start, end);
-                start = None;
-                end = None;
-            }
-            _ => (),
-        }
-    }
-    // If the last character completes a valid URL, add it.
-    push_url_range(&mut url_ranges, text, start, end);
-    url_ranges
 }
 
 #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
@@ -388,18 +203,17 @@ pub(crate) fn detect_file_paths(
                 // Check for line ranges after this file path and add them as separate clickable links
                 if let Some(line_ranges) = detect_line_ranges_after_file_path(text, byte_end) {
                     // Extract the base file path from the existing path_type
-                    if let DetectedLinkType::FilePath { absolute_path, .. } = &path_type {
-                        for (line_number, char_range) in line_ranges {
-                            // Create a new DetectedLinkType with the same file path but with the line number
-                            let line_range_link = DetectedLinkType::FilePath {
-                                absolute_path: absolute_path.clone(),
-                                line_and_column_num: Some(warp_util::path::LineAndColumnArg {
-                                    line_num: line_number as usize,
-                                    column_num: None,
-                                }),
-                            };
-                            file_paths.insert(char_range, line_range_link);
-                        }
+                    let DetectedLinkType::FilePath { absolute_path, .. } = &path_type;
+                    for (line_number, char_range) in line_ranges {
+                        // Create a new DetectedLinkType with the same file path but with the line number
+                        let line_range_link = DetectedLinkType::FilePath {
+                            absolute_path: absolute_path.clone(),
+                            line_and_column_num: Some(warp_util::path::LineAndColumnArg {
+                                line_num: line_number as usize,
+                                column_num: None,
+                            }),
+                        };
+                        file_paths.insert(char_range, line_range_link);
                     }
                 }
 
@@ -538,121 +352,6 @@ fn detect_line_ranges_after_file_path(
     }
 
     (!detected_ranges.is_empty()).then_some(detected_ranges)
-}
-
-/// Runs URL and file path detection on the given texts and combines with pre-extracted markdown hyperlinks.
-/// Designed to run on a background thread (file path detection does filesystem I/O).
-pub(crate) fn detect_all_links(
-    texts: &[(String, TextLocation)],
-    md_hyperlinks: Vec<(TextLocation, Vec<(Range<usize>, String)>)>,
-    #[cfg_attr(not(feature = "local_fs"), allow(unused_variables))]
-    current_working_directory: Option<&String>,
-    #[cfg_attr(not(feature = "local_fs"), allow(unused_variables))] shell_launch_data: Option<
-        &ShellLaunchData,
-    >,
-) -> HashMap<TextLocation, HashMap<Range<usize>, DetectedLinkType>> {
-    let mut all_links: HashMap<TextLocation, HashMap<Range<usize>, DetectedLinkType>> =
-        HashMap::new();
-
-    for (text, location) in texts {
-        let url_ranges = detect_urls(text);
-        let mut links = HashMap::new();
-
-        // Detect URLs via regex
-        for url_range in &url_ranges {
-            if let Some(link_text) = char_slice(text, url_range.start, url_range.end) {
-                links.insert(
-                    url_range.clone(),
-                    DetectedLinkType::Url(link_text.to_owned()),
-                );
-            }
-        }
-
-        // Detect file path links, skipping any that overlap with URLs
-        #[cfg(feature = "local_fs")]
-        if let Some(cwd) = current_working_directory {
-            let file_paths = detect_file_paths(cwd, text, shell_launch_data);
-            for (range, link) in file_paths {
-                if !url_ranges
-                    .iter()
-                    .any(|ur| ur.start < range.end && range.start < ur.end)
-                {
-                    links.insert(range, link);
-                }
-            }
-        }
-
-        if !links.is_empty() {
-            all_links.insert(*location, links);
-        }
-    }
-
-    // Add hyperlinks extracted from formatted markdown text
-    for (location, line_hyperlinks) in md_hyperlinks {
-        let entry = all_links.entry(location).or_default();
-        for (range, url) in line_hyperlinks {
-            entry.insert(range, DetectedLinkType::Url(url));
-        }
-    }
-
-    all_links
-}
-
-/// Given some text and its location
-/// the detected_links_state.
-pub(crate) fn detect_links(
-    detected_links_state: &mut DetectedLinksState,
-    text: &str,
-    text_location: TextLocation,
-    #[cfg_attr(not(feature = "local_fs"), allow(unused_variables))]
-    current_working_directory: Option<&String>,
-    #[cfg_attr(not(feature = "local_fs"), allow(unused_variables))] shell_launch_data: Option<
-        &ShellLaunchData,
-    >,
-) {
-    let url_ranges = detect_urls(text);
-    for url_range in &url_ranges {
-        let Some(link) = char_slice(text, url_range.start, url_range.end) else {
-            continue;
-        };
-        detected_links_state
-            .detected_links_by_location
-            .entry(text_location)
-            .or_default()
-            .detected_links
-            .insert(
-                url_range.clone(),
-                HoverableDetectedLink {
-                    link: DetectedLinkType::Url(link.to_owned()),
-                    mouse_state: Default::default(),
-                },
-            );
-    }
-    #[cfg(feature = "local_fs")]
-    if let Some(current_working_directory) = current_working_directory {
-        let file_paths = detect_file_paths(current_working_directory, text, shell_launch_data);
-        for (range, link) in file_paths {
-            // If this file path range overlaps with a URL range, don't add it.
-            if url_ranges
-                .iter()
-                .any(|url_range| url_range.start < range.end && range.start < url_range.end)
-            {
-                continue;
-            }
-            detected_links_state
-                .detected_links_by_location
-                .entry(text_location)
-                .or_default()
-                .detected_links
-                .insert(
-                    range,
-                    HoverableDetectedLink {
-                        link,
-                        mouse_state: Default::default(),
-                    },
-                );
-        }
-    }
 }
 
 #[cfg(test)]

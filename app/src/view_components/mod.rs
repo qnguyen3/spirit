@@ -6,7 +6,6 @@ pub mod callout_bubble;
 mod clickable_text_input;
 mod compact_dropdown;
 pub mod compactible_action_button;
-pub mod compactible_split_action_button;
 pub mod copyable_text_field;
 mod dismissible_toast;
 pub mod dropdown;

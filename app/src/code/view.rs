@@ -30,7 +30,6 @@ use warpui::{
 };
 
 use super::buffer_location::LocalOrRemotePath;
-use super::diff_viewer::DiffViewer;
 use super::editor::view::{CodeEditorEvent, CodeEditorView};
 use super::editor_management::CodeSource;
 use super::local_code_editor::{LocalCodeEditorEvent, LocalCodeEditorView};
@@ -380,7 +379,6 @@ impl CodeView {
                     })
                 },
                 false,
-                None,
                 ctx,
             );
             if is_local {
@@ -420,7 +418,7 @@ impl CodeView {
         });
 
         ctx.add_typed_action_view(|ctx| {
-            let local_editor = LocalCodeEditorView::new(editor, None, false, None, ctx);
+            let local_editor = LocalCodeEditorView::new(editor, None, false, ctx);
             local_editor.with_find_references_provider(
                 ShowFindReferencesCard {
                     editor_window_id: ctx.window_id(),
@@ -499,7 +497,6 @@ impl CodeView {
                 CodeView::display_save_failure(ctx.window_id(), ctx);
             }
             LocalCodeEditorEvent::DiffAccepted => (),
-            LocalCodeEditorEvent::DiffRejected => (),
             LocalCodeEditorEvent::DiffStatusUpdated => (),
             LocalCodeEditorEvent::UserEdited => (),
             LocalCodeEditorEvent::VimMinimizeRequested => (),
@@ -2080,7 +2077,7 @@ impl View for CodeView {
         "CodeView"
     }
 
-    fn render(&self, app: &AppContext) -> Box<dyn Element> {
+    fn render(&self, _app: &AppContext) -> Box<dyn Element> {
         let tab = self.tab_at(self.active_tab_index);
         let body = if let Some(tab) = tab {
             ChildView::new(&tab.editor_view).finish()

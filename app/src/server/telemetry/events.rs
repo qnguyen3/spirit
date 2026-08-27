@@ -257,14 +257,6 @@ pub struct MCPServerTelemetryMetadata {
 }
 
 #[derive(Clone, Debug, Copy, Serialize, Deserialize)]
-pub enum MCPTemplateCreationSource {
-    #[serde(rename = "json")]
-    Json,
-    #[serde(rename = "conversion")]
-    Conversion,
-}
-
-#[derive(Clone, Debug, Copy, Serialize, Deserialize)]
 pub enum MCPTemplateInstallationSource {
     #[serde(rename = "local")]
     Local,

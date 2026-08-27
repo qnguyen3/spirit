@@ -1,3 +1,5 @@
+use warp_cli::CliCommand;
+
 use super::*;
 
 #[test]
@@ -38,7 +40,6 @@ fn command_line_api_key_requires_validation() {
         },
         debug: false,
         is_sandboxed: false,
-        computer_use_override: None,
     };
 
     assert!(matches!(
@@ -116,7 +117,6 @@ fn startup_auth_is_non_blocking_only_for_tui() {
             global_options: GlobalOptions::default(),
             debug: false,
             is_sandboxed: false,
-            computer_use_override: None,
         },
         LaunchMode::Test {
             driver: Box::new(None),

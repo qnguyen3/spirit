@@ -15,13 +15,11 @@ pub(crate) mod inline_action_header;
 pub(crate) mod inline_action_icons;
 pub(crate) mod item_highlight;
 pub(crate) mod keyboard_navigable_buttons;
-pub mod json_tree;
 pub(crate) mod menu_button;
 pub(crate) mod red_notification_dot;
 pub(crate) mod render_file_search_row;
 pub(crate) mod shimmering_loading_text;
 pub(crate) mod status_icons;
-pub mod tab_selector;
 pub(crate) mod window_focus_dimming;
 
 pub use warp_core::ui::icons;

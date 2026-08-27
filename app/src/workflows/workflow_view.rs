@@ -37,8 +37,6 @@ use super::aliases::WorkflowAliases;
 use super::command_parser::WorkflowCommandDisplayData;
 use super::{CloudWorkflowModel, WorkflowSource, WorkflowType, WorkflowViewMode};
 use crate::appearance::Appearance;
-use crate::auth::auth_state::AuthState;
-use crate::auth::AuthStateProvider;
 use crate::cloud_object::breadcrumbs::ContainingObject;
 use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
 use crate::cloud_object::model::view::CloudViewModel;
@@ -292,7 +290,6 @@ pub struct WorkflowView {
     /// etc.).
     default_argument_id: usize,
     revision_ts: Option<Revision>,
-    pub(super) auth_state: Arc<AuthState>,
     owner: Option<Owner>,
     initial_folder_id: Option<SyncId>,
 
@@ -436,7 +433,6 @@ impl WorkflowView {
             initial_folder_id: None,
             revision_ts: None,
             command_display_data: WorkflowCommandDisplayData::new_empty(),
-            auth_state: AuthStateProvider::as_ref(ctx).get().clone(),
             pending_argument_editor_row: None,
             show_enum_creation_dialog: false,
             enum_creation_dialog,

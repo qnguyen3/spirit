@@ -23,7 +23,7 @@ use warpui::elements::{
     ScrollbarWidth, Shrinkable, SizeConstraintCondition, SizeConstraintSwitch, Stack, Text,
     UniformList, UniformListState, XAxisAnchor, YAxisAnchor,
 };
-use warpui::fonts::{Cache, Properties, Weight};
+use warpui::fonts::{Properties, Weight};
 use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 use warpui::{
     AppContext, Entity, SingletonEntity, TypedActionView, View, ViewContext, WeakViewHandle,
@@ -669,13 +669,6 @@ impl InputSuggestions {
         });
     }
 
-    pub fn em_width(&self, font_cache: &Cache, appearance: &Appearance) -> f32 {
-        font_cache.em_width(
-            appearance.monospace_font_family(),
-            appearance.monospace_font_size(),
-        )
-    }
-
     /// Renders the details of the item at index, if it is visible and has details.
     fn render_visible_item_details(
         &self,
@@ -734,7 +727,6 @@ impl InputSuggestions {
             .finish();
         }
         let handle = self.handle.clone();
-        let em_width = self.em_width(ctx.font_cache(), appearance);
 
         let list = UniformList::new(
             self.list_state.clone(),

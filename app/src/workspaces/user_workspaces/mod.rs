@@ -40,8 +40,6 @@ use crate::workspaces::workspace::{
 };
 pub(crate) mod billing_workspace_settings;
 pub(crate) mod team_workspace_settings;
-#[cfg(test)]
-pub(crate) use team_workspace_settings::TeamContextForOperation;
 pub use team_workspace_settings::{TeamContext, TeamContextResolver, TeamScope};
 
 const STRIPE_SUBSCRIPTION_INTERVAL_PAGE_PREFIX: &str = "/upgrade";
@@ -231,7 +229,6 @@ impl UserWorkspaces {
         )
     }
 
-    // TODO(isaiah): make me private in favour for upgrade_link_for_scope being the public facing api
     pub fn upgrade_link_for_team(team_uid: ServerId) -> String {
         format!(
             "{}{}/{}",
@@ -239,22 +236,6 @@ impl UserWorkspaces {
             STRIPE_SUBSCRIPTION_INTERVAL_PAGE_PREFIX,
             team_uid
         )
-    }
-
-    pub(crate) fn upgrade_link_for_scope<S: TeamScope + ?Sized>(
-        &self,
-        scope: &S,
-        app: &AppContext,
-    ) -> String {
-        match scope.team_uid() {
-            Some(team_uid) => Self::upgrade_link_for_team(team_uid),
-            None => Self::upgrade_link(
-                AuthStateProvider::as_ref(app)
-                    .get()
-                    .user_id()
-                    .unwrap_or_default(),
-            ),
-        }
     }
 
     pub fn warp_agent_cli_upgrade_link(user_id: Option<UserUid>) -> String {

@@ -155,35 +155,6 @@ pub struct DiffStatus {
 }
 
 impl DiffStatus {
-    /// Returns the number of lines added and removed in the current diff.
-    pub fn get_diff_lines(&self) -> (usize, usize) {
-        let mut lines_added = 0;
-        let mut lines_removed = 0;
-
-        // Count changes/additions
-        for (new_range, change_type) in self.change_mapping.iter() {
-            let new_range_lines =
-                (LineCount::from(new_range.end) - LineCount::from(new_range.start)).as_usize();
-            match change_type {
-                ChangeType::Addition => lines_added += new_range_lines,
-                ChangeType::Replacement { replaced_range, .. } => {
-                    let old_range_lines = (LineCount::from(replaced_range.end)
-                        - LineCount::from(replaced_range.start))
-                    .as_usize();
-                    lines_added += new_range_lines;
-                    lines_removed += old_range_lines;
-                }
-            }
-        }
-
-        // Count deletions
-        for range in self.deletion_mapping.values() {
-            lines_removed += (LineCount::from(range.end) - LineCount::from(range.start)).as_usize();
-        }
-
-        (lines_added, lines_removed)
-    }
-
     /// Retrieve the hunk to render for a given line number.
     pub fn diff_hunk(
         &self,

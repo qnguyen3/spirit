@@ -14,7 +14,6 @@ use itertools::Itertools;
 use lazy_static::lazy_static;
 use regex::Regex;
 use warp_errors::report_error;
-use warp_graphql::mcp_gallery_template::MCPGalleryTemplate;
 use warp_graphql::object_permissions::AccessLevel;
 use warp_graphql::scalars::time::ServerTimestamp;
 use warp_util::sync::Condition;
@@ -127,9 +126,6 @@ pub enum UpdateManagerEvent {
     },
     CloudPreferencesUpdated {
         updated: Vec<Preference>,
-    },
-    MCPGalleryUpdated {
-        templates: Vec<MCPGalleryTemplate>,
     },
 }
 
@@ -970,12 +966,6 @@ impl UpdateManager {
         // rather than the generic object sync.
         self.fetch_and_merge_environment_timestamps(ctx);
 
-        if !response.mcp_gallery.is_empty() {
-            ctx.emit(UpdateManagerEvent::MCPGalleryUpdated {
-                templates: response.mcp_gallery,
-            });
-        }
-
         if !updated_preferences.is_empty() {
             ctx.emit(UpdateManagerEvent::CloudPreferencesUpdated {
                 updated: updated_preferences,
@@ -1097,11 +1087,6 @@ impl UpdateManager {
     pub fn initial_load_complete(&self) -> impl Future<Output = ()> + use<> {
         // We're not using `async fn` here so that the returned Future doesn't borrow self.
         self.has_initial_load.wait()
-    }
-
-    /// Returns whether the current account's initial cloud-object load has completed.
-    pub(crate) fn has_completed_initial_load(&self) -> bool {
-        self.has_initial_load.is_set()
     }
 
     /// Reset the initial-load condition so that subsequent callers of

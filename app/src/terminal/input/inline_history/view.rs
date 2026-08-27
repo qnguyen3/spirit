@@ -6,7 +6,7 @@ use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::Fill;
 use warp_core::ui::theme::color::internal_colors;
 use warpui::elements::ChildView;
-use warpui::{AppContext, Element, Entity, EntityId, ModelHandle, View, ViewContext, ViewHandle};
+use warpui::{AppContext, Element, Entity, ModelHandle, View, ViewContext, ViewHandle};
 
 use crate::features::FeatureFlag;
 use crate::search::data_source::{Query, QueryFilter};
@@ -114,7 +114,6 @@ pub struct InlineHistoryMenuView {
 
 impl InlineHistoryMenuView {
     pub fn new(
-        terminal_view_id: EntityId,
         active_session: ModelHandle<ActiveSession>,
         input_suggestions_model: &ModelHandle<InputSuggestionsModeModel>,
         positioner: &ModelHandle<InlineMenuPositioner>,
@@ -123,7 +122,7 @@ impl InlineHistoryMenuView {
     ) -> Self {
         let tab_configs = build_tab_configs();
         let data_source =
-            ctx.add_model(|_| InlineHistoryMenuDataSource::new(terminal_view_id, active_session));
+            ctx.add_model(|_| InlineHistoryMenuDataSource::new(active_session));
 
         let initial_filters = tab_configs
             .first()

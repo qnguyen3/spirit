@@ -3015,7 +3015,6 @@ impl CodeReviewView {
                         })
                     },
                     false,
-                    None,
                     ctx,
                 )
             });
@@ -3103,7 +3102,7 @@ impl CodeReviewView {
                 // file_id() will be None for these editors; no downstream code in code_review
                 // relies on file_id for deleted entries (save/conflict flows early-return on None).
                 // Content is populated via reset_with_state in apply_diff_to_code_editor.
-                LocalCodeEditorView::new(code_editor_view, None, false, None, ctx)
+                LocalCodeEditorView::new(code_editor_view, None, false, ctx)
             });
 
             let comment_line_numbers = self.comment_line_numbers_for_file(&full_file_location, ctx);

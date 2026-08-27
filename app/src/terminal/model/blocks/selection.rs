@@ -1028,17 +1028,10 @@ impl BlockList {
                 selection_start_cursor.seek(&BlockHeight::from(top_row), SeekBias::Right);
 
                 // Loop over each _command block_ row in the rect selection. Add the content to the selected_texts result.
-                // Note that there could be rich content blocks in between the command block rows. Therefore in each iteration
-                // we need to check and append the intermediate rich content selections.
                 for (start, end) in rows {
                     let current_row = start.absolute_point.row;
 
-                    // Read rich content selected text in the intermediate rich content blocks.
                     while current_row >= selection_start_cursor.start().height {
-                        if let Some(BlockHeightItem::RichContent(item)) =
-                            selection_start_cursor.item()
-                        {
-                        }
                         selection_start_cursor.next();
                     }
                     let Some(command_block) = self.block_at(start.within_grid_point.block_index)
@@ -1050,11 +1043,7 @@ impl BlockList {
                     selected_texts.push(command_block.bounds_to_string(start_point, end_point));
                 }
 
-                // Read AI block selected text in the trailing AI blocks.
                 while bottom_row >= selection_start_cursor.start().height {
-                    if let Some(BlockHeightItem::RichContent(item)) = selection_start_cursor.item()
-                    {
-                    }
                     selection_start_cursor.next();
                 }
 

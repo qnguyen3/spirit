@@ -655,37 +655,6 @@ fn test_authed_repo_input_allows_arbitrary_repo() {
 }
 
 #[test]
-fn test_selected_repos_as_remote_repo_args_formats_owner_repo_strings() {
-    App::test((), |mut app| async move {
-        init_update_environment_form_test_models(&mut app);
-        let window_id = create_test_window(&mut app);
-
-        app.update(|ctx| {
-            let view_handle = ctx.add_typed_action_view(window_id, |ctx| {
-                UpdateEnvironmentForm::new_for_test(EnvironmentFormInitArgs::Create, ctx)
-            });
-            view_handle.update(ctx, |form, _| {
-                form.form_state.selected_repos = vec![
-                    GithubRepo::new("warpdotdev".to_string(), "warp-internal".to_string()),
-                    GithubRepo::new("facebook".to_string(), "react".to_string()),
-                ];
-            });
-
-            let form = view_handle.as_ref(ctx);
-            let args = form.selected_repos_as_remote_repo_args();
-
-            assert_eq!(
-                args,
-                vec![
-                    "warpdotdev/warp-internal".to_string(),
-                    "facebook/react".to_string(),
-                ]
-            );
-        });
-    })
-}
-
-#[test]
 fn test_can_suggest_image_for_edit_requires_repos_modified() {
     App::test((), |mut app| async move {
         init_update_environment_form_test_models(&mut app);

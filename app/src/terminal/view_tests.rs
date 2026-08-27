@@ -896,10 +896,9 @@ fn test_clear_session_flag_state() {
     })
 }
 
-/// A block's remoteness is a question of fact, so the team's command patterns classify it even
-/// when that team currently permits AI in remote sessions.
+/// A block's remoteness is a question of fact, so the team's command patterns classify it.
 #[test]
-fn org_command_patterns_classify_a_block_remote_even_when_remote_session_ai_is_permitted() {
+fn org_command_patterns_classify_a_block_remote() {
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
         let (window_id, terminal) = add_window_with_id_and_terminal(&mut app, None);
@@ -928,12 +927,6 @@ fn org_command_patterns_classify_a_block_remote_even_when_remote_session_ai_is_p
         });
 
         terminal.read(&app, |view, ctx| {
-            let user_workspaces = UserWorkspaces::as_ref(ctx);
-            let scope = user_workspaces.team_context(&terminal.downgrade(), ctx);
-            assert!(
-                user_workspaces.is_ai_allowed_in_remote_sessions(&scope),
-                "precondition: the team permits AI and only configures patterns"
-            );
             assert!(view.is_block_considered_remote(None, Some("kubectl get pods"), ctx));
             assert!(!view.is_block_considered_remote(None, Some("ls -la"), ctx));
         });

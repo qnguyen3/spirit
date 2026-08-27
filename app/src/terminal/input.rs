@@ -81,7 +81,6 @@ use super::alias::is_expandable_alias;
 use super::history_autosuggestions::{
     get_reverse_chronological_potential_autosuggestions, is_command_valid,
 };
-use super::block_list_viewport::InputMode;
 use super::event::{BlockCompletedEvent, BlockType, UserBlockCompleted};
 use super::ligature_settings::LigatureSettings;
 use super::model::block::{
@@ -149,15 +148,14 @@ use crate::resource_center::{
 use crate::search::QueryFilter;
 use crate::search::slash_command_menu::static_commands::commands::COMMAND_REGISTRY;
 use crate::server::ids::SyncId;
-use crate::server::server_api::ServerApi;
 use crate::server::telemetry::{
     AnonymousUserSignupEntrypoint, CommandXRayTrigger, EnvVarTelemetryMetadata, PaletteSource,
     SlashMenuSource, TelemetryEvent, WorkflowTelemetryMetadata,
 };
 use crate::session_management::SessionNavigationPromptElements;
 use crate::settings::{
-    AliasExpansionSettings, AppEditorSettings, AppEditorSettingsChangedEvent, InputModeSettings,
-    InputSettings, InputSettingsChangedEvent, MAX_TIMES_TO_SHOW_AUTOSUGGESTION_HINT,
+    AliasExpansionSettings, AppEditorSettings, AppEditorSettingsChangedEvent, InputSettings,
+    InputSettingsChangedEvent, MAX_TIMES_TO_SHOW_AUTOSUGGESTION_HINT,
 };
 use crate::settings_view::{SettingsSection, flags};
 use crate::suggestions::ignored_suggestions_model::{
@@ -206,7 +204,7 @@ use crate::workflows::workflow_enum::EnumVariants;
 use crate::workflows::{self, WorkflowSelectionSource, WorkflowSource, WorkflowType};
 use crate::workspace::sync_inputs::SyncedInputState;
 use crate::workspace::{CommandSearchOptions, InitContent, ToastStack, WorkspaceAction};
-use crate::workspaces::user_workspaces::{TeamContext, UserWorkspaces};
+use crate::workspaces::user_workspaces::UserWorkspaces;
 #[allow(unused_imports)]
 use crate::{AgentModeEntrypoint, ServerApiProvider, cmd_or_ctrl_shift, send_telemetry_from_ctx};
 
@@ -1040,7 +1038,6 @@ pub struct Input {
     menu_positioning_provider: Arc<dyn MenuPositioningProvider>,
     tips_completed: ModelHandle<TipsCompleted>,
     editor: ViewHandle<EditorView>,
-    server_api: Arc<ServerApi>,
     input_suggestions: ViewHandle<InputSuggestions>,
     suggestions_mode_model: ModelHandle<InputSuggestionsModeModel>,
     completions_menu_resizable_width: ResizableStateHandle,
@@ -1411,7 +1408,6 @@ impl Input {
     pub(crate) fn new(
         model: Arc<FairMutex<TerminalModel>>,
         tips_completed: ModelHandle<TipsCompleted>,
-        server_api: Arc<ServerApi>,
         sessions: ModelHandle<Sessions>,
         size_info: SizeInfo,
         menu_positioning_provider: Arc<dyn MenuPositioningProvider>,
@@ -1571,7 +1567,6 @@ impl Input {
             let buffer_model = buffer_model.clone();
             |ctx| {
                 inline_history::InlineHistoryMenuView::new(
-                    terminal_view_id,
                     active_session,
                     &suggestions_mode_model,
                     &inline_terminal_menu_positioner,
@@ -1751,7 +1746,6 @@ impl Input {
             tips_completed,
             editor,
             model,
-            server_api,
             sessions,
             focus_handle: None,
             active_block_metadata: None,
@@ -2102,10 +2096,6 @@ impl Input {
     fn is_pane_focused(&self, app: &AppContext) -> bool {
         // If the focus handle hasn't been set yet, assume we're not in a split pane and therefore focused.
         self.focus_handle.as_ref().is_none_or(|h| h.is_focused(app))
-    }
-
-    pub(super) fn team_scope<'a>(&self, app: &'a AppContext) -> TeamContext<'a> {
-        UserWorkspaces::as_ref(app).team_context(&self.weak_view_handle, app)
     }
 
     fn is_active_session(&self, app: &AppContext) -> bool {
@@ -3789,16 +3779,6 @@ impl Input {
             ctx,
         );
         self.clear_selected_workflow(ctx);
-    }
-
-    /// Closes any active suggestion mode UI when starting a new conversation.
-    ///
-    /// This is intentionally narrower than `close_overlays`: it does not close Voltron, workflow
-    /// info overlays, etc.
-    fn close_suggestion_modes_for_new_conversation(&mut self, ctx: &mut ViewContext<Self>) {
-        self.suggestions_mode_model.update(ctx, |model, ctx| {
-            model.set_mode(InputSuggestionsMode::Closed, ctx);
-        });
     }
 
     fn close_voltron(&mut self, ctx: &mut ViewContext<Input>) {
@@ -7047,14 +7027,6 @@ impl Input {
         InputSettings::as_ref(app).is_universal_developer_input_enabled(app)
     }
 
-    /// Returns whether the input box is currently pinned to the top of the screen.
-    fn is_input_at_top(&self, model: &TerminalModel, ctx: &AppContext) -> bool {
-        match InputModeSettings::as_ref(ctx).input_mode.value() {
-            InputMode::PinnedToBottom => false,
-            InputMode::PinnedToTop => true,
-            InputMode::Waterfall => model.is_block_list_empty(),
-        }
-    }
 }
 
 impl Entity for Input {

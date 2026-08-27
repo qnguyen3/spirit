@@ -1,5 +1,4 @@
 use chrono::{DateTime, Local};
-use fuzzy_match::FuzzyMatchResult;
 use ordered_float::OrderedFloat;
 use warp_core::ui::Icon;
 use warp_core::ui::color::coloru_with_opacity;
@@ -21,7 +20,6 @@ use crate::util::time_format::format_approx_duration_from_now_utc;
 #[derive(Debug, Clone)]
 pub struct InlineHistoryItem {
     item_type: HistoryItemType,
-    name_match_result: Option<FuzzyMatchResult>,
     prefix_match_len: usize,
     score: OrderedFloat<f64>,
     timestamp: DateTime<Local>,
@@ -48,16 +46,10 @@ impl InlineHistoryItem {
                 command,
                 linked_workflow_data,
             },
-            name_match_result: None,
             prefix_match_len: 0,
             score: OrderedFloat(f64::MIN),
             timestamp,
         }
-    }
-
-    pub fn with_name_match_result(mut self, result: Option<FuzzyMatchResult>) -> Self {
-        self.name_match_result = result;
-        self
     }
 
     pub fn with_prefix_match_len(mut self, len: usize) -> Self {
@@ -117,7 +109,6 @@ impl SearchItem for InlineHistoryItem {
         let secondary_text_color =
             inline_styles::secondary_text_color(theme, background_color.into());
 
-        let _ = &self.name_match_result;
         let (display_text, match_indices, font_family) = match &self.item_type {
             HistoryItemType::Command { command, .. } => {
                 let indices = if self.prefix_match_len > 0 {

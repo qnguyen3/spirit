@@ -624,114 +624,14 @@ fn two_teams() -> (Team, Team) {
     (team_a, team_b)
 }
 
-#[test]
-fn test_team_context_for_operation_resolves_each_windows_own_team() {
-    let (team_a, team_b) = two_teams();
-    let mut workspace = workspace_for_test(&team_a);
-    workspace.teams.push(team_b.clone());
-
-    App::test((), |mut app| async move {
-        initialize_window_team_test_app(&mut app, vec![workspace]);
-
-        let (window_a, view_a) = create_test_window(&mut app);
-        let (window_b, view_b) = create_test_window(&mut app);
-        UserWorkspaces::handle(&app).update(&mut app, |user_workspaces, ctx| {
-            user_workspaces.set_team_for_window(window_a, team_a.uid, ctx);
-            user_workspaces.set_team_for_window(window_b, team_b.uid, ctx);
-        });
-
-        let context_a = view_a.update(&mut app, |_, ctx| {
-            UserWorkspaces::as_ref(ctx).team_context_for_operation(ctx)
-        });
-        let context_b = view_b.update(&mut app, |_, ctx| {
-            UserWorkspaces::as_ref(ctx).team_context_for_operation(ctx)
-        });
-
-        assert_eq!(
-            context_a.team_uid(),
-            Some(team_a.uid),
-            "the view in window A should mint a context resolving to team A"
-        );
-        assert_eq!(
-            context_b.team_uid(),
-            Some(team_b.uid),
-            "the view in window B should mint a context resolving to team B"
-        );
-    })
-}
-
-/// A window only changes teams by reconciling away from a team that left the workspace, so
-/// that is also the only way to observe a captured context and a live render diverging.
-#[test]
-fn test_window_team_reconciliation_moves_rendering_but_not_a_captured_context() {
-    let (team_a, team_b) = two_teams();
-    let mut workspace = workspace_for_test(&team_a);
-    workspace.teams.push(team_b.clone());
-
-    App::test((), |mut app| async move {
-        initialize_window_team_test_app(&mut app, vec![workspace]);
-
-        let (window_id, view) = create_test_window(&mut app);
-        let weak_view = view.downgrade();
-        UserWorkspaces::handle(&app).update(&mut app, |user_workspaces, ctx| {
-            user_workspaces.set_team_for_window(window_id, team_a.uid, ctx);
-        });
-
-        let context_a = view.update(&mut app, |_, ctx| {
-            UserWorkspaces::as_ref(ctx).team_context_for_operation(ctx)
-        });
-
-        app.read(|ctx| {
-            assert_eq!(
-                UserWorkspaces::as_ref(ctx)
-                    .team_context(&weak_view, ctx)
-                    .team_uid(),
-                Some(team_a.uid),
-            );
-        });
-
-        UserWorkspaces::handle(&app).update(&mut app, |user_workspaces, ctx| {
-            user_workspaces.update_workspaces(vec![workspace_for_test(&team_b)], ctx);
-        });
-
-        app.read(|ctx| {
-            assert_eq!(
-                UserWorkspaces::as_ref(ctx)
-                    .team_context(&weak_view, ctx)
-                    .team_uid(),
-                Some(team_b.uid),
-                "a freshly resolved render context should follow the window to team B"
-            );
-        });
-        assert_eq!(
-            context_a.team_uid(),
-            Some(team_a.uid),
-            "a context captured for team A should keep pointing at team A rather than follow \
-             the window onto team B"
-        );
-    })
-}
-
-fn set_team_remote_session_policy(team: &mut Team, allow_ai: bool, patterns: &[&str]) {
-    team.settings
-        .ai_permissions
-        .allow_ai_in_remote_sessions
-        .value = allow_ai;
+fn set_team_remote_session_policy(team: &mut Team, patterns: &[&str]) {
     team.settings.ai_permissions.remote_session_regex_list = patterns
         .iter()
         .map(|pattern| Regex::new(pattern).expect("test pattern should compile"))
         .collect();
 }
 
-fn set_workspace_remote_session_policy(
-    workspace: &mut Workspace,
-    allow_ai: bool,
-    patterns: &[&str],
-) {
-    workspace
-        .settings
-        .ai_permissions_settings
-        .allow_ai_in_remote_sessions = allow_ai;
+fn set_workspace_remote_session_policy(workspace: &mut Workspace, patterns: &[&str]) {
     workspace
         .settings
         .ai_permissions_settings
@@ -754,22 +654,13 @@ fn remote_session_patterns_for_surface(
         .collect()
 }
 
-fn remote_session_ai_allowed_for_surface(
-    view: &ViewHandle<TeamContextTestView>,
-    app: &AppContext,
-) -> bool {
-    let user_workspaces = UserWorkspaces::as_ref(app);
-    let scope = user_workspaces.team_context(&view.downgrade(), app);
-    user_workspaces.is_ai_allowed_in_remote_sessions(&scope)
-}
-
 /// Each surface is judged by the rules of the team whose window it is in, so two terminals on
 /// opposing teams get opposing answers at the same moment.
 #[test]
 fn remote_session_policy_follows_each_surfaces_own_team() {
     let (mut team_a, mut team_b) = two_teams();
-    set_team_remote_session_policy(&mut team_a, true, &["^kubectl"]);
-    set_team_remote_session_policy(&mut team_b, false, &["^ssh"]);
+    set_team_remote_session_policy(&mut team_a, &["^kubectl"]);
+    set_team_remote_session_policy(&mut team_b, &["^ssh"]);
     let mut workspace = workspace_for_test(&team_a);
     workspace.teams = vec![team_a.clone(), team_b.clone()];
 
@@ -784,14 +675,6 @@ fn remote_session_policy_follows_each_surfaces_own_team() {
         });
 
         app.read(|ctx| {
-            assert!(
-                remote_session_ai_allowed_for_surface(&view_a, ctx),
-                "the surface in team A's window is governed by team A, which permits it"
-            );
-            assert!(
-                !remote_session_ai_allowed_for_surface(&view_b, ctx),
-                "the surface in team B's window is governed by team B, which forbids it"
-            );
             assert_eq!(
                 remote_session_patterns_for_surface(&view_a, ctx),
                 HashSet::from(["^kubectl".to_string()])
@@ -809,7 +692,7 @@ fn remote_session_policy_falls_back_to_the_workspace_for_a_user_with_no_teams() 
     let team = team_for_test();
     let mut workspace = workspace_for_test(&team);
     workspace.teams.clear();
-    set_workspace_remote_session_policy(&mut workspace, false, &["^workspace-only"]);
+    set_workspace_remote_session_policy(&mut workspace, &["^workspace-only"]);
 
     App::test((), |mut app| async move {
         initialize_window_team_test_app(&mut app, vec![workspace]);
@@ -820,11 +703,6 @@ fn remote_session_policy_falls_back_to_the_workspace_for_a_user_with_no_teams() 
         });
 
         app.read(|ctx| {
-            assert!(
-                !remote_session_ai_allowed_for_surface(&view, ctx),
-                "the workspace value is genuinely team-neutral for a user with no teams, so it \
-                 is the one to read"
-            );
             assert_eq!(
                 remote_session_patterns_for_surface(&view, ctx),
                 HashSet::from(["^workspace-only".to_string()])
@@ -833,35 +711,11 @@ fn remote_session_policy_falls_back_to_the_workspace_for_a_user_with_no_teams() 
     })
 }
 
-/// Guards the shape of the getter rather than a reachable user scenario: a scope that names an
-/// unresolvable team must fail closed, not fall through to the no-team branch. Mirrors
-/// `member_byo_policy_denies_a_scope_naming_an_unresolvable_team`.
-#[test]
-fn remote_session_ai_permission_denies_a_scope_naming_an_unresolvable_team() {
-    let mut team = team_for_test();
-    set_team_remote_session_policy(&mut team, true, &["^kubectl"]);
-    let workspace = workspace_for_test(&team);
-
-    App::test((), |mut app| async move {
-        initialize_window_team_test_app(&mut app, vec![workspace]);
-
-        let unresolvable_team_scope = TeamContextForOperation::new_for_test(9999.into());
-        app.read(|ctx| {
-            let user_workspaces = UserWorkspaces::as_ref(ctx);
-            assert!(
-                !user_workspaces.is_ai_allowed_in_remote_sessions(&unresolvable_team_scope),
-                "a team whose policy cannot be read must not inherit another team's"
-            );
-        });
-    })
-}
-
 /// `current_workspace()` is `None` only when logged out or before the first metadata fetch, not
 /// for a teamless user (who has a personal workspace). With no workspace there is no admin
-/// policy to consult, so this permits -- preserving the pre-refactor default that the
-/// unresolvable-team deny would otherwise have swallowed.
+/// policy to consult, so there are no patterns to apply.
 #[test]
-fn remote_session_ai_permission_is_allowed_for_a_user_with_no_workspace_at_all() {
+fn remote_session_patterns_are_empty_for_a_user_with_no_workspace_at_all() {
     App::test((), |mut app| async move {
         initialize_window_team_test_app(&mut app, vec![]);
 
@@ -871,7 +725,6 @@ fn remote_session_ai_permission_is_allowed_for_a_user_with_no_workspace_at_all()
         });
 
         app.read(|ctx| {
-            assert!(remote_session_ai_allowed_for_surface(&view, ctx));
             assert!(remote_session_patterns_for_surface(&view, ctx).is_empty());
         });
     })
@@ -994,11 +847,6 @@ fn test_team_contexts_represent_a_registered_teamless_window() {
             user_workspaces.register_window(window_id, None, ctx);
         });
 
-        let context = view.update(&mut app, |_, ctx| {
-            UserWorkspaces::as_ref(ctx).team_context_for_operation(ctx)
-        });
-        assert_eq!(context.team_uid(), None);
-
         let weak_view = view.downgrade();
         app.read(|ctx| {
             let context = UserWorkspaces::as_ref(ctx).team_context(&weak_view, ctx);
@@ -1062,16 +910,8 @@ fn member_byo_policy_follows_each_windows_own_team() {
                 "the window on the permissive team should allow member API keys"
             );
             assert!(
-                user_workspaces.are_member_byo_endpoints_allowed(&scope_a),
-                "the window on the permissive team should allow member custom endpoints"
-            );
-            assert!(
                 !user_workspaces.are_member_byo_keys_allowed(&scope_b),
                 "the window on the restrictive team should not allow member API keys"
-            );
-            assert!(
-                !user_workspaces.are_member_byo_endpoints_allowed(&scope_b),
-                "the window on the restrictive team should not allow member custom endpoints"
             );
         });
     })
@@ -1117,11 +957,6 @@ fn assert_teamless_window_reads_workspace_policy(allow_member_credentials: bool)
                 user_workspaces.are_member_byo_keys_allowed(&scope),
                 allow_member_credentials,
                 "a teamless window must read the workspace's key policy"
-            );
-            assert_eq!(
-                user_workspaces.are_member_byo_endpoints_allowed(&scope),
-                allow_member_credentials,
-                "a teamless window must read the workspace's endpoint policy"
             );
         });
     })
@@ -1178,7 +1013,6 @@ fn member_byo_policy_for_a_teamless_scope_ignores_teams_in_another_workspace() {
                 user_workspaces.are_member_byo_keys_allowed(&scope),
                 "a team in another workspace must not restrict this workspace's read"
             );
-            assert!(user_workspaces.are_member_byo_endpoints_allowed(&scope));
         });
     })
 }
@@ -1208,7 +1042,6 @@ fn member_byo_policy_is_unrestricted_without_the_managed_byok_entitlement() {
                 user_workspaces.are_member_byo_keys_allowed(&scope),
                 "a restrictive team_byo should be inert without the managed BYOK entitlement"
             );
-            assert!(user_workspaces.are_member_byo_endpoints_allowed(&scope));
         });
     })
 }
@@ -1242,34 +1075,6 @@ fn member_byo_policy_resolved_from_a_view_handle_matches_its_window() {
     })
 }
 
-/// Guards the shape of the getters rather than a reachable user scenario: a scope that names
-/// an unresolvable team must deny, not fall through to the no-team branch. Simplifying either
-/// getter to `is_none_or` would silently invert that into inheriting whichever policy the
-/// no-team branch grants, which is exactly what this migration exists to stop, and nothing
-/// else in the suite would fail.
-#[test]
-fn member_byo_policy_denies_a_scope_naming_an_unresolvable_team() {
-    let (team_a, _team_b) = two_teams_with_opposing_byo_policy();
-    let workspace = workspace_for_test(&team_a);
-
-    App::test((), |mut app| async move {
-        initialize_window_team_test_app(&mut app, vec![workspace]);
-
-        let unresolvable_team_scope = TeamContextForOperation::new_for_test(9999.into());
-        app.read(|ctx| {
-            let user_workspaces = UserWorkspaces::as_ref(ctx);
-            assert!(user_workspaces.is_managed_byok_byoe_enabled());
-            assert!(
-                !user_workspaces.are_member_byo_keys_allowed(&unresolvable_team_scope),
-                "a team whose policy cannot be read must not inherit another team's"
-            );
-            assert!(
-                !user_workspaces.are_member_byo_endpoints_allowed(&unresolvable_team_scope),
-                "a team whose policy cannot be read must not inherit another team's"
-            );
-        });
-    })
-}
 
 /// Reconciliation can move a window onto a different team, and the policy read has to move
 /// with it rather than keep answering for the team the window was on before.
@@ -1605,238 +1410,6 @@ fn test_joining_team_moves_objects() {
                 .unwrap()
                 .space(ctx);
             assert_eq!(space, Space::Team { team_uid });
-        });
-    })
-}
-
-#[test]
-fn test_agent_attribution_default_with_no_workspace() {
-    App::test((), |mut app| async move {
-        initialize_window_team_test_app(&mut app, vec![]);
-
-        let window_id = WindowId::new();
-        UserWorkspaces::handle(&app).update(&mut app, |user_workspaces, ctx| {
-            user_workspaces.register_window(window_id, None, ctx);
-        });
-
-        app.read(|ctx| {
-            let user_workspaces = UserWorkspaces::as_ref(ctx);
-            let scope = user_workspaces.team_context_for_window_for_test(window_id);
-            assert_eq!(
-                user_workspaces.get_agent_attribution_setting(&scope),
-                AdminEnablementSetting::RespectUserSetting,
-                "attribution should default to RespectUserSetting when there is no workspace"
-            );
-        });
-    })
-}
-
-/// Two windows on teams with opposing attribution policies each see their own team's.
-#[test]
-fn test_agent_attribution_resolves_each_windows_own_team() {
-    let (mut team_a, mut team_b) = two_teams();
-    team_a.settings.enable_warp_attribution = AdminEnablementSetting::Enable;
-    team_b.settings.enable_warp_attribution = AdminEnablementSetting::Disable;
-    let mut workspace = workspace_for_test(&team_a);
-    workspace.teams.push(team_b.clone());
-
-    App::test((), |mut app| async move {
-        initialize_window_team_test_app(&mut app, vec![workspace]);
-
-        let (window_a, _view_a) = create_test_window(&mut app);
-        let (window_b, _view_b) = create_test_window(&mut app);
-        UserWorkspaces::handle(&app).update(&mut app, |user_workspaces, ctx| {
-            user_workspaces.set_team_for_window(window_a, team_a.uid, ctx);
-            user_workspaces.set_team_for_window(window_b, team_b.uid, ctx);
-        });
-
-        app.read(|ctx| {
-            let user_workspaces = UserWorkspaces::as_ref(ctx);
-            let scope_a = user_workspaces.team_context_for_window_for_test(window_a);
-            let scope_b = user_workspaces.team_context_for_window_for_test(window_b);
-            assert_eq!(
-                user_workspaces.get_agent_attribution_setting(&scope_a),
-                AdminEnablementSetting::Enable,
-                "the window on team A should see team A's forced-on attribution"
-            );
-            assert_eq!(
-                user_workspaces.get_agent_attribution_setting(&scope_b),
-                AdminEnablementSetting::Disable,
-                "the window on team B should see team B's forced-off attribution"
-            );
-        });
-    })
-}
-
-/// Reconciliation can move a window onto a different team, and the policy read has to move
-/// with it rather than keep answering for the team the window was on before -- mirrors
-/// `member_byo_policy_follows_a_window_reconciled_onto_another_team`.
-#[test]
-fn test_agent_attribution_follows_a_window_reconciled_onto_another_team() {
-    let (mut team_a, mut team_b) = two_teams();
-    team_a.settings.enable_warp_attribution = AdminEnablementSetting::Disable;
-    team_b.settings.enable_warp_attribution = AdminEnablementSetting::Enable;
-    let mut workspace = workspace_for_test(&team_a);
-    workspace.teams.push(team_b.clone());
-
-    App::test((), |mut app| async move {
-        initialize_window_team_test_app(&mut app, vec![workspace]);
-
-        let (window_id, _view) = create_test_window(&mut app);
-        UserWorkspaces::handle(&app).update(&mut app, |user_workspaces, ctx| {
-            user_workspaces.set_team_for_window(window_id, team_a.uid, ctx);
-        });
-
-        app.read(|ctx| {
-            let user_workspaces = UserWorkspaces::as_ref(ctx);
-            assert_eq!(
-                user_workspaces.get_agent_attribution_setting(
-                    &user_workspaces.team_context_for_window_for_test(window_id)
-                ),
-                AdminEnablementSetting::Disable
-            );
-        });
-
-        UserWorkspaces::handle(&app).update(&mut app, |user_workspaces, ctx| {
-            user_workspaces.update_workspaces(vec![workspace_for_test(&team_b)], ctx);
-        });
-
-        app.read(|ctx| {
-            let user_workspaces = UserWorkspaces::as_ref(ctx);
-            assert_eq!(
-                user_workspaces.get_agent_attribution_setting(
-                    &user_workspaces.team_context_for_window_for_test(window_id)
-                ),
-                AdminEnablementSetting::Enable,
-                "the window reconciled onto team B, so its policy applies now"
-            );
-        });
-    })
-}
-
-/// Workspace settings are only trustworthy for a user with no teams at all; that user still
-/// has to get the policy their server-side tier defaults produced.
-#[test]
-fn test_agent_attribution_reads_workspace_settings_for_a_teamless_user() {
-    let mut workspace = workspace_for_test(&team_for_test());
-    workspace.teams.clear();
-    workspace.settings.enable_warp_attribution = AdminEnablementSetting::Disable;
-
-    App::test((), |mut app| async move {
-        initialize_window_team_test_app(&mut app, vec![workspace]);
-
-        let (window_id, _view) = create_test_window(&mut app);
-        UserWorkspaces::handle(&app).update(&mut app, |user_workspaces, ctx| {
-            user_workspaces.register_window(window_id, None, ctx);
-        });
-
-        app.read(|ctx| {
-            let user_workspaces = UserWorkspaces::as_ref(ctx);
-            let scope = user_workspaces.team_context_for_window_for_test(window_id);
-            assert_eq!(
-                user_workspaces.get_agent_attribution_setting(&scope),
-                AdminEnablementSetting::Disable,
-                "a genuinely teamless user reads the workspace's own setting"
-            );
-        });
-    })
-}
-
-#[test]
-fn test_default_host_slug_resolves_each_windows_own_team() {
-    let (mut team_a, mut team_b) = two_teams();
-    team_a.settings.default_host_slug = Some("host-a".to_string());
-    team_b.settings.default_host_slug = Some("host-b".to_string());
-    let mut workspace = workspace_for_test(&team_a);
-    workspace.teams.push(team_b.clone());
-
-    App::test((), |mut app| async move {
-        initialize_window_team_test_app(&mut app, vec![workspace]);
-
-        let (window_a, _view_a) = create_test_window(&mut app);
-        let (window_b, _view_b) = create_test_window(&mut app);
-        UserWorkspaces::handle(&app).update(&mut app, |user_workspaces, ctx| {
-            user_workspaces.set_team_for_window(window_a, team_a.uid, ctx);
-            user_workspaces.set_team_for_window(window_b, team_b.uid, ctx);
-        });
-
-        app.read(|ctx| {
-            let user_workspaces = UserWorkspaces::as_ref(ctx);
-            let scope_a = user_workspaces.team_context_for_window_for_test(window_a);
-            let scope_b = user_workspaces.team_context_for_window_for_test(window_b);
-            assert_eq!(user_workspaces.default_host_slug(&scope_a), Some("host-a"));
-            assert_eq!(user_workspaces.default_host_slug(&scope_b), Some("host-b"));
-        });
-    })
-}
-
-/// Reconciliation can move a window onto a different team, and the default host has to move
-/// with it rather than keep answering for the team the window was on before.
-#[test]
-fn test_default_host_slug_follows_a_window_reconciled_onto_another_team() {
-    let (mut team_a, mut team_b) = two_teams();
-    team_a.settings.default_host_slug = Some("host-a".to_string());
-    team_b.settings.default_host_slug = Some("host-b".to_string());
-    let mut workspace = workspace_for_test(&team_a);
-    workspace.teams.push(team_b.clone());
-
-    App::test((), |mut app| async move {
-        initialize_window_team_test_app(&mut app, vec![workspace]);
-
-        let (window_id, _view) = create_test_window(&mut app);
-        UserWorkspaces::handle(&app).update(&mut app, |user_workspaces, ctx| {
-            user_workspaces.set_team_for_window(window_id, team_a.uid, ctx);
-        });
-
-        app.read(|ctx| {
-            let user_workspaces = UserWorkspaces::as_ref(ctx);
-            assert_eq!(
-                user_workspaces.default_host_slug(
-                    &user_workspaces.team_context_for_window_for_test(window_id)
-                ),
-                Some("host-a")
-            );
-        });
-
-        UserWorkspaces::handle(&app).update(&mut app, |user_workspaces, ctx| {
-            user_workspaces.update_workspaces(vec![workspace_for_test(&team_b)], ctx);
-        });
-
-        app.read(|ctx| {
-            let user_workspaces = UserWorkspaces::as_ref(ctx);
-            assert_eq!(
-                user_workspaces.default_host_slug(
-                    &user_workspaces.team_context_for_window_for_test(window_id)
-                ),
-                Some("host-b"),
-                "the window reconciled onto team B, so its default host applies now"
-            );
-        });
-    })
-}
-
-#[test]
-fn test_default_host_slug_reads_workspace_settings_for_a_teamless_user() {
-    let mut workspace = workspace_for_test(&team_for_test());
-    workspace.teams.clear();
-    workspace.settings.default_host_slug = Some("workspace-host".to_string());
-
-    App::test((), |mut app| async move {
-        initialize_window_team_test_app(&mut app, vec![workspace]);
-
-        let (window_id, _view) = create_test_window(&mut app);
-        UserWorkspaces::handle(&app).update(&mut app, |user_workspaces, ctx| {
-            user_workspaces.register_window(window_id, None, ctx);
-        });
-
-        app.read(|ctx| {
-            let user_workspaces = UserWorkspaces::as_ref(ctx);
-            let scope = user_workspaces.team_context_for_window_for_test(window_id);
-            assert_eq!(
-                user_workspaces.default_host_slug(&scope),
-                Some("workspace-host"),
-                "a genuinely teamless user reads the workspace's own default host"
-            );
         });
     })
 }

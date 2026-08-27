@@ -32,7 +32,6 @@ use crate::terminal::model::mouse::MouseState;
 use crate::terminal::model::selection::{SelectAction, SelectionDirection};
 use crate::terminal::model::terminal_model::{BlockIndex, WithinModel};
 use crate::terminal::shared_session::SharedSessionActionSource;
-use crate::terminal::view::RichContentSecretTooltipInfo;
 
 /// This represents whether entering a subshell for a particular command should become automatic in
 /// the future, or to ask again.
@@ -196,11 +195,6 @@ pub enum TerminalAction {
         show_secret: bool,
     },
     CopyGridSecret(WithinModel<SecretHandle>),
-    ToggleRichContentSecret {
-        rich_content_tooltip_info: RichContentSecretTooltipInfo,
-        show_secret: bool,
-    },
-    CopyRichContentSecret(RichContentSecretTooltipInfo),
     ShowInFileExplorer(PathBuf),
     OpenFileInWarp(PathBuf),
     #[cfg(feature = "local_fs")]
@@ -403,11 +397,7 @@ impl fmt::Debug for TerminalAction {
             OpenGridLink(_) => f.write_str("OpenGridLink"),
             OpenRichContentLink(_) => f.write_str("OpenRichContentLink"),
             ToggleGridSecret { show_secret, .. } => write!(f, "ToggleGridSecret {show_secret:?}"),
-            ToggleRichContentSecret { show_secret, .. } => {
-                write!(f, "ToggleRichContentSecret {show_secret:?}")
-            }
             CopyGridSecret(_) => f.write_str("CopyGridSecret"),
-            CopyRichContentSecret(_) => f.write_str("CopyRichContentSecret"),
             ShowInFileExplorer(_) => f.write_str("ShowInFileExplorer"),
             OpenFileInWarp(_) => f.write_str("OpenFileInWarp"),
             #[cfg(feature = "local_fs")]

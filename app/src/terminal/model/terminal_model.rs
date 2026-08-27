@@ -1259,16 +1259,6 @@ impl TerminalModel {
         self.event_proxy.send_wakeup_event();
     }
 
-    pub fn append_followup_shared_session_scrollback(&mut self, scrollback: &[SerializedBlock]) {
-        debug_assert!(self.shared_session_status().is_viewer());
-
-        self.block_list_mut()
-            .append_followup_shared_session_scrollback(scrollback);
-        self.lifecycle_coordinator.reset_unknown();
-
-        self.event_proxy.send_wakeup_event();
-    }
-
     pub fn obfuscate_secrets(&self) -> ObfuscateSecrets {
         self.obfuscate_secrets
     }

@@ -1,8 +1,5 @@
 pub mod auth;
 pub mod block;
-#[cfg(not(target_family = "wasm"))]
-pub(crate) mod download;
-pub mod factory;
 pub mod integrations;
 pub mod managed_secrets;
 pub mod object;
@@ -23,7 +20,6 @@ use auth::AuthClient;
 use block::BlockClient;
 use channel_versions::ChannelVersions;
 use chrono::{DateTime, FixedOffset};
-use factory::FactoryClient;
 use instant::Instant;
 use object::ObjectClient;
 use parking_lot::Mutex;
@@ -36,9 +32,8 @@ use tui_onboarding::TuiOnboardingClient;
 use url::Url;
 use warp_core::context_flag::ContextFlag;
 use warp_core::telemetry::TelemetryEvent;
-use warp_errors::{AnyhowErrorExt, ErrorExt, register_error, report_error};
+use warp_errors::report_error;
 use warp_managed_secrets::client::ManagedSecretsClient;
-use warp_server_client::HttpStatusError;
 use warp_server_client::auth::{AuthClientImpl, AuthEvent, EXPERIMENT_ID_HEADER};
 use warp_server_client::base_client::{
     AmbientHeaderPolicy, AuthenticatedGraphqlConfig, BaseClient, GraphqlRoutingConfig,
@@ -57,20 +52,6 @@ use crate::settings::PrivacySettingsSnapshot;
 use crate::{ChannelState, settings_view};
 
 pub const FETCH_CHANNEL_VERSIONS_TIMEOUT: std::time::Duration = Duration::from_secs(60);
-
-/// We use a special error code header `X-Warp-Error-Code` to allow the server to send
-/// more specific error code information, so that the client can discern between different
-/// errors with the same error code.
-/// See errors/http_error_codes.go on the server for possible values.
-const WARP_ERROR_CODE_HEADER: &str = "X-Warp-Error-Code";
-
-/// An error indicating the user is out of credits. The server sends 429s to communicate this
-/// state, but if Cloud Run is overloaded, it can also send 429s that aren't credit-related.
-/// So we use this to distinguish between the two cases.
-const WARP_ERROR_CODE_OUT_OF_CREDITS: &str = "OUT_OF_CREDITS";
-
-/// Error code indicating the user has reached their cloud agent concurrency limit.
-const WARP_ERROR_CODE_AT_CAPACITY: &str = "AT_CLOUD_AGENT_CAPACITY";
 
 /// ResponseType received by Client
 #[derive(thiserror::Error, Debug, Serialize, Deserialize)]
@@ -92,14 +73,6 @@ impl Deref for ServerApi {
     }
 }
 
-/// Error when the user is at their cloud agent concurrency limit.
-#[derive(thiserror::Error, Debug, Clone, Deserialize)]
-#[error("{error} (running agents: {running_agents})")]
-pub struct CloudAgentCapacityError {
-    pub error: String,
-    pub running_agents: i32,
-}
-
 #[derive(Deserialize, Debug)]
 struct TimeResponse {
     current_time: DateTime<FixedOffset>,
@@ -118,206 +91,6 @@ impl ServerTime {
         self.time_at_fetch + elapsed
     }
 }
-
-/// Wrapper for deserialization errors. This covers both:
-/// * Using `serde` directly
-/// * Using `reqwest` decoding utilities
-#[derive(thiserror::Error, Debug)]
-pub enum DeserializationError {
-    #[error(transparent)]
-    Json(#[from] serde_json::Error),
-    #[error(transparent)]
-    Transport(reqwest::Error),
-}
-
-#[derive(Deserialize, Debug)]
-struct OutOfCreditsResponse {
-    #[serde(default, rename = "userDisplayMessage")]
-    user_display_message: Option<String>,
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum AIApiError {
-    #[error("Request failed due to lack of AI quota.")]
-    QuotaLimit {
-        user_display_message: Option<String>,
-    },
-
-    #[error("Warp is currently overloaded. Please try again later.")]
-    ServerOverloaded,
-
-    #[error("Internal error occurred at transport layer.")]
-    Transport(#[source] reqwest::Error),
-
-    #[error("Failed to deserialize API response.")]
-    Deserialization(#[source] DeserializationError),
-
-    #[error("No context found on context search.")]
-    NoContextFound,
-
-    #[error("Failed with status code {0}: {1}")]
-    ErrorStatus(http::StatusCode, String),
-
-    #[error(transparent)]
-    Other(#[from] anyhow::Error),
-
-    #[error("Got error when streaming {stream_type}: {source:#}")]
-    Stream {
-        stream_type: &'static str,
-        #[source]
-        source: anyhow::Error,
-    },
-
-    /// Synthesized client-side when a response stream ends without a stream-finished
-    /// event: the server always sends one, but the transport can truncate the response
-    /// between chunks, surfacing as a clean EOF.
-    #[error("Response stream ended unexpectedly before completion.")]
-    UnexpectedEof,
-
-    /// Synthesized client-side when a request that uses the connected Grok
-    /// subscription can't be sent because its expired OAuth token failed to
-    /// refresh. Surfaced as a terminal, user-visible error asking the user to
-    /// reconnect, rather than sending a request that would fail authentication.
-    #[error(
-        "Grok subscription token could not be refreshed. Please try reconnecting your subscription."
-    )]
-    GrokSubscriptionTokenRefreshFailed,
-}
-
-impl From<http_client::ResponseError> for AIApiError {
-    fn from(err: http_client::ResponseError) -> Self {
-        let http_client::ResponseError {
-            source,
-            headers,
-            body,
-        } = err;
-        Self::from_response_error(source, &headers, body)
-    }
-}
-
-impl From<reqwest::Error> for AIApiError {
-    fn from(err: reqwest::Error) -> Self {
-        Self::from_transport_error(err)
-    }
-}
-
-impl From<serde_json::Error> for AIApiError {
-    fn from(err: serde_json::Error) -> Self {
-        AIApiError::Deserialization(err.into())
-    }
-}
-
-impl AIApiError {
-    /// Converts a reqwest error to an AIApiError, using response headers to distinguish
-    /// between different types of 429 errors.
-    fn from_response_error(
-        err: reqwest::Error,
-        headers: &::http::HeaderMap,
-        body: Option<String>,
-    ) -> Self {
-        // For HTTP 429 errors, check the X-Warp-Error-Code header to distinguish
-        // between out-of-credits and server-overload.
-        if err.status() == Some(http::StatusCode::TOO_MANY_REQUESTS) {
-            return Self::error_for_429(headers, body);
-        }
-
-        Self::from_transport_error(err)
-    }
-
-    /// Converts a transport-level reqwest error (no HTTP response) to an AIApiError.
-    fn from_transport_error(err: reqwest::Error) -> Self {
-        // Unfortunately, `reqwest` reports some non-decoding errors as decoding errors (e.g.
-        // unexpected disconnects or timeouts while deserializing a response body). Since we
-        // render deserialization and transport errors differently, we try to detect those cases
-        // here.
-        if err.is_timeout() {
-            return AIApiError::Transport(err);
-        }
-        if err.is_decode() {
-            #[cfg(not(target_family = "wasm"))]
-            {
-                use std::error::Error as _;
-                let mut source = err.source();
-                while let Some(underlying) = source {
-                    if underlying.is::<hyper::Error>() {
-                        return AIApiError::Transport(err);
-                    }
-
-                    source = underlying.source();
-                }
-            }
-
-            return AIApiError::Deserialization(DeserializationError::Transport(err));
-        }
-
-        AIApiError::Transport(err)
-    }
-
-    /// Returns the appropriate error for a 429 response by checking the X-Warp-Error-Code header.
-    fn error_for_429(headers: &::http::HeaderMap, body: Option<String>) -> Self {
-        if headers
-            .get(WARP_ERROR_CODE_HEADER)
-            .and_then(|v| v.to_str().ok())
-            == Some(WARP_ERROR_CODE_OUT_OF_CREDITS)
-        {
-            let user_display_message = body
-                .and_then(|body| serde_json::from_str::<OutOfCreditsResponse>(&body).ok())
-                .and_then(|r| r.user_display_message);
-            AIApiError::QuotaLimit {
-                user_display_message,
-            }
-        } else {
-            AIApiError::ServerOverloaded
-        }
-    }
-
-    /// Whether the error is worth an automatic recovery attempt — a fresh request may
-    /// succeed. Gates both retry (pre-actions) and resume (post-actions).
-    pub fn is_recoverable(&self) -> bool {
-        // Don't recover from client errors, except timeouts and rate limits.
-        fn is_recoverable_status(status: http::StatusCode) -> bool {
-            !status.is_client_error()
-                || status == http::StatusCode::REQUEST_TIMEOUT
-                || status == http::StatusCode::TOO_MANY_REQUESTS
-        }
-
-        match self {
-            AIApiError::ErrorStatus(status, _) => is_recoverable_status(*status),
-            AIApiError::Transport(e) => {
-                if let Some(status) = e.status() {
-                    return is_recoverable_status(status);
-                }
-                true
-            }
-            // A failed Grok token refresh is a credential problem the user must
-            // fix by reconnecting, so retrying or resuming won't help.
-            AIApiError::GrokSubscriptionTokenRefreshFailed => false,
-            // By default, attempt recovery on error.
-            _ => true,
-        }
-    }
-}
-
-impl ErrorExt for AIApiError {
-    fn is_actionable(&self) -> bool {
-        match self {
-            AIApiError::Deserialization(error) => match error {
-                DeserializationError::Json(_) => true,
-                DeserializationError::Transport(error) => error.is_actionable(),
-            },
-            AIApiError::Transport(error) => error.is_actionable(),
-            AIApiError::Other(error) => error.is_actionable(),
-            AIApiError::Stream { source, .. } => source.is_actionable(),
-            AIApiError::ErrorStatus(_, _) => self.is_recoverable(),
-            AIApiError::UnexpectedEof => true,
-            AIApiError::QuotaLimit { .. }
-            | AIApiError::ServerOverloaded
-            | AIApiError::NoContextFound
-            | AIApiError::GrokSubscriptionTokenRefreshFailed => false,
-        }
-    }
-}
-register_error!(AIApiError);
 
 /// An API wrapper struct with methods to requests to warp-server.
 ///
@@ -516,234 +289,6 @@ impl ServerApi {
         }
 
         Ok(self.wrap_eventsource_with_iap_detection(request.eventsource()))
-    }
-
-    /// Sends a POST request to a public API endpoint and returns the raw response on success.
-    async fn post_public_api_response<B>(
-        &self,
-        path: &str,
-        body: &B,
-    ) -> Result<http_client::Response>
-    where
-        B: Serialize,
-    {
-        let auth_token = self
-            .get_or_refresh_access_token()
-            .await
-            .context("Failed to get access token for API request")?;
-
-        let url = format!("{}/api/v1/{}", ChannelState::server_root_url(), path);
-
-        let mut request = self.base_client.http_client().post(&url).json(body);
-        if let Some(token) = auth_token.as_bearer_token() {
-            request = request.bearer_auth(token);
-        }
-
-        for (name, value) in self.ambient_agent_headers().await? {
-            request = request.header(name, value);
-        }
-
-        let response = request
-            .send()
-            .await
-            .with_context(|| format!("Failed to send API request to {url}"))?;
-
-        if response.status().is_success() {
-            Ok(response)
-        } else {
-            self.observe_iap_challenge(&response);
-            Err(Self::error_from_response(response).await)
-        }
-    }
-
-    /// Converts a non-success public API response into the most specific client error
-    /// available. The returned error always carries an [`HttpStatusError`] in its chain
-    /// (via [`anyhow::Error::context`]) so callers retrying through
-    /// [`is_transient_http_error`](super::retry_strategies::is_transient_http_error) fail
-    /// fast on a deterministic 4xx instead of defaulting to a transient retry.
-    async fn error_from_response(response: http_client::Response) -> anyhow::Error {
-        let status = response.status();
-        let is_at_capacity = response
-            .headers()
-            .get(WARP_ERROR_CODE_HEADER)
-            .and_then(|v| v.to_str().ok())
-            == Some(WARP_ERROR_CODE_AT_CAPACITY);
-        let is_out_of_credits = response
-            .headers()
-            .get(WARP_ERROR_CODE_HEADER)
-            .and_then(|v| v.to_str().ok())
-            == Some(WARP_ERROR_CODE_OUT_OF_CREDITS);
-
-        // Get the response text first since we may need to try multiple deserializations.
-        let response_text = response.text().await.unwrap_or_default();
-        let status_error = HttpStatusError {
-            status: status.as_u16(),
-            body: response_text.clone(),
-        };
-
-        // Check for AT_CAPACITY error code header.
-        if is_at_capacity
-            && let Ok(capacity_error) =
-                serde_json::from_str::<CloudAgentCapacityError>(&response_text)
-        {
-            return anyhow::Error::new(status_error).context(capacity_error);
-        }
-        if status == StatusCode::TOO_MANY_REQUESTS && is_out_of_credits {
-            let user_display_message = serde_json::from_str::<OutOfCreditsResponse>(&response_text)
-                .ok()
-                .and_then(|r| r.user_display_message);
-            return anyhow::Error::new(status_error).context(AIApiError::QuotaLimit {
-                user_display_message,
-            });
-        }
-
-        // Try to deserialize error response as { "error": "message" }
-        match serde_json::from_str::<ClientError>(&response_text) {
-            Ok(error_response) => anyhow::Error::new(status_error).context(error_response),
-            Err(_) => anyhow::Error::new(status_error)
-                .context(format!("API request failed with status {status}")),
-        }
-    }
-
-    /// Sends a POST request to a public API endpoint.
-    ///
-    /// # Arguments
-    /// * `path` - Endpoint path relative to `/api/v1` (e.g., "agent/run")
-    /// * `body` - Request body to serialize as JSON
-    async fn post_public_api<B, R>(&self, path: &str, body: &B) -> Result<R>
-    where
-        B: Serialize,
-        R: serde::de::DeserializeOwned,
-    {
-        let response = self.post_public_api_response(path, body).await?;
-        let url = response.url().clone();
-        response
-            .json::<R>()
-            .await
-            .with_context(|| format!("Failed to deserialize response from {url}"))
-    }
-
-    /// Sends a PUT request to a public API endpoint and returns the raw response on success.
-    async fn put_public_api_response<B>(
-        &self,
-        path: &str,
-        body: &B,
-    ) -> Result<http_client::Response>
-    where
-        B: Serialize,
-    {
-        let auth_token = self
-            .get_or_refresh_access_token()
-            .await
-            .context("Failed to get access token for API request")?;
-
-        let url = format!("{}/api/v1/{}", ChannelState::server_root_url(), path);
-
-        let mut request = self.base_client.http_client().put(&url).json(body);
-        if let Some(token) = auth_token.as_bearer_token() {
-            request = request.bearer_auth(token);
-        }
-
-        for (name, value) in self.ambient_agent_headers().await? {
-            request = request.header(name, value);
-        }
-
-        let response = request
-            .send()
-            .await
-            .with_context(|| format!("Failed to send API request to {url}"))?;
-
-        if response.status().is_success() {
-            Ok(response)
-        } else {
-            Err(Self::error_from_response(response).await)
-        }
-    }
-
-    /// Sends a PUT request to a public API endpoint.
-    async fn put_public_api<B, R>(&self, path: &str, body: &B) -> Result<R>
-    where
-        B: Serialize,
-        R: serde::de::DeserializeOwned,
-    {
-        let response = self.put_public_api_response(path, body).await?;
-        let url = response.url().clone();
-        response
-            .json::<R>()
-            .await
-            .with_context(|| format!("Failed to deserialize response from {url}"))
-    }
-
-    /// Sends a POST request to a public API endpoint that returns no response body.
-    async fn post_public_api_unit<B>(&self, path: &str, body: &B) -> Result<()>
-    where
-        B: Serialize,
-    {
-        self.post_public_api_response(path, body).await?;
-        Ok(())
-    }
-
-    /// Sends a DELETE request to a public API endpoint that returns no response body.
-    async fn delete_public_api_unit(&self, path: &str) -> Result<()> {
-        let auth_token = self
-            .get_or_refresh_access_token()
-            .await
-            .context("Failed to get access token for API request")?;
-
-        let url = format!("{}/api/v1/{}", ChannelState::server_root_url(), path);
-
-        let mut request = self.base_client.http_client().delete(&url);
-        if let Some(token) = auth_token.as_bearer_token() {
-            request = request.bearer_auth(token);
-        }
-
-        for (name, value) in self.ambient_agent_headers().await? {
-            request = request.header(name, value);
-        }
-
-        let response = request
-            .send()
-            .await
-            .with_context(|| format!("Failed to send API request to {url}"))?;
-
-        if response.status().is_success() {
-            Ok(())
-        } else {
-            Err(Self::error_from_response(response).await)
-        }
-    }
-
-    /// Sends a PATCH request to a public API endpoint that returns no response body.
-    async fn patch_public_api_unit<B>(&self, path: &str, body: &B) -> Result<()>
-    where
-        B: Serialize,
-    {
-        let auth_token = self
-            .get_or_refresh_access_token()
-            .await
-            .context("Failed to get access token for API request")?;
-
-        let url = format!("{}/api/v1/{}", ChannelState::server_root_url(), path);
-
-        let mut request = self.base_client.http_client().patch(&url).json(body);
-        if let Some(token) = auth_token.as_bearer_token() {
-            request = request.bearer_auth(token);
-        }
-
-        for (name, value) in self.ambient_agent_headers().await? {
-            request = request.header(name, value);
-        }
-
-        let response = request
-            .send()
-            .await
-            .with_context(|| format!("Failed to send API request to {url}"))?;
-
-        if response.status().is_success() {
-            Ok(())
-        } else {
-            Err(Self::error_from_response(response).await)
-        }
     }
 
     /// Sends an authenticated empty POST request to /client/login, which signals to the server
@@ -1065,10 +610,6 @@ impl ServerApiProvider {
         self.server_api.clone()
     }
 
-    pub fn get_factory_client(&self) -> Arc<dyn FactoryClient> {
-        self.server_api.clone()
-    }
-
     /// Returns the shared HTTP client. This client is wired into network logging
     /// and includes standard Warp request headers.
     pub fn get_http_client(&self) -> Arc<http_client::Client> {
@@ -1081,7 +622,3 @@ impl Entity for ServerApiProvider {
 }
 
 impl SingletonEntity for ServerApiProvider {}
-
-#[cfg(test)]
-#[path = "server_api_tests.rs"]
-mod tests;

@@ -701,7 +701,6 @@ impl TerminalManager {
                     terminal_view.show_persistent_toast(reason_string, ToastFlavor::Error, ctx);
                 });
             }
-            NetworkEvent::AgentPromptRequestInFlight(_) => {}
             NetworkEvent::AgentPromptRequestFailed { reason, .. } => {
                 let Some(view) = weak_view_handle.upgrade(ctx) else {
                     return;

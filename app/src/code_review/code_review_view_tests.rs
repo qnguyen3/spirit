@@ -113,7 +113,7 @@ fn create_editor_with_content(app: &mut App, content: &str) -> ViewHandle<LocalC
             editor.reset(InitialBufferState::plain_text(&content), ctx);
         });
 
-        LocalCodeEditorView::new(code_editor_view, None, false, None, ctx)
+        LocalCodeEditorView::new(code_editor_view, None, false, ctx)
     });
 
     local_editor
@@ -143,7 +143,7 @@ fn create_editor_with_diff(
             editor.set_base(&base, true, ctx);
         });
 
-        LocalCodeEditorView::new(code_editor_view, None, false, None, ctx)
+        LocalCodeEditorView::new(code_editor_view, None, false, ctx)
     });
 
     local_editor

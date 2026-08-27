@@ -97,10 +97,6 @@ impl TerminalView {
         Some(self.shared_session.as_ref()?.session_id())
     }
 
-    fn shared_session_source_type(&self) -> Option<&SessionSourceType> {
-        Some(self.shared_session.as_ref()?.source_type())
-    }
-
     pub(super) fn handle_viewer_role_change_menu_event(
         &mut self,
         event: &MenuEvent,
@@ -571,7 +567,6 @@ impl TerminalView {
             participant_list,
             session_id,
             started_at,
-            source_type.clone(),
             ctx,
         );
         let presence_manager = adapter.presence_manager().clone();
@@ -1625,21 +1620,6 @@ impl TerminalView {
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn restore_pty_to_sharer_size(&mut self, ctx: &mut ViewContext<Self>) {
         self.active_viewer_driven_size = None;
-        self.refresh_size(ctx);
-    }
-
-    /// Forces a fresh viewer-size report to the sharer by clearing the dedup cache and
-    /// refreshing size. No-op when not an active viewer or when viewer-driven sizing is
-    /// not eligible. Used when a new process (e.g. the harness CLI starting for a non-oz
-    /// Cloud Mode run) needs the sharer to resize its PTY so the new process picks up
-    /// correct terminal dimensions at startup.
-    pub(in crate::terminal::view) fn force_report_viewer_terminal_size(
-        &mut self,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if let Some(viewer) = self.shared_session_viewer_mut() {
-            viewer.last_reported_natural_size = None;
-        }
         self.refresh_size(ctx);
     }
 

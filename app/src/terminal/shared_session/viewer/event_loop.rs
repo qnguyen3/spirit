@@ -24,9 +24,6 @@ pub enum SharedSessionInitialLoadMode {
     /// Replace the viewer's placeholder block list with the scrollback snapshot from the session
     /// being joined.
     ReplaceFromSessionScrollback,
-    /// Add only the new blocks from a follow-up session while preserving the existing shared
-    /// ambient-agent transcript.
-    AppendFollowupScrollback,
 }
 
 /// The event loop is used to process a stream of events
@@ -84,10 +81,6 @@ impl EventLoop {
             match load_mode {
                 SharedSessionInitialLoadMode::ReplaceFromSessionScrollback => {
                     terminal_model.load_shared_session_scrollback(scrollback_blocks.as_slice());
-                }
-                SharedSessionInitialLoadMode::AppendFollowupScrollback => {
-                    terminal_model
-                        .append_followup_shared_session_scrollback(scrollback_blocks.as_slice());
                 }
             }
             if is_alt_screen_active {

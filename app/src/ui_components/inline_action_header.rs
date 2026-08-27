@@ -22,8 +22,6 @@ use crate::view_components::compactible_action_button::{
 
 /// Same padding constants as the original for consistency
 pub const INLINE_ACTION_HORIZONTAL_PADDING: f32 = 16.;
-/// The vertical padding applied to the requested action row's content body (usually a command).
-pub const INLINE_ACTION_VERTICAL_PADDING: f32 = 12.;
 pub const INLINE_ACTION_HEADER_VERTICAL_PADDING: f32 = 10.;
 pub const CONTENT_HORIZONTAL_PADDING: f32 = 20.;
 pub const CONTENT_ITEM_VERTICAL_MARGIN: f32 = 16.;
@@ -56,42 +54,12 @@ impl ExpandedConfig {
         }
     }
 
-    pub fn with_expands_upwards(mut self) -> Self {
-        self.expands_upwards = true;
-        self
-    }
-
     pub fn with_toggle_callback<F>(mut self, callback: F) -> Self
     where
         F: Fn(&mut EventContext) + 'static,
     {
         self.on_toggle_expanded = Some(Rc::new(callback));
         self
-    }
-
-    pub fn with_right_click_callback<F>(mut self, callback: F) -> Self
-    where
-        F: Fn(&mut EventContext) + 'static,
-    {
-        self.on_right_click = Some(Rc::new(callback));
-        self
-    }
-}
-
-/// Configuration for when we want a right clickable element,
-/// but that element isn't necessarily expandable.
-#[derive(Clone)]
-pub struct RightClickConfig {
-    pub on_right_click: OnRightClickCallback,
-    pub header_mouse_state: MouseStateHandle,
-}
-
-impl RightClickConfig {
-    pub fn new(on_right_click: OnRightClickCallback, header_mouse_state: MouseStateHandle) -> Self {
-        Self {
-            on_right_click,
-            header_mouse_state,
-        }
     }
 }
 
@@ -104,8 +72,6 @@ pub enum InteractionMode {
     },
     /// Renders expansion chevron, with caller-specified click handler.
     ManuallyExpandable(ExpandedConfig),
-    /// Renders a right-clickable element, with caller-specified right-click handler.
-    RightClickable(RightClickConfig),
 }
 
 #[derive(Clone)]
@@ -139,23 +105,8 @@ impl HeaderConfig {
         }
     }
 
-    pub fn with_soft_wrap_title(mut self) -> Self {
-        self.soft_wrap_title = true;
-        self
-    }
-
-    pub fn with_font_family(mut self, font: FamilyId) -> Self {
-        self.font_family = font;
-        self
-    }
-
     pub fn with_icon(mut self, icon: warpui::elements::Icon) -> Self {
         self.icon = Some(icon);
-        self
-    }
-
-    pub fn with_badge(mut self, badge: String) -> Self {
-        self.badge = Some(badge);
         self
     }
 
@@ -169,19 +120,8 @@ impl HeaderConfig {
         self
     }
 
-    pub fn with_font_color(mut self, font_color: ColorU) -> Self {
-        self.font_color_override = Some(font_color);
-        self
-    }
-
     pub fn with_corner_radius_override(mut self, corner_radius: CornerRadius) -> Self {
         self.corner_radius_override = Some(corner_radius);
-        self
-    }
-
-    /// Parses the title as markdown when rendering.
-    pub fn with_markdown(mut self) -> Self {
-        self.use_markdown = true;
         self
     }
 
@@ -291,7 +231,6 @@ impl HeaderConfig {
                     InteractionMode::ManuallyExpandable(expansion_config) => {
                         expansion_config.is_expanded && !expansion_config.expands_upwards
                     }
-                    InteractionMode::RightClickable(..) => false,
                 });
         let container = Container::new(header_row.finish())
             .with_padding_left(INLINE_ACTION_HORIZONTAL_PADDING)
@@ -339,19 +278,6 @@ impl HeaderConfig {
                     return element;
                 }
             }
-        } else if let Some(InteractionMode::RightClickable(right_click_config)) =
-            &self.interaction_mode
-        {
-            let right_click_callback = right_click_config.on_right_click.clone();
-            let header_mouse_state = right_click_config.header_mouse_state.clone();
-
-            let hoverable = Hoverable::new(header_mouse_state, |_| container).finish();
-            return EventHandler::new(hoverable)
-                .on_right_mouse_down(move |ctx, _, _, _| {
-                    right_click_callback(ctx);
-                    DispatchEventResult::PropagateToParent
-                })
-                .finish();
         }
 
         container
@@ -404,7 +330,6 @@ impl HeaderConfig {
 
                         self.render_header(app, Some(expanded_icon))
                     }
-                    InteractionMode::RightClickable(_) => self.render_header(app, None),
                 }
             }
             _ => self.render_header(app, None),

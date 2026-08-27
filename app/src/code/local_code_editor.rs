@@ -64,7 +64,6 @@ use crate::menu::{Event, Menu, MenuItem, MenuItemFields};
 #[cfg(feature = "local_fs")]
 use crate::persisted_workspace::{LspTask, PersistedWorkspace, PersistedWorkspaceEvent};
 use crate::settings::CodeSettings;
-use crate::workspace::WorkspaceAction;
 
 const HOVER_DEBOUNCE_PERIOD: Duration = Duration::from_millis(500);
 
@@ -75,7 +74,6 @@ const AUTO_SAVE_DEBOUNCE_PERIOD: Duration = Duration::from_millis(1000);
 use warp_core::send_telemetry_from_ctx;
 
 use super::ImmediateSaveError;
-use super::diff_viewer::DiffViewer;
 use super::editor::scroll::{ScrollPosition, ScrollTrigger};
 use super::editor::view::{CodeEditorEvent, CodeEditorView};
 use super::find_references_view::{FindReferencesView, FindReferencesViewEvent};
@@ -99,7 +97,6 @@ pub enum LocalCodeEditorEvent {
         error: Arc<FileSaveError>,
     },
     DiffAccepted,
-    DiffRejected,
     /// Emitted when a user presses Escape in Vim Normal mode inside the embedded editor.
     VimMinimizeRequested,
     /// Emitted when a user edits the file.
@@ -146,8 +143,6 @@ struct LoadedFileMetadata {
 }
 
 use warp_errors::report_error;
-
-pub use super::diff_viewer::DisplayMode;
 
 #[derive(Debug, Clone)]
 pub enum LocalCodeEditorAction {
@@ -240,8 +235,6 @@ pub struct LocalCodeEditorView {
     /// A marker for when the backing file has first been loaded. This is used to prevent applying
     /// a diff before it can be properly calculated.
     file_loaded: Condition,
-    /// Whether content was changed from its base.
-    was_edited: bool,
     /// Content version of the base file state.
     base_content_version: Option<ContentVersion>,
     /// Set to `true` when a `RemoteBufferConflict` event fires for this
@@ -284,7 +277,6 @@ impl LocalCodeEditorView {
         editor: ViewHandle<CodeEditorView>,
         diff_type: Option<DiffType>,
         enable_diff_nav_by_default: bool,
-        display_mode: Option<DisplayMode>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         let context_menu = ctx.add_typed_action_view(|_| {
@@ -309,7 +301,6 @@ impl LocalCodeEditorView {
                 }
 
                 if origin.from_user() {
-                    me.was_edited = true;
                     ctx.emit(LocalCodeEditorEvent::UserEdited);
 
                     // Queue a debounced auto-save while the user types. The
@@ -473,14 +464,13 @@ impl LocalCodeEditorView {
             Self::handle_window_focus_change,
         );
 
-        let model = Self {
+        Self {
             editor,
             diff_type,
             is_new_file,
             metadata: None,
             enable_diff_nav_by_default,
             file_loaded: Condition::new(),
-            was_edited: false,
             base_content_version: None,
             has_remote_conflict: false,
             conflict_banner_mouse_states: Default::default(),
@@ -497,12 +487,7 @@ impl LocalCodeEditorView {
             processed_diagnostics: Vec::new(),
             diagnostic_decorations: Vec::new(),
             find_references_view: None,
-        };
-
-        if let Some(display_mode) = display_mode {
-            model.set_display_mode(display_mode, ctx);
         }
-        model
     }
 
     /// Calls LSP goto_definition and spawns a callback with the result.
@@ -1276,7 +1261,6 @@ impl LocalCodeEditorView {
         location: BufferFileLocation,
         editor_constructor: T,
         enable_diff_nav_by_default: bool,
-        display_mode: Option<DisplayMode>,
         ctx: &mut ViewContext<Self>,
     ) -> Self
     where
@@ -1306,8 +1290,7 @@ impl LocalCodeEditorView {
             }
         }
 
-        let mut local_editor =
-            Self::new(editor, None, enable_diff_nav_by_default, display_mode, ctx);
+        let mut local_editor = Self::new(editor, None, enable_diff_nav_by_default, ctx);
 
         local_editor.metadata = Some(LoadedFileMetadata {
             id: file_id,
@@ -1863,24 +1846,6 @@ impl LocalCodeEditorView {
         self.editor.as_ref(ctx).scroll_fraction(ctx)
     }
 
-    /// Accept the diff that is currently in the editor. For local files, this can only be called after the file contents
-    /// have been loaded into the editor.
-    /// If it is a local file, the diff content will be retrieved and the pending diff will be marked as completed.
-    /// If it is not a local file, the pending diff will be marked as completed with an empty diff.
-    pub fn accept_diff(&mut self, ctx: &mut ViewContext<Self>) {
-        match self.file_path() {
-            Some(file) => {
-                // Begin calculating the diff that will be saved.  When the result comes back, the diff will be marked completed.
-                self.editor.update(ctx, |view, ctx| {
-                    view.retrieve_unified_diff(file.display().to_string(), ctx)
-                });
-            }
-            None => {
-                ctx.emit(LocalCodeEditorEvent::DiffAccepted);
-            }
-        };
-    }
-
     pub fn close_find_bar(&mut self, should_focus_editor: bool, ctx: &mut ViewContext<Self>) {
         self.editor.update(ctx, |editor, ctx| {
             editor.close_find_bar(should_focus_editor, ctx);
@@ -2003,69 +1968,6 @@ impl LocalCodeEditorView {
         } else {
             false
         }
-    }
-}
-
-impl DiffViewer for LocalCodeEditorView {
-    fn editor(&self) -> &ViewHandle<CodeEditorView> {
-        &self.editor
-    }
-
-    fn diff(&self) -> Option<&DiffType> {
-        self.diff_type.as_ref()
-    }
-
-    fn was_edited(&self) -> bool {
-        self.was_edited
-    }
-
-    fn reject_diff(&mut self, ctx: &mut ViewContext<Self>) {
-        ctx.emit(LocalCodeEditorEvent::DiffRejected);
-    }
-
-    fn restore_diff_base(&mut self, ctx: &mut ViewContext<Self>) -> Result<(), String> {
-        if self.is_new_file {
-            if let Some(file_id) = self.file_id() {
-                GlobalBufferModel::handle(ctx).update(ctx, |model, ctx| {
-                    model.remove(file_id, ctx);
-                });
-            }
-            if let Some(path) = self.file_path().map(|p| p.to_path_buf()) {
-                if let Err(e) = std::fs::remove_file(&path) {
-                    report_error!(
-                        anyhow::Error::new(e).context("Failed to delete file after save")
-                    );
-                } else {
-                    // This will close tabs with the file open
-                    ctx.dispatch_typed_action(&WorkspaceAction::FileDeleted { path });
-                }
-            }
-
-            return Ok(());
-        }
-
-        let base_content = self
-            .editor
-            .as_ref(ctx)
-            .model
-            .as_ref(ctx)
-            .diff()
-            .as_ref(ctx)
-            .base()
-            .ok_or_else(|| "Missing base content".to_string())?
-            .to_string();
-
-        let file_id = self
-            .file_id()
-            .ok_or_else(|| "Missing file_id".to_string())?;
-
-        let buffer_version = self.editor.as_ref(ctx).version(ctx);
-
-        GlobalBufferModel::handle(ctx)
-            .update(ctx, |model, ctx| {
-                model.save(file_id, base_content, buffer_version, ctx)
-            })
-            .map_err(|e| format!("Failed to save file: {e:?}"))
     }
 }
 
