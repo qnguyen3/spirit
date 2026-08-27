@@ -1,9 +1,7 @@
 use std::default::Default;
 use std::sync::Arc;
 
-use byte_unit::Byte;
 use parking_lot::FairMutex;
-use warp_core::features::FeatureFlag;
 use warpui::elements::{
     Container, Flex, MainAxisSize, MouseStateHandle, ParentElement, Shrinkable, Text,
 };

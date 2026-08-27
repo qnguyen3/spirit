@@ -4,12 +4,10 @@ use std::ops::Range;
 use string_offset::ByteOffset;
 use urlocator::{UrlLocation, UrlLocator};
 use warpui::Action;
-use warpui::elements::{MouseStateHandle, PartialClickableElement};
-use warpui::platform::Cursor;
+use warpui::elements::MouseStateHandle;
 use warpui::text::char_slice;
 
 use crate::terminal::ShellLaunchData;
-use crate::terminal::links::should_directly_open_link;
 use crate::terminal::model::grid::grid_handler::{is_file_link_separator, is_url_link_separator};
 
 cfg_if::cfg_if! {

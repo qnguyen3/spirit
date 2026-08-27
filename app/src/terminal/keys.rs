@@ -1,8 +1,6 @@
 //! Utilities for terminal keybindings.
 
-use warpui::{Entity, ModelContext, ModelHandle, SingletonEntity};
 
-use crate::settings_view::keybindings::{KeybindingChangedEvent, KeybindingChangedNotifier};
 use crate::util::bindings::{
     CustomAction, custom_tag_to_keystroke, keybinding_name_to_display_string,
 };

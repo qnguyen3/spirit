@@ -34,7 +34,6 @@ use crate::auth::github_auth_notifier::{GitHubAuthEvent, GitHubAuthNotifier};
 use crate::editor::{
     EditorOptions, EditorView, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions, TextOptions,
 };
-use crate::root_view::CreateEnvironmentArg;
 use crate::server::ids::SyncId;
 use crate::server::server_api::ServerApiProvider;
 use crate::ui_components::buttons::icon_button;

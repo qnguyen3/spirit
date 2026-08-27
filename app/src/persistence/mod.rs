@@ -34,7 +34,6 @@ pub use sqlite::database_file_path_for_current_scope;
 pub use sqlite::database_file_path_for_scope;
 #[cfg(any(feature = "local_fs", feature = "integration_tests"))]
 pub use sqlite::establish_ro_connection;
-use uuid::Uuid;
 use warp_core::command::ExitCode;
 use warp_errors::report_error;
 use warp_graphql::scalars::time::ServerTimestamp;

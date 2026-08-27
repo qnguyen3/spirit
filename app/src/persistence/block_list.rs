@@ -1,13 +1,10 @@
 //! Manages how we write to and read from our SQLite database for our AI features.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
-use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
 use diesel::prelude::*;
 use diesel::result::Error;
 use diesel::sqlite::SqliteConnection;
-use itertools::Itertools;
 
 use super::model::Block;
 use super::{model, schema};
