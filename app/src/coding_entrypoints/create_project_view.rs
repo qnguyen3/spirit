@@ -14,6 +14,7 @@ use warpui::{
 use crate::TelemetryEvent;
 use crate::appearance::Appearance;
 use crate::coding_entrypoints::glowing_editor::{GlowingEditor, GlowingEditorEvent};
+use crate::settings::should_collect_ai_ugc_telemetry;
 use crate::settings::PrivacySettings;
 
 const ICON_MARGIN_LEFT: f32 = 12.;

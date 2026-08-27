@@ -20,7 +20,6 @@ use lsp::{
 use lsp_types::FormattingOptions;
 use markdown_parser::FormattedText;
 use num_traits::SaturatingSub;
-use pathfinder_color::ColorU;
 use pathfinder_geometry::rect::RectF;
 use pathfinder_geometry::vector::Vector2F;
 use remote_server::manager::RemoteServerManager;
@@ -28,28 +27,23 @@ use remote_server::manager::RemoteServerManager;
 use repo_metadata::repositories::DetectedRepositories;
 use string_offset::CharOffset;
 use vec1::Vec1;
-use vim::vim::{MotionType, VimMode};
 use warp_core::r#async::debounce;
-use warp_core::features::FeatureFlag;
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::icons::Icon;
 use warp_editor::content::buffer::InitialBufferState;
 use warp_editor::content::text::IndentUnit;
-use warp_editor::render::model::{Decoration, LineCount};
+use warp_editor::render::model::Decoration;
 use warp_util::content_version::ContentVersion;
 use warp_util::file::{FileId, FileLoadError, FileSaveError};
 #[cfg(feature = "local_fs")]
 use warp_util::local_or_remote_path::LocalOrRemotePath;
-use warp_util::path::to_relative_path;
 use warp_util::sync::Condition;
 use warpui::elements::{
-    Border, ChildAnchor, ChildView, ClippedScrollStateHandle, ConstrainedBox, Container,
-    CornerRadius, CrossAxisAlignment, DropShadow, Flex, Hoverable, MainAxisAlignment, MainAxisSize,
-    MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Radius,
-    Rect, Shrinkable, Stack, Text,
+    ChildAnchor, ChildView, ClippedScrollStateHandle, ConstrainedBox, Container, CornerRadius,
+    CrossAxisAlignment, Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle,
+    OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Radius, Rect, Shrinkable,
+    Stack, Text,
 };
-use warpui::keymap::FixedBinding;
-use warpui::keymap::macros::*;
 use warpui::platform::SaveFilePickerConfiguration;
 use warpui::text::point::Point;
 use warpui::ui_components::button::ButtonVariant;
@@ -67,16 +61,10 @@ use crate::code::global_buffer_model::{BufferState, GlobalBufferModel, GlobalBuf
 use crate::code::{SaveOutcome, ShowFindReferencesCardProvider};
 use crate::code_review::comments::CommentId;
 use crate::menu::{Event, Menu, MenuItem, MenuItemFields};
-use crate::settings::{CodeSettings};
-use crate::terminal::TerminalView;
+#[cfg(feature = "local_fs")]
+use crate::persisted_workspace::{LspTask, PersistedWorkspace, PersistedWorkspaceEvent};
+use crate::settings::CodeSettings;
 use crate::workspace::WorkspaceAction;
-
-const DROP_SHADOW_COLOR: ColorU = ColorU {
-    r: 0,
-    g: 0,
-    b: 0,
-    a: 48,
-};
 
 const HOVER_DEBOUNCE_PERIOD: Duration = Duration::from_millis(500);
 
@@ -96,14 +84,6 @@ use super::lsp_telemetry::LspTelemetryEvent;
 
 type SaveCallback =
     Box<dyn FnOnce(SaveOutcome, &mut ViewContext<LocalCodeEditorView>) + Send + Sync + 'static>;
-
-pub fn init(app: &mut AppContext) {
-    app.register_fixed_bindings([FixedBinding::new(
-        "cmdorctrl-l",
-        LocalCodeEditorAction::InsertSelectedTextToInput,
-        id!("LocalCodeEditorView") & !id!("IMEOpen"),
-    )]);
-}
 
 pub enum LocalCodeEditorEvent {
     FileLoaded,
@@ -126,13 +106,6 @@ pub enum LocalCodeEditorEvent {
     UserEdited,
     /// Emitted when the diff status changes (e.g., line counts update).
     DiffStatusUpdated,
-    SelectionAddedAsContext {
-        relative_file_path: String,
-        /// 1-indexed line range of the selection: `[start, end]` both inclusive.
-        line_range: Range<LineCount>,
-        /// Literal text content of the selection.
-        selected_text: String,
-    },
     DiscardUnsavedChanges {
         path: PathBuf,
     },
@@ -161,9 +134,6 @@ pub enum LocalCodeEditorEvent {
     /// The workspace will handle opening a terminal with `tail -f` on the log file.
     OpenLspLogs {
         log_path: PathBuf,
-    },
-    RunTabConfigSkill {
-        path: PathBuf,
     },
     DelayedRenderingFlushed,
 }

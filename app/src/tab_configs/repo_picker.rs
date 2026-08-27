@@ -10,6 +10,7 @@ use warpui::{
 };
 
 use crate::appearance::Appearance;
+use crate::persisted_workspace::{PersistedWorkspace, PersistedWorkspaceEvent};
 use crate::tab_configs::PickerStyle;
 use crate::view_components::{DropdownItem, FilterableDropdown};
 

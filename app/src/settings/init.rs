@@ -16,12 +16,13 @@ use super::native_preference::NativePreferenceSettings;
 use super::{
     AccessibilitySettings, AliasExpansionSettings, AppEditorSettings,
     BlockVisibilitySettings, ChangelogSettings, CodeSettings, DebugSettings, EmacsBindingsSettings,
-    FontSettings, FontSettingsChangedEvent, GPUSettings, InputBoxType, InputSettings, LocalControlSettings, PaneSettings, SameLinePromptBlockSettings, ScrollSettings,
+    FontSettings, FontSettingsChangedEvent, GPUSettings, InputBoxType, InputModeSettings,
+    InputSettings, LocalControlSettings, NewSessionSettings, PaneSettings,
+    SameLinePromptBlockSettings, ScrollSettings,
     SelectionSettings, SharedObjectLimitBannerSettings, SshSettings, ThemeSettings,
     TuiAutoupdateSettings, TuiThemeSettings, TuiZeroStateSettings,
     VimBannerSettings, WarpDrivePrivacySettings,
 };
-use crate::ai::cloud_agent_settings::CloudAgentSettings;
 use crate::banner::BannerState;
 use crate::drive::settings::WarpDriveSettings;
 use crate::resource_center::TipsCompleted;
@@ -72,15 +73,13 @@ pub fn register_all_settings(ctx: &mut AppContext) {
     GPUSettings::register(ctx);
     ChangelogSettings::register(ctx);
     GeneralSettings::register(ctx);
-    AISettings::register_and_subscribe_to_events(ctx);
-    CloudAgentSettings::register(ctx);
+    NewSessionSettings::register(ctx);
     ScrollSettings::register(ctx);
     SelectionSettings::register(ctx);
     InputModeSettings::register(ctx);
     ThemeSettings::register(ctx);
     TuiAutoupdateSettings::register(ctx);
     TuiThemeSettings::register(ctx);
-    TuiVoiceSettings::register(ctx);
     TuiZeroStateSettings::register(ctx);
     AccessibilitySettings::register(ctx);
     NativePreferenceSettings::register(ctx);
@@ -222,7 +221,7 @@ pub fn init(
         },
     );
 
-    appearance::register(ctx);
+    crate::appearance::register(ctx);
 
     // Set up hot-reload for the settings file. When the WarpConfig watcher
     // detects a change to settings.toml, reload preferences from disk and

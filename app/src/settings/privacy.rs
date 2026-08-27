@@ -14,6 +14,8 @@ use warpui::{AppContext, Entity, ModelContext, SingletonEntity, UpdateModel};
 
 use super::cloud_preferences_syncer::CloudPreferencesSyncer;
 use crate::auth::AuthStateProvider;
+use crate::workspaces::user_workspaces::UserWorkspaces;
+use crate::workspaces::workspace::UgcCollectionEnablementSetting;
 use crate::auth::auth_state::AuthState;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::server::cloud_objects::update_manager::UpdateManager;
@@ -845,6 +847,24 @@ pub enum PrivacySettingsChangedEvent {
     HasInitializedDefaultSecretRegexes {
         change_event_reason: ChangeEventReason,
     },
+}
+
+/// Returns `true` if we should collect UGC (user-generated content) telemetry for AI features.
+///
+/// This should apply to telemetry events that include user-generated content, like queries or
+/// outputs, but need not be checked for regular metadata telemetry events.
+pub fn should_collect_ai_ugc_telemetry(app: &AppContext, is_telemetry_enabled: bool) -> bool {
+    match UserWorkspaces::as_ref(app).get_ugc_collection_enablement_setting() {
+        UgcCollectionEnablementSetting::Disable => false,
+        UgcCollectionEnablementSetting::Enable => true,
+        UgcCollectionEnablementSetting::RespectUserSetting => {
+            (FeatureFlag::GlobalAIAnalyticsCollection.is_enabled()
+                // Do NOT remove this check. Unlike the send telemetry macro,
+                // UploadBlock endpoint does not automatically check user's telemetry setting.
+                && is_telemetry_enabled)
+                || FeatureFlag::AgentModeAnalytics.is_enabled()
+        }
+    }
 }
 
 impl Entity for PrivacySettings {
