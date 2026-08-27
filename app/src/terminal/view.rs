@@ -7319,7 +7319,6 @@ impl TerminalView {
                 SharedSessionScrollbackType::All,
                 None,
                 source,
-                false,
                 ctx,
             );
         }
@@ -10633,7 +10632,7 @@ impl TerminalView {
         self.input.as_ref(app).create_prompt_elements(app)
     }
 
-    pub fn session_command_context(&self, app: &AppContext) -> CommandContext {
+    pub fn session_command_context(&self) -> CommandContext {
         let model = self.model.lock();
         let block_list = model.block_list();
 
@@ -11604,7 +11603,6 @@ impl TerminalView {
 
     fn num_non_hidden_selected_blocks(&self) -> usize {
         let model = self.model.lock();
-        let agent_view_state = model.block_list().transcript_scope();
         self.selected_blocks
             .ranges()
             .iter()
@@ -11613,7 +11611,7 @@ impl TerminalView {
                 model
                     .block_list()
                     .block_at(*block_index)
-                    .is_some_and(|block| !block.is_empty(agent_view_state))
+                    .is_some_and(|block| !block.is_empty())
             })
             .count()
     }
@@ -11625,14 +11623,13 @@ impl TerminalView {
         let input_mode = *InputModeSettings::as_ref(ctx).input_mode.value();
         let sort_direction = input_mode.block_sort_direction();
         let model = self.model.lock();
-        let agent_view_state = model.block_list().transcript_scope();
         let sorted_ranges = self.selected_blocks.sorted_ranges(sort_direction);
         for selection_range in sorted_ranges {
             for block_index in selection_range.range(Some(sort_direction)) {
                 if let Some(block) = model
                     .block_list()
                     .block_at(block_index)
-                    .filter(|block| !block.is_empty(agent_view_state))
+                    .filter(|block| !block.is_empty())
                 {
                     action(block);
                 }
@@ -11963,7 +11960,6 @@ impl TerminalView {
                     SharedSessionScrollbackType::All,
                     Some(SharedSessionActionSource::FooterChip),
                     source,
-                    true,
                     ctx,
                 );
             }
@@ -13852,12 +13848,11 @@ impl TerminalView {
 
         // Since blocks in a blocklist can have different sizes, we want
         // to make sure we're rendering with enough columns to support them all.
-        let agent_view_state = model.block_list().transcript_scope();
         let columns_needed = model
             .block_list()
             .blocks()
             .iter()
-            .filter(|b| b.is_visible(agent_view_state))
+            .filter(|b| b.is_visible())
             .map(|b| b.size().columns)
             .max()
             .unwrap_or(self.size_info.columns);
@@ -13879,7 +13874,7 @@ impl TerminalView {
                 .block_list()
                 .blocks()
                 .iter()
-                .filter(|b| b.is_visible(agent_view_state))
+                .filter(|b| b.is_visible())
                 .count()
                 > 0
             && required_terminal_width > pane_width;
@@ -16444,12 +16439,11 @@ impl View for TerminalView {
         } else {
             let last_five_blocks_content = {
                 let model = self.model.lock();
-                let agent_view_state = model.block_list().transcript_scope();
                 let blocks = model
                     .block_list()
                     .blocks()
                     .iter()
-                    .filter(|block| block.is_visible(agent_view_state))
+                    .filter(|block| block.is_visible())
                     .rev()
                     .take(5)
                     .collect_vec();

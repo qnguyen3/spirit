@@ -8,7 +8,7 @@ use warpui::keymap::FixedBinding;
 use warpui::presenter::ChildView;
 use warpui::ui_components::components::UiComponentStyles;
 use warpui::{
-    AppContext, Element, Entity, EntityId, SingletonEntity, TypedActionView, View, ViewContext,
+    AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext,
     ViewHandle,
 };
 
@@ -155,7 +155,6 @@ impl ShareSessionModal {
         terminal_pane_id: TerminalPaneId,
         open_source: SharedSessionActionSource,
         model: Arc<FairMutex<TerminalModel>>,
-        terminal_view_id: EntityId,
         ctx: &mut ViewContext<Self>,
     ) {
         self.terminal_pane_id = Some(terminal_pane_id);

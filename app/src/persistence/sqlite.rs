@@ -48,7 +48,7 @@ use super::block_list::{delete_blocks, save_block};
 use super::model::{
     self, AI_DOCUMENT_PANE_KIND, AI_FACT_PANE_KIND, ActiveMCPServer, CODE_PANE_KIND,
     CurrentUserInformation, ENV_VAR_COLLECTION_PANE_KIND, EXECUTION_PROFILE_EDITOR_PANE_KIND,
-    MCP_SERVER_PANE_KIND, MCPEnvironmentVariables, NOTEBOOK_PANE_KIND, NewActiveMCPServer, NewApp,
+    MCP_SERVER_PANE_KIND, NOTEBOOK_PANE_KIND, NewActiveMCPServer, NewApp,
     NewCommand, NewServerExperiment, NewTab, NewTabGroup, NewTeam, NewWindow, NewWorkspace,
     NewWorkspaceMetadata, NewWorkspaceTeam, Project, SETTINGS_PANE_KIND, TERMINAL_PANE_KIND, Tab,
     TabGroup, WORKFLOW_PANE_KIND, Window, WorkspaceMetadata as WorkspaceMetadataModel,
@@ -79,7 +79,7 @@ use crate::notebooks::NotebookId;
 use crate::persistence::block_list::get_all_restored_blocks;
 use crate::persistence::model::{
     CODE_REVIEW_PANE_KIND, GET_STARTED_PANE_KIND, NewPersistedObjectAction, NewTeamSettings,
-    ProjectRules, UserProfile,
+    UserProfile,
 };
 use crate::server::experiments::ServerExperiment;
 use crate::server::ids::{ClientId, HashableId, ServerId, SyncId};

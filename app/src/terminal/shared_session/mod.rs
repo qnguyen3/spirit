@@ -238,7 +238,7 @@ impl SharedSessionScrollbackType {
             .iter()
             .skip(first_block_index.into())
             .filter(|block| {
-                block.is_scrollback_block_for_shared_session(model.block_list().transcript_scope())
+                block.is_scrollback_block_for_shared_session()
             })
             .filter_map(|block| {
                 let serialized_block: SerializedBlock = block.into();
@@ -266,8 +266,7 @@ impl SharedSessionScrollbackType {
                 .skip(block_index.into())
                 .find(|block| {
                     block.is_scrollback_block_for_shared_session(
-                        model.block_list().transcript_scope(),
-                    )
+                        )
                 })
                 .map_or(model.block_list().active_block_index(), |block| {
                     block.index()

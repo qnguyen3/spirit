@@ -48,7 +48,7 @@ pub fn test_find() {
     block.prompt_only_precmd(PromptMetadata::default());
     block.start();
     assert_lines_approx_eq!(
-        block.height(&crate::terminal::model::block::TranscriptScope::Terminal),
+        block.height(),
         3.
     );
 
@@ -89,7 +89,7 @@ pub fn test_find() {
     block.header_grid.command_grid_linefeed();
 
     assert_lines_approx_eq!(
-        block.height(&crate::terminal::model::block::TranscriptScope::Terminal),
+        block.height(),
         6.
     );
 
@@ -157,7 +157,7 @@ pub fn test_find() {
     assert_eq!(block.header_grid.prompt_and_command_number_of_rows(), 3);
     assert_eq!(block.output_grid.len(), 3);
     assert_lines_approx_eq!(
-        block.height(&crate::terminal::model::block::TranscriptScope::Terminal),
+        block.height(),
         8.5
     );
 
@@ -261,7 +261,7 @@ pub fn test_find() {
     assert_eq!(block.header_grid.prompt_and_command_number_of_rows(), 2);
     assert_eq!(block.output_grid.len(), 3);
     assert_lines_approx_eq!(
-        block.height(&crate::terminal::model::block::TranscriptScope::Terminal),
+        block.height(),
         7.5
     );
 
@@ -525,13 +525,13 @@ pub fn test_block_height_non_bootstrapped_block() {
     block.on_finish_byte_processing(&ansi::ProcessorInput::new(&[]));
 
     // The block is empty since it was never started.
-    assert!(block.is_empty(&crate::terminal::model::block::TranscriptScope::Terminal));
+    assert!(block.is_empty());
 
     block.start();
 
     // The block should be non-empty even though it wasn't bootstrapped.
     assert_lines_approx_eq!(
-        block.height(&crate::terminal::model::block::TranscriptScope::Terminal),
+        block.height(),
         5.
     );
 }
@@ -561,7 +561,7 @@ fn test_background_block() {
     // between-grid padding because there's only one grid.
     assert_lines_approx_eq!(block.output_grid_displayed_height(), 3);
     assert_lines_approx_eq!(
-        block.height(&crate::terminal::model::block::TranscriptScope::Terminal),
+        block.height(),
         4.2
     );
 }

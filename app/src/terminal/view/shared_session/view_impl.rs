@@ -407,7 +407,6 @@ impl TerminalView {
         scrollback_type: SharedSessionScrollbackType,
         action_source: Option<SharedSessionActionSource>,
         source: SharedSessionSource,
-        bypass_conversation_guard: bool,
         ctx: &mut ViewContext<Self>,
     ) {
         // We should only be attempting to share a session

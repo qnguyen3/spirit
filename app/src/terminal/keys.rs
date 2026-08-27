@@ -2,7 +2,7 @@
 
 
 use crate::util::bindings::{
-    CustomAction, custom_tag_to_keystroke, keybinding_name_to_display_string,
+    CustomAction, custom_tag_to_keystroke,
 };
 
 /// The keybinding label to display for a [`CustomAction`].

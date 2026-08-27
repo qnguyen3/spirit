@@ -352,9 +352,9 @@ pub struct BlockFilter {
 
 impl BlockFilter {
     /// Tests if a block matches this filter.
-    pub fn matches(self, block: &Block, transcript_scope: &TranscriptScope) -> bool {
+    pub fn matches(self, block: &Block) -> bool {
         (self.include_background || !block.is_background())
-            && (self.include_hidden || !block.is_empty(transcript_scope))
+            && (self.include_hidden || !block.is_empty())
     }
 
     /// Block filter for visible command blocks. This excludes background output
@@ -846,8 +846,7 @@ impl BlockList {
         };
 
         let gap = BlockHeightItem::Gap(gap_height.into());
-        let transcript_scope = self.transcript_scope;
-        let active_block_height = self.active_block_mut().height(&transcript_scope).into();
+        let active_block_height = self.active_block_mut().height().into();
 
         if active_block_height > BlockHeight::zero() {
             self.block_heights
@@ -1403,7 +1402,7 @@ impl BlockList {
         };
         let mut previous_block_height = BlockHeight::zero();
         let block_height = if let Some(block) = self.block_at(block_index) {
-            block.height(&self.transcript_scope).into()
+            block.height().into()
         } else {
             report_error!(
                 "Tried to update height of block, but no such block exists",
@@ -1542,7 +1541,7 @@ impl BlockList {
     {
         block_indices.into_iter().find(|index| {
             self.block_at(*index)
-                .is_some_and(|block| filter.matches(block, &self.transcript_scope))
+                .is_some_and(|block| filter.matches(block))
         })
     }
 
@@ -1706,7 +1705,6 @@ impl BlockList {
         F: Fn(&mut Block),
         G: Fn(&mut Gap),
     {
-        let transcript_scope = &self.transcript_scope;
         self.block_heights = {
             let mut new_sum_tree = SumTree::new();
 
@@ -1724,7 +1722,7 @@ impl BlockList {
                         if let Some(block) = self.blocks.get_mut(block_index) {
                             block_update_fn(block);
                             new_sum_tree.push(BlockHeightItem::Block(
-                                block.height(transcript_scope).into(),
+                                block.height().into(),
                             ));
                         } else {
                             report_error!("invalid block index in block heights");
@@ -2219,7 +2217,7 @@ impl BlockList {
         }
 
         self.block_heights.push(BlockHeightItem::Block(
-            block.height(&self.transcript_scope).into(),
+            block.height().into(),
         ));
         self.block_id_to_block_index
             .insert(block.id().clone(), block.index());
@@ -2727,14 +2725,13 @@ impl BlockList {
         let num_secrets_obfuscated = self
             .background_block_mut()
             .map(|block| block.num_secrets_obfuscated());
-        let transcript_scope = self.transcript_scope;
         if let Some(background_block) = self.background_block_mut() {
             background_block.finish(0);
             let block_index = background_block.index();
 
             // It's common to have empty background blocks (because they only contained
             // typeahead), so we skip serializing them.
-            if !background_block.is_empty(&transcript_scope) {
+            if !background_block.is_empty() {
                 // This is similar to send_after_block_completed_event, but we can't
                 // call it because background_block mutably borrows self.
                 let block_type = background_block.into();
@@ -2786,7 +2783,7 @@ impl BlockList {
     /// Updates the sumtree with the block's new height.
     fn update_block_height_at_idx(&mut self, block_index: BlockIndex) {
         if let Some(block) = self.block_at(block_index) {
-            let new_block_height = block.height(&self.transcript_scope).into();
+            let new_block_height = block.height().into();
 
             self.block_heights = {
                 let mut cursor = self.block_heights.cursor::<BlockIndex, ()>();
@@ -2822,7 +2819,7 @@ impl BlockList {
         let block_to_filter = self
             .blocks
             .get_mut(block_index.0)
-            .filter(|block| !block.is_empty(&self.transcript_scope));
+            .filter(|block| !block.is_empty());
         if let Some(block) = block_to_filter {
             block.filter_output(filter_query);
             self.update_block_height_at_idx(block_index);
@@ -2841,7 +2838,7 @@ impl BlockList {
         let block_to_clear = self
             .blocks
             .get_mut(block_index.0)
-            .filter(|block| !block.is_empty(&self.transcript_scope));
+            .filter(|block| !block.is_empty());
         if let Some(block) = block_to_clear {
             block.clear_filter();
             self.update_block_height_at_idx(block_index);
@@ -2870,14 +2867,14 @@ impl BlockList {
     pub fn filter_for_block(&self, block_index: BlockIndex) -> Option<&BlockFilterQuery> {
         self.blocks
             .get(block_index.0)
-            .filter(|block| !block.is_empty(&self.transcript_scope))
+            .filter(|block| !block.is_empty())
             .and_then(|block| block.current_filter())
     }
 
     pub fn num_matched_lines_in_filter_for_block(&self, block_index: BlockIndex) -> Option<usize> {
         self.blocks
             .get(block_index.0)
-            .filter(|block| !block.is_empty(&self.transcript_scope))
+            .filter(|block| !block.is_empty())
             .and_then(|block| {
                 block
                     .output_grid()
@@ -3211,7 +3208,7 @@ impl ansi::Handler for BlockList {
 
                 if let Some(block) = self.blocks.last() {
                     self.block_heights = SumTree::from_item(BlockHeightItem::Block(
-                        block.height(&self.transcript_scope).into(),
+                        block.height().into(),
                     ));
                 } else {
                     self.block_heights = SumTree::new();

@@ -81,7 +81,7 @@ fn test_terminal_model_is_correct() {
 
         // Before we receive any events, the block list only contains hidden blocks.
         assert!(model.lock().block_list().blocks().iter().all(|block| {
-            block.height(&crate::terminal::model::block::TranscriptScope::Terminal) == Lines::zero()
+            block.height() == Lines::zero()
         }));
 
         // Load shared session scrollback.
@@ -96,17 +96,17 @@ fn test_terminal_model_is_correct() {
             assert_eq!(model.block_list().blocks().len(), 3);
             assert_eq!(
                 model.block_list().blocks()[0]
-                    .height(&crate::terminal::model::block::TranscriptScope::Terminal),
+                    .height(),
                 Lines::zero()
             );
             assert_ne!(
                 model.block_list().blocks()[1]
-                    .height(&crate::terminal::model::block::TranscriptScope::Terminal),
+                    .height(),
                 Lines::zero()
             );
             assert_eq!(
                 model.block_list().blocks()[2]
-                    .height(&crate::terminal::model::block::TranscriptScope::Terminal),
+                    .height(),
                 Lines::zero()
             );
         }
@@ -123,17 +123,17 @@ fn test_terminal_model_is_correct() {
         assert_eq!(model.block_list().blocks().len(), 3);
         assert_eq!(
             model.block_list().blocks()[0]
-                .height(&crate::terminal::model::block::TranscriptScope::Terminal),
+                .height(),
             Lines::zero()
         );
         assert_ne!(
             model.block_list().blocks()[1]
-                .height(&crate::terminal::model::block::TranscriptScope::Terminal),
+                .height(),
             Lines::zero()
         );
         assert_ne!(
             model.block_list().blocks()[2]
-                .height(&crate::terminal::model::block::TranscriptScope::Terminal),
+                .height(),
             Lines::zero()
         );
     })

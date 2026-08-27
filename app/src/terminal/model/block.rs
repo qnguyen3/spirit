@@ -390,7 +390,7 @@ impl From<&Block> for BlockType {
             BootstrapStage::RestoreBlocks => BlockType::Restored,
             BootstrapStage::WarpInput | BootstrapStage::Bootstrapped => BlockType::BootstrapHidden,
             BootstrapStage::ScriptExecution => {
-                if block.is_empty(&TranscriptScope::Terminal) {
+                if block.is_empty() {
                     BlockType::BootstrapHidden
                 } else {
                     let serialized_block = block.into();
@@ -1105,9 +1105,9 @@ impl Block {
         self.header_grid.clone_command_from_blockgrid(command);
     }
 
-    pub fn is_empty(&self, transcript_scope: &TranscriptScope) -> bool {
+    pub fn is_empty(&self) -> bool {
         // TODO(vorporeal): this should use a larger epsilon
-        self.height(transcript_scope).as_f64() < f64::EPSILON
+        self.height().as_f64() < f64::EPSILON
     }
 
     pub fn is_restored(&self) -> bool {
@@ -1128,7 +1128,7 @@ impl Block {
     }
 
     /// If true, this block is hidden and has a height of 0.
-    pub fn should_hide_block(&self, transcript_scope: &TranscriptScope) -> bool {
+    pub fn should_hide_block(&self) -> bool {
         if self.hidden {
             return true;
         }
@@ -1187,11 +1187,8 @@ impl Block {
 
     /// Returns true iff this block should be used as a scrollback block in a shared session context.
     /// The active block is included when it is eligible so viewers can restore the active prompt.
-    pub fn is_scrollback_block_for_shared_session(
-        &self,
-        transcript_scope: &TranscriptScope,
-    ) -> bool {
-        !self.should_hide_block(transcript_scope) && !self.is_restored()
+    pub fn is_scrollback_block_for_shared_session(&self) -> bool {
+        !self.should_hide_block() && !self.is_restored()
     }
 
     pub fn index(&self) -> BlockIndex {
@@ -1199,15 +1196,14 @@ impl Block {
     }
 
     /// `true` if the block is rendered in the blocklist.
-    pub fn is_visible(&self, transcript_scope: &TranscriptScope) -> bool {
-        self.height(transcript_scope) > Lines::zero()
+    pub fn is_visible(&self) -> bool {
+        self.height() > Lines::zero()
     }
 
     /// Height is the source-of-truth determinant for whether or not a block is hidden (i.e. if it
-    /// has a height of 0). Thus it depends on the transcript scope, which affects whether a block
-    /// should be hidden.
-    pub fn height(&self, transcript_scope: &TranscriptScope) -> Lines {
-        if self.should_hide_block(transcript_scope) {
+    /// has a height of 0).
+    pub fn height(&self) -> Lines {
+        if self.should_hide_block() {
             Lines::zero()
         } else {
             self.block_banner_height()
@@ -2301,7 +2297,7 @@ impl Block {
             x if x < (self.output_grid_offset() + self.output_grid_displayed_height()) => {
                 BlockSection::OutputGrid((row - self.output_grid_offset()).max(Lines::zero()))
             }
-            x if x < self.height(&TranscriptScope::Terminal) => BlockSection::PaddingBottom,
+            x if x < self.height() => BlockSection::PaddingBottom,
             _ => BlockSection::NotContained,
         }
     }

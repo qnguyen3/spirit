@@ -42,7 +42,7 @@ use super::proto::{
     FragmentMetadataLookupError as ProtoFragmentMetadataLookupError,
     FragmentMetadataLookupErrorCode, GetBranchesError, GetBranchesResponse, GetBranchesSuccess,
     GetDiffStateResponse, GetFragmentMetadataFromHash, GetFragmentMetadataFromHashResponse,
-    GetFragmentMetadataFromHashSuccess, GitCommitChainMode, GitCommitChainRequest,
+    GetFragmentMetadataFromHashSuccess, GitCommitChainRequest,
     GitCommitChainResponse, GitCommitChainSuccess, GitCreatePrRequest, GitCreatePrResponse,
     GitGenerateCommitMessageResponse, GitGetCommittedBranchFilesRequest,
     GitGetCommittedBranchFilesResponse, GitGetCommittedBranchFilesSuccess, GitHubPrInfoPush,

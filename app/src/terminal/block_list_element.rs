@@ -70,7 +70,7 @@ use crate::terminal::alt_screen::{should_intercept_mouse, should_intercept_scrol
 use crate::terminal::block_list_viewport::AutoscrollBehavior;
 use crate::terminal::blockgrid_renderer::BlockGridParams;
 use crate::terminal::input::inline_menu::InlineMenuPositioner;
-use crate::terminal::model::block::{Block, BlockSection, TranscriptScope};
+use crate::terminal::model::block::{Block, BlockSection};
 use crate::terminal::model::blocks::{
     BlockHeight, BlockHeightItem, BlockHeightSummary, BlockList, BlockListPoint, TotalIndex,
 };
@@ -2109,7 +2109,7 @@ impl BlockListElement {
                 {
                     if block_list
                         .block_at(block_index)
-                        .map(|block| block.should_hide_block(block_list.transcript_scope()))
+                        .map(|block| block.should_hide_block())
                         .unwrap_or(true)
                     {
                         any_hidden = true;
@@ -2314,10 +2314,9 @@ impl BlockListElement {
         warp_theme: &WarpTheme,
         block_borders_enabled: bool,
         snackbar_header: &Option<SnackbarHeader>,
-        transcript_scope: &TranscriptScope,
         ctx: &mut PaintContext,
     ) {
-        let block_height = block.height(transcript_scope).as_f64() as f32 * cell_size.y();
+        let block_height = block.height().as_f64() as f32 * cell_size.y();
         if block.is_restored() {
             ctx.scene
                 .draw_rect_with_hit_recording(RectF::new(
@@ -2407,7 +2406,6 @@ impl BlockListElement {
         draw_border_between_blocks: bool,
         cursor_hint_text: Option<&mut Box<dyn Element>>,
         image_metadata: &HashMap<u32, StoredImageMetadata>,
-        transcript_scope: &TranscriptScope,
         ctx: &mut PaintContext,
         app: &AppContext,
     ) {
@@ -2420,7 +2418,6 @@ impl BlockListElement {
             &block_grid_params.grid_render_params.warp_theme,
             block_borders_enabled,
             snackbar_header,
-            transcript_scope,
             ctx,
         );
 
@@ -3687,7 +3684,6 @@ impl Element for BlockListElement {
         }
 
         let mut cli_subagent_views_to_paint = vec![];
-        let transcript_scope = model.block_list().transcript_scope();
 
         let items = self
             .visible_items
@@ -3741,7 +3737,7 @@ impl Element for BlockListElement {
 
                     // TODO(vorporeal): should probably use `Pixels` here
                     let block_pixel_height =
-                        block.height(transcript_scope).as_f64() as f32 * cell_size.y();
+                        block.height().as_f64() as f32 * cell_size.y();
 
                     let block_bottom_y = grid_origin.y() + block_pixel_height;
                     let selection_bottom_y = snackbar_header
@@ -3954,7 +3950,6 @@ impl Element for BlockListElement {
                         draw_border_above_block,
                         self.cursor_hint_text_element.as_mut(),
                         &model.image_id_to_metadata,
-                        transcript_scope,
                         ctx,
                         app,
                     );

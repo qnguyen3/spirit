@@ -7,7 +7,7 @@ use warp_core::ui::appearance::Appearance;
 use warp_core::ui::color::blend::Blend as _;
 use warp_core::ui::theme::color::internal_colors;
 use warpui::elements::{
-    ChildAnchor, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, DropShadow, Expanded,
+    ChildAnchor, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, DropShadow,
     Flex, Hoverable, MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement as _,
     ParentOffsetBounds, Radius, Stack,
 };

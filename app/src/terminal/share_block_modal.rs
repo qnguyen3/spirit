@@ -35,7 +35,7 @@ use super::grid_renderer::CellGlyphCache;
 use super::model::grid::RespectDisplayedOutput;
 use crate::appearance::Appearance;
 use crate::editor::{
-    EditOrigin, EditorView, Event as EditorEvent, SingleLineEditorOptions, TextOptions,
+    EditorView, SingleLineEditorOptions, TextOptions,
 };
 use crate::send_telemetry_from_ctx;
 use crate::server::block::{Block as ServerBlock, DisplaySetting};

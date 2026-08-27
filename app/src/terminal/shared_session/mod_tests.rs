@@ -327,7 +327,7 @@ fn test_loading_scrollback() {
         model
             .block_list()
             .active_block()
-            .height(&crate::terminal::model::block::TranscriptScope::Terminal),
+            .height(),
         Lines::zero()
     );
     assert!(!model.block_list().active_block().started());
@@ -373,7 +373,7 @@ fn test_loading_scrollback_with_completed_last_block_creates_active_block() {
         model
             .block_list()
             .active_block()
-            .height(&crate::terminal::model::block::TranscriptScope::Terminal),
+            .height(),
         Lines::zero()
     );
     assert!(!model.block_list().active_block().started());
@@ -418,7 +418,7 @@ fn test_loading_scrollback_in_alt_screen() {
             .block_list()
             .block_at(2.into())
             .unwrap()
-            .height(&crate::terminal::model::block::TranscriptScope::Terminal),
+            .height(),
         0.
     );
     assert!(!model.block_list().block_at(2.into()).unwrap().started());

@@ -128,7 +128,7 @@ impl TerminalPane {
         SessionNavigationData::new(
             view.full_prompt(app),
             view.prompt_elements(app),
-            view.session_command_context(app),
+            view.session_command_context(),
             PaneViewLocator {
                 pane_group_id,
                 pane_id: self.id(),

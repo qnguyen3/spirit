@@ -961,7 +961,6 @@ fn mock_workspace_with_shared_session(app: &mut App) -> ViewHandle<Workspace> {
             SharedSessionScrollbackType::All,
             None,
             SharedSessionSource::user(None),
-            false,
             ctx,
         );
     });
@@ -1611,7 +1610,6 @@ fn setup_session_sharing_test(workspace: &ViewHandle<Workspace>, app: &mut App) 
                         SharedSessionScrollbackType::None,
                         None,
                         SharedSessionSource::user(None),
-                        false,
                         ctx,
                     );
                 });
@@ -2356,7 +2354,6 @@ fn test_stop_sharing_all_sessions_in_tab() {
                                 SharedSessionScrollbackType::None,
                                 None,
                                 SharedSessionSource::user(None),
-                                false,
                                 ctx,
                             );
                         });
@@ -2374,7 +2371,6 @@ fn test_stop_sharing_all_sessions_in_tab() {
                                 SharedSessionScrollbackType::None,
                                 None,
                                 SharedSessionSource::user(None),
-                                false,
                                 ctx,
                             );
                         });

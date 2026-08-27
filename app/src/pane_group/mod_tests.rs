@@ -912,7 +912,6 @@ fn test_stop_shared_session() {
                     SharedSessionScrollbackType::None,
                     None,
                     SharedSessionSource::user(None),
-                    false,
                     ctx,
                 );
             });

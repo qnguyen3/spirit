@@ -585,8 +585,13 @@ impl TypedActionView for TeamsPageView {
             }
             TeamsPageAction::OpenWarpDrive => ctx.emit(TeamsPageViewEvent::OpenWarpDrive),
             TeamsPageAction::ShowLeaveTeamConfirmationDialog => {
+                let variant = if FeatureFlag::BillingAndUsagePageV2.is_enabled() {
+                    CloudActionConfirmationDialogVariant::LeaveTeamReloadCredits
+                } else {
+                    CloudActionConfirmationDialogVariant::LeaveTeam
+                };
                 self.show_team_action_confirmation(
-                    CloudActionConfirmationDialogVariant::LeaveTeam,
+                    variant,
                     TeamActionConfirmationTarget::Leave,
                     ctx,
                 );

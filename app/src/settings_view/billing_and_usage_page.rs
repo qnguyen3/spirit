@@ -5,17 +5,15 @@ use itertools::Itertools;
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
-use settings::Setting;
 use thousands::Separable;
 use warp_core::features::FeatureFlag;
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::Fill;
 use warp_graphql::billing::AddonCreditsOption;
 use warpui::elements::{
-    Align, Border, ChildAnchor, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty,
-    Flex, FormattedTextElement, HighlightedHyperlink, Hoverable, HyperlinkUrl, MainAxisAlignment,
-    MainAxisSize, MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement,
-    ParentOffsetBounds, Radius, Shrinkable, Text, Wrap,
+    Align, Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty,
+    Flex, FormattedTextElement, HighlightedHyperlink, HyperlinkUrl, MainAxisAlignment,
+    MainAxisSize, MouseStateHandle, ParentElement, Radius, Shrinkable, Text, Wrap,
 };
 use warpui::fonts::{Properties, Weight};
 use warpui::prelude::ChildView;
@@ -23,14 +21,14 @@ use warpui::ui_components::button::{ButtonVariant, TextAndIcon, TextAndIconAlign
 use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 use warpui::ui_components::switch::SwitchStateHandle;
 use warpui::{
-    AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, UpdateView, View,
+    AppContext, Element, Entity, SingletonEntity, TypedActionView, UpdateView, View,
     ViewContext, ViewHandle, WeakViewHandle,
 };
 
 use super::admin_actions::AdminActions;
 use super::billing_and_usage::overage_limit_modal::{SpendingLimitModal, SpendingLimitModalEvent};
 use super::settings_page::{
-    AdditionalInfo, HEADER_PADDING, build_sub_header, render_body_item, render_customer_type_badge,
+    AdditionalInfo, HEADER_PADDING, render_body_item, render_customer_type_badge,
     render_info_icon,
 };
 use crate::auth::auth_manager::LoginGatedFeature;

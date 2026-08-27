@@ -157,7 +157,6 @@ pub(crate) fn create_terminal_view_surface(
                         SharedSessionScrollbackType::All,
                         None,
                         SharedSessionSource::user(None),
-                        false,
                         ctx,
                     )
                 });
