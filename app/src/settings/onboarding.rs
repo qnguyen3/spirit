@@ -19,17 +19,8 @@ pub(crate) fn apply_onboarding_settings(
     selected_settings: &SelectedSettings,
     app: &mut AppContext,
 ) {
-    match selected_settings {
-        SelectedSettings::AgentDrivenDevelopment {
-            ui_customization, ..
-        }
-        | SelectedSettings::Terminal {
-            ui_customization, ..
-        } => {
-            if let Some(ui) = ui_customization {
-                apply_ui_customization_settings(ui, app);
-            }
-        }
+    if let Some(ui) = &selected_settings.ui_customization {
+        apply_ui_customization_settings(ui, app);
     }
 }
 

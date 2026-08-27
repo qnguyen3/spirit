@@ -9253,7 +9253,6 @@ dependencies = [
 name = "onboarding"
 version = "0.1.0"
 dependencies = [
- "ai",
  "anyhow",
  "cfg-if",
  "instant",

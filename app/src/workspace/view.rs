@@ -31,7 +31,6 @@ use std::time::Duration;
 #[cfg(target_os = "macos")]
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use ::onboarding::OnboardingIntention;
 use ::settings::{Setting, ToggleableSetting};
 #[cfg(target_os = "macos")]
 use anyhow::Result;
@@ -826,7 +825,6 @@ pub struct Workspace {
     pending_session_config_replacement: Option<PendingSessionConfigReplacement>,
     /// When set, the guided onboarding tutorial will start after the session
     /// config modal is closed (submitted or dismissed).
-    pending_onboarding_intention: Option<OnboardingIntention>,
     pending_session_config_tab_config_chip: bool,
     show_session_config_tab_config_chip: bool,
     new_worktree_modal: ModalViewState<Modal<NewWorktreeModal>>,
@@ -1840,7 +1838,6 @@ impl Workspace {
     ) {
         match event {
             SessionConfigModalEvent::Completed(selection) => {
-                let pending_intention = self.pending_onboarding_intention.take();
                 send_telemetry_from_ctx!(
                     TabConfigsTelemetryEvent::GuidedModalSubmitted {
                         session_type: GuidedModalSessionType::from(&selection.session_type),
@@ -1851,22 +1848,7 @@ impl Workspace {
                     ctx
                 );
                 self.close_session_config_modal(ctx);
-                let has_worktree = selection.enable_worktree;
-                let has_params = {
-                    use crate::tab_configs::session_config::build_tab_config;
-                    let config = build_tab_config(
-                        &selection.session_type,
-                        &selection.directory,
-                        selection.enable_worktree,
-                        selection.autogenerate_worktree_branch_name,
-                    );
-                    !config.params.is_empty()
-                };
                 self.handle_session_config_completed(selection, ctx);
-
-                if pending_intention.is_some() && has_worktree && has_params {
-                    self.pending_onboarding_intention = pending_intention;
-                }
 
                 // Show the chip only when no params modal followed.
                 if !self.current_workspace_state.is_tab_config_params_modal_open {
@@ -1874,8 +1856,6 @@ impl Workspace {
                 }
             }
             SessionConfigModalEvent::Dismissed => {
-                self.pending_onboarding_intention = None;
-
                 // No tab config was created, so don't show the chip.
                 self.pending_session_config_tab_config_chip = false;
                 self.close_session_config_modal(ctx);
@@ -1958,7 +1938,7 @@ impl Workspace {
 
         self.session_config_modal.open();
         self.current_workspace_state.is_session_config_modal_open = true;
-        self.pending_session_config_tab_config_chip = self.pending_onboarding_intention.is_some();
+        self.pending_session_config_tab_config_chip = false;
         self.show_session_config_tab_config_chip = false;
         ctx.focus(&self.session_config_modal.view);
         send_telemetry_from_ctx!(TabConfigsTelemetryEvent::GuidedModalOpened, ctx);
@@ -2578,7 +2558,6 @@ impl Workspace {
             tab_config_params_modal,
             session_config_modal,
             pending_session_config_replacement: None,
-            pending_onboarding_intention: None,
             pending_session_config_tab_config_chip: false,
             show_session_config_tab_config_chip: false,
             new_worktree_modal,
@@ -8815,7 +8794,6 @@ impl Workspace {
     /// Cleans up pending state and closes the tab-config params modal without
     /// creating a tab config. Used when the modal is dismissed or cancelled.
     fn cancel_tab_config_params_modal(&mut self, ctx: &mut ViewContext<Self>) {
-        self.pending_onboarding_intention = None;
         self.pending_session_config_replacement = None;
         self.pending_session_config_tab_config_chip = false;
         self.close_tab_config_params_modal(ctx);
@@ -8828,7 +8806,6 @@ impl Workspace {
     ) {
         match event {
             TabConfigParamsModalEvent::Submit { config, params } => {
-                self.pending_onboarding_intention = None;
                 let should_track_existing_config_open =
                     self.pending_session_config_replacement.is_none();
                 let worktree_name = self.maybe_generate_worktree_name(config);

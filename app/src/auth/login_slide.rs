@@ -4,7 +4,7 @@ use onboarding::components::feature_optout_dialog::{
     FeatureOptOutDialog, render_feature_optout_dialog,
 };
 use onboarding::slides::{layout, onboarding_bottom_nav, slide_content};
-use onboarding::{OnboardingEvent, OnboardingIntention, WARP_DRIVE_FEATURES};
+use onboarding::{OnboardingEvent, WARP_DRIVE_FEATURES};
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use ui_components::{Component as _, Options as _, button};
@@ -96,14 +96,6 @@ impl LoginPurpose {
                 "Get started with Warp Drive",
                 "Connect your account to save and share notebooks, workflows, and more across devices.",
             ),
-            LoginPurpose::WarpAgent => (
-                "Get started with AI",
-                "Connect your account to enable AI-powered planning, coding, and automation.",
-            ),
-            LoginPurpose::ThirdParty => (
-                "Create an account",
-                "Create a Warp account to enable AI-powered planning, coding, and automations.",
-            ),
             LoginPurpose::AccountFirst => (
                 "Create an account",
                 "Access AI, run cloud agents, collaborate with teammates, and sync settings across devices.",
@@ -191,9 +183,7 @@ enum LoginSlideOverlay {
 /// creates an account.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum LoginPurpose {
-    WarpAgent,
     WarpDrive,
-    ThirdParty,
     AccountFirst,
 }
 
@@ -204,23 +194,6 @@ enum LoginPurpose {
 const AUTH_TOKEN_INPUT_BORDER_RADIUS: Radius = Radius::Pixels(4.);
 
 pub struct LoginSlideView {
-    /// Whether this path wants AI (agent intent) vs. not (terminal intention).
-    /// Used to gate the cloud-conversation-storage toggle and AI wording in the
-    /// privacy settings step. This reflects intent, not the final state: AI runs
-    /// on a Warp account, so skipping login leaves it off even when this is true.
-    /// The actual `AISettings` value is written when settings are applied.
-    ai_enabled: bool,
-    /// Whether the user chose third-party (BYO) agents during onboarding. Drives
-    /// the agent-path login copy ("Create an account" for third-party vs. "Get
-    /// started with AI" for Warp Agent); it does not affect whether AI is
-    /// enabled, which depends on the user creating an account.
-    uses_third_party_agents: bool,
-    /// Onboarding intention selected by the user, used to render Drive-focused
-    /// copy on the Terminal+Drive path. On the login slide, `intention ==
-    /// OnboardingIntention::Terminal` is equivalent to "Terminal+Drive":
-    /// `RootView` only routes Terminal-intent users here when Warp Drive is
-    /// enabled.
-    intention: OnboardingIntention,
     theme_visual_path: &'static str,
     step: LoginStep,
     active_overlay: Option<LoginSlideOverlay>,
@@ -279,15 +252,8 @@ const VISUAL_IMAGE_PATHS: &[&str] = &[
     "async/png/onboarding/agent_intention/theme/theme_adeberry_horizontal.png",
 ];
 
-fn resolve_visual_path(
-    intention: OnboardingIntention,
-    theme_name: &str,
-    use_vertical_tabs: bool,
-) -> &'static str {
-    let intention_dir = match intention {
-        OnboardingIntention::AgentDrivenDevelopment => "agent_intention",
-        OnboardingIntention::Terminal => "terminal_intention",
-    };
+fn resolve_visual_path(theme_name: &str, use_vertical_tabs: bool) -> &'static str {
+    let intention_dir = "terminal_intention";
     let name_key = match theme_name {
         "Phenomenon" => "phenomenon",
         "Dark" => "dark",
@@ -318,11 +284,8 @@ impl LoginSlideView {
     }
 
     pub fn new(
-        ai_enabled: bool,
-        uses_third_party_agents: bool,
         theme_name: &str,
         use_vertical_tabs: bool,
-        intention: OnboardingIntention,
         source: LoginSlideSource,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
@@ -368,10 +331,7 @@ impl LoginSlideView {
         });
 
         let view = Self {
-            ai_enabled,
-            uses_third_party_agents,
-            intention,
-            theme_visual_path: resolve_visual_path(intention, theme_name, use_vertical_tabs),
+            theme_visual_path: resolve_visual_path(theme_name, use_vertical_tabs),
             step: match source {
                 LoginSlideSource::OnboardingFlow | LoginSlideSource::AccountFirstOnboarding => {
                     LoginStep::SelectAuthPathway
@@ -580,31 +540,16 @@ impl LoginSlideView {
     // Step 1: Select auth pathway
     // ------------------------------------------------------------------
 
-    /// Disclaimer prefix shown before the "Privacy Settings" link. AI is
-    /// dropped from the wording on paths that don't enable AI (e.g.
-    /// Terminal+Drive), since there are no AI features to opt out of there.
+    /// Disclaimer prefix shown before the "Privacy Settings" link.
     fn privacy_disclaimer_prefix(&self) -> &'static str {
-        if self.ai_enabled {
-            "If you'd like to opt out of analytics and AI features, you can adjust your "
-        } else {
-            "If you'd like to opt out of analytics, you can adjust your "
-        }
+        "If you'd like to opt out of analytics, you can adjust your "
     }
 
     fn login_purpose(&self) -> LoginPurpose {
         if matches!(self.source, LoginSlideSource::AccountFirstOnboarding) {
             return LoginPurpose::AccountFirst;
         }
-        match self.intention {
-            OnboardingIntention::Terminal => LoginPurpose::WarpDrive,
-            OnboardingIntention::AgentDrivenDevelopment => {
-                if self.uses_third_party_agents {
-                    LoginPurpose::ThirdParty
-                } else {
-                    LoginPurpose::WarpAgent
-                }
-            }
-        }
+        LoginPurpose::WarpDrive
     }
 
     fn render_select_auth_content(&self, appearance: &Appearance) -> Vec<Box<dyn Element>> {
@@ -797,8 +742,6 @@ impl LoginSlideView {
         let cmd_enter = Keystroke::parse("cmdorctrl-enter").unwrap_or_default();
         let skip_label = match self.login_purpose() {
             LoginPurpose::WarpDrive => "Disable Warp Drive",
-            LoginPurpose::WarpAgent => "Skip for now",
-            LoginPurpose::ThirdParty => "Skip for now",
             LoginPurpose::AccountFirst => "Skip",
         };
         let skip_keystroke = if matches!(self.login_purpose(), LoginPurpose::AccountFirst) {
@@ -1059,7 +1002,7 @@ impl LoginSlideView {
             app,
             &self.privacy_settings_handles,
             &actions,
-            self.ai_enabled,
+            false,
         );
 
         vec![title, Container::new(toggles).with_margin_top(24.).finish()]
@@ -1112,7 +1055,7 @@ impl LoginSlideView {
                 WARP_DRIVE_FEATURES,
                 "Enable Warp Drive",
             ),
-            LoginPurpose::WarpAgent | LoginPurpose::ThirdParty | LoginPurpose::AccountFirst => (
+            LoginPurpose::AccountFirst => (
                 "Continue without signing in?",
                 "Without an account, you won't have access to Warp's AI features. Sign in anytime to unlock agents and other AI features.",
                 &[],

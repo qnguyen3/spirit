@@ -1,12 +1,9 @@
-use ai::LLMId;
 use warp_core::features::FeatureFlag;
 use warp_core::telemetry::testing::MockTelemetryContextProvider;
 use warpui_core::{App, Entity, ModelHandle};
 
-use crate::OnboardingIntention;
 use crate::model::{
-    NoAiConfirmationSource, OnboardingAuthState, OnboardingStateEvent, OnboardingStateModel,
-    OnboardingStep, SelectedSettings,
+    OnboardingAuthState, OnboardingStateEvent, OnboardingStateModel, OnboardingStep,
 };
 use crate::slides::OfferVariant;
 
@@ -43,14 +40,7 @@ fn pricing_promotion_message_can_be_replaced_and_cleared() {
 }
 
 fn add_model(app: &mut App) -> ModelHandle<OnboardingStateModel> {
-    app.add_model(|_| {
-        OnboardingStateModel::new(
-            Vec::new(),
-            LLMId::from("auto"),
-            false,
-            OnboardingAuthState::FreeUser,
-        )
-    })
+    app.add_model(|_| OnboardingStateModel::new(OnboardingAuthState::FreeUser))
 }
 
 fn step(app: &App, model: &ModelHandle<OnboardingStateModel>) -> OnboardingStep {
@@ -263,45 +253,6 @@ fn account_first_path_uses_three_step_progress() {
 }
 
 #[test]
-fn cancel_no_ai_from_intention_routes_to_ai_setup() {
-    App::test((), |mut app| async move {
-        let model = add_test_model(&mut app);
-
-        model.update(&mut app, |model, ctx| {
-            model.next(ctx); // Intro → Intention
-            model.set_intention_terminal(ctx);
-            model.request_no_ai_confirmation(NoAiConfirmationSource::Intention, ctx);
-        });
-
-        // "Give me AI features" switches onto the AI path and opens the AI-setup slide.
-        model.update(&mut app, |model, ctx| model.cancel_no_ai(ctx));
-        assert_eq!(step(&app, &model), OnboardingStep::AiSetup);
-        model.read(&app, |model, _| {
-            assert_eq!(model.no_ai_confirmation(), None);
-            assert_eq!(
-                *model.intention(),
-                OnboardingIntention::AgentDrivenDevelopment
-            );
-        });
-    });
-}
-
-#[test]
-fn terminal_settings_disable_ai() {
-    App::test((), |mut app| async move {
-        let model = add_test_model(&mut app);
-        model.update(&mut app, |model, ctx| model.set_intention_terminal(ctx));
-        model.read(&app, |model, _| {
-            assert!(matches!(
-                model.settings(),
-                SelectedSettings::Terminal { .. }
-            ));
-            assert!(!model.settings().is_ai_enabled());
-        });
-    });
-}
-
-#[test]
 fn terminal_path_skips_agent_slides() {
     App::test((), |mut app| async move {
         let model = add_test_model(&mut app);
@@ -325,9 +276,8 @@ fn terminal_path_skips_agent_slides() {
 fn progress_reports_terminal_path_uses_three_dot_variant() {
     App::test((), |mut app| async move {
         let model = add_test_model(&mut app);
-        model.update(&mut app, |model, ctx| model.set_intention_terminal(ctx));
         let cases = [
-            (OnboardingStep::Intention, (0, 3)),
+            (OnboardingStep::Intro, (0, 3)),
             (OnboardingStep::Customize, (1, 3)),
             (OnboardingStep::ThemePicker, (2, 3)),
         ];

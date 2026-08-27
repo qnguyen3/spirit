@@ -3,14 +3,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::SyncSender;
 
-use ai::LLMId;
 use anyhow::Result;
 use cfg_if::cfg_if;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use onboarding::{
     AgentOnboardingEvent, AgentOnboardingView, OfferVariant, OnboardingAuthState, OnboardingEvent,
-    OnboardingIntention, SelectedSettings,
+    SelectedSettings,
 };
 use parking_lot::Mutex;
 use pathfinder_geometry::rect::RectF;
@@ -567,13 +566,8 @@ fn open_launch_config(arg: &OpenLaunchConfigArg, ctx: &mut AppContext) {
     );
 }
 
-fn requires_post_onboarding_login(
-    is_logged_in: bool,
-    ai_enabled: bool,
-    warp_drive_enabled: bool,
-) -> bool {
-    !is_logged_in
-        && (FeatureFlag::AccountFirstOnboarding.is_enabled() || ai_enabled || warp_drive_enabled)
+fn requires_post_onboarding_login(is_logged_in: bool, warp_drive_enabled: bool) -> bool {
+    !is_logged_in && (FeatureFlag::AccountFirstOnboarding.is_enabled() || warp_drive_enabled)
 }
 /// Replaces the settings and tutorial snapshots consumed when post-auth
 /// onboarding eventually completes.
@@ -1942,9 +1936,6 @@ impl RootView {
             let mut view = AgentOnboardingView::new(
                 themes.clone(),
                 false, // Always use unskippable onboarding.
-                Vec::new(),
-                LLMId::from("auto"),
-                false,
                 auth_state,
                 ctx,
             );
@@ -2340,11 +2331,10 @@ impl RootView {
                 let is_logged_in = AuthStateProvider::as_ref(ctx).get().is_logged_in();
                 // Account-first always presents account creation to logged-out users.
                 // The fallback flow only requires login for account-backed settings.
-                let ai_enabled = selected_settings.is_ai_enabled();
                 let warp_drive_enabled = selected_settings.is_warp_drive_enabled();
                 // With old onboarding, we ask user to log in before onboarding, so don't do it after onboarding completes.
                 let requires_login =
-                    requires_post_onboarding_login(is_logged_in, ai_enabled, warp_drive_enabled);
+                    requires_post_onboarding_login(is_logged_in, warp_drive_enabled);
 
                 if requires_login {
                     refresh_pending_onboarding_choices(
@@ -2358,39 +2348,16 @@ impl RootView {
                         .theme()
                         .name()
                         .unwrap_or_else(|| "Dark".to_string());
-                    let (use_vertical_tabs, intention, uses_third_party_agents) =
-                        match selected_settings {
-                            SelectedSettings::AgentDrivenDevelopment {
-                                ui_customization,
-                                agent_settings,
-                                ..
-                            } => (
-                                ui_customization
-                                    .as_ref()
-                                    .map(|c| c.use_vertical_tabs)
-                                    .unwrap_or(true),
-                                OnboardingIntention::AgentDrivenDevelopment,
-                                agent_settings.disable_oz,
-                            ),
-                            SelectedSettings::Terminal {
-                                ui_customization, ..
-                            } => (
-                                ui_customization
-                                    .as_ref()
-                                    .map(|c| c.use_vertical_tabs)
-                                    .unwrap_or(false),
-                                OnboardingIntention::Terminal,
-                                false,
-                            ),
-                        };
+                    let use_vertical_tabs = selected_settings
+                        .ui_customization
+                        .as_ref()
+                        .map(|c| c.use_vertical_tabs)
+                        .unwrap_or(false);
 
                     let login_slide_view = ctx.add_typed_action_view(|ctx| {
                         LoginSlideView::new(
-                            ai_enabled,
-                            uses_third_party_agents,
                             &theme_name,
                             use_vertical_tabs,
-                            intention,
                             if account_first {
                                 LoginSlideSource::AccountFirstOnboarding
                             } else {
@@ -2519,13 +2486,6 @@ impl RootView {
                 let target = target.clone();
                 let onboarding_view = onboarding_view.clone();
 
-                // This event is only emitted from the terminal-intention theme
-                // slide (the variant name encodes this). The terminal intention
-                // disables AI once onboarding settings are applied, so treat AI
-                // as disabled here — `AISettings::is_any_ai_enabled` still holds
-                // the pre-onboarding / default value at this point and would
-                // incorrectly surface the cloud-conversation toggle.
-                let ai_enabled = false;
                 let appearance = Appearance::as_ref(ctx);
                 let theme_name = appearance
                     .theme()
@@ -2537,16 +2497,10 @@ impl RootView {
                 // completes.
                 let use_vertical_tabs = onboarding_view.as_ref(ctx).use_vertical_tabs(ctx);
 
-                // This event variant encodes that it was emitted from the
-                // terminal-intention theme slide, so match its image here.
                 let login_slide_view = ctx.add_typed_action_view(|ctx| {
                     LoginSlideView::new(
-                        ai_enabled,
-                        // Terminal intention is never the third-party-agent path.
-                        false,
                         &theme_name,
                         use_vertical_tabs,
-                        OnboardingIntention::Terminal,
                         LoginSlideSource::PrivacySettingsFromTerminalIntentionTheme,
                         ctx,
                     )
@@ -2575,7 +2529,6 @@ impl RootView {
                 let target = target.clone();
                 let onboarding_view = onboarding_view.clone();
 
-                let ai_enabled = false;
                 let appearance = Appearance::as_ref(ctx);
                 let theme_name = appearance
                     .theme()
@@ -2591,15 +2544,8 @@ impl RootView {
 
                 let login_slide_view = ctx.add_typed_action_view(|ctx| {
                     LoginSlideView::new(
-                        ai_enabled,
-                        // No agent setup choice has been made yet; default to the
-                        // Warp Agent login screen rather than the third-party copy.
-                        false,
                         &theme_name,
                         use_vertical_tabs,
-                        // Existing-user login from the welcome slide happens before the user
-                        // picks an intention; default the visual to the agent intention panel.
-                        OnboardingIntention::AgentDrivenDevelopment,
                         LoginSlideSource::LoginExistingUserFromWelcome,
                         ctx,
                     )

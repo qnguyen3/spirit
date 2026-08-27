@@ -1,5 +1,3 @@
-use ai::LLMId;
-use onboarding::slides::AgentDevelopmentSettings;
 use onboarding::{SelectedSettings, UICustomizationSettings};
 use warp_core::features::FeatureFlag;
 use warpui::{App, SingletonEntity};
@@ -30,15 +28,7 @@ fn account_first_settings_apply_ui_choices() {
         app.add_singleton_model(PrivacySettings::mock);
         app.add_singleton_model(UserWorkspaces::default_mock);
 
-        let selected_settings = SelectedSettings::AgentDrivenDevelopment {
-            agent_settings: AgentDevelopmentSettings {
-                selected_model_id: LLMId::from("auto"),
-                autonomy: None,
-                cli_agent_toolbar_enabled: true,
-                session_default: onboarding::SessionDefault::Agent,
-                disable_oz: false,
-                show_agent_notifications: true,
-            },
+        let selected_settings = SelectedSettings {
             ui_customization: Some(UICustomizationSettings {
                 use_vertical_tabs: false,
                 show_conversation_history: false,
@@ -47,6 +37,8 @@ fn account_first_settings_apply_ui_choices() {
                 show_warp_drive: false,
                 show_code_review_button: true,
             }),
+            cli_agent_toolbar_enabled: true,
+            show_agent_notifications: true,
         };
 
         app.update(|ctx| {

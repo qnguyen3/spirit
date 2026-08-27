@@ -1,7 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use ai::LLMId;
 use warp_core::telemetry::testing::MockTelemetryContextProvider;
 use warp_core::ui::appearance::Appearance;
 use warpui_core::elements::Empty;
@@ -35,14 +34,7 @@ impl TypedActionView for EventObserver {
 }
 
 fn add_onboarding_state(app: &mut App) -> ModelHandle<OnboardingStateModel> {
-    app.add_model(|_| {
-        OnboardingStateModel::new(
-            Vec::new(),
-            LLMId::from("auto"),
-            false,
-            OnboardingAuthState::FreeUser,
-        )
-    })
+    app.add_model(|_| OnboardingStateModel::new(OnboardingAuthState::FreeUser))
 }
 
 #[test]
