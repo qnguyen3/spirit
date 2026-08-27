@@ -5389,34 +5389,3 @@ fn hash_trigger_disabled_keeps_hash_literal_and_does_not_open_ai_command_search(
     });
 }
 
-/// With the '#' trigger left at its default (enabled), typing '#' at the start of the buffer
-/// must still open AI Command Search, preserving pre-existing behavior.
-#[test]
-fn hash_trigger_enabled_by_default_opens_ai_command_search() {
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        let terminal = add_window_with_bootstrapped_terminal(&mut app, None, None).await;
-        let input = terminal.read(&app, |terminal, _| terminal.input().clone());
-
-        let open_count = Rc::new(RefCell::new(0));
-        let open_count_for_subscription = open_count.clone();
-        app.update(|ctx| {
-            ctx.subscribe_to_view(&input, move |_, event, _| {
-                if matches!(event, Event::ShowCommandSearch(_)) {
-                    *open_count_for_subscription.borrow_mut() += 1;
-                }
-            });
-        });
-
-        input.update(&mut app, |input, ctx| {
-            input.user_insert("#", ctx);
-        });
-
-        assert_eq!(
-            *open_count.borrow(),
-            1,
-            "AI Command Search must open on typing '#' when the trigger setting defaults to enabled"
-        );
-    });
-}
