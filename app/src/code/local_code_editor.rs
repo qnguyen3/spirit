@@ -96,7 +96,6 @@ pub enum LocalCodeEditorEvent {
     FailedToSave {
         error: Arc<FileSaveError>,
     },
-    DiffAccepted,
     /// Emitted when a user presses Escape in Vim Normal mode inside the embedded editor.
     VimMinimizeRequested,
     /// Emitted when a user edits the file.
@@ -289,9 +288,6 @@ impl LocalCodeEditorView {
         });
 
         ctx.subscribe_to_view(&editor, |me, _, event, ctx| match event {
-            CodeEditorEvent::UnifiedDiffComputed => {
-                ctx.emit(LocalCodeEditorEvent::DiffAccepted);
-            }
             CodeEditorEvent::ContentChanged { origin, .. } => {
                 me.update_diff_hunk_gutter_buttons(ctx);
 

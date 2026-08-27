@@ -3943,18 +3943,18 @@ fn single_general_review_comment(content: &str) -> AgentReviewCommentBatch {
     }
 }
 
-fn set_warp_tui_session(view: &mut TerminalView, ctx: &mut ViewContext<TerminalView>) {
-    view.model.lock().simulate_long_running_block("warp", "");
+fn set_amp_session(view: &mut TerminalView, ctx: &mut ViewContext<TerminalView>) {
+    view.model.lock().simulate_long_running_block("amp", "");
     assert_eq!(
-        CLIAgent::detect("warp", None, None, ctx),
-        Some(CLIAgent::WarpTui)
+        CLIAgent::detect("amp", None, None, ctx),
+        Some(CLIAgent::Amp)
     );
 
     CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions, ctx| {
         sessions.set_session(
             view.view_id,
             CLIAgentSession {
-                agent: CLIAgent::WarpTui,
+                agent: CLIAgent::Amp,
                 status: CLIAgentSessionStatus::InProgress,
                 session_context: CLIAgentSessionContext::default(),
                 input_state: CLIAgentInputState::Closed,
@@ -3972,7 +3972,7 @@ fn set_warp_tui_session(view: &mut TerminalView, ctx: &mut ViewContext<TerminalV
 }
 
 #[test]
-fn warp_tui_session_start_registers_listener_without_auto_toggle() {
+fn amp_session_start_registers_listener_without_auto_toggle() {
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
 
@@ -3980,7 +3980,7 @@ fn warp_tui_session_start_registers_listener_without_auto_toggle() {
         terminal.update(&mut app, |view, ctx| {
             view.handle_cli_agent_notification(
                 Some(CLI_AGENT_NOTIFICATION_SENTINEL),
-                r#"{"v":1,"agent":"warp-tui","event":"session_start"}"#,
+                r#"{"v":1,"agent":"amp","event":"session_start"}"#,
                 ctx,
             );
         });
@@ -3988,58 +3988,58 @@ fn warp_tui_session_start_registers_listener_without_auto_toggle() {
         terminal.read(&app, |view, ctx| {
             let session = CLIAgentSessionsModel::as_ref(ctx)
                 .session(view.view_id)
-                .expect("Warp TUI session should be registered");
+                .expect("CLI agent session should be registered");
             assert!(session.listener.is_some());
             assert!(!session.should_auto_toggle_input);
         });
     });
 }
 #[test]
-fn active_cli_agent_recognizes_detected_warp_tui_session() {
+fn active_cli_agent_recognizes_detected_cli_agent_session() {
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
         let _hoa_code_review = FeatureFlag::HoaCodeReview.override_enabled(true);
 
         let terminal = add_window_with_terminal(&mut app, None);
         terminal.update(&mut app, |view, ctx| {
-            set_warp_tui_session(view, ctx);
+            set_amp_session(view, ctx);
         });
 
         terminal.read(&app, |view, ctx| {
             assert_eq!(
                 view.active_cli_agent(ctx),
-                Some(CLIAgent::WarpTui),
-                "Warp TUI should be recognized as a code-review destination while running"
+                Some(CLIAgent::Amp),
+                "a running CLI agent should be recognized as a code-review destination"
             );
         });
     });
 }
 
-/// `active_cli_agent` must return `None` for the Warp TUI when `HoaCodeReview`
-/// is disabled, preserving the pre-feature behavior (no review destination).
+/// `active_cli_agent` must return `None` when `HoaCodeReview` is disabled,
+/// preserving the pre-feature behavior (no review destination).
 #[test]
-fn active_cli_agent_ignores_warp_tui_when_hoa_code_review_disabled() {
+fn active_cli_agent_ignores_session_when_hoa_code_review_disabled() {
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
         let _hoa_code_review = FeatureFlag::HoaCodeReview.override_enabled(false);
 
         let terminal = add_window_with_terminal(&mut app, None);
         terminal.update(&mut app, |view, ctx| {
-            set_warp_tui_session(view, ctx);
+            set_amp_session(view, ctx);
         });
 
         terminal.read(&app, |view, ctx| {
             assert_eq!(
                 view.active_cli_agent(ctx),
                 None,
-                "Warp TUI should not be a review destination when HoaCodeReview is disabled"
+                "a CLI agent should not be a review destination when HoaCodeReview is disabled"
             );
         });
     });
 }
 
 #[test]
-fn active_cli_agent_ignores_non_tui_long_running_command() {
+fn active_cli_agent_ignores_non_agent_long_running_command() {
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
         let _hoa_code_review = FeatureFlag::HoaCodeReview.override_enabled(true);
@@ -4054,16 +4054,16 @@ fn active_cli_agent_ignores_non_tui_long_running_command() {
             assert_eq!(
                 view.active_cli_agent(ctx),
                 None,
-                "a non-TUI long-running command must not be a review destination"
+                "a long-running non-agent command must not be a review destination"
             );
         });
     });
 }
 
-/// Sending review comments while the Warp TUI is running writes the built prompt
-/// directly to the TUI's PTY rather than the outer rich input.
+/// Sending review comments while a CLI agent is running with its rich input closed
+/// writes the built prompt directly to the agent's PTY rather than the outer rich input.
 #[test]
-fn send_review_comments_to_warp_tui_writes_prompt_to_pty() {
+fn send_review_comments_to_cli_agent_writes_prompt_to_pty() {
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
         let _hoa_code_review = FeatureFlag::HoaCodeReview.override_enabled(true);
@@ -4080,8 +4080,8 @@ fn send_review_comments_to_warp_tui_writes_prompt_to_pty() {
         });
 
         terminal.update(&mut app, |view, ctx| {
-            set_warp_tui_session(view, ctx);
-            assert_eq!(view.active_cli_agent(ctx), Some(CLIAgent::WarpTui));
+            set_amp_session(view, ctx);
+            assert_eq!(view.active_cli_agent(ctx), Some(CLIAgent::Amp));
             assert!(!view.is_cli_agent_rich_input_open(ctx));
 
             let review = single_general_review_comment("please fix the off-by-one");
@@ -4090,7 +4090,7 @@ fn send_review_comments_to_warp_tui_writes_prompt_to_pty() {
         });
 
         // The review prompt is written to the PTY in a single write because
-        // Warp TUI sessions do not open the outer rich input.
+        // the session's rich input is closed.
         let writes = pty_writes.borrow();
         assert_eq!(
             writes.len(),

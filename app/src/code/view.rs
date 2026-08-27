@@ -496,7 +496,6 @@ impl CodeView {
                 log::warn!("Failed to load file. {err:?}");
                 CodeView::display_save_failure(ctx.window_id(), ctx);
             }
-            LocalCodeEditorEvent::DiffAccepted => (),
             LocalCodeEditorEvent::DiffStatusUpdated => (),
             LocalCodeEditorEvent::UserEdited => (),
             LocalCodeEditorEvent::VimMinimizeRequested => (),

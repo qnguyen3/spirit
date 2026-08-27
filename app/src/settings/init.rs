@@ -19,8 +19,7 @@ use super::{
     FontSettingsChangedEvent, GPUSettings, InputBoxType, InputModeSettings, InputSettings,
     LocalControlSettings, NewSessionSettings, PaneSettings, SameLinePromptBlockSettings,
     ScrollSettings, SelectionSettings, SharedObjectLimitBannerSettings, SshSettings, ThemeSettings,
-    TuiAutoupdateSettings, TuiThemeSettings, TuiZeroStateSettings, VimBannerSettings,
-    WarpDrivePrivacySettings,
+    VimBannerSettings, WarpDrivePrivacySettings,
 };
 use crate::banner::BannerState;
 use crate::drive::settings::WarpDriveSettings;
@@ -77,9 +76,6 @@ pub fn register_all_settings(ctx: &mut AppContext) {
     SelectionSettings::register(ctx);
     InputModeSettings::register(ctx);
     ThemeSettings::register(ctx);
-    TuiAutoupdateSettings::register(ctx);
-    TuiThemeSettings::register(ctx);
-    TuiZeroStateSettings::register(ctx);
     AccessibilitySettings::register(ctx);
     NativePreferenceSettings::register(ctx);
     CloudPreferencesSettings::register(ctx);
@@ -355,13 +351,6 @@ pub fn init_public_user_preferences() -> (user_preferences::Model, Option<user_p
 /// 3. The migration-complete marker is absent from the native store
 ///    (handles the case where a user deletes `settings.toml` to reset).
 fn needs_settings_file_migration(ctx: &AppContext) -> bool {
-    // Migration only applies to the GUI surface, which is the one with legacy
-    // native-store settings to move into its TOML file. Other surfaces (e.g.
-    // the TUI) have nothing to migrate and must never run migration or touch
-    // the shared migration-complete marker.
-    if !settings::settings_mode().should_migrate_native_settings() {
-        return false;
-    }
     needs_settings_file_migration_for_path(ctx, &super::user_preferences_toml_file_path())
 }
 
@@ -451,7 +440,7 @@ fn migrate_native_settings_to_settings_file(ctx: &mut AppContext) {
     );
 }
 
-#[cfg(any(test, all(feature = "tui", feature = "test-util")))]
+#[cfg(test)]
 pub fn init_and_register_user_preferences(ctx: &mut AppContext) {
     let public_prefs = Box::<user_preferences::in_memory::InMemoryPreferences>::default();
     let private_prefs = settings::PrivatePreferences::new(Box::<

@@ -153,8 +153,6 @@ pub enum CLIAgent {
     Hermes,
     Vibe,
     Antigravity,
-    /// Warp's own headless TUI.
-    WarpTui,
     /// Represents an unknown/custom CLI agent matched by user-configured regex patterns.
     Unknown,
 }
@@ -178,14 +176,6 @@ impl CLIAgent {
             CLIAgent::Hermes => &["hermes"],
             CLIAgent::Vibe => &["vibe", "vibe-acp"],
             CLIAgent::Antigravity => &["agy"],
-            CLIAgent::WarpTui => &[
-                "warp",
-                "warp-preview",
-                "warp-dev",
-                "warp-tui",
-                "warp-tui-oss",
-                "run-tui",
-            ],
             CLIAgent::Unknown => &[],
         }
     }
@@ -241,7 +231,6 @@ impl CLIAgent {
             CLIAgent::Hermes => "Hermes",
             CLIAgent::Vibe => "Mistral Vibe",
             CLIAgent::Antigravity => "Antigravity",
-            CLIAgent::WarpTui => "Warp TUI",
             CLIAgent::Unknown => "CLI Agent",
         }
     }
@@ -267,7 +256,6 @@ impl CLIAgent {
             // up in a follow-up once an officially licensed SVG is available.
             CLIAgent::Vibe => None,
             CLIAgent::Antigravity => Some(Icon::AntigravityLogo),
-            CLIAgent::WarpTui => Some(Icon::Warp),
             CLIAgent::Unknown => None,
         }
     }
@@ -300,7 +288,6 @@ impl CLIAgent {
             CLIAgent::Hermes => &[SkillProvider::Agents],
             CLIAgent::Vibe => &[SkillProvider::Agents],
             CLIAgent::Antigravity => &[],
-            CLIAgent::WarpTui => &[],
             CLIAgent::Unknown => &[],
         }
     }
@@ -345,7 +332,6 @@ impl CLIAgent {
             CLIAgent::Hermes => Some(HERMES_PURPLE),
             CLIAgent::Vibe => Some(MISTRAL_ORANGE),
             CLIAgent::Antigravity => Some(ANTIGRAVITY_COLOR),
-            CLIAgent::WarpTui => Some(ColorU::black()),
             CLIAgent::Unknown => None,
         }
     }
@@ -621,7 +607,6 @@ impl From<CLIAgent> for CLIAgentType {
             CLIAgent::Hermes => CLIAgentType::Hermes,
             CLIAgent::Vibe => CLIAgentType::Vibe,
             CLIAgent::Antigravity => CLIAgentType::Antigravity,
-            CLIAgent::WarpTui => CLIAgentType::WarpTui,
             CLIAgent::Unknown => CLIAgentType::Unknown,
         }
     }

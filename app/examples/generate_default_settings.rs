@@ -16,7 +16,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use settings::SettingsMode;
+use settings::SettingSurfaces;
 use settings::schema::SettingSchemaEntry;
 use warp_core::features::{DEBUG_FLAGS, DOGFOOD_FLAGS, FeatureFlag, PREVIEW_FLAGS, RELEASE_FLAGS};
 use warpui_extras::user_preferences::UserPreferences as _;
@@ -105,8 +105,8 @@ fn main() {
     // file excludes GUI-only keys. Required (with no default) so a typo or a
     // missing value never silently generates the wrong surface's file.
     let surface_mode = match surface {
-        Some("gui") => SettingsMode::Gui,
-        Some("tui") => SettingsMode::Tui,
+        Some("gui") => SettingSurfaces::GUI,
+        Some("tui") => SettingSurfaces::TUI,
         Some(other) => {
             eprintln!("Unknown surface '{other}' (expected 'gui' or 'tui')");
             std::process::exit(1);

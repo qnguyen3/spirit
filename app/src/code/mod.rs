@@ -1,6 +1,5 @@
 use std::any::Any;
 use std::fmt::Debug;
-use std::ops::AddAssign;
 
 use pathfinder_geometry::rect::RectF;
 use warp_errors::{ErrorExt, register_error};
@@ -131,31 +130,6 @@ pub fn init(app: &mut AppContext) {
     self::file_tree::init(app);
     #[cfg(not(target_family = "wasm"))]
     self::find_references_view::init(app);
-}
-
-/// The diff that results from editing a file.
-#[derive(Debug, Default, Clone)]
-pub struct DiffResult {
-    /// The changes in unified diff format.
-    pub unified_diff: String,
-    /// Number of lines added.
-    pub lines_added: usize,
-    /// Number of lines removed.
-    pub lines_removed: usize,
-}
-
-impl AddAssign<&DiffResult> for DiffResult {
-    fn add_assign(&mut self, other: &DiffResult) {
-        self.lines_added += other.lines_added;
-        self.lines_removed += other.lines_removed;
-
-        // There's not a standardized multi-file diff format, but concatenating the diffs is enough
-        // for our needs: https://en.wikipedia.org/wiki/Diff#Extensions
-        if !self.unified_diff.is_empty() && !other.unified_diff.is_empty() {
-            self.unified_diff.push('\n');
-        }
-        self.unified_diff.push_str(&other.unified_diff);
-    }
 }
 
 #[derive(Debug)]

@@ -81,8 +81,6 @@ mod test_util;
 mod throttle;
 mod tips;
 mod tracing;
-#[cfg(feature = "tui")]
-mod tui_onboarding_markers;
 mod ui_components;
 mod undo_close;
 mod uri;
@@ -263,7 +261,6 @@ use crate::workspaces::user_workspaces::UserWorkspaces;
 
 /// Our embedded application assets.
 pub static ASSETS: warp_assets::Assets = warp_assets::Assets;
-const TUI_SECURE_STORAGE_SERVICE_SUFFIX: &str = ".tui";
 
 fn is_unsupported_agent_command(command: &warp_cli::CliCommand) -> bool {
     matches!(
@@ -314,25 +311,6 @@ pub(crate) enum LaunchMode {
         /// directory on the remote host.
         identity_key: String,
     },
-
-    /// Run the headless TUI front-end or a one-shot command using its settings
-    /// and secure-storage namespace.
-    #[cfg_attr(not(feature = "tui"), allow(dead_code))]
-    Tui { entrypoint: TuiEntryPoint },
-}
-
-#[cfg_attr(not(feature = "tui"), allow(dead_code))]
-enum TuiEntryPoint {
-    /// Build the root TUI view, initialize login, and start the TUI driver.
-    Interactive {
-        mount: TuiMountFn,
-        /// API key for non-interactive Warp authentication.
-        api_key: Option<String>,
-    },
-    /// Execute a CLI command after TUI-scoped app initialization, then exit.
-    CliCommand {
-        execute: Box<dyn FnOnce(&mut warpui::AppContext)>,
-    },
 }
 
 enum AuthInitialization {
@@ -347,24 +325,17 @@ impl LaunchMode {
             LaunchMode::CommandLine { .. }
             | LaunchMode::Test { .. }
             | LaunchMode::RemoteServerProxy
-            | LaunchMode::RemoteServerDaemon { .. }
-            | LaunchMode::Tui { .. } => Cow::Owned(warp_cli::AppArgs::default()),
+            | LaunchMode::RemoteServerDaemon { .. } => Cow::Owned(warp_cli::AppArgs::default()),
         }
     }
 
     fn api_key(&self) -> Option<String> {
         match self {
             LaunchMode::CommandLine { global_options, .. } => global_options.api_key.clone(),
-            LaunchMode::App { api_key, .. }
-            | LaunchMode::Tui {
-                entrypoint: TuiEntryPoint::Interactive { api_key, .. },
-            } => api_key.clone(),
+            LaunchMode::App { api_key, .. } => api_key.clone(),
             LaunchMode::Test { .. }
             | LaunchMode::RemoteServerProxy
-            | LaunchMode::RemoteServerDaemon { .. }
-            | LaunchMode::Tui {
-                entrypoint: TuiEntryPoint::CliCommand { .. },
-            } => None,
+            | LaunchMode::RemoteServerDaemon { .. } => None,
         }
     }
 
@@ -385,35 +356,13 @@ impl LaunchMode {
             LaunchMode::App { .. }
             | LaunchMode::CommandLine { .. }
             | LaunchMode::RemoteServerProxy
-            | LaunchMode::RemoteServerDaemon { .. }
-            | LaunchMode::Tui { .. } => false,
+            | LaunchMode::RemoteServerDaemon { .. } => false,
         }
     }
 
-    /// The settings surface for this launch mode. The TUI front-end gets its
-    /// own settings file and local-only (non-cloud-synced) config; every other
-    /// mode uses the standard GUI settings surface.
-    fn settings_mode(&self) -> ::settings::SettingsMode {
-        match self {
-            LaunchMode::Tui { .. } => ::settings::SettingsMode::Tui,
-            LaunchMode::App { .. }
-            | LaunchMode::CommandLine { .. }
-            | LaunchMode::Test { .. }
-            | LaunchMode::RemoteServerProxy
-            | LaunchMode::RemoteServerDaemon { .. } => ::settings::SettingsMode::Gui,
-        }
-    }
     /// The platform secure-storage service name for this launch mode.
-    ///
-    /// The TUI uses a separate namespace so it never attempts to read secrets
-    /// created by the GUI. On macOS, those items' Keychain ACLs trust the GUI's
-    /// distinct code-signing identity and would otherwise prompt for the user's
-    /// login password when the TUI accesses them.
     fn secure_storage_service_name<'a>(&self, data_domain: &'a str) -> Cow<'a, str> {
         match self {
-            LaunchMode::Tui { .. } => {
-                Cow::Owned(format!("{data_domain}{TUI_SECURE_STORAGE_SERVICE_SUFFIX}"))
-            }
             LaunchMode::App { .. }
             | LaunchMode::CommandLine { .. }
             | LaunchMode::Test { .. }
@@ -428,8 +377,7 @@ impl LaunchMode {
             LaunchMode::App { .. }
             | LaunchMode::CommandLine { .. }
             | LaunchMode::RemoteServerProxy
-            | LaunchMode::RemoteServerDaemon { .. }
-            | LaunchMode::Tui { .. } => None,
+            | LaunchMode::RemoteServerDaemon { .. } => None,
         }
     }
 
@@ -446,7 +394,6 @@ impl LaunchMode {
             LaunchMode::App { .. } => ExecutionMode::App,
             LaunchMode::CommandLine { .. } => ExecutionMode::Sdk,
             LaunchMode::Test { .. } => ExecutionMode::App,
-            LaunchMode::Tui { .. } => ExecutionMode::Tui,
             // RemoteServerProxy is a thin byte bridge; Sdk is the closest match.
             LaunchMode::RemoteServerProxy => ExecutionMode::Sdk,
             // RemoteServerDaemon gets its own mode for distinct Sentry tagging.
@@ -460,8 +407,7 @@ impl LaunchMode {
             LaunchMode::App { .. }
             | LaunchMode::Test { .. }
             | LaunchMode::RemoteServerProxy
-            | LaunchMode::RemoteServerDaemon { .. }
-            | LaunchMode::Tui { .. } => false,
+            | LaunchMode::RemoteServerDaemon { .. } => false,
         }
     }
 
@@ -470,8 +416,6 @@ impl LaunchMode {
         match self {
             LaunchMode::CommandLine { .. } => true,
             LaunchMode::RemoteServerProxy | LaunchMode::RemoteServerDaemon { .. } => true,
-            // The TUI front-end renders to the terminal, with no GUI window.
-            LaunchMode::Tui { .. } => true,
             LaunchMode::App { .. } | LaunchMode::Test { .. } => false,
         }
     }
@@ -479,7 +423,7 @@ impl LaunchMode {
     /// Whether this launch mode should start the local loopback HTTP server
     /// (`crates/http_server`), which serves app-installation detection and profiling on a
     /// fixed port. Only non-headless GUI instances start it, since co-located headless
-    /// processes (daemon, CLI, proxy, TUI) would otherwise contend for the fixed port.
+    /// processes (daemon, CLI, proxy) would otherwise contend for the fixed port.
     #[cfg_attr(target_family = "wasm", allow(dead_code))]
     fn should_start_local_http_server(&self) -> bool {
         !self.is_headless()
@@ -493,8 +437,7 @@ impl LaunchMode {
             LaunchMode::CommandLine { .. }
             | LaunchMode::Test { .. }
             | LaunchMode::RemoteServerProxy
-            | LaunchMode::RemoteServerDaemon { .. }
-            | LaunchMode::Tui { .. } => false,
+            | LaunchMode::RemoteServerDaemon { .. } => false,
         }
     }
 
@@ -506,8 +449,7 @@ impl LaunchMode {
             | LaunchMode::CommandLine { .. }
             | LaunchMode::Test { .. }
             | LaunchMode::RemoteServerDaemon { .. }
-            | LaunchMode::RemoteServerProxy
-            | LaunchMode::Tui { .. } => true,
+            | LaunchMode::RemoteServerProxy => true,
         }
     }
 
@@ -518,8 +460,7 @@ impl LaunchMode {
             | LaunchMode::CommandLine { .. }
             | LaunchMode::Test { .. }
             | LaunchMode::RemoteServerDaemon { .. }
-            | LaunchMode::RemoteServerProxy
-            | LaunchMode::Tui { .. } => true,
+            | LaunchMode::RemoteServerProxy => true,
         }
     }
 
@@ -536,16 +477,12 @@ impl LaunchMode {
             // Proxy must log to stderr because stdout is the protocol channel.
             LaunchMode::RemoteServerProxy => Some(LogDestination::Stderr),
             LaunchMode::RemoteServerDaemon { .. } => Some(LogDestination::File),
-            // A TUI owns the terminal, so logs go to a file; stdout/stderr would
-            // corrupt the rendered output and the device-code prompt.
-            LaunchMode::Tui { .. } => Some(LogDestination::File),
             LaunchMode::App { .. } | LaunchMode::Test { .. } => None,
         }
     }
 
     fn log_frontend(&self) -> LogFrontend {
         match self {
-            LaunchMode::Tui { .. } => LogFrontend::Tui,
             LaunchMode::App { .. } | LaunchMode::Test { .. } => LogFrontend::Gui,
             LaunchMode::CommandLine { .. }
             | LaunchMode::RemoteServerProxy
@@ -560,7 +497,6 @@ impl LaunchMode {
             LaunchMode::Test { .. } => "test",
             LaunchMode::RemoteServerDaemon { .. } => "remote_server_daemon",
             LaunchMode::RemoteServerProxy => "remote_server_proxy",
-            LaunchMode::Tui { .. } => "tui",
         }
     }
 }
@@ -786,57 +722,7 @@ pub fn run_integration_test(driver: TestDriver) -> Result<()> {
     run_internal(launch)
 }
 
-/// Runs the headless TUI front-end (the `warp-tui` binary in the `warp_tui`
-/// crate). Bootstraps the real (headless) app and then runs `mount`, which
-/// builds the root TUI view and starts the non-blocking TUI driver.
-///
-/// `mount` is supplied by the `warp_tui` crate (which owns the concrete root
-/// view plus the window/driver bootstrap), so `warp` never has to depend on
-/// `warp_tui`.
-#[cfg(feature = "tui")]
-pub fn run_tui(api_key: Option<String>, mount: TuiMountFn) -> Result<()> {
-    run_internal(LaunchMode::Tui {
-        entrypoint: TuiEntryPoint::Interactive { mount, api_key },
-    })
-}
-
-/// Executes a CLI command after initializing TUI-scoped settings and secure storage.
-#[cfg(feature = "tui")]
-pub fn run_tui_cli_command(execute: Box<dyn FnOnce(&mut warpui::AppContext)>) -> Result<()> {
-    run_internal(LaunchMode::Tui {
-        entrypoint: TuiEntryPoint::CliCommand { execute },
-    })
-}
-
-/// Dispatches a worker command when the current executable was re-invoked for one.
-#[cfg(feature = "tui")]
-pub fn run_tui_worker_if_requested() -> Option<Result<()>> {
-    // Worker spawners always put the worker mode in argv[1]. Do not scan later
-    // arguments because a TUI prompt value may legitimately match a worker name.
-    let is_worker = std::env::args()
-        .nth(1)
-        .is_some_and(|arg| warp_cli::is_worker_invocation(&arg));
-    if !is_worker {
-        return None;
-    }
-
-    features::init_feature_flags();
-    let args = warp_cli::Args::from_env();
-    let Some(warp_cli::Command::Worker(worker)) = args.command() else {
-        return Some(Err(anyhow!(
-            "Recognized a Warp worker invocation, but failed to parse its worker command"
-        )));
-    };
-    Some(run_worker_command(worker))
-}
-
-/// The headless TUI front-end's mount callback, carried by [`LaunchMode::Tui`].
-/// Supplied to [`run_tui`] by the `warp_tui` crate; it runs after
-/// `initialize_app` to build the root TUI view and start the TUI driver.
-pub type TuiMountFn = Box<dyn FnOnce(&mut warpui::AppContext)>;
-
-/// Runs the app (or CLI / daemon). TUI entry points run after `initialize_app`
-/// in place of the GUI/CLI `launch()` path.
+/// Runs the app (or CLI / daemon).
 fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
     let mut timer = IntervalTimer::new();
 
@@ -999,11 +885,6 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
     #[cfg(windows)]
     command::windows::init();
 
-    // Establish the settings surface (GUI vs TUI) before initializing
-    // preferences so the settings infra selects the right file name and
-    // cloud-sync behavior for this launch mode.
-    ::settings::set_settings_mode(launch_mode.settings_mode());
-
     let private_preferences = settings::init_private_user_preferences();
     let (public_preferences, startup_toml_parse_error) = settings::init_public_user_preferences();
 
@@ -1039,33 +920,10 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
     let pty_spawner =
         terminal::local_tty::spawner::PtySpawner::new().context("Failed to create pty spawner")?;
 
-    // The TUI front-end skips the GUI lifecycle callbacks, which reach for
-    // windows and GUI-only state, but still flushes telemetry and reporting on
-    // termination.
-    let callbacks = if matches!(launch_mode, LaunchMode::Tui { .. }) {
-        let mut tracing_initialization = tracing_initialization.take();
-        warpui::platform::AppCallbacks {
-            on_will_terminate: Some(Box::new(move |ctx| {
-                TelemetryCollector::handle(ctx).update(ctx, |telemetry_collector, ctx| {
-                    telemetry_collector.flush_telemetry_events_for_shutdown(ctx);
-                });
-
-                profiling::teardown();
-                if let Some(initialization) = tracing_initialization.as_mut() {
-                    initialization.shutdown();
-                }
-
-                #[cfg(feature = "crash_reporting")]
-                crash_reporting::uninit_sentry();
-            })),
-            ..Default::default()
-        }
-    } else {
-        app_callbacks(
-            launch_mode.is_integration_test(),
-            tracing_initialization.take(),
-        )
-    };
+    let callbacks = app_callbacks(
+        launch_mode.is_integration_test(),
+        tracing_initialization.take(),
+    );
     let mut app_builder = if launch_mode.is_headless() {
         warpui::platform::AppBuilder::new_headless(
             callbacks,
@@ -1079,10 +937,6 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
             launch_mode.take_test_driver(),
         )
     };
-
-    if matches!(launch_mode, LaunchMode::Tui { .. }) {
-        app_builder.enable_headless_microphone_access_query();
-    }
 
     // A headless invocation has no Dock presence, so it performs no Dock-visible
     // setup at all (Dock icon, Dock menu, menu bar). See APP-2946.
@@ -1204,12 +1058,7 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
             FeatureFlag::UseTantivySearch.set_enabled(true);
         }
 
-        match launch_mode {
-            LaunchMode::Tui { .. } => {
-                unreachable!("the TUI front-end is not part of this build")
-            }
-            other => launch(ctx, app_state, other),
-        }
+        launch(ctx, app_state, launch_mode)
     })
 }
 
@@ -1232,53 +1081,13 @@ impl StartupUserAuthentication {
     }
 }
 
-/// Whether startup user authentication should proceed without blocking on IAP.
-///
-/// The TUI front-end must not stall its startup waiting for a staging IAP token
-/// the server may not even require, so it authenticates immediately and lets IAP
-/// resolve out of band (see [`authenticate_user_after_iap_access`]). Every other
-/// front-end keeps the blocking behavior. IAP config only exists on staging
-/// builds, so this never affects production.
-fn startup_auth_is_non_blocking(launch_mode: &LaunchMode) -> bool {
-    matches!(launch_mode, LaunchMode::Tui { .. })
-}
-
 fn authenticate_user_after_iap_access(
     authentication: StartupUserAuthentication,
-    non_blocking: bool,
     ctx: &mut AppContext,
 ) {
     let iap_manager = IapManager::handle(ctx);
     if !iap_manager.as_ref(ctx).is_enabled() || iap_manager.as_ref(ctx).has_valid_token() {
         authentication.start(ctx);
-        return;
-    }
-
-    if non_blocking {
-        // Don't stall startup waiting for an IAP token the server may not even
-        // require. Authenticate immediately; if the server DOES enforce IAP, this
-        // first attempt hits an IAP challenge, which notifies `IapManager` to mint
-        // a token (`observe_iap_challenge` -> `handle_challenge`). Once a valid
-        // token lands we retry auth so login still recovers — unless the
-        // optimistic attempt already established a session.
-        authentication.clone().start(ctx);
-        let mut pending_authentication = Some(authentication);
-        ctx.subscribe_to_model(&iap_manager, move |iap_manager, event, ctx| match event {
-            IapManagerEvent::StateChanged => {
-                if !iap_manager.as_ref(ctx).has_valid_token() {
-                    return;
-                }
-                if AuthStateProvider::as_ref(ctx).get().user_id().is_some() {
-                    pending_authentication = None;
-                    return;
-                }
-                if let Some(authentication) = pending_authentication.take() {
-                    authentication.start(ctx);
-                }
-            }
-            IapManagerEvent::AccessUnavailable | IapManagerEvent::RefreshFailed { .. } => {}
-        });
-        iap_manager.update(ctx, |manager, ctx| manager.ensure_access(ctx));
         return;
     }
 
@@ -1418,9 +1227,6 @@ pub(crate) fn initialize_app(
                 identity_key: identity_key.clone(),
             }
         }
-        // The TUI keeps its own database so GUI/TUI version skew can never
-        // migrate a shared database out from under the older binary.
-        LaunchMode::Tui { .. } => persistence::PersistenceScope::Tui,
         LaunchMode::App { .. }
         | LaunchMode::CommandLine { .. }
         | LaunchMode::RemoteServerProxy
@@ -1429,7 +1235,6 @@ pub(crate) fn initialize_app(
     // Only read the subsets of persisted data this launch mode actually
     // consumes; loading everything is expensive on large databases.
     let persisted_data_scope = match launch_mode {
-        LaunchMode::Tui { .. } => persistence::PersistedDataScope::TuiFrontend,
         LaunchMode::RemoteServerDaemon { .. } => {
             persistence::PersistedDataScope::CodebaseIndicesOnly
         }
@@ -2080,9 +1885,7 @@ pub(crate) fn initialize_app(
 
     // CLI commands establish IAP access and refresh auth in their dispatch path so they can
     // surface failures synchronously. Other interactive clients gate startup user authentication
-    // on IAP here, since the request itself calls the IAP-gated warp-server — except the TUI,
-    // which authenticates immediately and resolves IAP out of band (see
-    // `startup_auth_is_non_blocking`).
+    // on IAP here, since the request itself calls the IAP-gated warp-server.
     let startup_authentication = if matches!(launch_mode, LaunchMode::CommandLine { .. }) {
         None
     } else {
@@ -2091,11 +1894,7 @@ pub(crate) fn initialize_app(
             .or_else(|| user_is_logged_in.then_some(StartupUserAuthentication::RefreshUser))
     };
     if let Some(authentication) = startup_authentication {
-        authenticate_user_after_iap_access(
-            authentication,
-            startup_auth_is_non_blocking(launch_mode),
-            ctx,
-        );
+        authenticate_user_after_iap_access(authentication, ctx);
     }
 
     // Add a singleton model that holds the current prompt configuration.
@@ -2640,9 +2439,6 @@ fn launch(ctx: &mut warpui::AppContext, app_state: Option<AppState>, launch_mode
     ctx.set_fallback_font_fn(font_fallback::fallback_font_fn);
 
     match launch_mode {
-        // The TUI front-end runs its own mount in the run closure and returns
-        // before reaching launch().
-        LaunchMode::Tui { .. } => unreachable!("LaunchMode::Tui is handled before launch()"),
         LaunchMode::App { .. } | LaunchMode::Test { .. } => {
             let should_skip_restore = launch_mode
                 .args()

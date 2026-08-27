@@ -96,15 +96,7 @@ pub fn initialize_cloud_preferences_syncer(
     let force_local_wins_on_startup =
         file_has_unsynced_changes && startup_toml_parse_error.is_none();
 
-    // The settings surface decides whether this process participates in cloud
-    // sync at all (e.g. the TUI keeps its config local).
-    let sync_enabled = settings::settings_mode().should_sync_to_cloud();
-    CloudPreferencesSyncer::new(
-        force_local_wins_on_startup,
-        toml_file_path,
-        sync_enabled,
-        ctx,
-    )
+    CloudPreferencesSyncer::new(force_local_wins_on_startup, toml_file_path, true, ctx)
 }
 
 /// Handles syncing CloudPreferences (the Warp Drive objects) and local Settings models that

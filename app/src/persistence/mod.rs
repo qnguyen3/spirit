@@ -64,10 +64,6 @@ use crate::workspaces::workspace::{Workspace as WorkspaceMetadata, WorkspaceUid}
 pub enum PersistenceScope {
     /// The GUI app (and other launch modes that share its database).
     App,
-    /// The `warp-tui` front-end, which keeps its own database so GUI/TUI
-    /// version skew can never migrate a shared database out from under the
-    /// older binary. Cloud sync is the cross-front-end sharing mechanism.
-    Tui,
     RemoteServerDaemon {
         identity_key: String,
     },
@@ -95,17 +91,13 @@ pub fn current_scope() -> PersistenceScope {
 /// Which subsets of [`PersistedData`] a launch mode actually consumes.
 ///
 /// Loading everything unconditionally is expensive (GUI session-restore
-/// payloads dominate startup on large databases), so headless launch modes
-/// opt out of the data they never read.
+/// payloads dominate startup on large databases), so the headless launch mode
+/// opts out of the data it never reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PersistedDataScope {
     /// The GUI app: everything, including window/tab/block session
     /// restoration and command history.
     Full,
-    /// The `warp-tui` front-end: command history, cloud objects, user profiles,
-    /// and agent/conversation state, but no GUI session restoration or pending
-    /// object actions.
-    TuiFrontend,
     /// The remote server daemon: only codebase index metadata.
     CodebaseIndicesOnly,
 }
@@ -116,15 +108,12 @@ impl PersistedDataScope {
         matches!(self, PersistedDataScope::Full)
     }
 
-    /// Shell-command history consumed by both interactive front-ends.
+    /// Shell-command history.
     fn command_history(self) -> bool {
-        matches!(
-            self,
-            PersistedDataScope::Full | PersistedDataScope::TuiFrontend
-        )
+        matches!(self, PersistedDataScope::Full)
     }
 
-    /// User profiles used to identify cloud-object creators in both interactive frontends.
+    /// User profiles used to identify cloud-object creators.
     fn user_profiles(self) -> bool {
         self != PersistedDataScope::CodebaseIndicesOnly
     }

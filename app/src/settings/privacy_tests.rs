@@ -1,5 +1,5 @@
 use settings::schema::SettingSchemaEntry;
-use settings::{Setting, SettingSurfaces, SettingsMode};
+use settings::{Setting, SettingSurfaces};
 
 use super::{IsCloudConversationStorageEnabled, IsCrashReportingEnabled, IsTelemetryEnabled};
 
@@ -17,7 +17,7 @@ fn privacy_settings_apply_to_gui_and_tui() {
         let surfaces = (entry.surfaces_fn)();
 
         assert_eq!(surfaces, SettingSurfaces::ALL, "{storage_key}");
-        assert!(surfaces.includes(SettingsMode::Gui), "{storage_key}");
-        assert!(surfaces.includes(SettingsMode::Tui), "{storage_key}");
+        assert!(surfaces.includes(SettingSurfaces::GUI), "{storage_key}");
+        assert!(surfaces.includes(SettingSurfaces::TUI), "{storage_key}");
     }
 }

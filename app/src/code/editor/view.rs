@@ -100,8 +100,6 @@ pub enum CodeEditorEvent {
     ContentChanged {
         origin: EditOrigin,
     },
-    /// Emitted when a unified diff computation completes.
-    UnifiedDiffComputed,
     SelectionChanged,
     SelectionStart,
     SelectionEnd,
@@ -1272,9 +1270,6 @@ impl CodeEditorView {
                     self.vim_maybe_enforce_cursor_line_cap(ctx);
                 }
                 ctx.emit(CodeEditorEvent::ContentChanged { origin: *origin });
-            }
-            CodeEditorModelEvent::UnifiedDiffComputed(_) => {
-                ctx.emit(CodeEditorEvent::UnifiedDiffComputed);
             }
             CodeEditorModelEvent::ViewportUpdated(version) => {
                 if let Some(trigger) = self

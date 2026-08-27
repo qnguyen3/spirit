@@ -26,8 +26,6 @@ pub enum LocalCodeEditorEvent {
     #[allow(dead_code)]
     FailedToSave { error: Arc<FileSaveError> },
     #[allow(dead_code)]
-    DiffAccepted,
-    #[allow(dead_code)]
     VimMinimizeRequested,
     #[allow(dead_code)]
     UserEdited,

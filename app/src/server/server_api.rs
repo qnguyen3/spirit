@@ -5,8 +5,6 @@ pub mod managed_secrets;
 pub mod object;
 pub mod referral;
 pub mod team;
-#[cfg(feature = "tui")]
-pub mod tui_onboarding;
 pub mod workspace;
 
 use std::ops::Deref;
@@ -27,8 +25,6 @@ use referral::ReferralsClient;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use team::TeamClient;
-#[cfg(feature = "tui")]
-use tui_onboarding::TuiOnboardingClient;
 use url::Url;
 use warp_core::context_flag::ContextFlag;
 use warp_core::telemetry::TelemetryEvent;
@@ -162,7 +158,7 @@ impl ServerApi {
         }
     }
 
-    #[cfg(any(test, all(feature = "tui", feature = "test-util")))]
+    #[cfg(test)]
     fn new_for_test() -> Self {
         let (tx, _) = async_channel::unbounded();
         let auth_state = Arc::new(AuthState::new_for_test());
@@ -558,7 +554,7 @@ impl ServerApiProvider {
     }
 
     /// Constructs a new SeverApiProvider for tests.
-    #[cfg(any(test, all(feature = "tui", feature = "test-util")))]
+    #[cfg(test)]
     pub fn new_for_test() -> Self {
         let server_api = Arc::new(ServerApi::new_for_test());
         let auth_client = Arc::new(AuthClientImpl::new(server_api.base_client.clone()));
@@ -591,10 +587,6 @@ impl ServerApiProvider {
     }
 
     pub fn get_team_client(&self) -> Arc<dyn TeamClient> {
-        self.server_api.clone()
-    }
-    #[cfg(feature = "tui")]
-    pub fn get_tui_onboarding_client(&self) -> Arc<dyn TuiOnboardingClient> {
         self.server_api.clone()
     }
 
