@@ -291,7 +291,7 @@ pub(super) fn add_input_suggestions_overlays(
         // SlashCommandsMenu is rendered separately via inline_slash_commands_menu_view
         InputSuggestionsMode::SlashCommands => {}
         // Inline history menu is rendered separately via inline_history_menu_view
-        InputSuggestionsMode::InlineHistoryMenu { .. } => {}
+        InputSuggestionsMode::InlineHistoryMenu => {}
         InputSuggestionsMode::Closed => {}
     }
 }

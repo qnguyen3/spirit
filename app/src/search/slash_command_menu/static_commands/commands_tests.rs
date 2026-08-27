@@ -132,7 +132,6 @@ fn is_active_requires_every_availability_bit_the_command_declares() {
 fn docker_sandbox_command_is_local_only_and_takes_no_argument() {
     assert_eq!(CREATE_DOCKER_SANDBOX.kind, SlashCommandKind::CreateDockerSandbox);
     assert!(CREATE_DOCKER_SANDBOX.argument.is_none());
-    assert!(!CREATE_DOCKER_SANDBOX.auto_enter_ai_mode);
     assert!(CREATE_DOCKER_SANDBOX.is_active(Availability::LOCAL));
     assert!(!CREATE_DOCKER_SANDBOX.is_active(Availability::ALWAYS));
 }

@@ -2002,11 +2002,9 @@ impl Input {
                 // Snapshot the current input so we can restore it after the command completes.
                 let current_input = self.buffer_text(ctx);
                 if self.try_execute_command_from_source(&command, CommandExecutionSource::User, ctx)
-                {
-                    if !current_input.is_empty() {
+                    && !current_input.is_empty() {
                         self.input_contents_before_prompt_chip_command = Some(current_input);
                     }
-                }
             }
         }
     }
@@ -2598,8 +2596,7 @@ impl Input {
             .set_cloud_env_var_state(env_var_collection_id);
 
 
-        let did_execute: bool;
-        if self
+        let did_execute = if self
             .model
             .lock()
             .block_list()
@@ -2627,14 +2624,14 @@ impl Input {
             }
 
             self.start_block_and_write_command_to_pty(command, source, ctx);
-            did_execute = true;
+            true
         } else {
             // We don't want to submit the command if precmd has not
             // been received. Instead, we want the user to be aware
             // that the prompt might not be up to date.
             send_telemetry_from_ctx!(TelemetryEvent::TriedToExecuteBeforePrecmd, ctx);
-            did_execute = false;
-        }
+            false
+        };
 
         // Close the workflows info box if it was open.
         self.clear_selected_workflow(ctx);

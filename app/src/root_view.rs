@@ -137,7 +137,6 @@ fn offer_variant_for_account_class(account_class: FtueAccountClass) -> Option<Of
 
 /// Whether the team selected in `ctx`'s window imposes any AI autonomy policy, which is
 /// what decides whether onboarding offers the user an autonomy choice at all.
-
 fn current_onboarding_auth_state(ctx: &AppContext) -> OnboardingAuthState {
     let auth_state = AuthStateProvider::as_ref(ctx).get();
     if auth_state.is_anonymous_or_logged_out() {

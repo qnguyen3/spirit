@@ -4245,10 +4245,10 @@ fn resolved_terminal_working_directory(
     terminal_view: &TerminalView,
     app: &AppContext,
 ) -> Option<String> {
-    let working_directory = terminal_view
+    
+    terminal_view
         .display_working_directory(app)
-        .filter(|wd| !wd.trim().is_empty());
-    working_directory
+        .filter(|wd| !wd.trim().is_empty())
 }
 
 fn render_terminal_row_content(
