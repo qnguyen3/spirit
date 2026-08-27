@@ -13,8 +13,6 @@ use crate::server::server_api::ServerApiProvider;
 
 #[cfg(not(target_family = "wasm"))]
 pub mod auth_context;
-#[cfg(not(target_family = "wasm"))]
-mod codebase_index_status;
 pub mod diff_state_proto;
 #[cfg(not(target_family = "wasm"))]
 pub mod diff_state_tracker;
