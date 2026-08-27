@@ -16,8 +16,8 @@ use crate::code_review::comments::{
 use crate::context_chips::prompt::Prompt;
 use crate::editor::{AutosuggestionLocation, AutosuggestionType};
 use crate::features::FeatureFlag;
-use crate::pane_group::TerminalPaneId;
 use crate::pane_group::focus_state::PaneGroupFocusState;
+use crate::pane_group::{BackingView, TerminalPaneId};
 use crate::settings::{AppEditorSettings, RightClickBehavior, WarpPromptSeparator};
 use crate::terminal::alt_screen::should_intercept_mouse;
 use crate::terminal::block_list_element::{SnackbarPoint, SnackbarTranslationMode};
@@ -40,7 +40,6 @@ use crate::test_util::terminal::{
 };
 use crate::test_util::{add_window_with_terminal, assert_eventually};
 use crate::view_components::find::FindWithinBlockState;
-use crate::workspace::ToastStack;
 
 #[test]
 fn cmd_up_walks_ordinary_block_selection() {
@@ -3821,11 +3820,11 @@ fn copy_forwards_etx_to_pty_on_linux_alt_screen_without_warp_selection() {
             }
             assert_eq!("", &read_from_clipboard(ctx));
 
-            // No CLI-subagent / error-screen / grid / input-editor / block
-            // selection exists, so `copy()` reaches the new fallback. The clipboard
-            // is written synchronously, but `WriteBytesToPty` events are dispatched
-            // after the update closure returns, so the PTY-write assertion is made
-            // outside the closure (mirroring `ctrl_c_after_stop_takeover_cancels_conversation`).
+            // No error-screen / grid / input-editor / block selection exists, so
+            // `copy()` reaches the new fallback. The clipboard is written
+            // synchronously, but `WriteBytesToPty` events are dispatched after the
+            // update closure returns, so the PTY-write assertion is made outside the
+            // closure.
             view.handle_action(&TerminalAction::Copy, ctx);
 
             assert_eq!(

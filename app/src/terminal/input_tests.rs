@@ -57,7 +57,7 @@ use crate::terminal::general_settings::UserDefaultShellUnsupportedBannerState;
 use crate::terminal::input::slash_commands::SlashCommandsEvent;
 use crate::terminal::local_shell::LocalShellState;
 use crate::terminal::local_tty::shell::ShellStarter;
-use crate::terminal::model::ansi::PromptMetadata;
+use crate::terminal::model::ansi::{Handler, PromptMetadata};
 use crate::terminal::model::block::SerializedBlock;
 use crate::terminal::model::blocks::{BlockListPoint, insert_block};
 use crate::terminal::model::grid::Dimensions as _;
