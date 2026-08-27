@@ -78,7 +78,7 @@ use {
 };
 
 const PAGE_TITLE_TEXT: &str = "Environments";
-const PAGE_DESCRIPTION_TEXT: &str = "Environments define where your ambient agents run. Set one up in minutes via GitHub (recommended), Warp-assisted setup, or manual configuration.";
+const PAGE_DESCRIPTION_TEXT: &str = "Environments define where your ambient agents run. Set one up in minutes via GitHub (recommended) or manual configuration.";
 const CARD_BORDER_WIDTH: f32 = 1.;
 const CARD_PADDING: f32 = 16.;
 const CARD_SPACING: f32 = 12.;
@@ -203,6 +203,73 @@ impl EnvironmentDisplayData {
     }
 }
 
+impl StringModel for AmbientAgentEnvironment {
+    type CloudObjectType = CloudAmbientAgentEnvironment;
+
+    fn model_type_name(&self) -> &'static str {
+        "Cloud environment"
+    }
+
+    fn should_enforce_revisions() -> bool {
+        true
+    }
+
+    fn model_format() -> GenericStringObjectFormat {
+        GenericStringObjectFormat::Json(JsonObjectType::CloudEnvironment)
+    }
+
+    fn display_name(&self) -> String {
+        self.name.clone()
+    }
+
+    // The sync queue no longer has an environment-update item, so enqueue a create the server
+    // rejects; anything that still drains pending environment edits fails gracefully instead of
+    // panicking.
+    fn update_object_queue_item(
+        &self,
+        _revision_ts: Option<Revision>,
+        object: &CloudAmbientAgentEnvironment,
+    ) -> QueueItem {
+        QueueItem::CreateObject {
+            object_type: ObjectType::GenericStringObject(Self::model_format()),
+            owner: object.permissions.owner,
+            id: ClientId::default(),
+            title: None,
+            serialized_model: Some(Arc::new(object.model().serialized())),
+            initial_folder_id: None,
+            entrypoint: Default::default(),
+            initiated_by: InitiatedBy::User,
+        }
+    }
+
+    fn uniqueness_key(&self) -> Option<GenericStringObjectUniqueKey> {
+        None
+    }
+
+    fn should_show_activity_toasts() -> bool {
+        false
+    }
+
+    fn warn_if_unsaved_at_quit() -> bool {
+        true
+    }
+}
+
+fn owner_for_new_personal_environment(app: &AppContext) -> Option<Owner> {
+    let user_id = AuthStateProvider::as_ref(app).get().user_id()?;
+    Some(Owner::User { user_uid: user_id })
+}
+
+fn owner_for_new_environment(app: &AppContext) -> Option<Owner> {
+    match UserWorkspaces::as_ref(app)
+        .team_for_view(app)
+        .map(|team| team.uid)
+    {
+        Some(team_uid) => Some(Owner::Team { team_uid }),
+        None => owner_for_new_personal_environment(app),
+    }
+}
+
 pub struct EnvironmentsPageView {
     self_handle: WeakViewHandle<Self>,
     page: PageType<Self>,
@@ -218,7 +285,6 @@ pub struct EnvironmentsPageView {
     search_query: String,
     search_editor: ViewHandle<EditorView>,
     empty_state_github_repos_button_mouse_state: MouseStateHandle,
-    empty_state_local_repos_button_mouse_state: MouseStateHandle,
     // Track pending save to show success toast when complete
     pending_save_env_id: Option<SyncId>,
     // Track pending create to show success toast when complete
@@ -463,7 +529,6 @@ impl EnvironmentsPageView {
             search_query: String::new(),
             search_editor,
             empty_state_github_repos_button_mouse_state: MouseStateHandle::default(),
-            empty_state_local_repos_button_mouse_state: MouseStateHandle::default(),
             pending_save_env_id: None,
             pending_create_client_id: None,
             pending_delete_env_id: None,
@@ -736,60 +801,6 @@ impl EnvironmentsPageView {
         }
     }
 
-    fn open_agent_assisted_environment_modal(&mut self, ctx: &mut ViewContext<Self>) {
-        self.agent_assisted_environment_modal
-            .update(ctx, |modal, ctx| {
-                modal.show(ctx);
-            });
-        ctx.emit(SettingsPageEvent::AgentAssistedEnvironmentModalToggled { is_open: true });
-        ctx.notify();
-    }
-
-    fn open_environment_setup_mode_selector(&mut self, ctx: &mut ViewContext<Self>) {
-        if self.is_environment_setup_mode_selector_open {
-            return;
-        }
-
-        self.is_environment_setup_mode_selector_open = true;
-        ctx.focus(&self.environment_setup_mode_selector);
-        ctx.emit(SettingsPageEvent::EnvironmentSetupModeSelectorToggled { is_open: true });
-        ctx.notify();
-    }
-
-    fn close_environment_setup_mode_selector(&mut self, ctx: &mut ViewContext<Self>) {
-        if !self.is_environment_setup_mode_selector_open {
-            return;
-        }
-
-        self.is_environment_setup_mode_selector_open = false;
-        ctx.emit(SettingsPageEvent::EnvironmentSetupModeSelectorToggled { is_open: false });
-        ctx.notify();
-    }
-
-    fn handle_environment_setup_mode_selector_event(
-        &mut self,
-        event: &EnvironmentSetupModeSelectorEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            EnvironmentSetupModeSelectorEvent::Selected(mode) => {
-                self.close_environment_setup_mode_selector(ctx);
-
-                match mode {
-                    EnvironmentSetupMode::RemoteGitHub => {
-                        self.update_page(EnvironmentsPage::Create, ctx);
-                    }
-                    EnvironmentSetupMode::LocalRepositories => {
-                        self.open_agent_assisted_environment_modal(ctx);
-                    }
-                }
-            }
-            EnvironmentSetupModeSelectorEvent::Dismissed => {
-                self.close_environment_setup_mode_selector(ctx);
-                self.focus(ctx);
-            }
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -800,8 +811,6 @@ pub enum EnvironmentsPageAction {
     StartGithubAuth,
     CopyEnvId(SyncId, String),
     OpenCreatePage,
-    OpenAgentAssistedCreateModal,
-    OpenEnvironmentSetupModeSelector,
     ShareToTeam(SyncId),
 }
 impl Entity for EnvironmentsPageView {
@@ -853,12 +862,6 @@ impl TypedActionView for EnvironmentsPageView {
             }
             EnvironmentsPageAction::OpenCreatePage => {
                 self.update_page(EnvironmentsPage::Create, ctx);
-            }
-            EnvironmentsPageAction::OpenAgentAssistedCreateModal => {
-                self.open_agent_assisted_environment_modal(ctx);
-            }
-            EnvironmentsPageAction::OpenEnvironmentSetupModeSelector => {
-                self.open_environment_setup_mode_selector(ctx);
             }
             EnvironmentsPageAction::ShareToTeam(env_id) => {
                 let Some(team_uid) = UserWorkspaces::as_ref(ctx)
@@ -1339,23 +1342,6 @@ impl EnvironmentsPageWidget {
             github_button_action,
         );
 
-        let local_repos_button = Self::render_empty_state_button(
-            appearance,
-            "Launch agent",
-            ButtonVariant::Secondary,
-            view.empty_state_local_repos_button_mouse_state.clone(),
-            true,
-            Some(EnvironmentsPageAction::OpenAgentAssistedCreateModal),
-        );
-        let local_repos_button_compact = Self::render_empty_state_button(
-            appearance,
-            "Launch agent",
-            ButtonVariant::Secondary,
-            view.empty_state_local_repos_button_mouse_state.clone(),
-            true,
-            Some(EnvironmentsPageAction::OpenAgentAssistedCreateModal),
-        );
-
         let github_row = Self::render_empty_state_row(
             appearance,
             EmptyStateRowConfig {
@@ -1369,25 +1355,11 @@ impl EnvironmentsPageWidget {
             },
         );
 
-        let local_repos_row = Self::render_empty_state_row(
-            appearance,
-            EmptyStateRowConfig {
-                icon: Icon::Terminal,
-                title: "Use the agent",
-                badge: None,
-                subtitle: "Choose a locally set up project and we’ll help you set up an environment based on it",
-                action_button: local_repos_button,
-                compact_action_button: local_repos_button_compact,
-                icon_size,
-            },
-        );
-
         let rows = ConstrainedBox::new(
             Flex::column()
                 .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
                 .with_spacing(8.)
                 .with_child(github_row)
-                .with_child(local_repos_row)
                 .finish(),
         )
         .with_max_width(DROPDOWN_MAX_WIDTH * EMPTY_STATE_MAX_WIDTH_RATIO)

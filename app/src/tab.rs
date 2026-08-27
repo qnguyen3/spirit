@@ -27,7 +27,6 @@ use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 use warpui::ui_components::text_input::TextInput;
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity, ViewHandle};
 
-use crate::BlocklistAIHistoryModel;
 use crate::appearance::Appearance;
 /// Tab module contains structures related to Tabs (such as TabData or TabComponent) that simplify
 /// the rendering and management of tabs in general.
@@ -37,6 +36,8 @@ use crate::launch_configs::launch_config::LaunchConfig;
 use crate::menu::{MenuAction, MenuItem, MenuItemFields};
 use crate::pane_group::{PaneGroup, PaneId};
 use crate::shell_indicator::ShellIndicatorType;
+use crate::terminal::CLIAgent;
+use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::shared_session::SharedSessionStatus;
 use crate::terminal::shared_session::manager::Manager;
 use crate::terminal::shared_session::render_util::shared_session_indicator_color;
@@ -1300,30 +1301,16 @@ impl<'a> TabComponent<'a> {
         self
     }
 
-    /// Returns the agent indicator for the focused session's active conversation,
-    /// or `None` if there is no non-empty, non-passive conversation to display.
-    /// When a shell command is long-running the status is overridden to
-    /// `InProgress`, matching vertical-tab behavior.
+    /// Returns the agent indicator for the focused session's CLI agent session, or `None`
+    /// if the focused session is not running a known CLI agent.
     fn agent_indicator(tab: &TabData, app: &AppContext) -> Option<Indicator> {
         let terminal_view = tab.pane_group.as_ref(app).focused_session_view(app)?;
-        let terminal_view_ref = terminal_view.as_ref(app);
-        let is_long_running = terminal_view_ref.is_long_running();
-        let conversation =
-            BlocklistAIHistoryModel::as_ref(app).active_conversation(terminal_view_ref.id())?;
-
-        // Show in-progress indicator when a shell command is running in the AgentView.
-        // This matches vertical-tab behavior.
-        if is_long_running {
-            return Some(Indicator::Agent {
-                conversation_status: Some(ConversationStatus::InProgress),
-            });
-        }
-
-        if conversation.is_empty() || conversation.is_entirely_passive() {
+        let session = CLIAgentSessionsModel::as_ref(app).session(terminal_view.id())?;
+        if matches!(session.agent, CLIAgent::Unknown) {
             return None;
         }
-
-        let conversation_status = Some(conversation.status().clone());
+        let conversation_status = (session.listener.is_some() && session.supports_rich_status())
+            .then(|| session.status.to_conversation_status());
         Some(Indicator::Agent {
             conversation_status,
         })
@@ -1361,11 +1348,9 @@ impl<'a> TabComponent<'a> {
         ctx: &AppContext,
     ) -> Option<String> {
         if Self::is_agent_task_indicator(indicator) {
-            return Self::get_agent_task_tooltip_message(tab, ctx);
+            return None;
         }
 
-        // If we're not showing the conversation title in the tooltip,
-        // use the original title from the terminal model.
         let original_title = tab
             .pane_group
             .as_ref(ctx)
@@ -1378,31 +1363,6 @@ impl<'a> TabComponent<'a> {
         }
 
         None
-    }
-
-    /// Get the task description for the tooltip if this is an agent task
-    /// and the tooltip content would be different from what's displayed in the tab
-    fn get_agent_task_tooltip_message(tab: &TabData, ctx: &AppContext) -> Option<String> {
-        let terminal_view_id = tab
-            .pane_group
-            .as_ref(ctx)
-            .focused_session_view(ctx)
-            .map(|view| view.id())?;
-        let ai_history_model = BlocklistAIHistoryModel::as_ref(ctx);
-        let conversation = ai_history_model.active_conversation(terminal_view_id)?;
-
-        // Don't show tooltip for passive conversations
-        if conversation.is_entirely_passive() {
-            return None;
-        }
-
-        let conversation_title = conversation.title()?;
-        let trimmed_title = conversation_title.trim().to_owned();
-
-        // Truncate tooltip to prevent rendering issues
-        let truncated_name = truncate_from_end(&trimmed_title, MAX_TOOLTIP_LENGTH);
-
-        Some(truncated_name)
     }
 
     /// Check if the given indicator is an agent task indicator

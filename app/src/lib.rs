@@ -151,7 +151,6 @@ use terminal::keys_settings::KeysSettings;
 #[cfg(all(not(target_family = "wasm"), feature = "local_tty"))]
 use terminal::local_shell::LocalShellState;
 pub use util::bindings::cmd_or_ctrl_shift;
-use warp_cli::agent::AgentCommand;
 use warp_cli::{CliCommand, GlobalOptions};
 #[cfg(feature = "local_fs")]
 use watcher::HomeDirectoryWatcher;
@@ -509,10 +508,7 @@ impl LaunchMode {
     /// Returns `true` if Warp should run headlessly, without a visible UI.
     fn is_headless(&self) -> bool {
         match self {
-            LaunchMode::CommandLine { command, .. } => match command {
-                CliCommand::Agent(AgentCommand::Run(args)) => !args.gui,
-                _ => true,
-            },
+            LaunchMode::CommandLine { .. } => true,
             LaunchMode::RemoteServerProxy | LaunchMode::RemoteServerDaemon { .. } => true,
             // The TUI front-end renders to the terminal, with no GUI window.
             LaunchMode::Tui { .. } => true,
@@ -532,9 +528,7 @@ impl LaunchMode {
     /// Returns `true` if this process can build and sync codebase indices.
     fn supports_indexing(&self) -> bool {
         match self {
-            LaunchMode::CommandLine { command, .. } => {
-                matches!(command, CliCommand::Agent(AgentCommand::Run { .. }))
-            }
+            LaunchMode::CommandLine { .. } => false,
             LaunchMode::RemoteServerDaemon { .. } => {
                 FeatureFlag::RemoteCodebaseIndexing.is_enabled()
             }
@@ -734,14 +728,6 @@ pub fn run() -> Result<()> {
                     ));
                 }
 
-                let (is_sandboxed, computer_use_override) = match cmd.as_ref() {
-                    warp_cli::CliCommand::Agent(warp_cli::agent::AgentCommand::Run(run_args)) => (
-                        run_args.sandboxed,
-                        run_args.computer_use.computer_use_override(),
-                    ),
-                    _ => (false, None),
-                };
-
                 return run_internal(LaunchMode::CommandLine {
                     command: cmd.as_ref().clone(),
                     global_options: GlobalOptions {
@@ -749,8 +735,8 @@ pub fn run() -> Result<()> {
                         api_key: args.api_key().cloned(),
                     },
                     debug: args.debug(),
-                    is_sandboxed,
-                    computer_use_override,
+                    is_sandboxed: false,
+                    computer_use_override: None,
                 });
             }
             warp_cli::Command::DumpDebugInfo => {

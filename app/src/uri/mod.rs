@@ -16,7 +16,7 @@ use url::Url;
 use warp_util::path::LineAndColumnArg;
 use warpui::notification::UserNotification;
 use warpui::platform::TerminationMode;
-use warpui::{AppContext, EntityId, SingletonEntity as _, TypedActionView, ViewHandle, WindowId};
+use warpui::{AppContext, SingletonEntity as _, TypedActionView, WindowId};
 
 use self::docker::open_docker_container;
 use crate::auth::github_auth_notifier::GitHubAuthNotifier;
@@ -24,10 +24,7 @@ use crate::cloud_object::ObjectType;
 use crate::drive::{OpenWarpDriveObjectArgs, OpenWarpDriveObjectSettings};
 use crate::features::FeatureFlag;
 use crate::launch_configs::launch_config::LaunchConfig;
-use crate::root_view::{
-    NewWorkspaceSource, OpenLaunchConfigArg, open_new_window_get_handles,
-    open_new_with_workspace_source,
-};
+use crate::root_view::{OpenLaunchConfigArg, open_new_window_get_handles};
 use crate::server::ids::ServerId;
 use crate::server::telemetry::{LaunchConfigUiLocation, TelemetryEvent};
 use crate::settings_view::{
