@@ -6,7 +6,7 @@
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::{Fill, WarpTheme};
 use warpui::color::ColorU;
-use warpui::{AppContext, SingletonEntity};
+use warpui::{AppContext, Element, SingletonEntity};
 
 use crate::search::result_renderer::ItemHighlightState;
 
@@ -70,8 +70,8 @@ pub fn render_keystroke_with_color_overrides(
     color: Option<ColorU>,
     background_color: Option<ColorU>,
     app: &AppContext,
-) -> Box<dyn warpui::Element> {
-    use warpui::ui_components::components::{Coords, UiComponentStyles};
+) -> Box<dyn Element> {
+    use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 
     use crate::ui_components::blended_colors;
 

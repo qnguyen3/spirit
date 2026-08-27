@@ -28,7 +28,7 @@ use crate::terminal::input::inline_menu::{InlineMenuAction, InlineMenuType};
 use crate::terminal::input::slash_command_model::{
     SlashCommandEntryState, UpdatedSlashCommandModel,
 };
-use crate::terminal::input::{CompletionsTrigger, Event, Input, InputAction, InputSuggestionsMode};
+use crate::terminal::input::{CompletionsTrigger, Event, Input, InputSuggestionsMode};
 #[cfg(feature = "local_fs")]
 use crate::terminal::model::session::Session;
 use crate::terminal::view::TerminalAction;

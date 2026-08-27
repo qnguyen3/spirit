@@ -1,7 +1,7 @@
 mod serialized_block;
 
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::io;
 use std::iter::DoubleEndedIterator;
 use std::num::NonZeroUsize;
@@ -17,7 +17,6 @@ use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::Vector2F;
 pub use serialized_block::*;
 use warp_core::command::ExitCode;
-use warp_core::features::FeatureFlag;
 use warp_errors::report_error;
 use warp_terminal::model::grid::Dimensions as _;
 use warp_terminal::model::{KeyboardModes, KeyboardModesApplyBehavior};
@@ -256,19 +255,8 @@ pub struct Block {
     /// track the count of discarded newlines here in order to correct the row number.
     leading_linefeeds_ignored: usize,
 
-    /// `true` if client-side telemetry for user-generated AI data is enabled.
-
     /// Only set on restored blocks. Indicates whether the block was local or from a remote session.
     restored_block_was_local: Option<bool>,
-
-    /// Tracks which views (terminal and/or agent conversations) this block should be visible in.
-    ///
-    /// This is only used if `FeatureFlag::AgentView` is enabled.
-
-    /// Whether natural language detection (NLD) was overridden (i.e., the user had manually locked
-    /// the input type) at the time this block's command was submitted.
-    ///
-    /// This is used for debugging UI shown in the block header on dogfood builds.
 
     visible_bootstrap_block_event_sent: bool,
 }
@@ -429,7 +417,7 @@ impl From<&Block> for BlockType {
                             id,
                             Block::compute_output_truncated_with_obfuscated_secrets
                         ),
-                        block.agent_interaction_metadata().is_some(),
+                        false,
                         block.command_start_time(),
                         block.output_grid().len() as u64,
                         block.output_grid().grid_handler().num_lines_truncated(),

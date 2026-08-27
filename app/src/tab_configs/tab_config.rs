@@ -363,9 +363,9 @@ fn resolve_pane_node(
             .ok_or_else(|| format!("leaf pane '{}' is missing required 'type' field", node.id))?;
 
         let pane_mode = match pane_type {
-            TabConfigPaneType::Terminal => PaneMode::Terminal,
-            TabConfigPaneType::Agent => PaneMode::Agent,
-            TabConfigPaneType::Cloud => PaneMode::Cloud,
+            TabConfigPaneType::Terminal
+            | TabConfigPaneType::Agent
+            | TabConfigPaneType::Cloud => PaneMode::Terminal,
         };
 
         let cwd = node

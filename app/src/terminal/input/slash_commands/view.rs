@@ -122,7 +122,6 @@ impl InlineSlashCommandView {
                 | SlashCommandEntryState::SlashCommand(_) => {
                     me.run_query_for_current_slash_filter(ctx);
                 }
-                _ => (),
             }
         });
 

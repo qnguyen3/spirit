@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::ops::Range;
 
 use string_offset::CharOffset;
-use warp_core::features::FeatureFlag;
 use warp_core::settings::Setting;
 use warp_errors::report_error;
 use warpui::color::ColorU;
@@ -29,7 +28,7 @@ use super::command_parser::{
 };
 use super::workflow::Argument;
 use super::workflow_view::env_var_selector::{EnvVarSelector, EnvVarSelectorEvent};
-use super::{AIWorkflowOrigin, CloudWorkflow};
+use super::CloudWorkflow;
 use crate::appearance::Appearance;
 use crate::cloud_object::CloudObjectMetadataExt;
 use crate::cloud_object::model::actions::{ObjectActionType, ObjectActions};
@@ -137,7 +136,6 @@ struct ButtonMouseStates {
     close: MouseStateHandle,
     collapse: MouseStateHandle,
     view_context: MouseStateHandle,
-    save_as_workflow: MouseStateHandle,
     edit_cloud_workflow: MouseStateHandle,
     reset_command: MouseStateHandle,
     add_env_var_collection: MouseStateHandle,
@@ -532,21 +530,6 @@ impl WorkflowsMoreInfoView {
             .finish()
     }
 
-    fn render_save_workflow_button(&self, appearance: &Appearance) -> Box<dyn Element> {
-        let workflow = self.workflow.as_workflow().to_owned();
-        render_hoverable_card_button(
-            icons::Icon::Workflow,
-            Some("Save as workflow".to_string()),
-            self.button_mouse_states.save_as_workflow.clone(),
-            move |ctx, _, _| {
-                ctx.dispatch_typed_action(TerminalAction::OpenWorkflowModalForAIWorkflow(
-                    workflow.clone(),
-                ));
-            },
-            appearance,
-        )
-    }
-
     fn render_close_workflow_button(&self, appearance: &Appearance) -> Box<dyn Element> {
         render_hoverable_card_button(
             icons::Icon::X,
@@ -711,10 +694,6 @@ impl WorkflowsMoreInfoView {
 
                 let edit_button = self.render_edit_button(cloud_workflow, appearance);
                 row_content.add_children([edit_button, collapse_button, close_button]);
-            }
-            WorkflowType::AIGenerated { .. } => {
-                let save_as_workflow_button = self.render_save_workflow_button(appearance);
-                row_content.add_children([save_as_workflow_button, collapse_button, close_button]);
             }
             _ => row_content.add_children([collapse_button, close_button]),
         };
@@ -908,11 +887,7 @@ impl WorkflowsMoreInfoView {
         appearance: &Appearance,
     ) -> Box<dyn Element> {
         match &self.workflow {
-            WorkflowType::AIGenerated {
-                workflow,
-                origin: source,
-            } => {
-                let _ = source;
+            WorkflowType::AIGenerated { workflow, .. } => {
                 let icon =
                     Icon::new(icons::Icon::Prompt.into(), appearance.theme().accent()).finish();
 

@@ -3,7 +3,6 @@ use std::sync::Arc;
 use pathfinder_geometry::vector::vec2f;
 use vim::vim::{VimMode, VimState};
 use warp_completer::completer::Description;
-use warp_core::features::FeatureFlag;
 use warpui::elements::{
     AnchorPair, Border, ChildAnchor, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
     DispatchEventResult, Element, EventHandler, Flex, OffsetPositioning, OffsetType, ParentAnchor,
@@ -13,25 +12,18 @@ use warpui::elements::{
 use warpui::fonts::Weight;
 use warpui::presenter::ChildView;
 use warpui::ui_components::components::{UiComponent, UiComponentStyles};
-use warpui::{AppContext, EntityId, SingletonEntity, ViewHandle};
+use warpui::{AppContext, SingletonEntity, ViewHandle};
 
 use crate::appearance::Appearance;
-use crate::settings::{InputSettings};
+use crate::settings::InputSettings;
 use crate::terminal::input::{Input, InputAction, InputSuggestionsMode, MenuPositioning};
-use crate::terminal::model::TerminalModel;
 use crate::terminal::view::{PADDING_LEFT, TerminalAction};
 use crate::ui_components::icons::Icon;
-use crate::workspaces::user_workspaces::{TeamScope, UserWorkspaces};
 
 /// Whether the terminal input message bar should be shown.
 ///
-/// The message bar is hidden when AI is disabled, the user has turned it off in settings,
-/// or the session is a shared ambient agent session.
-pub(super) fn should_show_terminal_input_message_bar(
-    model: &TerminalModel,
-    app: &AppContext,
-) -> bool {
-    let _ = model;
+/// The message bar is hidden when the user has turned it off in settings.
+pub(super) fn should_show_terminal_input_message_bar(app: &AppContext) -> bool {
     InputSettings::as_ref(app).is_terminal_input_message_bar_enabled()
 }
 
@@ -298,24 +290,8 @@ pub(super) fn add_input_suggestions_overlays(
         }
         // SlashCommandsMenu is rendered separately via inline_slash_commands_menu_view
         InputSuggestionsMode::SlashCommands => {}
-        // Conversation menu is rendered separately via inline_conversation_menu_view
-        InputSuggestionsMode::ConversationMenu => {}
-        // Model selector is rendered separately via inline_model_selector_view
-        InputSuggestionsMode::ModelSelector => {}
-        // Profile selector is rendered separately via inline_profile_selector_view
-        InputSuggestionsMode::ProfileSelector => {}
-        // Prompts menu is rendered separately via inline_prompts_menu_view
-        InputSuggestionsMode::PromptsMenu => {}
-        // Skill menu is rendered separately via inline_skill_selector_view
-        InputSuggestionsMode::SkillMenu => {}
-        // User query menu is rendered separately via user_query_menu_view
-        InputSuggestionsMode::UserQueryMenu { .. } => {}
         // Inline history menu is rendered separately via inline_history_menu_view
         InputSuggestionsMode::InlineHistoryMenu { .. } => {}
-        // Repos menu is rendered separately via inline_repos_menu_view
-        InputSuggestionsMode::IndexedReposMenu => {}
-        // Plan menu is rendered separately via inline_plan_menu_view
-        InputSuggestionsMode::PlanMenu { .. } => {}
         InputSuggestionsMode::Closed => {}
     }
 }

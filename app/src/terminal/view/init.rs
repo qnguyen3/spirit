@@ -1,7 +1,7 @@
 use warp_core::context_flag::ContextFlag;
 use warpui::AppContext;
 use warpui::keymap::{
-    BindingDescription, ContextPredicate, EditableBinding, FixedBinding, PerPlatformKeystroke,
+    BindingDescription, EditableBinding, FixedBinding, PerPlatformKeystroke,
 };
 use warpui::platform::OperatingSystem;
 use warpui::units::IntoLines;
@@ -15,7 +15,6 @@ use crate::terminal::TerminalView;
 use crate::terminal::model::escape_sequences::{self, EscCodes};
 use crate::terminal::model::selection::SelectionDirection;
 use crate::terminal::shared_session::{SharedSessionActionSource, SharedSessionStatus};
-use crate::util::bindings;
 use crate::util::bindings::{CustomAction, cmd_or_ctrl_shift, is_binding_pty_compliant};
 
 pub const TOGGLE_BLOCK_FILTER_KEYBINDING: &str =
@@ -26,14 +25,10 @@ pub const CANCEL_COMMAND_KEYBINDING: &str = "terminal:cancel_command";
 const SELECT_NEXT_BLOCK_ACTION_NAME: &str = "terminal:select_next_block";
 pub const SELECT_PREVIOUS_BLOCK_ACTION_NAME: &str = "terminal:select_previous_block";
 
-pub const CAN_RESUME_CONVERSATION_KEY: &str = "CanResumeConversation";
-pub const CAN_FORK_FROM_LAST_KNOWN_GOOD_STATE_KEY: &str = "CanForkFromLastKnownGoodState";
-
 pub const INPUT_BOX_VISIBLE_KEY: &str = "InputVisible";
 pub const KEYBOARD_PROTOCOL_ENABLED_KEY: &str = "KeyboardProtocolEnabled";
 pub const CLI_AGENT_SESSION_ACTIVE_KEY: &str = "CLIAgentSessionActive";
 pub const ROOT_CLOUD_MODE_PANE_KEY: &str = "RootCloudModePane";
-pub const CAN_SHOW_CONVERSATION_DETAILS_KEY: &str = "CanShowConversationDetails";
 
 /// Some keybindings will do different things in different contexts. We break
 /// these into their own function to ensure we pay special attention to
@@ -126,36 +121,6 @@ pub fn init(app: &mut AppContext) {
             id!("Terminal") & !id!("IMEOpen"),
         ),
     ]);
-    if cfg!(target_os = "macos") {
-        // On MacOS, if the user has the 'Option as meta' setting enabled, the cmd-alt-y binding
-        // above will not match.
-        app.register_fixed_bindings([FixedBinding::new(
-            "cmd-meta-y",
-            TerminalAction::ForkConversationFromLastKnownGoodState,
-            id!("Terminal") & !id!("IMEOpen") & id!(CAN_FORK_FROM_LAST_KNOWN_GOOD_STATE_KEY),
-        )]);
-    }
-
-    // Register binding to toggle plans in agent conversations.
-    {
-        app.register_fixed_bindings([FixedBinding::new(
-            "cmdorctrl-alt-p",
-            TerminalAction::ToggleAIDocumentPane,
-            id!("Terminal") & !id!("IMEOpen"),
-        )]);
-        if cfg!(target_os = "macos") {
-            // On MacOS, if the user has the 'Option as meta' setting enabled, the cmd-alt-p binding
-            // above will not match.
-            //
-            // TODO(zachbai): Consider if, for the purposes of fixed bindings, alt/meta should work
-            // fungibly regardless of underlying setting.
-            app.register_fixed_bindings([FixedBinding::new(
-                "cmd-meta-p",
-                TerminalAction::ToggleAIDocumentPane,
-                id!("Terminal") & !id!("IMEOpen"),
-            )]);
-        }
-    }
 
     if ChannelState::channel() == Channel::Integration {
         app.register_fixed_bindings([
@@ -686,25 +651,6 @@ pub fn init(app: &mut AppContext) {
     )
     .with_context_predicate(id!("Terminal"))]);
 
-    app.register_editable_bindings([
-    ]);
-
-    app.register_editable_bindings([EditableBinding::new(
-        "workspace:write_codebase_index",
-        BindingDescription::new("Write current codebase index snapshot"),
-        TerminalAction::WriteCodebaseIndex,
-    )
-    .with_enabled(|| FeatureFlag::CodebaseIndexPersistence.is_enabled())
-    .with_context_predicate(id!("Workspace"))]);
-
-    app.register_editable_bindings([EditableBinding::new(
-        "terminal:load_agent_mode_conversation",
-        "Load agent mode conversation (from debug link in clipboard)",
-        TerminalAction::LoadAgentModeConversation,
-    )
-    .with_enabled(ChannelState::enable_debug_features)
-    .with_context_predicate(id!("Terminal"))]);
-
     app.register_editable_bindings([EditableBinding::new(
         "terminal:toggle_session_recording",
         "Toggle PTY Recording for Session",
@@ -714,60 +660,11 @@ pub fn init(app: &mut AppContext) {
     .with_context_predicate(id!("Terminal"))]);
 
     app.register_editable_bindings([EditableBinding::new(
-        "workspace:init_project_rules",
-        BindingDescription::new("Initiate project for warp"),
-        TerminalAction::InitProject,
-    )
-    .with_context_predicate(id!("Workspace") & id!(flags::IS_ANY_AI_ENABLED))]);
-
-    app.register_editable_bindings([EditableBinding::new(
         "workspace:add_current_dir_as_project",
         BindingDescription::new("Add current folder as project"),
         TerminalAction::AddProjectAtCurrentDirectory,
     )
     .with_enabled(|| FeatureFlag::Projects.is_enabled())
     .with_context_predicate(id!("Workspace") & id!(flags::IS_ANY_AI_ENABLED))]);
-
-    #[cfg(not(target_arch = "wasm32"))]
-    app.register_editable_bindings([EditableBinding::new(
-        "terminal:toggle_conversation_details_panel",
-        "Toggle Conversation Details Panel",
-        TerminalAction::ToggleConversationDetailsPanel,
-    )
-    .with_group(bindings::BindingGroup::WarpAi.as_str())
-    .with_context_predicate(id!("Terminal") & id!(CAN_SHOW_CONVERSATION_DETAILS_KEY))]);
-
-    app.register_editable_bindings([
-    ]);
-
-    // Register bindings for starting a new cloud agent conversation.
-    {
-        app.register_fixed_bindings([FixedBinding::new_per_platform(
-            PerPlatformKeystroke {
-                mac: "cmd-alt-enter",
-                linux_and_windows: "ctrl-alt-enter",
-            },
-            TerminalAction::EnterCloudAgentView,
-            id!("Terminal") & id!(flags::IS_ANY_AI_ENABLED),
-        )
-        .with_enabled(|| {
-            FeatureFlag::AgentView.is_enabled()
-                && FeatureFlag::CloudMode.is_enabled()
-                && FeatureFlag::CloudModeFromLocalSession.is_enabled()
-        })
-        .with_group(bindings::BindingGroup::WarpAi.as_str())]);
-        if cfg!(target_os = "macos") {
-            // On MacOS, if the user has the 'Option as meta' setting enabled, the cmd-alt-enter
-            // binding above will not match.
-            //
-            // TODO(zachbai): Consider if, for the purposes of fixed bindings, alt/meta should work
-            // fungibly regardless of underlying setting.
-            app.register_fixed_bindings([FixedBinding::new(
-                "cmd-meta-enter",
-                TerminalAction::EnterCloudAgentView,
-                id!("Terminal") & id!(flags::IS_ANY_AI_ENABLED),
-            )]);
-        }
-    }
 }
 

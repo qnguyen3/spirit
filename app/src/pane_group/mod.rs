@@ -2063,9 +2063,7 @@ impl PaneGroup {
                 };
 
                 terminal_view.update(ctx, |view, ctx| {
-                    let share_source = SharedSessionSource::user(
-                        view.active_conversation_task_id(ctx).map(|t| t.to_string()),
-                    );
+                    let share_source = SharedSessionSource::user(None);
                     view.attempt_to_share_session(
                         *scrollback_type,
                         Some(*source),
@@ -3090,13 +3088,6 @@ impl PaneGroup {
     /// Emits an event for the workspace to show a confirmation dialog if necessary, or closes immediately if not.
     /// If a dialog is opened, the workspace may call back into pane group to close the pane after the user confirms.
     pub fn close_pane_with_confirmation(&mut self, pane_id: PaneId, ctx: &mut ViewContext<Self>) {
-        // Child agent panes are just hidden when closed, so skip the
-        // "process running" warning—it doesn't apply.
-        if self.is_child_agent_pane(pane_id) {
-            self.close_pane(pane_id, ctx);
-            return;
-        }
-
         if let Some(terminal_manager) = self
             .terminal_session_by_id(pane_id)
             .map(|session| session.terminal_manager(ctx))
@@ -3198,52 +3189,6 @@ impl PaneGroup {
             return;
         }
 
-        // Child agent panes return to off-tree state instead of being
-        // destroyed; future pill clicks re-host the same view. The view
-        // keeps ownership of its conversation, so we skip the
-        // transfer-on-close step below.
-        if self.is_child_agent_pane(pane_id) {
-            // Revert the swap if the child is currently swapped in.
-            if self.panes.original_pane_for_replacement(pane_id).is_some() {
-                self.panes.revert_temporary_replacement(pane_id);
-            }
-            // Or remove the child from the tree if it was split off.
-            else if self.panes.is_pane_in_tree(pane_id) && !self.panes.remove(pane_id) {
-                report_error!("close_pane: failed to remove split-off child pane from tree");
-            }
-            // Drop any leftover swap entry recording this child as the
-            // original side. Otherwise a later revert of the surviving
-            // sibling could resurrect the just-closed pane.
-            self.panes.remove_hidden_pane(pane_id);
-
-            // Clear the split-off marker so the next reveal renders pills
-            // rather than breadcrumbs.
-            if let Some(terminal_view) = self.terminal_view_from_pane_id(pane_id, ctx) {
-                terminal_view.update(ctx, |view, ctx| {
-                    view.clear_orchestration_split_off(ctx);
-                });
-            }
-            self.focus_next_terminal_pane_and_activate_session(
-                pane_id,
-                PaneRemovalReason::Close,
-                ctx,
-            );
-            self.handle_pane_count_change(ctx);
-            ctx.emit(Event::TerminalViewStateChanged);
-            ctx.emit(Event::AppStateChanged);
-            return;
-        }
-
-        // Best-effort: re-bind any child conversations on this view back
-        // to the pane that owns their parent so the pill bar keeps
-        // working after this pane closes.
-        self.transfer_child_agent_conversations_to_parents_on_close(pane_id, ctx);
-
-        // If this is a parent with child agents, discard the children first.
-        if let Some(terminal_view) = self.terminal_view_from_pane_id(pane_id, ctx) {
-            self.remove_child_agent_panes(terminal_view.id(), ctx);
-        }
-
         if FeatureFlag::UndoClosedPanes.is_enabled() {
             // Don't clase a pane that's already been hidden to allow for undo functionality
             if self.is_pane_hidden_for_close(pane_id) {
@@ -3320,10 +3265,6 @@ impl PaneGroup {
             if !self.panes.remove(pane_id) {
                 report_error!("Pane not found");
             }
-
-            // Mirror cleanup_closed_pane's transitive-share map cleanup so
-            // the non-undo close path doesn't leak stale entries.
-            self.forget_transitively_shared_pane(pane_id);
         }
 
         self.handle_pane_count_change(ctx);
@@ -3338,15 +3279,6 @@ impl PaneGroup {
         pane_to_focus: PaneId,
         ctx: &mut ViewContext<Self>,
     ) {
-        // Child agent panes go through the normal close path so the
-        // underlying view is preserved (the temp-replacement close path
-        // would destroy it).
-        if self.is_child_agent_pane(pane_id) {
-            self.close_pane(pane_id, ctx);
-            ctx.emit(Event::FocusPane { pane_to_focus });
-            return;
-        }
-
         // Check if this is a temporary replacement that should be reverted
         if self.panes.is_temporary_replacement(pane_id) {
             // Remove the replacement pane and focus the original pane
@@ -3371,17 +3303,8 @@ impl PaneGroup {
     /// neither in the tree nor swap-hidden.
     pub fn reveal_and_focus_pane(&mut self, pane_id: PaneId, ctx: &mut ViewContext<Self>) {
         if let Some(replacement_id) = self.panes.replacement_pane_for_original(pane_id) {
-            self.revert_swap_clearing_split_off(replacement_id, ctx);
+            self.panes.revert_temporary_replacement(replacement_id);
             self.handle_pane_count_change(ctx);
-            // The visible content of this slot changed; refresh agent-view
-            // back-button labels on both sides.
-            for refresh_pane_id in [pane_id, replacement_id] {
-                if let Some(terminal_view) = self.terminal_view_from_pane_id(refresh_pane_id, ctx) {
-                    terminal_view.update(ctx, |view, ctx| {
-                        view.update_agent_view_back_button_state(ctx);
-                    });
-                }
-            }
             ctx.emit(Event::TerminalViewStateChanged);
             ctx.emit(Event::AppStateChanged);
         } else if !self.panes.is_pane_in_tree(pane_id) {
@@ -3428,10 +3351,6 @@ impl PaneGroup {
                 self.clean_up_pane(original_pane_id, ctx);
                 self.pane_contents.remove(&original_pane_id);
             }
-            self.restore_missing_child_agent_panes_for_terminal_pane_if_needed(
-                replacement_pane_id,
-                ctx,
-            );
 
             // Focus the replacement pane to ensure proper user interaction
             self.focus_pane_by_id(replacement_pane_id, ctx);
@@ -3582,9 +3501,6 @@ impl PaneGroup {
             PaneEvent::FocusActiveSession => self.focus_active_session(ctx),
             PaneEvent::AppStateChanged => {
                 ctx.emit(Event::AppStateChanged);
-            }
-            PaneEvent::NewPaneInAIMode { initial_query } => {
-                self.add_terminal_pane_in_agent_mode(initial_query.as_deref(), None, ctx)
             }
             PaneEvent::ClearHoveredTabIndex => ctx.emit(Event::ClearHoveredTabIndex),
             #[cfg(feature = "local_fs")]
@@ -3817,9 +3733,6 @@ impl PaneGroup {
             log::warn!("Attempted to cleanup pane {pane_id} but it was not found in the tree");
         }
         self.pane_contents.remove(&pane_id);
-        // Drop any transitive-share tracking entry for this pane so the
-        // map doesn't accumulate stale ids.
-        self.forget_transitively_shared_pane(pane_id);
 
         ctx.notify();
         ctx.emit(Event::TerminalViewStateChanged);
@@ -3841,8 +3754,6 @@ impl PaneGroup {
                 self.cleanup_closed_pane(pane_id, ctx);
                 return false;
             }
-            self.restore_missing_child_agent_panes_for_terminal_pane_if_needed(pane_id, ctx);
-
             self.focus_pane_and_record_in_history(pane_id, ctx);
 
             ctx.emit(Event::TerminalViewStateChanged);
@@ -4626,7 +4537,6 @@ impl PaneGroup {
             self.pane_contents.remove(&pane_id);
             return None;
         }
-        self.restore_missing_child_agent_panes_for_terminal_pane_if_needed(pane_id, ctx);
 
         if options.focus_new_pane {
             self.focus_pane_and_record_in_history(pane_id, ctx);
@@ -5092,7 +5002,6 @@ impl PaneGroup {
                 continue;
             };
             self.attach_pane(pane.as_ref(), ctx);
-            self.restore_missing_child_agent_panes_for_terminal_pane_if_needed(pane_id, ctx);
         }
     }
 
@@ -5247,41 +5156,6 @@ impl PaneGroup {
     #[cfg(test)]
     pub fn share_session_modal(&self) -> &ViewHandle<ShareSessionModal> {
         &self.share_session_modal
-    }
-
-    /// Creates an ambient agent pane with the given initial prompt.
-    fn create_ambient_agent_pane(&self, ctx: &mut ViewContext<Self>) -> TerminalPane {
-        let uuid = Uuid::new_v4();
-        let resources = TerminalViewResources {
-            tips_completed: self.tips_completed.clone(),
-            server_api: self.server_api.clone(),
-            model_event_sender: self.model_event_sender.clone(),
-        };
-
-        let view_bounds = Self::estimated_view_bounds(ctx);
-
-        let (terminal_view, terminal_manager) =
-            Self::create_ambient_agent_terminal(resources, view_bounds.size(), ctx);
-
-        TerminalPane::new(
-            uuid.into_bytes().to_vec(),
-            terminal_manager,
-            terminal_view,
-            self.model_event_sender.clone(),
-            ctx,
-        )
-    }
-
-    /// Add and focus a cloud mode pane.
-    pub fn add_ambient_agent_pane(&mut self, ctx: &mut ViewContext<Self>) {
-        if !FeatureFlag::AgentView.is_enabled() || !FeatureFlag::CloudMode.is_enabled() {
-            return;
-        }
-
-        let pane_data = self.create_ambient_agent_pane(ctx);
-
-        // Add the pane to the right
-        let _ = self.add_pane(Direction::Right, None, Box::new(pane_data), true, ctx);
     }
 
     /// Close overlays whose state is managed by this pane group or its terminal panes. Does not

@@ -96,12 +96,8 @@ pub struct WorkspaceState {
     pub is_header_toolbar_editor_open: bool,
     pub is_import_modal_open: bool,
     pub is_close_session_confirmation_dialog_open: bool,
-    pub is_rewind_confirmation_dialog_open: bool,
-    pub is_delete_conversation_confirmation_dialog_open: bool,
     pub is_native_quit_modal_open: bool,
     pub is_shared_objects_creation_denied_modal_open: bool,
-    pub is_enable_auto_reload_modal_open: bool,
-    pub is_agent_management_view_open: bool,
     pub is_tab_config_params_modal_open: bool,
     pub is_session_config_modal_open: bool,
     pub is_new_worktree_modal_open: bool,
@@ -115,15 +111,15 @@ pub struct WorkspaceState {
 }
 
 impl WorkspaceState {
-    pub fn is_any_non_terminal_view_open(&self, app: &AppContext) -> bool {
-        self.is_any_modal_open(app)
+    pub fn is_any_non_terminal_view_open(&self) -> bool {
+        self.is_any_modal_open()
             || self.is_theme_chooser_open
             || self.is_ai_assistant_panel_open
             || self.is_workflow_modal_open
             || self.is_warp_drive_open
     }
 
-    pub fn is_any_non_palette_modal_open(&self, app: &AppContext) -> bool {
+    pub fn is_any_non_palette_modal_open(&self) -> bool {
         self.is_theme_creator_modal_open
             || self.is_theme_deletion_modal_open
             || self.is_changelog_modal_open
@@ -137,7 +133,6 @@ impl WorkspaceState {
             || self.is_header_toolbar_editor_open
             || self.is_import_modal_open
             || self.is_shared_objects_creation_denied_modal_open
-            || self.is_enable_auto_reload_modal_open
             || self.is_tab_config_params_modal_open
             || self.is_session_config_modal_open
             || self.is_new_worktree_modal_open
@@ -145,8 +140,8 @@ impl WorkspaceState {
     }
 
     /// Returns whether any modal (sitting over terminal views) is open.
-    pub fn is_any_modal_open(&self, app: &AppContext) -> bool {
-        self.is_any_non_palette_modal_open(app)
+    pub fn is_any_modal_open(&self) -> bool {
+        self.is_any_non_palette_modal_open()
             || self.is_palette_open
             || self.is_ctrl_tab_palette_open
     }
@@ -170,7 +165,6 @@ impl WorkspaceState {
         self.is_shared_objects_creation_denied_modal_open = false;
         self.is_auth_override_modal_open = false;
         self.is_require_login_modal_open = false;
-        self.is_enable_auto_reload_modal_open = false;
         self.is_tab_config_params_modal_open = false;
         self.is_session_config_modal_open = false;
         self.is_new_worktree_modal_open = false;

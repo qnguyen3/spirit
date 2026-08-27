@@ -8,7 +8,7 @@ use warp_completer::meta::Spanned;
 use warp_completer::parsers::ParsedExpression;
 use warp_completer::parsers::hir::{Command, Expression, FlagType};
 use warp_core::features::FeatureFlag;
-use warpui::AppContext;
+use warpui::{AppContext, SingletonEntity};
 
 use crate::completer::SessionContext;
 use crate::terminal::input::CompleterData;

@@ -88,7 +88,7 @@ use crate::terminal::view::{TerminalAction, cell_size_and_padding};
 use crate::themes::onboarding_theme_picker_themes;
 use crate::terminal::model::block::SerializedBlock;
 use crate::themes::theme::{AnsiColorIdentifier, Blend, Fill, ThemeKind, WarpThemeConfig};
-use crate::uri::{OpenMCPSettingsArgs, OpenSettingsArgs, url_reports_checkout_success};
+use crate::uri::{OpenSettingsArgs, url_reports_checkout_success};
 use crate::util::bindings::{self, is_binding_pty_compliant};
 use crate::util::traffic_lights::{TrafficLightData, TrafficLightMouseStates, traffic_light_data};
 use crate::view_components::DismissibleToast;
@@ -384,11 +384,6 @@ pub fn init(app: &mut AppContext) {
         );
     }
 
-
-    app.add_action(
-        "root_view:create_environment_in_existing_window_and_run",
-        RootView::create_environment_in_existing_window_and_run,
-    );
     app.add_global_action(
         "root_view:open_drive_object_new_window",
         open_warp_drive_object,
@@ -1975,7 +1970,7 @@ impl RootView {
         let onboarding_view_for_workspaces = onboarding_view.clone();
         ctx.subscribe_to_model(
             &UserWorkspaces::handle(ctx),
-            move |_, _user_workspaces, event, ctx| {
+            move |_, _user_workspaces, _event, ctx| {
                 let auth_state = current_onboarding_auth_state(ctx);
                 onboarding_view_for_workspaces.update(ctx, |onboarding_view, ctx| {
                     onboarding_view.set_auth_state(auth_state, ctx);
@@ -2420,7 +2415,6 @@ impl RootView {
                     return;
                 }
 
-                let team_context = UserWorkspaces::as_ref(ctx).team_context_for_operation(ctx);
                 apply_onboarding_settings(selected_settings, ctx);
 
                 if is_logged_in {
@@ -2906,6 +2900,132 @@ impl RootView {
         }
     }
 
+    pub fn add_file_pane(&mut self, path: &PathBuf, ctx: &mut ViewContext<Self>) -> bool {
+        if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
+            handle.update(ctx, |workspace, ctx| {
+                workspace.add_tab_for_file_notebook(Some(path.to_owned()), ctx);
+            });
+            let window_id = ctx.window_id();
+            ctx.windows().show_window_and_focus_app(window_id);
+            ctx.notify();
+        } else {
+            log::warn!("Auth not complete before trying to open file pane");
+        }
+        true
+    }
+
+    /// Insert a command that should create a subshell. If we support bootstrapping AKA
+    /// "warpifying" its [`ShellType`], set a flag to automatically bootstrap it when the command's
+    /// block receives the [`AfterBlockStarted`] event.
+    pub fn insert_subshell_command_and_bootstrap_if_supported(
+        &mut self,
+        arg: &SubshellCommandArg,
+        ctx: &mut ViewContext<Self>,
+    ) -> bool {
+        let window_id = ctx.window_id();
+        if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
+            handle.update(ctx, |workspace, ctx| {
+                workspace.insert_subshell_command_and_bootstrap_if_supported(
+                    &arg.command,
+                    arg.shell_type,
+                    ctx,
+                );
+                ctx.windows().show_window_and_focus_app(window_id);
+            })
+        } else {
+            log::warn!("Auth not complete before trying to fill input");
+        }
+        true
+    }
+
+    /// Shows the user the settings view of their newly joined team
+    /// within the app.
+    pub fn handle_team_intent_link_action(&mut self, _: &(), ctx: &mut ViewContext<Self>) -> bool {
+        // Force-open warp drive.
+        let window_id = ctx.window_id();
+        if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
+            ctx.dispatch_typed_action_for_view(
+                window_id,
+                handle.id(),
+                &WorkspaceAction::OpenWarpDrive,
+            );
+            ctx.windows().show_window_and_focus_app(window_id);
+        } else {
+            report_error!("Auth not complete before trying to open warp drive");
+        }
+
+        // Use the team tester model to notify relevant subscribers to refresh their data.
+        TeamTesterStatus::handle(ctx).update(ctx, |model, ctx| {
+            model.initiate_data_pollers(true, ctx);
+        });
+        true
+    }
+
+    pub fn open_team_settings_page(&mut self, _: &(), ctx: &mut ViewContext<Self>) -> bool {
+        let window_id = ctx.window_id();
+        if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
+            ctx.dispatch_typed_action_for_view(
+                window_id,
+                handle.id(),
+                &WorkspaceAction::ShowSettingsPage(SettingsSection::Teams),
+            );
+            ctx.windows().show_window_and_focus_app(window_id);
+        } else {
+            report_error!("Auth not complete before trying to open team settings page");
+        }
+        true
+    }
+
+    pub fn open_settings_page_in_existing_window(
+        &mut self,
+        section: &SettingsSection,
+        ctx: &mut ViewContext<Self>,
+    ) -> bool {
+        let window_id = ctx.window_id();
+        if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
+            let handle = handle.clone();
+            ctx.dispatch_typed_action_for_view(
+                window_id,
+                handle.id(),
+                &WorkspaceAction::ShowSettingsPage(*section),
+            );
+            ctx.windows().show_window_and_focus_app(window_id);
+            return true;
+        }
+
+        // A checkout confirmation that predates the unified success hand-off
+        // still returns the user through the Billing & Usage deeplink. Landing
+        // it mid-onboarding would interrupt the flow, so onboarding takes it as
+        // the purchase succeeding and moves on instead.
+        if *section == SettingsSection::BillingAndUsage
+            && self.notify_onboarding_checkout_succeeded(ctx)
+        {
+            return true;
+        }
+
+        report_error!(
+            "Auth not complete before trying to open settings page",
+            extra: { "section" => ?section }
+        );
+        true
+    }
+
+    pub fn open_settings_in_existing_window(
+        &mut self,
+        args: &OpenSettingsArgs,
+        ctx: &mut ViewContext<Self>,
+    ) -> bool {
+        let window_id = ctx.window_id();
+        if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
+            let action = workspace_action_for_open_settings(args);
+            ctx.dispatch_typed_action_for_view(window_id, handle.id(), &action);
+            ctx.windows().show_window_and_focus_app(window_id);
+        } else {
+            report_error!("Auth not complete before trying to open settings");
+        }
+        true
+    }
+
     /// Syncs the local "onboarding completed" flag to the server if the user
     /// finished onboarding pre-login and has since authenticated. Runs on every
     /// `AuthComplete`, so it also covers users who skipped login during onboarding
@@ -3054,10 +3174,7 @@ impl RootView {
                     if let Some(selected_settings) =
                         self.pending_post_auth_onboarding_settings.take()
                     {
-                        // Skipped login → no account → AI disabled.
-                        let team_context =
-                            UserWorkspaces::as_ref(ctx).team_context_for_operation(ctx);
-                        apply_onboarding_settings(&selected_settings, false, team_context, ctx);
+                        apply_onboarding_settings(&selected_settings, ctx);
                     }
                     self.auth_onboarding_state = AuthOnboardingState::Terminal(workspace);
                     ctx.emit(RootViewEvent::AuthOnboardingStateChanged);
@@ -3284,8 +3401,6 @@ impl RootView {
         let Some(selected_settings) = self.pending_post_auth_onboarding_settings.take() else {
             return;
         };
-        // Reached only after a successful login, so the user has an account.
-        let team_context = UserWorkspaces::as_ref(ctx).team_context_for_operation(ctx);
         apply_onboarding_settings(&selected_settings, ctx);
     }
 

@@ -189,7 +189,6 @@ pub enum UpdateEnvironmentFormAction {
     RemoveSetupCommand(usize),
 
     SuggestImage,
-    LaunchAgentForSelectedRepos,
     RetryFetchGithubRepos,
     StartGithubAuth,
     OpenUrl(String),
@@ -342,7 +341,6 @@ pub struct UpdateEnvironmentForm {
     suggest_image_request_seq: u64,
     suggest_image_button_mouse_state: MouseStateHandle,
     suggest_image_auth_button_mouse_state: MouseStateHandle,
-    suggest_image_launch_agent_button_mouse_state: MouseStateHandle,
     image_link_button_mouse_state: MouseStateHandle,
 
     /// On the edit page, we keep the suggest-image button disabled until repos have been modified
@@ -651,7 +649,6 @@ impl UpdateEnvironmentForm {
             suggest_image_request_seq: 0,
             suggest_image_button_mouse_state: MouseStateHandle::default(),
             suggest_image_auth_button_mouse_state: MouseStateHandle::default(),
-            suggest_image_launch_agent_button_mouse_state: MouseStateHandle::default(),
             image_link_button_mouse_state: MouseStateHandle::default(),
             edit_repos_modified: false,
             show_header: true,
@@ -3171,23 +3168,13 @@ impl UpdateEnvironmentForm {
         reason: &str,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
-        let action = UpdateEnvironmentFormAction::LaunchAgentForSelectedRepos;
-        let button = WarningBoxButtonConfig::new(
-            "Launch agent",
-            self.suggest_image_launch_agent_button_mouse_state.clone(),
-            move |ctx| {
-                ctx.dispatch_typed_action(action.clone());
-            },
-        );
-
         render_warning_box(
             WarningBoxConfig::new(
                 "We couldn't find a good match. We recommend using a custom Docker image for these repos.",
             )
             .with_description(reason)
             .with_icon(Icon::AlertTriangle)
-            .with_width(self.field_max_width)
-            .with_button(button),
+            .with_width(self.field_max_width),
             appearance,
         )
     }
@@ -3344,34 +3331,6 @@ impl TypedActionView for UpdateEnvironmentForm {
             }
             UpdateEnvironmentFormAction::SuggestImage => {
                 self.suggest_image(ctx);
-            }
-            UpdateEnvironmentFormAction::LaunchAgentForSelectedRepos => {
-
-                let repos = self.selected_repos_as_remote_repo_args();
-                if repos.is_empty() {
-                    return;
-                }
-
-                let arg = CreateEnvironmentArg { repos };
-
-                let window_id = ctx.window_id();
-                let primary_window_and_view = ctx
-                    .root_view_id(window_id)
-                    .map(|view_id| (window_id, view_id));
-
-                if let Some((primary_window_id, root_view_id)) = primary_window_and_view {
-                    ctx.dispatch_action(
-                        primary_window_id,
-                        &[root_view_id],
-                        "root_view:create_environment_in_existing_window_and_run",
-                        &arg,
-                        log::Level::Info,
-                    );
-                } else {
-                    ctx.dispatch_global_action("root_view:create_environment_and_run", arg);
-                }
-
-                ctx.notify();
             }
             UpdateEnvironmentFormAction::RetryFetchGithubRepos => {
                 self.fetch_github_repos(ctx);

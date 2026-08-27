@@ -7,10 +7,9 @@ use pathfinder_geometry::vector::Vector2F;
 use session_sharing_protocol::common::{
     ActivePrompt, AddGuestsResponse, CLIAgentSessionState, CommandExecutionFailureReason,
     LinkAccessLevelUpdateResponse, LongRunningCommandAgentInteraction, RemoveGuestResponse,
-    SelectedAgentModel, SessionId, TeamAccessLevelUpdateResponse,
-    UniversalDeveloperInputContextUpdate, UpdatePendingUserRoleResponse,
+    SessionId, TeamAccessLevelUpdateResponse, UniversalDeveloperInputContextUpdate,
+    UpdatePendingUserRoleResponse,
 };
-use session_sharing_protocol::sharer::SessionSourceType;
 use session_sharing_protocol::viewer::SessionEndedReason;
 use settings::Setting as _;
 use warp_errors::report_error;
@@ -21,13 +20,12 @@ use warpui::{
 
 use super::event_loop::SharedSessionInitialLoadMode;
 use super::network::{
-    FailedToJoinReason, Network, NetworkEvent, agent_prompt_failure_reason_string,
+    Network, NetworkEvent, agent_prompt_failure_reason_string,
     command_execution_failure_reason_string, control_action_failure_reason_string,
     session_ended_reason_string, viewer_removed_reason_string, write_to_pty_failure_reason_string,
 };
 use crate::context_chips::prompt_snapshot::PromptSnapshot;
 use crate::context_chips::prompt_type::PromptType;
-use crate::features::FeatureFlag;
 use crate::network::{NetworkStatus, NetworkStatusEvent, NetworkStatusKind};
 use crate::pane_group::TerminalViewResources;
 use crate::pane_group::pane::DetachType;
@@ -45,7 +43,7 @@ use crate::terminal::shared_session::SharedSessionStatus;
 use crate::terminal::shared_session::manager::Manager;
 use crate::terminal::shared_session::permissions_manager::SessionPermissionsManager;
 use crate::terminal::shared_session::shared_handlers::{
-    ActiveRemoteUpdate, RemoteUpdateGuard, apply_cli_agent_state_update,
+    RemoteUpdateGuard, apply_cli_agent_state_update,
 };
 use crate::terminal::terminal_manager::{BlockSpacing, compute_block_size, terminal_colors_list};
 use crate::terminal::view::ExecuteCommandEvent;
@@ -129,7 +127,7 @@ impl TerminalManager {
         });
     }
 
-    /// Handles a failed viewer command request and clears any queued-command dispatch state.
+    /// Handles a failed viewer command request.
     fn handle_command_execution_request_failed(
         terminal_view: &mut TerminalView,
         reason: &CommandExecutionFailureReason,
@@ -137,7 +135,6 @@ impl TerminalManager {
     ) {
         let reason_string = command_execution_failure_reason_string(reason);
         terminal_view.show_persistent_toast(reason_string, ToastFlavor::Error, ctx);
-        terminal_view.clear_queued_command_in_flight(ctx);
 
         // On command execution request, the input is frozen and set to a loading state.
         // We only need to restore the input for errors that aren't the result of a new buffer.
@@ -437,26 +434,12 @@ impl TerminalManager {
                 // Apply the universal developer input context if present.
                 let active_remote_update = viewer_remote_update_guard.start_remote_update();
                 if let Some(universal_developer_input_context) = universal_developer_input_context {
-                    if let Some(ref model) = universal_developer_input_context.selected_model {
-                        Self::handle_selected_agent_model_update(&weak_view_handle, model, &active_remote_update, ctx);
-                    }
-                    if let Some(ref input_mode) = universal_developer_input_context.input_mode {
-                        Self::handle_input_mode_update(&weak_view_handle, input_mode, &active_remote_update, ctx);
-                    }
                     apply_cli_agent_state_update(
                         &weak_view_handle,
                         &universal_developer_input_context.cli_agent_session,
                         &active_remote_update,
                         ctx,
                     );
-                    if let Some(ref selected_conversation) = universal_developer_input_context.selected_conversation {
-                        Self::handle_selected_conversation_update(
-                            &weak_view_handle,
-                            selected_conversation,
-                            &active_remote_update,
-                            ctx,
-                        );
-                    }
                     // TODO(roland): we do not apply universal_developer_input_context.long_running_command_agent_interaction here
                     // because the block it should apply to won't exist yet, until the `OrderedTerminalEvents` that come after are processed.
                     // We should try to apply it after catching up to the latest state.
@@ -718,21 +701,7 @@ impl TerminalManager {
                     terminal_view.show_persistent_toast(reason_string, ToastFlavor::Error, ctx);
                 });
             }
-            NetworkEvent::AgentPromptRequestInFlight(_id) => {
-                let Some(view) = weak_view_handle.upgrade(ctx) else {
-                    return;
-                };
-                view.update(ctx, |terminal_view, ctx| {
-                    // Restore frozen visual state. optimistically_show_empty=true creates
-                    // a display-only empty ephemeral for immediate UX feedback. Unlike a
-                    // regular ephemeral, this one discards its content on materialization
-                    // instead of restoring it to the regular buffer, so no spurious CRDT
-                    // delete ops are generated for concurrent edits by other viewers.
-                    terminal_view.input().update(ctx, |input, ctx| {
-                        input.unfreeze_agent_input(true, ctx);
-                    });
-                });
-            }
+            NetworkEvent::AgentPromptRequestInFlight(_) => {}
             NetworkEvent::AgentPromptRequestFailed { reason, .. } => {
                 let Some(view) = weak_view_handle.upgrade(ctx) else {
                     return;
@@ -740,13 +709,6 @@ impl TerminalManager {
                 view.update(ctx, |terminal_view, ctx| {
                     let reason_string = agent_prompt_failure_reason_string(reason);
                     terminal_view.show_persistent_toast(reason_string, ToastFlavor::Error, ctx);
-
-                    // Restore frozen visual state without clearing the buffer — the prompt
-                    // failed so no CRDT delete ops were sent, and the user should be able
-                    // to retry with their original text.
-                    terminal_view.input().update(ctx, |input, ctx| {
-                        input.unfreeze_agent_input(false, ctx);
-                    });
                 });
             }
             NetworkEvent::ControlActionRequestFailed { reason } => {
@@ -978,12 +940,11 @@ impl TerminalManager {
                 block_id,
                 operations,
             } => {
-                let should_send_input_update = view.read(ctx, |view, ctx| {
+                let should_send_input_update = {
                     let model = model.lock();
                     model.block_list().active_block_id() == block_id
                         && model.shared_session_status().is_executor()
-                        && view.should_publish_shared_session_input_editor_update(&model, ctx)
-                });
+                };
                 if should_send_input_update {
                     Self::update_current_network(&current_network, ctx, |network, _| {
                         network.send_input_update(block_id, operations.iter());
@@ -1016,26 +977,6 @@ impl TerminalManager {
             TerminalViewEvent::RejoinCurrentSession => {
                 Self::update_current_network(&current_network, ctx, |network, ctx| {
                     network.reauthenticate_viewer(ctx);
-                });
-            }
-            TerminalViewEvent::SendAgentPrompt {
-                server_conversation_token,
-                prompt,
-                attachments,
-            } => {
-                Self::update_current_network(&current_network, ctx, |network, _| {
-                    network.send_agent_prompt_request(
-                        *server_conversation_token,
-                        prompt.clone(),
-                        attachments.clone(),
-                    );
-                });
-            }
-            TerminalViewEvent::CancelSharedSessionConversation {
-                server_conversation_token,
-            } => {
-                Self::update_current_network(&current_network, ctx, |network, _| {
-                    network.send_cancel_control_action(*server_conversation_token);
                 });
             }
             TerminalViewEvent::ReportViewerTerminalSize { window_size } => {

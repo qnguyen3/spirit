@@ -1,20 +1,16 @@
-use std::cell::RefCell;
-use std::collections::HashMap;
 use std::sync::Arc;
 
-use chrono::Local;
 use itertools::Itertools;
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
-use settings::Setting;
 use thousands::Separable;
 use warp_core::features::FeatureFlag;
 use warp_core::ui::appearance::Appearance;
 use warp_graphql::billing::AddonCreditsOption;
 use warpui::elements::{
     Align, Border, Clipped, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty,
-    Expanded, Flex, FormattedTextElement, HighlightedHyperlink, MainAxisAlignment, MainAxisSize,
+    Flex, FormattedTextElement, HighlightedHyperlink, MainAxisAlignment, MainAxisSize,
     MouseStateHandle, ParentElement, Radius, Shrinkable, Text, Wrap,
 };
 use warpui::fonts::{Properties, Weight};
@@ -23,8 +19,8 @@ use warpui::ui_components::button::{ButtonVariant, TextAndIcon, TextAndIconAlign
 use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 use warpui::ui_components::switch::SwitchStateHandle;
 use warpui::{
-    AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, UpdateView, View,
-    ViewContext, ViewHandle, WeakViewHandle,
+    AppContext, Element, Entity, SingletonEntity, TypedActionView, UpdateView, View, ViewContext,
+    ViewHandle, WeakViewHandle,
 };
 
 use super::billing_and_usage::overage_limit_modal::{SpendingLimitModal, SpendingLimitModalEvent};
@@ -44,13 +40,12 @@ use crate::server::telemetry::TelemetryEvent;
 use crate::ui_components::blended_colors;
 use crate::ui_components::buttons::icon_button;
 use crate::ui_components::icons::Icon;
-use crate::ui_components::tab_selector::{self, SettingsTab};
 use crate::view_components::ToastFlavor;
 use crate::view_components::action_button::{ActionButton, PrimaryTheme, SecondaryTheme};
 use crate::workspaces::update_manager::TeamUpdateManager;
 use crate::workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent};
-use crate::workspaces::workspace::{CustomerType, Workspace, WorkspaceUid};
-use crate::{WorkspaceAction, send_telemetry_from_ctx};
+use crate::workspaces::workspace::{CustomerType, Workspace};
+use crate::send_telemetry_from_ctx;
 
 const ADDON_CREDITS_DESCRIPTION: &str = "Add-on credits are purchased in prepaid packages that roll over each billing cycle and expire after one year. The more you purchase, the better the per-credit rate. Once your base plan credits are used, add-on credits will be consumed.";
 const ADDITIONAL_ADDON_CREDITS_DESCRIPTION_FOR_TEAM: &str =
@@ -1363,7 +1358,7 @@ impl View for BillingAndUsagePageV2View {
         let mut page = Flex::column();
         page.add_child(self.render_plan_section(appearance, app));
 
-        page.add_child(self.render_overview_tab(appearance, app));
+        page.add_child(self.render_overview_tab(app));
 
         page.finish()
     }

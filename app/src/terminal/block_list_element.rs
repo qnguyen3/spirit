@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::mem;
 use std::ops::{Deref, Range, RangeInclusive};
@@ -14,7 +13,6 @@ use session_sharing_protocol::common::{ParticipantId, Selection};
 use vec1::Vec1;
 use warp_core::semantic_selection::SemanticSelection;
 use warp_core::ui::builder::UiBuilder;
-use warp_core::ui::theme::AnsiColorIdentifier;
 use warp_util::user_input::UserInput;
 use warpui::elements::new_scrollable::{NewScrollableElement, ScrollableAxis};
 use warpui::elements::{
@@ -1491,7 +1489,7 @@ impl BlockListElement {
 
         if self.is_mouse_position_within_bounds(position) {
             ctx.dispatch_typed_action(TerminalAction::CloseContextMenu);
-            let mut should_redetermine_focus = true;
+            let should_redetermine_focus = true;
 
             match self.coord_to_point(
                 SnackbarPoint::within_snackbar(position),
@@ -1598,8 +1596,8 @@ impl BlockListElement {
                             ));
                         }
                         // While rich content blocks can't be selected like command blocks,
-                        // text selections can still originate in them (i.e. with AI blocks)
-                        Some(BlockHeightItem::RichContent(RichContentItem { view_id, .. })) => {
+                        // text selections can still originate in them.
+                        Some(BlockHeightItem::RichContent(_)) => {
                             let bounds = self
                                 .bounds
                                 .expect("Bounds should be set before event dispatching");
@@ -1612,16 +1610,6 @@ impl BlockListElement {
 
                             if self.snackbar_header_state().mouse_down(position, ctx) {
                                 return true;
-                            }
-
-                            if matches!(
-                                self.rich_content_metadata.get(view_id),
-                                Some(
-                                    RichContentMetadata::AIBlock(_)
-                                        | RichContentMetadata::PendingUserQuery { .. }
-                                )
-                            ) {
-                                should_redetermine_focus = false;
                             }
 
                             ctx.dispatch_typed_action(TerminalAction::BlockSelect {
@@ -4101,7 +4089,7 @@ impl Element for BlockListElement {
                     let mut render_params = CLISubagentRenderParams {
                         block_id: block.id().clone(),
                         view_origin: None,
-                        should_clip_view: !block.is_agent_blocked(),
+                        should_clip_view: true,
                     };
 
                     if let Some(cli_subagent_view) = self.cli_subagent_views.get_mut(block.id()) {
@@ -4217,7 +4205,6 @@ impl Element for BlockListElement {
                 VisibleItem::RichContent {
                     view_id, height_px, ..
                 } => {
-                    let block_origin = grid_origin;
                     if let Some(rich_content) = self.rich_content_elements.get_mut(view_id) {
                         rich_content.paint(grid_origin, ctx, app);
                     }

@@ -126,7 +126,7 @@ pub fn initialize(
     let database_path = database_file_path_for_scope(&scope);
     match init_db(&scope) {
         Ok(mut conn) => {
-            let mut persisted_data = read_persisted_data(&mut conn, ctx, data_scope);
+            let persisted_data = read_persisted_data(&mut conn, ctx, data_scope);
 
             let writer_handles = match start_writer(conn, database_path.clone()) {
                 Ok(writer_handles) => Some(writer_handles),
@@ -873,16 +873,13 @@ fn save_app_state(conn: &mut SqliteConnection, app_state: &AppState) -> Result<(
                 origin_y,
                 quake_mode: window.quake_mode,
                 universal_search_width: window.universal_search_width,
-                warp_ai_width: window.warp_ai_width,
+                warp_ai_width: None,
                 voltron_width: window.voltron_width,
                 warp_drive_index_width: window.warp_drive_index_width,
                 left_panel_open: Some(window.left_panel_open),
                 vertical_tabs_panel_open: Some(window.vertical_tabs_panel_open),
                 fullscreen_state: window.fullscreen_state as i32,
-                agent_management_filters: window
-                    .agent_management_filters
-                    .as_ref()
-                    .and_then(|f| serde_json::to_string(f).ok()),
+                agent_management_filters: None,
                 team_uid: window.team_uid.map(Into::into),
             };
             diesel::insert_into(schema::windows::dsl::windows)
@@ -2023,17 +2020,20 @@ fn read_node(conn: &mut SqliteConnection, node: model::PaneNode) -> Result<PaneN
 
 fn box_persisted_generic_string_object(
     object: PersistedGenericStringObject,
-) -> Box<dyn CloudObject> {
+) -> Option<Box<dyn CloudObject>> {
     match object {
-        PersistedGenericStringObject::Preference(object) => Box::new(object),
-        PersistedGenericStringObject::EnvVarCollection(object) => Box::new(object),
-        PersistedGenericStringObject::WorkflowEnum(object) => Box::new(object),
-        PersistedGenericStringObject::AIFact(object) => Box::new(object),
-        PersistedGenericStringObject::MCPServer(object) => Box::new(object),
-        PersistedGenericStringObject::TemplatableMCPServer(object) => Box::new(object),
-        PersistedGenericStringObject::AIExecutionProfile(object) => Box::new(object),
-        PersistedGenericStringObject::CloudEnvironment(object) => Box::new(object),
-        PersistedGenericStringObject::ScheduledAmbientAgent(object) => Box::new(object),
+        PersistedGenericStringObject::Preference(object) => Some(Box::new(object)),
+        PersistedGenericStringObject::EnvVarCollection(object) => Some(Box::new(object)),
+        PersistedGenericStringObject::WorkflowEnum(object) => Some(Box::new(object)),
+        PersistedGenericStringObject::CloudEnvironment(object) => Some(Box::new(object)),
+        PersistedGenericStringObject::AIFact(_)
+        | PersistedGenericStringObject::MCPServer(_)
+        | PersistedGenericStringObject::TemplatableMCPServer(_)
+        | PersistedGenericStringObject::AIExecutionProfile(_)
+        | PersistedGenericStringObject::ScheduledAmbientAgent(_) => {
+            log::debug!("Skipping unsupported persisted cloud object kind");
+            None
+        }
     }
 }
 
@@ -2248,7 +2248,6 @@ fn read_sqlite_data(
                         quake_mode: window.quake_mode,
                         bounds,
                         universal_search_width: window.universal_search_width,
-                        warp_ai_width: window.warp_ai_width,
                         voltron_width: window.voltron_width,
                         warp_drive_index_width: window.warp_drive_index_width,
                         left_panel_open: window_left_panel_open,
@@ -2256,9 +2255,6 @@ fn read_sqlite_data(
                         fullscreen_state: fullscreen_state_val,
                         left_panel_width,
                         right_panel_width,
-                        agent_management_filters: window
-                            .agent_management_filters
-                            .and_then(|s| serde_json::from_str(&s).ok()),
                         tab_groups: tab_groups_snapshots,
                     }
                 },
@@ -2300,7 +2296,7 @@ fn read_sqlite_data(
     cloud_objects.extend(
         generic_string_persistence::read_generic_string_objects(conn, &read_context)?
             .into_iter()
-            .map(box_persisted_generic_string_object),
+            .filter_map(box_persisted_generic_string_object),
     );
 
     let db_teams: Vec<model::Team> = schema::teams::dsl::teams.load(conn)?;

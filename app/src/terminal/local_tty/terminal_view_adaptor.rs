@@ -8,21 +8,18 @@ use parking_lot::FairMutex;
 use session_sharing_protocol::common::{
     ActivePrompt, AgentPromptFailureReason, CLIAgentSessionState, CommandExecutionFailureReason,
     ControlAction, ControlActionFailureReason, LongRunningCommandAgentInteraction,
-    SelectedAgentModel, UniversalDeveloperInputContextUpdate, WriteToPtyFailureReason,
+    UniversalDeveloperInputContextUpdate, WriteToPtyFailureReason,
 };
 #[cfg(not(any(test, feature = "integration_tests")))]
-use session_sharing_protocol::common::{
-    LongRunningCommandAgentInteractionState, SelectedConversation, UniversalDeveloperInputContext,
-};
+use session_sharing_protocol::common::UniversalDeveloperInputContext;
 use session_sharing_protocol::sharer::{
     AddGuestsResponse, FailedToInitializeSessionReason, Lifetime, LinkAccessLevelUpdateResponse,
     QuotaType, RemoveGuestResponse, SessionEndedReason, SessionSourceType,
     TeamAccessLevelUpdateResponse, UpdatePendingUserRoleResponse,
 };
 use warp_core::execution_mode::AppExecutionMode;
-use warp_core::send_telemetry_from_ctx;
 use warp_errors::report_error;
-use warpui::{AppContext, ModelHandle, SingletonEntity, ViewContext, ViewHandle, WindowId};
+use warpui::{AppContext, ModelHandle, SingletonEntity, ViewHandle, WindowId};
 
 use super::terminal_manager::{TerminalManager, TerminalSurfaceInit, TerminalSurfaceResult};
 use crate::NetworkStatus;
@@ -34,7 +31,6 @@ use crate::features::FeatureFlag;
 use crate::network::{NetworkStatusEvent, NetworkStatusKind};
 use crate::pane_group::TerminalViewResources;
 use crate::persistence::ModelEvent;
-use crate::server::telemetry::{TelemetryAgentViewEntryOrigin, TelemetryEvent};
 use crate::terminal::cli_agent_sessions::{
     CLIAgentInputState, CLIAgentSessionsModel, CLIAgentSessionsModelEvent,
 };
@@ -60,15 +56,6 @@ use crate::terminal::{TerminalManager as TerminalManagerTrait, TerminalModel, Te
 use crate::view_components::ToastFlavor;
 
 const ACL_UPDATE_FAILURE_RESPONSE: &str = "Something went wrong. Please try again.";
-
-/// Whether the given CRDT operation should be dropped when broadcasting
-/// sharer input to viewers. In ambient agent sessions the sharer is a
-/// headless worker — forwarding its selection ops would produce a phantom
-/// cursor on the viewer side. Content ops (Edit / Undo) are kept so the
-/// buffer stays in sync.
-fn should_skip_sharer_op(is_ambient_session: bool, op: &CrdtOperation) -> bool {
-    is_ambient_session && matches!(op, CrdtOperation::UpdateSelections(_))
-}
 
 /// Configuration for constructing the GUI terminal surface.
 pub(crate) struct TerminalViewSurfaceConfig {
@@ -348,7 +335,6 @@ impl TerminalManager<TerminalView> {
                     ctx,
                 ));
             } else {
-                let input_config = terminal_view.as_ref(ctx).input_config(ctx);
                 let input_replica_id = terminal_view
                     .as_ref(ctx)
                     .input()
@@ -357,7 +343,7 @@ impl TerminalManager<TerminalView> {
                     .as_ref(ctx)
                     .replica_id(ctx);
                 // Include CLI agent session state in initial context so
-                // late-joining viewers see the footer immediately.
+                // late-joining viewers see it immediately.
                 let terminal_view_id = terminal_view.id();
                 let cli_agent_session = {
                     let sessions_model = CLIAgentSessionsModel::as_ref(ctx);
@@ -448,13 +434,11 @@ impl TerminalManager<TerminalView> {
 
                 // Flush the initial input operations that the sharer performed
                 // in the latest buffer before the share was started.
-                let is_ambient = model.lock().is_shared_ambient_agent_session();
                 let init_input_ops: Vec<CrdtOperation> = terminal_view
                     .as_ref(ctx)
                     .input()
                     .as_ref(ctx)
                     .latest_buffer_operations()
-                    .filter(|op| !should_skip_sharer_op(is_ambient, op))
                     .cloned()
                     .collect();
                 if !init_input_ops.is_empty() {
@@ -583,16 +567,7 @@ impl TerminalManager<TerminalView> {
                 };
 
                 match action {
-                    ControlAction::CancelConversation {
-                        server_conversation_token,
-                    } => {
-                        terminal_view.update(ctx, |view, ctx| {
-                            view.ai_controller().update(ctx, |controller, ctx| {
-                                controller
-                                    .handle_shared_session_cancel_action(*server_conversation_token, ctx);
-                            });
-                        });
-                    }
+                    ControlAction::CancelConversation { .. } => {}
                 }
             }
             NetworkEvent::ParticipantListUpdated(participant_list) => {
@@ -610,25 +585,17 @@ impl TerminalManager<TerminalView> {
                 // Check eligibility from the incoming participant list directly,
                 // since the presence manager processes new viewers asynchronously.
                 if was_viewer_driven_sizing_eligible {
-                    let is_ambient_agent = terminal_view
-                        .as_ref(ctx)
-                        .is_shared_session_for_ambient_agent();
-                    // We never want to reset back to the sharer size if we are a cloud agent,
-                    // since it was a default. Prefer to keep the viewer-set size for transcript
-                    // persistence.
-                    if !is_ambient_agent {
-                        let sharer_uid =
-                            participant_list.sharer.info.profile_data.firebase_uid.as_str();
-                        let still_eligible =
-                            PresenceManager::single_distinct_present_viewer_uid_from_viewers(
-                                participant_list.viewers.iter(),
-                            )
-                            .is_some_and(|viewer_uid| viewer_uid == sharer_uid);
-                        if !still_eligible {
-                            terminal_view.update(ctx, |view, ctx| {
-                                view.restore_pty_to_sharer_size(ctx);
-                            });
-                        }
+                    let sharer_uid =
+                        participant_list.sharer.info.profile_data.firebase_uid.as_str();
+                    let still_eligible =
+                        PresenceManager::single_distinct_present_viewer_uid_from_viewers(
+                            participant_list.viewers.iter(),
+                        )
+                        .is_some_and(|viewer_uid| viewer_uid == sharer_uid);
+                    if !still_eligible {
+                        terminal_view.update(ctx, |view, ctx| {
+                            view.restore_pty_to_sharer_size(ctx);
+                        });
                     }
                 }
 
@@ -700,7 +667,6 @@ impl TerminalManager<TerminalView> {
                     view.input().update(ctx, |input, ctx| {
                         input.process_remote_edits(block_id, operations.clone(), ctx);
                     });
-                    emit_shared_session_viewer_input(view, ctx);
                 });
             }
             NetworkEvent::CommandExecutionRequested {
@@ -760,7 +726,6 @@ impl TerminalManager<TerminalView> {
                             ctx,
                         );
                     });
-                    emit_shared_session_viewer_input(view, ctx);
                 });
             }
             NetworkEvent::WriteToPtyRequested { id, bytes } => {
@@ -806,7 +771,6 @@ impl TerminalManager<TerminalView> {
 
                 terminal_view.update(ctx, |view, ctx| {
                     view.write_viewer_bytes_to_pty(bytes.clone(), ctx);
-                    emit_shared_session_viewer_input(view, ctx);
                 });
             }
             NetworkEvent::AgentPromptRequested {
@@ -1179,17 +1143,12 @@ impl TerminalManager<TerminalView> {
                     return;
                 }
 
-                let is_ambient = model.lock().is_shared_ambient_agent_session();
-                let filtered: Vec<_> = operations
-                    .iter()
-                    .filter(|op| !should_skip_sharer_op(is_ambient, op))
-                    .collect();
-                if filtered.is_empty() {
+                if operations.is_empty() {
                     return;
                 }
                 if let Some(network) = session_sharer.borrow().as_ref() {
                     network.update(ctx, |network, _| {
-                        network.send_input_update(block_id, filtered.into_iter());
+                        network.send_input_update(block_id, operations.iter());
                     });
                 }
             }
@@ -1384,19 +1343,6 @@ impl TerminalManagerTrait for TerminalManager<TerminalView> {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
-}
-
-/// Reports viewer input on a cloud agent's shared session so the agent driver can treat someone
-/// debugging in the session as activity.
-///
-/// Scoped to those sessions because a cloud agent's sharer is a process that can hold the session
-/// open on the strength of this signal. Ordinary shared sessions have no consumer for it, and
-/// these fire at keystroke frequency.
-fn emit_shared_session_viewer_input(view: &TerminalView, ctx: &mut ViewContext<TerminalView>) {
-    if !view.model.lock().is_shared_ambient_agent_session() {
-        return;
-    }
-    ctx.emit(TerminalViewEvent::SharedSessionViewerInput);
 }
 
 /// Send a Shutdown event to each PTY's event loop and waits for the

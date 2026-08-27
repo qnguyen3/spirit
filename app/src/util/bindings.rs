@@ -117,13 +117,7 @@ pub enum CustomAction {
     WindowsPaste,
     #[cfg(windows)]
     WindowsCopy,
-    /// Also applies to legacy Warp AI (attaches the selection to the panel editor)
-    AttachSelectionAsAgentModeContext,
-    OpenAIFactCollection,
-    OpenMCPServerCollection,
     ToggleProjectExplorer,
-    NewPersonalAIPrompt,
-    NewTeamAIPrompt,
     OpenRepository,
     NewTerminalTab,
     NewAgentPicker,
@@ -401,9 +395,6 @@ pub fn custom_tag_to_keystroke(custom: CustomTag) -> Option<Keystroke> {
         CustomAction::CloseCurrentSession => Keystroke::parse(cmd_or_ctrl_shift("w")).ok(),
         CustomAction::ViewChangelog => Keystroke::parse(cmd_or_ctrl_shift("alt-o")).ok(),
         CustomAction::NewAgentPicker => Keystroke::parse("ctrl-space").ok(),
-        CustomAction::AttachSelectionAsAgentModeContext => {
-            Keystroke::parse("ctrl-shift-space").ok()
-        }
         CustomAction::ToggleProjectExplorer => {
             if OperatingSystem::get().is_mac() {
                 Keystroke::parse("ctrl-1").ok()
@@ -462,11 +453,7 @@ pub fn custom_tag_to_keystroke(custom: CustomTag) -> Option<Keystroke> {
         | CustomAction::SearchDrive
         | CustomAction::OpenTeamSettings
         | CustomAction::ShareCurrentSession
-        | CustomAction::SharePaneContents
-        | CustomAction::OpenAIFactCollection
-        | CustomAction::OpenMCPServerCollection
-        | CustomAction::NewPersonalAIPrompt
-        | CustomAction::NewTeamAIPrompt => None,
+        | CustomAction::SharePaneContents => None,
     }
 }
 
@@ -798,7 +785,6 @@ pub enum BindingGroup {
     Settings,
     Close,
     Navigation,
-    WarpAi,
     Workflow,
     Notebooks,
     Folders,
@@ -814,7 +800,6 @@ impl BindingGroup {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Settings => "settings",
-            Self::WarpAi => "warp_ai",
             Self::Navigation => "navigation",
             Self::Workflow => "workflows",
             Self::Notebooks => "notebooks",

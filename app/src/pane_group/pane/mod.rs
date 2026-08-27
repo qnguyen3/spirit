@@ -1034,11 +1034,6 @@ pub enum PaneEvent {
     RemoteRepoNavigated {
         remote_path: RemotePath,
     },
-    /// Split the current pane into two. If `initial_query` is `Some` fill the new pane's input with
-    /// its value.
-    NewPaneInAIMode {
-        initial_query: Option<String>,
-    },
     ClearHoveredTabIndex,
     #[cfg(feature = "local_fs")]
     ReplaceWithCodePane {

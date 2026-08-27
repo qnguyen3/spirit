@@ -509,14 +509,9 @@ impl UriHost {
             }),
             Self::Team | Self::Drive | Self::Settings => W::default(),
             // These URLs always open new windows.
-            Self::Launch | Self::SharedSession | Self::Conversation | Self::Home => W::Nothing,
+            Self::Launch | Self::SharedSession | Self::Home => W::Nothing,
             // This will actually be handled by [`Action::window_behavior_hint`].
             Self::Action => W::Nothing,
-            // TODO(vorporeal): probably want to focus the window with the MCP pane open
-            Self::Mcp => W::Nothing,
-            // Codex opens a new tab with AI mode, use default behavior
-            Self::Codex => W::default(),
-            // Linear deeplink opens a new tab with agent view
             Self::Linear => W::default(),
             // Handler picks the window itself based on `?new_window=true`.
             Self::TabConfig => W::Nothing,
@@ -1321,7 +1316,6 @@ fn settings_section_for_simple_subpage(subpage: &str) -> Option<SettingsSection>
         "billing_and_usage" => Some(SettingsSection::BillingAndUsage),
         "platform" => Some(SettingsSection::WarpCloudAgentAPIKeys),
         "appearance" => Some(SettingsSection::Appearance),
-        "warp_agent" => Some(SettingsSection::WarpAgent),
         _ => None,
     }
 }

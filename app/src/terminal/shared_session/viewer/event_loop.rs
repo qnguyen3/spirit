@@ -6,9 +6,8 @@ use parking_lot::FairMutex;
 use session_sharing_protocol::common::{
     OrderedTerminalEvent, OrderedTerminalEventType, Scrollback, WindowSize,
 };
-use warpui::{Entity, ModelContext, SingletonEntity, WeakViewHandle};
+use warpui::{Entity, ModelContext, WeakViewHandle};
 
-use crate::features::FeatureFlag;
 use crate::terminal::event_listener::ChannelEventListener;
 use crate::terminal::model::ansi::{self};
 use crate::terminal::shared_session::shared_handlers::RemoteUpdateGuard;
@@ -63,8 +62,6 @@ pub struct EventLoop {
 
     /// A buffer to maintain events we receive from the server that are unordered.
     buffer: HashMap<usize, OrderedTerminalEventType>,
-
-    should_suppress_existing_agent_conversation_replay: bool,
 }
 
 impl EventLoop {
@@ -117,28 +114,6 @@ impl EventLoop {
                 });
         }
 
-        let should_suppress_existing_agent_conversation_replay = matches!(
-            load_mode,
-            SharedSessionInitialLoadMode::AppendFollowupScrollback
-        );
-        // Append mode means the local conversation already contains the prior
-        // transcript. Arm both halves of the replay gate before this event
-        // loop can dispatch its first ordered response event: some sessions
-        // deliver replayed Init/CreateTask events before (or without) the
-        // explicit ReplayStarted marker. The request-aware controller gate
-        // still allows new live request IDs through.
-        if should_suppress_existing_agent_conversation_replay {
-            terminal_model
-                .lock()
-                .set_is_receiving_agent_conversation_replay(true);
-            if let Some(view) = terminal_view.upgrade(ctx) {
-                view.update(ctx, |view, ctx| {
-                    view.ai_controller().update(ctx, |controller, _ctx| {
-                        controller.set_should_suppress_existing_agent_conversation_replay(true);
-                    });
-                });
-            }
-        }
         let mut event_loop = Self {
             terminal_model,
             terminal_view,
@@ -150,7 +125,6 @@ impl EventLoop {
             next_event_no: 0,
             buffer: HashMap::new(),
             catching_up_to_event_no,
-            should_suppress_existing_agent_conversation_replay,
         };
 
         // Respect the sharer's window size.
@@ -218,17 +192,12 @@ impl EventLoop {
                         // When a non-agent command starts, clear the loading state and input buffer.
                         if should_clear_input && let Some(view) = self.terminal_view.upgrade(ctx) {
                             view.update(ctx, |view, ctx| {
-                                if view.has_queued_command_in_flight(ctx) {
-                                    return;
-                                }
                                 view.input().update(ctx, |input, ctx| {
-                                    // Restore frozen visual state. Then also reinitialize the
-                                    // buffer here: for shell commands the block transition will
-                                    // reset the CRDT with a new block ID shortly after, so the
-                                    // brief CRDT inconsistency is harmless. This pre-emptive
-                                    // clear gives the viewer an empty buffer while the command
-                                    // runs rather than showing the command text.
-                                    input.unfreeze_agent_input(false, ctx);
+                                    // Reinitialize the buffer here: for shell commands the block
+                                    // transition will reset the CRDT with a new block ID shortly
+                                    // after, so the brief CRDT inconsistency is harmless. This
+                                    // pre-emptive clear gives the viewer an empty buffer while the
+                                    // command runs rather than showing the command text.
                                     let editor = input.editor().clone();
                                     editor.update(ctx, |editor, ctx| {
                                         editor.reinitialize_buffer(None, ctx);

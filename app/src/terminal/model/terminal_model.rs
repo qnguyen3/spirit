@@ -8,9 +8,7 @@ use async_channel::Sender;
 use base64::Engine;
 use itertools::Either;
 use serde::Serialize;
-use session_sharing_protocol::common::{
-    AICommandMetadata, OrderedTerminalEventType, ParticipantId,
-};
+use session_sharing_protocol::common::{OrderedTerminalEventType, ParticipantId};
 use session_sharing_protocol::sharer::SessionSourceType;
 use string_offset::CharOffset;
 use warp_core::command::ExitCode;
@@ -33,7 +31,7 @@ use super::block::{
     BlocklistEnvVarMetadata, SerializedBlock,
 };
 use super::blockgrid::BlockGrid;
-use super::blocks::{ActiveBlockCompletion, BlockFilter};
+use super::blocks::ActiveBlockCompletion;
 use super::grid::grid_handler::{
     ContainsPoint, FragmentBoundary, GridHandler, Link, PossiblePath, TermMode,
 };
@@ -1314,9 +1312,7 @@ impl TerminalModel {
     }
 
     pub fn is_read_only(&self) -> bool {
-        self.handled_exit
-            || self.is_conversation_transcript_viewer()
-            || self.shared_session_status().is_finished_viewer()
+        self.handled_exit || self.shared_session_status().is_finished_viewer()
     }
 
     pub fn colors(&self) -> color::List {
@@ -2066,23 +2062,6 @@ impl TerminalModel {
 
     /// Takes accumulated typeahead that should be inserted into a front-end input editor.
     pub fn take_typeahead_for_input(&mut self) -> Option<(String, CharOffset)> {
-        let completed_block_index = self.block_list.prev_matching_block_from_index(
-            BlockFilter {
-                include_hidden: true,
-                include_background: false,
-            },
-            self.block_list.active_block_index(),
-        );
-        let was_entered_during_agent_requested_command =
-            completed_block_index.is_some_and(|index| {
-                self.block_list
-                    .block_at(index)
-                    .is_some_and(|block| block.agent_interaction_metadata().is_some())
-            });
-        if was_entered_during_agent_requested_command {
-            return None;
-        }
-
         let (typeahead, previously_inserted) =
             self.block_list.early_output_mut().advance_typeahead()?;
         Some((typeahead.to_owned(), previously_inserted))

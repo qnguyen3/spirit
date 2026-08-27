@@ -589,8 +589,7 @@ impl TerminalView {
             input.on_session_share_joined(input_replica_id, presence_manager, ctx);
         });
 
-        // Mark this terminal as a viewer for chips and AI context menu once on join
-        let is_ambient = self.is_ambient_agent_session(ctx);
+        // Mark this terminal as a viewer for chips once on join
         self.input().update(ctx, |input, ctx| {
             input
                 .prompt_render_helper
@@ -630,23 +629,10 @@ impl TerminalView {
             self.terminal_title = pwd.to_string();
         }
 
-        // Update the pane title, which will show either the conversation title/status
-        // if there's an active conversation, or fall back to the terminal_title (pwd).
+        // Update the pane title, which falls back to the terminal_title (pwd).
         self.update_pane_configuration(ctx);
 
         self.update_shared_session_pane_header(ctx);
-        // Shared ambient agent sessions should auto-open the details panel once, except for
-        // local-to-cloud handoff panes where the user stays in the moved conversation by default.
-        let is_local_to_cloud_handoff = self
-            .ambient_agent_view_model
-            .as_ref()
-            .is_some_and(|model| model.as_ref(ctx).is_local_to_cloud_handoff());
-        if FeatureFlag::CloudMode.is_enabled()
-            && matches!(source_type, SessionSourceType::AmbientAgent { .. })
-            && !is_local_to_cloud_handoff
-        {
-            self.maybe_auto_open_conversation_details_panel(ctx);
-        }
 
         send_telemetry_from_ctx!(
             TelemetryEvent::JoinedSharedSession {
@@ -797,18 +783,6 @@ impl TerminalView {
     /// (2) After the second interval, we show a warning modal
     /// (3) After the third interval, we end the session
     pub fn reset_sharer_inactivity_timer(&mut self, ctx: &mut ViewContext<Self>) {
-        // For ambient agent shared sessions, we do not auto-revoke roles or end the
-        // session due to inactivity. Clear any existing timer and return early so
-        // the session stays open until explicitly closed.
-        if self.model.lock().is_shared_ambient_agent_session() {
-            if let Some(sharer) = self.shared_session_sharer_mut()
-                && let Some(old_abort_handle) = sharer.inactivity_timer_abort_handle.take()
-            {
-                old_abort_handle.abort();
-            }
-            return;
-        }
-
         let Some(sharer) = self.shared_session_sharer_mut() else {
             return;
         };
@@ -1258,13 +1232,6 @@ impl TerminalView {
                 let role = &role;
                 editor.set_interaction_state(role.into(), ctx);
             });
-            // Role gates whether prompts can be sent, so the queued prompts panel's
-            // send-now buttons and enter hint must re-sync.
-            if let Some(panel) = input.queued_prompts_panel().cloned() {
-                panel.update(ctx, |panel, ctx| {
-                    panel.set_can_send_prompt(role.can_execute(), ctx);
-                });
-            }
         });
     }
 
@@ -1624,23 +1591,19 @@ impl TerminalView {
     }
 
     /// Returns true if viewer-driven sizing should be active.
-    /// For cloud agent sessions (AmbientAgent), the same-user identity check is skipped.
-    /// Otherwise, conditions: exactly 1 viewer, and that viewer is the same user as the sharer.
+    /// Conditions: exactly 1 viewer, and that viewer is the same user as the sharer.
     pub(crate) fn is_viewer_driven_sizing_eligible(
         &self,
         is_sharer: bool,
         ctx: &ViewContext<Self>,
     ) -> bool {
-        let skip_uid_check = self.is_shared_session_for_ambient_agent();
         self.shared_session_presence_manager()
             .map(|manager| {
                 let manager = manager.as_ref(ctx);
                 if is_sharer {
                     manager
                         .single_distinct_present_viewer_uid()
-                        .is_some_and(|viewer_uid| {
-                            skip_uid_check || viewer_uid == manager.firebase_uid().as_str()
-                        })
+                        .is_some_and(|viewer_uid| viewer_uid == manager.firebase_uid().as_str())
                 } else {
                     // No other distinct user should be viewing.
                     // Stale copies of our own connection share our UID.
@@ -1648,11 +1611,10 @@ impl TerminalView {
                         v.info.profile_data.firebase_uid == manager.firebase_uid().as_string()
                     });
                     no_other_user
-                        && (skip_uid_check
-                            || manager.get_sharer().is_some_and(|s| {
-                                s.info.profile_data.firebase_uid
-                                    == manager.firebase_uid().as_string()
-                            }))
+                        && manager.get_sharer().is_some_and(|s| {
+                            s.info.profile_data.firebase_uid
+                                == manager.firebase_uid().as_string()
+                        })
                 }
             })
             .unwrap_or(false)

@@ -182,13 +182,6 @@ impl SearchItemIcon for BindingGroup {
     fn icon(&self) -> Icon {
         match self {
             Self::Settings => Icon::Gear,
-            Self::WarpAi => {
-                if !FeatureFlag::AgentMode.is_enabled() {
-                    Icon::AiAssistant
-                } else {
-                    Icon::Agent
-                }
-            }
             Self::Close => Icon::X,
             Self::Navigation => Icon::Navigation,
             Self::Workflow => Icon::Workflow,
@@ -212,10 +205,6 @@ impl SearchItemIcon for BindingGroup {
             | Self::Folders
             | Self::Terminal
             | Self::Notifications => appearance.theme().foreground().into_solid(),
-            Self::WarpAi if !FeatureFlag::AgentMode.is_enabled() => {
-                ColorU::from_u32(colors::WARP_AI)
-            }
-            Self::WarpAi => appearance.theme().foreground().into_solid(),
             Self::Workflow => warp_drive_icon_color(appearance, DriveObjectType::Workflow),
             Self::Notebooks => warp_drive_icon_color(
                 appearance,

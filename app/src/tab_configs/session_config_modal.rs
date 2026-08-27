@@ -72,7 +72,7 @@ pub struct SessionConfigModal {
 impl SessionConfigModal {
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
-        let session_types = session_config_rendering::visible_session_types(true);
+        let session_types = session_config_rendering::visible_session_types();
 
         let close_button = ctx.add_view(|ctx| {
             ActionButton::new("", NakedTheme)
@@ -126,7 +126,7 @@ impl SessionConfigModal {
     /// to Terminal behind the scenes.
     pub fn configure(&mut self) {
         self.show_session_type_row = false;
-        self.session_types = session_config_rendering::visible_session_types(false);
+        self.session_types = session_config_rendering::visible_session_types();
         self.selected_session_type_index = 0;
         self.session_pill_mouse_states = self
             .session_types

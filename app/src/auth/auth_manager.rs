@@ -28,7 +28,6 @@ use super::user::User;
 use super::user_properties::UserProperties;
 use super::{AuthStateProvider, UserUid};
 use crate::autoupdate::AutoupdateState;
-use crate::persisted_workspace::PersistedWorkspace;
 use crate::persistence::ModelEvent;
 use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::graphql::get_user_facing_error_message;
@@ -448,10 +447,6 @@ impl AuthManager {
 
                 CloudPreferencesSyncer::handle(ctx).update(ctx, |model, ctx| {
                     model.handle_user_fetched(self.auth_state.clone(), ctx)
-                });
-
-                PersistedWorkspace::handle(ctx).update(ctx, |index_manager_updater, ctx| {
-                    index_manager_updater.on_user_changed(ctx);
                 });
 
                 if !user.is_user_anonymous() {

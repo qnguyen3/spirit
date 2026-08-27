@@ -12,7 +12,7 @@ use warpui::fonts::FamilyId;
 use warpui::{AppContext, Entity, EntityId, ModelContext, ModelHandle, SingletonEntity};
 
 use crate::search::slash_command_menu::fuzzy_match::SlashCommandFuzzyMatchResult;
-use crate::search::slash_command_menu::static_commands::{Availability, commands};
+use crate::search::slash_command_menu::static_commands::Availability;
 use crate::search::slash_command_menu::{SlashCommandId, StaticCommand};
 use crate::terminal::cli_agent_sessions::{CLIAgentSessionsModel, CLIAgentSessionsModelEvent};
 use crate::terminal::input::slash_command_model::{
@@ -21,7 +21,7 @@ use crate::terminal::input::slash_command_model::{
 use crate::terminal::input::slash_commands::AcceptSlashCommandOrSavedPrompt;
 use crate::terminal::model::session::SessionType;
 use crate::terminal::model::session::active_session::{ActiveSession, ActiveSessionEvent};
-use crate::workspaces::user_workspaces::{TeamContext, TeamContextResolver, UserWorkspaces};
+use crate::workspaces::user_workspaces::{TeamContext, TeamContextResolver};
 
 /// Event emitted when the set of active slash commands changes.
 #[derive(Debug, Clone, Copy)]
@@ -84,8 +84,8 @@ pub(super) fn subscribe_to_shared_dependencies<T>(
 /// State shared by GUI and TUI slash command data sources.
 ///
 /// Surface-neutral behavior is provided by [`SlashCommandDataSource`]. Surface-specific behavior
-/// such as agent view, cloud mode, compact rendering, recomputation, and event emission lives on
-/// the wrapping surface types.
+/// such as agent view, compact rendering, recomputation, and event emission lives on the wrapping
+/// surface types.
 pub struct SlashCommandDataSourceState {
     active_session: ModelHandle<ActiveSession>,
     terminal_view_id: EntityId,
@@ -209,8 +209,7 @@ pub trait SlashCommandDataSource {
 
     /// Availability bits derived only from state shared by both surfaces.
     ///
-    /// Surfaces add their own bits (agent view vs. terminal view, cloud mode, active
-    /// conversation) on top of this baseline.
+    /// Surfaces add their own bits (agent view vs. terminal view) on top of this baseline.
     fn base_availability(&self, ctx: &AppContext) -> Availability {
         let mut availability = Availability::empty();
 
@@ -236,18 +235,7 @@ pub trait SlashCommandDataSource {
             availability |= Availability::REPOSITORY;
         }
 
-        if !self
-            .state()
-            .cli_subagent_controller
-            .as_ref(ctx)
-            .is_agent_in_control()
-        {
-            availability |= Availability::NO_LRC_CONTROL;
-        }
-
-        if UserWorkspaces::as_ref(ctx).is_codebase_context_enabled(ctx) {
-            availability |= Availability::CODEBASE_CONTEXT;
-        }
+        availability |= Availability::NO_LRC_CONTROL;
 
         availability
     }

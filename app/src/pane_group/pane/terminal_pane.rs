@@ -550,9 +550,6 @@ fn handle_terminal_view_event(
             Event::OpenPluginInstructionsPane(agent, kind) => {
                 ctx.emit(pane_group::Event::OpenPluginInstructionsPane(*agent, *kind));
             }
-            Event::AskAIAssistant(ask_type) => {
-                ctx.emit(pane_group::Event::AskAIAssistant(ask_type.to_owned()))
-            }
             Event::SyncInput(sync_event) => {
                 if SyncedInputState::as_ref(ctx)
                     .should_sync_this_pane_group(ctx.view_id(), ctx.window_id())
@@ -639,15 +636,6 @@ fn handle_terminal_view_event(
             }
             Event::OpenShareSessionModal { open_source } => {
                 group.open_share_session_modal(terminal_pane_id, *open_source, ctx)
-            }
-            // When the host's manual share stops, also stop the share on
-            // any local children whose share was auto-created via
-            // `inherit_share_for_local_child`. Skipped on wasm because the
-            // transitive-share tracker is only populated on non-wasm
-            // dispatch paths.
-            #[cfg(not(target_family = "wasm"))]
-            Event::StopSharingCurrentSession { .. } => {
-                group.stop_transitively_shared_child_shares(pane_id, ctx);
             }
             Event::OpenShareSessionDeniedModal => {
                 group.open_share_session_denied_modal(terminal_pane_id, ctx);
@@ -775,11 +763,6 @@ fn handle_terminal_view_event(
             Event::OpenFilesPalette { source } => {
                 ctx.emit(pane_group::Event::OpenFilesPalette { source: *source })
             }
-            Event::OpenAddPromptPane { initial_content } => {
-                ctx.emit(crate::pane_group::Event::OpenAddPromptPane {
-                    initial_content: initial_content.clone(),
-                });
-            }
             Event::OpenEnvironmentManagementPane => {
                 ctx.emit(crate::pane_group::Event::OpenEnvironmentManagementPane);
             }
@@ -815,20 +798,6 @@ fn handle_terminal_view_event(
                     diff_mode: diff_mode.to_owned(),
                     open_code_review: open_code_review.clone(),
                 });
-            }
-            Event::EnsureSharedSessionViewerChildPane {
-                conversation_id,
-                session_id,
-            } => {
-                // Emitted by `OrchestrationViewerModel` when a child of the
-                // orchestrator currently being viewed first surfaces a
-                // joinable `session_id`. Materializes a dedicated hidden
-                // shared-session viewer pane for the child so subsequent pill
-                // clicks land on a populated agent view rather than an empty
-                // cloud-mode shell. Only reached while
-                // `OrchestrationUnifiedStack` is disabled; the unified stack
-                // emits `EnsureUnifiedViewerChildPane` instead.
-                group.ensure_shared_session_viewer_child_pane(*conversation_id, *session_id, ctx);
             }
             _ => {}
         }

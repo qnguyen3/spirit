@@ -255,6 +255,7 @@ pub fn render_status_element(
 ) -> Box<dyn warpui::Element> {
     use warp_core::ui::color::coloru_with_opacity;
     use warp_core::ui::theme::Fill;
+    use warpui::Element;
     use warpui::elements::{ConstrainedBox, Container, CornerRadius, Radius};
 
     let theme = appearance.theme();

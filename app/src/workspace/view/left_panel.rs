@@ -702,7 +702,7 @@ impl LeftPanelView {
             }
         });
 
-        self.on_left_panel_visibility_changed(left_panel_open, ctx);
+        self.on_left_panel_visibility_changed(ctx);
 
         ctx.notify();
     }

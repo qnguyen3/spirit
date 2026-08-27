@@ -12221,7 +12221,6 @@ impl TerminalView {
             InputEvent::OpenFilesPalette { source } => {
                 ctx.emit(Event::OpenFilesPalette { source: *source })
             }
-            InputEvent::SubmitCLIAgentInput { .. } => {}
             InputEvent::ShowToast { message, flavor } => {
                 ctx.emit(Event::ShowToast {
                     message: message.clone(),

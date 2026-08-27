@@ -14,12 +14,11 @@ use selection::BlockListSelection;
 pub use selection::SelectionRange;
 use sum_tree::{Dimension, Item, SeekBias, SumTree};
 use warp_core::command::ExitCode;
-use warp_core::features::FeatureFlag;
 use warp_terminal::model::{KeyboardModes, KeyboardModesApplyBehavior};
 use warpui::r#async::executor::Background;
 use warpui::color::ColorU;
 use warpui::units::{IntoLines, IntoPixels, Lines};
-use warpui::{AppContext, EntityId, ViewHandle, record_trace_event};
+use warpui::{EntityId, record_trace_event};
 
 use super::ansi::{Handler, InputBufferValue};
 use super::block::{BlockId, BlockSize, BlockState};
@@ -640,9 +639,7 @@ impl BlockList {
             scroll_position_before_filter: None,
             is_inverted,
             transcript_scope: TranscriptScope::Terminal,
-            active_conversation_context: None,
             pinned_to_bottom: None,
-            is_executing_oz_environment_startup_commands: false,
         }
     }
 
@@ -1876,8 +1873,7 @@ impl BlockList {
                             height_when_visible: *height_when_visible,
                             is_historical_conversation_restoration:
                                 *is_historical_conversation_restoration,
-                            // Don't show restored block separators in the agent view.
-                            is_hidden: transcript_scope.is_conversation(),
+                            is_hidden: false,
                         });
                     }
                     BlockHeightItem::InlineBanner {
@@ -1885,12 +1881,10 @@ impl BlockList {
                         height_when_visible: height,
                         ..
                     } => {
-                        let is_hidden = transcript_scope.is_conversation()
-                            && !banner.banner_type.is_visible_in_agent_view();
                         new_sum_tree.push(BlockHeightItem::InlineBanner {
                             banner: *banner,
                             height_when_visible: *height,
-                            is_hidden,
+                            is_hidden: false,
                         });
                     }
                 }
@@ -2323,11 +2317,6 @@ impl BlockList {
             block.set_prompt_grids_from_cached_data(prompt_grid, rprompt_grid);
         }
 
-        if self.is_executing_oz_environment_startup_commands {
-            block.set_is_oz_environment_startup_command(true);
-            block.hide();
-        }
-
         self.block_heights.push(BlockHeightItem::Block(
             block.height(&self.transcript_scope).into(),
         ));
@@ -2357,7 +2346,6 @@ impl BlockList {
             BlockIndex::zero(),
             false,
             self.obfuscate_secrets,
-            None,
         )
     }
 

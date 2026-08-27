@@ -183,6 +183,15 @@ impl LocalControlBridge {
             ActionKind::WindowClose => close::window_close(&self.instance_id, &request, ctx),
             ActionKind::TabClose => close::tab_close(&self.instance_id, &request, ctx),
             ActionKind::PaneClose => close::pane_close(&self.instance_id, &request, ctx),
+            ActionKind::SurfaceAiAssistantToggle
+            | ActionKind::SurfaceConversationListOpen
+            | ActionKind::SurfaceAgentManagementOpen => Err(ControlError::new(
+                ErrorCode::UnsupportedAction,
+                format!(
+                    "{} is not supported by this build",
+                    request.action.kind.as_str()
+                ),
+            )),
         };
         match result {
             Ok(data) => ResponseEnvelope::ok(request.request_id, data),

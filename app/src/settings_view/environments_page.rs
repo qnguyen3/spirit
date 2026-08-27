@@ -44,7 +44,7 @@ use crate::auth::AuthStateProvider;
 use crate::cloud_object::model::generic_string_model::StringModel;
 use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
 use crate::cloud_object::{
-    CloudObjectLocation, CloudObjectLookup as _, GenericStringObjectFormat,
+    CloudModelType as _, CloudObjectLocation, CloudObjectLookup as _, GenericStringObjectFormat,
     GenericStringObjectUniqueKey, JsonObjectType, ObjectType, Owner, Revision, Space,
 };
 use crate::drive::CloudObjectTypeAndId;
@@ -65,7 +65,7 @@ use crate::view_components::{
     COPY_FEEDBACK_DURATION, CopyButtonPlacement, CopyableTextFieldConfig, DismissibleToast,
     render_copyable_text_field,
 };
-use crate::workspace::{ToastStack, WorkspaceAction};
+use crate::workspace::ToastStack;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 
 mod new_environment_button;
@@ -260,13 +260,13 @@ fn owner_for_new_personal_environment(app: &AppContext) -> Option<Owner> {
     Some(Owner::User { user_uid: user_id })
 }
 
-fn owner_for_new_environment(app: &AppContext) -> Option<Owner> {
-    match UserWorkspaces::as_ref(app)
-        .team_for_view(app)
+fn owner_for_new_environment<T: Entity>(ctx: &ViewContext<T>) -> Option<Owner> {
+    match UserWorkspaces::as_ref(ctx)
+        .team_for_view(ctx)
         .map(|team| team.uid)
     {
         Some(team_uid) => Some(Owner::Team { team_uid }),
-        None => owner_for_new_personal_environment(app),
+        None => owner_for_new_personal_environment(ctx),
     }
 }
 
@@ -278,7 +278,6 @@ pub struct EnvironmentsPageView {
     edit_button_mouse_states: HashMap<SyncId, MouseStateHandle>,
     share_button_mouse_states: HashMap<SyncId, MouseStateHandle>,
     card_hover_mouse_states: HashMap<SyncId, MouseStateHandle>,
-    view_runs_link_mouse_states: HashMap<SyncId, MouseStateHandle>,
     /// Tracks when each env ID was last copied, for showing checkmark feedback
     copy_feedback_times: HashMap<SyncId, Instant>,
     // List page search state
@@ -313,7 +312,6 @@ impl EnvironmentsPageView {
             self.edit_button_mouse_states.entry(env.id).or_default();
             self.share_button_mouse_states.entry(env.id).or_default();
             self.card_hover_mouse_states.entry(env.id).or_default();
-            self.view_runs_link_mouse_states.entry(env.id).or_default();
         }
     }
     pub fn update_page(&mut self, page: EnvironmentsPage, ctx: &mut ViewContext<Self>) {
@@ -489,7 +487,6 @@ impl EnvironmentsPageView {
         let mut edit_button_mouse_states = HashMap::new();
         let mut share_button_mouse_states = HashMap::new();
         let mut card_hover_mouse_states = HashMap::new();
-        let mut view_runs_link_mouse_states = HashMap::new();
         for env in CloudAmbientAgentEnvironment::get_all(ctx) {
             copy_button_mouse_states
                 .entry(env.id)
@@ -501,9 +498,6 @@ impl EnvironmentsPageView {
                 .entry(env.id)
                 .or_insert_with(MouseStateHandle::default);
             card_hover_mouse_states
-                .entry(env.id)
-                .or_insert_with(MouseStateHandle::default);
-            view_runs_link_mouse_states
                 .entry(env.id)
                 .or_insert_with(MouseStateHandle::default);
         }
@@ -524,7 +518,6 @@ impl EnvironmentsPageView {
             edit_button_mouse_states,
             share_button_mouse_states,
             card_hover_mouse_states,
-            view_runs_link_mouse_states,
             copy_feedback_times: HashMap::new(),
             search_query: String::new(),
             search_editor,
@@ -935,7 +928,6 @@ struct EnvironmentCardRenderState<'a> {
     edit_button_mouse_states: &'a HashMap<SyncId, MouseStateHandle>,
     share_button_mouse_states: &'a HashMap<SyncId, MouseStateHandle>,
     card_hover_mouse_states: &'a HashMap<SyncId, MouseStateHandle>,
-    view_runs_link_mouse_states: &'a HashMap<SyncId, MouseStateHandle>,
     copy_feedback_times: &'a HashMap<SyncId, Instant>,
 }
 
@@ -1071,7 +1063,6 @@ impl EnvironmentsPageWidget {
                     edit_button_mouse_states: &view.edit_button_mouse_states,
                     share_button_mouse_states: &view.share_button_mouse_states,
                     card_hover_mouse_states: &view.card_hover_mouse_states,
-                    view_runs_link_mouse_states: &view.view_runs_link_mouse_states,
                     copy_feedback_times: &view.copy_feedback_times,
                 };
 
@@ -1627,12 +1618,6 @@ impl EnvironmentsPageWidget {
             .cloned()
             .unwrap_or_else(MouseStateHandle::default);
 
-        let view_runs_link_mouse_state = card_render_state
-            .view_runs_link_mouse_states
-            .get(&env_id)
-            .cloned()
-            .unwrap_or_else(MouseStateHandle::default);
-
         let last_copied_at = card_render_state.copy_feedback_times.get(&env_id).copied();
 
         Hoverable::new(card_hover_mouse_state, move |state| {
@@ -1735,30 +1720,7 @@ impl EnvironmentsPageWidget {
 
             let timestamp_color = blended_colors::text_sub(theme, theme.surface_1());
 
-            // Add "Last edited" and "Last used" text with a "View my runs" link.
-            let view_runs_env_id = env_id_str.clone();
-            let view_runs_link = appearance
-                .ui_builder()
-                .link(
-                    "View my runs".to_string(),
-                    None,
-                    Some(Box::new(move |ctx| {
-                        ctx.dispatch_typed_action(WorkspaceAction::ViewAgentRunsForEnvironment {
-                            environment_id: view_runs_env_id.clone(),
-                        });
-                    })),
-                    view_runs_link_mouse_state.clone(),
-                )
-                .soft_wrap(false)
-                .with_style(UiComponentStyles {
-                    font_family_id: Some(appearance.ui_font_family()),
-                    font_size: Some(appearance.ui_font_size() * 0.9),
-                    font_weight: Some(Weight::Normal),
-                    ..Default::default()
-                })
-                .build()
-                .finish();
-
+            // Add "Last edited" and "Last used" text.
             let timestamp_row = Flex::row()
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
                 .with_child(
@@ -1771,16 +1733,6 @@ impl EnvironmentsPageWidget {
                     .with_selectable(true)
                     .finish(),
                 )
-                .with_child(
-                    Text::new_inline(
-                        " · ",
-                        appearance.ui_font_family(),
-                        appearance.ui_font_size() * 0.9,
-                    )
-                    .with_color(timestamp_color)
-                    .finish(),
-                )
-                .with_child(view_runs_link)
                 .finish();
 
             details_section.add_child(timestamp_row);

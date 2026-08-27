@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use warpui::{AppContext, Entity, EntityId, ModelContext, ModelHandle};
+use warpui::{AppContext, Entity, EntityId, ModelContext, ModelHandle, SingletonEntity};
 
 use super::core::subscribe_to_shared_dependencies;
 use super::{
