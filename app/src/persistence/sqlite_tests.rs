@@ -373,6 +373,71 @@ fn test_deduplicate_no_snapshots() {
     assert!(matches!(&filtered_events[0], &ModelEvent::SaveBlock(_)));
 }
 
+/// Decision D4: window snapshots written by older builds can contain panes for AI features that
+/// no longer exist. Restoring one must not abort, and must not drop the surrounding tab -- each
+/// removed pane kind decodes into a fresh empty terminal pane so the tab layout survives the
+/// downgrade. Simulates the legacy rows by rewriting a saved terminal pane's kind, since the
+/// current writer can no longer produce them.
+#[test]
+fn legacy_ai_panes_restore_as_terminal_panes() {
+    for legacy_kind in [
+        "ai_memory",
+        "mcp_server",
+        "ai_document",
+        "ambient_agent",
+        "execution_profile_editor",
+    ] {
+        let tempdir = tempfile::tempdir().expect("tempdir should be created");
+        let database_path = tempdir.path().join("warp.sqlite");
+        let mut conn = setup_database(&database_path).expect("database should initialize");
+
+        let app_state = AppState {
+            windows: vec![test_terminal_window_snapshot(false)],
+            active_window_index: Some(0),
+            block_lists: Default::default(),
+            running_mcp_servers: Default::default(),
+        };
+        save_app_state(&mut conn, &app_state).expect("app state should save");
+
+        // `terminal_panes` is keyed on (id, kind) and CHECKs kind = 'terminal', so the child
+        // row goes before the leaf can take a legacy kind.
+        conn.batch_execute(&format!(
+            "DELETE FROM terminal_panes; \
+             UPDATE pane_leaves SET kind = '{legacy_kind}' WHERE kind = 'terminal';"
+        ))
+        .expect("legacy pane kind should be written");
+
+        let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
+            .unwrap_or_else(|err| panic!("restore must not fail for {legacy_kind}: {err}"));
+        let restored_app_state = restored
+            .app_state
+            .unwrap_or_else(|| panic!("app state should be present for {legacy_kind}"));
+
+        assert_eq!(
+            restored_app_state.windows.len(),
+            1,
+            "the window must survive a {legacy_kind} pane"
+        );
+        let tabs = &restored_app_state.windows[0].tabs;
+        assert_eq!(tabs.len(), 1, "the tab must survive a {legacy_kind} pane");
+
+        let PaneNodeSnapshot::Leaf(leaf) = &tabs[0].root else {
+            panic!("restored root should be a leaf for {legacy_kind}");
+        };
+        let LeafContents::Terminal(terminal) = &leaf.contents else {
+            panic!("a {legacy_kind} pane should restore as a terminal pane");
+        };
+        assert!(
+            terminal.cwd.is_none() && terminal.shell_launch_data.is_none(),
+            "a {legacy_kind} pane should restore as an empty terminal, not inherit stale state"
+        );
+        assert!(
+            !terminal.uuid.is_empty(),
+            "the replacement terminal pane needs its own uuid for {legacy_kind}"
+        );
+    }
+}
+
 fn test_terminal_window_snapshot(vertical_tabs_panel_open: bool) -> WindowSnapshot {
     WindowSnapshot {
         tabs: vec![TabSnapshot {
