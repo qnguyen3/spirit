@@ -100,7 +100,7 @@ use super::block_list_viewport::InputMode;
 use super::event::{BlockCompletedEvent, BlockType, UserBlockCompleted};
 use super::ligature_settings::LigatureSettings;
 use super::model::block::{
-    AgentInteractionMetadata, BlockId, BlockMetadata, BlocklistEnvVarMetadata,
+    BlockId, BlockMetadata, BlocklistEnvVarMetadata,
 };
 use super::model::session::{Session, SessionId, SessionType, Sessions};
 use super::prompt_render_helper::{
@@ -567,10 +567,6 @@ pub enum CommandExecutionSource {
         /// The block ID associated to the active block when
         /// the request was fired.
         block_id: BlockId,
-        /// Optional AI metadata if this command was requested by the AI agent
-        /// in a shared session. This is used to associate the resulting command block
-        /// with the original agent command.
-        ai_metadata: Option<AgentInteractionMetadata>,
         /// True when the command was dispatched by a queued command row rather than the current
         /// editor buffer, so input draft state should be preserved.
         preserve_input: bool,
@@ -2519,7 +2515,6 @@ impl Input {
             CommandExecutionSource::SharedSession {
                 participant_id,
                 block_id,
-                ai_metadata: None,
                 preserve_input,
             },
             ctx,
@@ -5266,7 +5261,6 @@ impl Input {
         ctx: &'a ViewContext<Self>,
     ) -> Vec<HistoryInputSuggestion<'a>> {
         History::as_ref(ctx).up_arrow_suggestions_for_terminal_surface(
-            self.terminal_view_id,
             self.active_block_session_id(),
             UpArrowHistoryConfig::default(),
             ctx,

@@ -383,7 +383,6 @@ impl Network {
         active_prompt: ActivePrompt,
         selection: Selection,
         input_replica_id: ReplicaId,
-        terminal_view_id: warpui::EntityId,
         universal_developer_input_context: UniversalDeveloperInputContext,
         lifetime: Lifetime,
         source: SharedSessionSource,
@@ -403,11 +402,7 @@ impl Network {
                 num_cols: size_info.columns(),
             }
         };
-        let selected_model_id: String = crate::ai::llms::LLMPreferences::as_ref(ctx)
-            .get_active_base_model(ctx, Some(terminal_view_id))
-            .id
-            .clone()
-            .into();
+        let selected_model_id = String::new();
         let startup_retry = StartupRetryState::new(startup_max_attempts(&source));
         let startup_config = StartupConfig {
             scrollback: scrollback.clone(),

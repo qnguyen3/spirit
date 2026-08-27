@@ -5,8 +5,6 @@ mod bookmarks;
 mod context_menu;
 pub mod init;
 pub mod inline_banner;
-use onboarding::callout::{FinalState, OnboardingCalloutViewEvent, OnboardingQuery};
-use onboarding::{OnboardingCalloutView, OnboardingKeybindings};
 use repo_metadata::CanonicalizedPath;
 use warp_util::remote_path::RemotePath;
 use warp_util::standardized_path::StandardizedPath;
@@ -297,7 +295,6 @@ use crate::terminal::input::{
     CommandExecutionSource, InputAction, InputEmptyStateChangeReason, InputState, MenuPositioning,
     MenuPositioningProvider,
 };
-use crate::terminal::keys::TerminalKeybindings;
 use crate::terminal::ligature_settings::{LigatureSettings, should_use_ligature_rendering};
 use crate::terminal::links::should_directly_open_link;
 #[cfg(feature = "local_tty")]
@@ -309,7 +306,7 @@ use crate::terminal::local_tty::shell::ShellStarter;
 use crate::terminal::local_tty::windows::get_user_and_system_env_variable;
 use crate::terminal::model::ansi::{ClearMode, Handler};
 use crate::terminal::model::block::{
-    AgentInteractionMetadata, Block, BlockId, BlockMetadata, LONG_RUNNING_BOTTOM_PADDING_LINES,
+    Block, BlockId, BlockMetadata, LONG_RUNNING_BOTTOM_PADDING_LINES,
 };
 use crate::terminal::model::blockgrid::BlockGrid;
 use crate::terminal::model::blocks::{
@@ -336,7 +333,7 @@ use crate::terminal::recorder::PtyRecorder;
 use crate::terminal::safe_mode_settings::get_secret_obfuscation_mode;
 use crate::terminal::session_settings::{
     DEFAULT_THRESHOLD_FOR_LONG_RUNNING_NOTIFICATION, NotificationsMode, NotificationsSettings,
-    SessionSettings, SessionSettingsChangedEvent, ToolbarChipSelection,
+    SessionSettings, SessionSettingsChangedEvent,
 };
 use crate::terminal::settings::{TerminalSettings, TerminalSettingsChangedEvent};
 use crate::terminal::shared_session::manager::Manager;
@@ -2071,7 +2068,6 @@ pub struct TerminalView {
     onboarding_prompt_block: Option<ViewHandle<OnboardingPromptBlock>>,
     settings_import_onboarding_block: Option<ViewHandle<SettingsImportView>>,
 
-    onboarding_callout_view: Option<ViewHandle<onboarding::OnboardingCalloutView>>,
 
     /// The type of the subshell that we will bootstrap/"warpify"" on the next [`AfterBlockStarted`]
     /// terminal model event. Will only be `Some` with a [`ShellType`] we can bootstrap.
@@ -2952,7 +2948,6 @@ impl TerminalView {
             block_onboarding_active: false,
             onboarding_prompt_block: None,
             settings_import_onboarding_block: None,
-            onboarding_callout_view: None,
             pending_auto_bootstrap_shell_type: None,
             pending_env_var_collection: None,
             env_vars: Vec::new(),
@@ -7888,7 +7883,6 @@ impl TerminalView {
         if TerminalSettings::as_ref(ctx).should_show_zero_state_block()
             && !self.model.lock().block_list().is_restored_session()
             && !should_show_onboarding
-            && self.onboarding_callout_view.is_none()
             && !is_launch_modal_open
             && !is_subshell_or_ssh
             && !has_plugin_instructions_block
@@ -8213,54 +8207,6 @@ impl TerminalView {
     }
 }
 
-/// Constructs the keybindings struct for the onboarding callout.
-///
-/// Gets display strings for:
-/// - Toggle input mode: from TerminalKeybindings (editable binding)
-/// - Submit to local agent: fixed binding (cmd-enter / ctrl-shift-enter)
-/// - Submit to cloud agent: fixed binding (cmd-alt-enter / ctrl-alt-enter)
-fn build_onboarding_keybindings(ctx: &AppContext) -> OnboardingKeybindings {
-    let toggle_input_mode = TerminalKeybindings::handle(ctx)
-        .as_ref(ctx)
-        .set_input_mode_agent_keybinding()
-        .unwrap_or_else(|| {
-            if OperatingSystem::get().is_mac() {
-                "⌘-I".to_string()
-            } else {
-                "Ctrl-I".to_string()
-            }
-        });
-
-    // EditorAction::CmdEnter is a fixed binding, not editable
-    let submit_to_local_agent = if OperatingSystem::get().is_mac() {
-        Keystroke::parse("cmd-enter")
-    } else {
-        Keystroke::parse("ctrl-shift-enter")
-    }
-    .map(|k| k.displayed())
-    .unwrap_or_else(|_| "⌘-⏎".to_string());
-
-    // TerminalAction::EnterCloudAgentView is a fixed binding, not editable
-    let submit_to_cloud_agent = if OperatingSystem::get().is_mac() {
-        Keystroke::parse("cmd-alt-enter")
-    } else {
-        Keystroke::parse("ctrl-alt-enter")
-    }
-    .map(|k| k.displayed())
-    .unwrap_or_else(|_| "⌘-⌥-⏎".to_string());
-
-    let return_to_terminal_mode = Keystroke::parse("escape")
-        .map(|k| k.displayed())
-        .unwrap_or_else(|_| "ESC".to_string());
-
-    OnboardingKeybindings {
-        toggle_input_mode,
-        submit_to_local_agent,
-        submit_to_cloud_agent,
-        return_to_terminal_mode,
-    }
-}
-
 /// Builds the context-menu label for forking an AI conversation from a given query.
 fn fork_label_for_query(query: &str) -> String {
     if query.is_empty() {
@@ -8278,54 +8224,6 @@ fn fork_label_for_query(query: &str) -> String {
 }
 
 impl TerminalView {
-
-    fn maybe_render_onboarding_callout(
-        &self,
-        menu_positioning: MenuPositioning,
-        should_position_above_zero_state: bool,
-        stack: &mut Stack,
-        app: &AppContext,
-    ) {
-        let Some(onboarding_view) = self.onboarding_callout_view.as_ref() else {
-            return;
-        };
-
-        let (position_id, anchor, child_anchor, offset) = match (
-            should_position_above_zero_state,
-            self.agent_view_zero_state_save_position_id(app),
-            menu_positioning,
-        ) {
-            (true, Some(zero_state_position_id), _) => (
-                zero_state_position_id,
-                PositionedElementAnchor::TopLeft,
-                ChildAnchor::BottomLeft,
-                vec2f(4., -8.),
-            ),
-            (_, _, MenuPositioning::BelowInputBox) => (
-                self.input.as_ref(app).status_free_input_save_position_id(),
-                PositionedElementAnchor::BottomLeft,
-                ChildAnchor::TopLeft,
-                vec2f(4., 8.),
-            ),
-            (_, _, MenuPositioning::AboveInputBox) => (
-                self.input.as_ref(app).status_free_input_save_position_id(),
-                PositionedElementAnchor::TopLeft,
-                ChildAnchor::BottomLeft,
-                vec2f(4., -8.),
-            ),
-        };
-
-        stack.add_positioned_overlay_child(
-            ChildView::new(onboarding_view).finish(),
-            OffsetPositioning::offset_from_save_position_element(
-                position_id.as_str(),
-                offset,
-                PositionedElementOffsetBounds::WindowByPosition,
-                anchor,
-                child_anchor,
-            ),
-        );
-    }
 
     // Redundantly issues resize changes to increase the chances that the alt-screen program
     // gets the latest winsize when it has a resize handler setup.
@@ -12204,23 +12102,6 @@ impl TerminalView {
         ctx.notify();
     }
 
-    fn focus_onboarding_callout_if_active(&mut self, ctx: &mut ViewContext<Self>) -> bool {
-        let Some(onboarding_callout_view) = self.onboarding_callout_view.as_ref() else {
-            return false;
-        };
-
-        if !onboarding_callout_view
-            .as_ref(ctx)
-            .is_onboarding_active(ctx)
-        {
-            return false;
-        }
-
-        ctx.focus(onboarding_callout_view);
-        ctx.notify();
-        true
-    }
-
     fn focus_block_filter_editor(&mut self, ctx: &mut ViewContext<Self>) {
         ctx.focus(&self.block_filter_editor);
         ctx.notify();
@@ -12329,12 +12210,6 @@ impl TerminalView {
         }
 
         if OneTimeModalModel::as_ref(ctx).is_any_modal_open() {
-            return;
-        }
-
-        // If the onboarding callout is active, it should win focus so that its displayed
-        // keybindings (enter/delete) actually work.
-        if self.focus_onboarding_callout_if_active(ctx) {
             return;
         }
 
@@ -13893,11 +13768,7 @@ impl TerminalView {
                 // determines if we need git status updates.
                 self.update_git_status_subscription(ctx);
             }
-            SessionSettingsChangedEvent::CLIAgentToolbarChipSelectionSetting { .. } => {
-                self.update_git_status_subscription(ctx);
-            }
-            SessionSettingsChangedEvent::AgentToolbarChipSelectionSetting { .. }
-            | SessionSettingsChangedEvent::GithubPrChipDefaultValidation { .. } => {
+            SessionSettingsChangedEvent::GithubPrChipDefaultValidation { .. } => {
                 self.update_git_status_subscription(ctx);
             }
             _ => {}
@@ -16271,10 +16142,6 @@ impl PtyIntentEvent for Event {
             Event::CtrlD => Some(PtyIntent::CtrlD),
             Event::ShutdownPty => Some(PtyIntent::ShutdownPty),
             Event::WriteBytesToPty { bytes } => Some(PtyIntent::WriteBytes(bytes.clone())),
-            Event::WriteAgentInputToPty { bytes, mode } => Some(PtyIntent::WriteAgentInput {
-                bytes: bytes.clone(),
-                mode: *mode,
-            }),
             Event::Resize { size_update } => Some(PtyIntent::Resize(*size_update)),
             Event::ExecuteCommand(event) => Some(PtyIntent::ExecuteCommand(event.clone())),
             Event::RunNativeShellCompletions {
@@ -17180,13 +17047,6 @@ impl View for TerminalView {
         };
         let viewport = self.viewport_state(model.block_list(), input_mode, app);
         let is_alt_screen_active = { model.is_alt_screen_active() };
-        // Compute callout positioning early while we have the model lock.
-        // For the final Agent Modality callout, always position relative to the input box,
-        // even when the zero state is visible.
-        let should_position_callout_above_zero_state = self
-            .onboarding_callout_view
-            .as_ref()
-            .is_some_and(|v| v.as_ref(app).should_position_above_zero_state(app));
         let is_long_running_command = {
             model
                 .block_list()
@@ -17334,13 +17194,6 @@ impl View for TerminalView {
                 ),
             );
         }
-
-        self.maybe_render_onboarding_callout(
-            menu_positioning,
-            should_position_callout_above_zero_state,
-            &mut stack,
-            app,
-        );
 
         match &self.context_menu_state.map(|c| c.menu_type) {
             Some(ContextMenuType::BlockList { menu_source }) => match menu_source {

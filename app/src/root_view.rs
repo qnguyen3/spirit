@@ -2394,13 +2394,7 @@ impl RootView {
         if account_class.is_none() || cloud_ready {
             self.pending_account_first_settings_class = None;
             if let Some(selected_settings) = self.pending_post_auth_onboarding_settings.take() {
-                let team_context = UserWorkspaces::as_ref(ctx).team_context_for_operation(ctx);
-                apply_account_first_onboarding_settings(
-                    &selected_settings,
-                    account_class,
-                    team_context,
-                    ctx,
-                );
+                apply_account_first_onboarding_settings(&selected_settings, ctx);
             }
         } else {
             self.pending_account_first_settings_class = account_class;
@@ -2461,8 +2455,7 @@ impl RootView {
                 // User opted out of login: apply locally (no cloud race).
                 // Skipping leaves the user without an account, so AI is disabled.
                 if let Some(selected_settings) = self.pending_post_auth_onboarding_settings.take() {
-                    let team_context = UserWorkspaces::as_ref(ctx).team_context_for_operation(ctx);
-                    apply_onboarding_settings(&selected_settings, false, team_context, ctx);
+                    apply_onboarding_settings(&selected_settings, ctx);
                 }
                 self.auth_onboarding_state = AuthOnboardingState::Terminal(workspace);
                 ctx.emit(RootViewEvent::AuthOnboardingStateChanged);
@@ -2615,7 +2608,7 @@ impl RootView {
                 }
 
                 let team_context = UserWorkspaces::as_ref(ctx).team_context_for_operation(ctx);
-                apply_onboarding_settings(selected_settings, is_logged_in, team_context, ctx);
+                apply_onboarding_settings(selected_settings, ctx);
 
                 if is_logged_in {
                     AuthManager::handle(ctx)
@@ -3721,13 +3714,8 @@ impl RootView {
         }
         if let Some(account_class) = self.pending_account_first_settings_class.take() {
             if let Some(selected_settings) = self.pending_post_auth_onboarding_settings.take() {
-                let team_context = UserWorkspaces::as_ref(ctx).team_context_for_operation(ctx);
-                apply_account_first_onboarding_settings(
-                    &selected_settings,
-                    Some(account_class),
-                    team_context,
-                    ctx,
-                );
+                let _ = account_class;
+                apply_account_first_onboarding_settings(&selected_settings, ctx);
             }
             if self.pending_account_first_tutorial_after_settings {
                 self.pending_account_first_tutorial_after_settings = false;
@@ -3749,7 +3737,7 @@ impl RootView {
         };
         // Reached only after a successful login, so the user has an account.
         let team_context = UserWorkspaces::as_ref(ctx).team_context_for_operation(ctx);
-        apply_onboarding_settings(&selected_settings, true, team_context, ctx);
+        apply_onboarding_settings(&selected_settings, ctx);
     }
 
     /// If onboarding stored a pending tutorial (because login was required first),

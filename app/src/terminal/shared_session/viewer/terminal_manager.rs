@@ -25,7 +25,6 @@ use super::network::{
     command_execution_failure_reason_string, control_action_failure_reason_string,
     session_ended_reason_string, viewer_removed_reason_string, write_to_pty_failure_reason_string,
 };
-use super::orchestration_viewer_model::OrchestrationViewerModel;
 use crate::context_chips::prompt_snapshot::PromptSnapshot;
 use crate::context_chips::prompt_type::PromptType;
 use crate::features::FeatureFlag;
@@ -46,9 +45,7 @@ use crate::terminal::shared_session::SharedSessionStatus;
 use crate::terminal::shared_session::manager::Manager;
 use crate::terminal::shared_session::permissions_manager::SessionPermissionsManager;
 use crate::terminal::shared_session::shared_handlers::{
-    ActiveRemoteUpdate, RemoteUpdateGuard, apply_auto_approve_agent_actions_update,
-    apply_cli_agent_state_update, apply_input_mode_update, apply_selected_agent_model_update,
-    apply_selected_conversation_update, build_selected_conversation_update,
+    ActiveRemoteUpdate, RemoteUpdateGuard, apply_cli_agent_state_update,
 };
 use crate::terminal::terminal_manager::{BlockSpacing, compute_block_size, terminal_colors_list};
 use crate::terminal::view::ExecuteCommandEvent;
@@ -88,21 +85,6 @@ pub struct TerminalManager {
     current_network: Arc<FairMutex<Option<ModelHandle<Network>>>>,
     viewer_remote_update_guard: RemoteUpdateGuard,
     outbound_handlers_registered: bool,
-    /// Owns child discovery + status polling for an orchestrated ambient
-    /// agent run. Lazily created in `JoinedSuccessfully` on the first
-    /// ambient session join. `Arc<FairMutex<Option<...>>>` matches
-    /// `current_network` so the network-event closure can write into it
-    /// without `&mut self`.
-    orchestration_viewer_model: Arc<FairMutex<Option<ModelHandle<OrchestrationViewerModel>>>>,
-    /// `true` for the root viewer pane of an orchestrator, `false` for
-    /// per-child viewer panes. Skipping polling on children avoids
-    /// duplicated REST traffic and grandchild double-registration via the
-    /// transitive `ancestor_run_id` filter.
-    enable_orchestration_polling: bool,
-    /// Dedicated orchestration child viewers recover missing or inaccessible
-    /// live sessions through their pane group instead of the generic join
-    /// failure UI.
-    orchestration_child_conversation_id: Option<AIConversationId>,
 }
 
 pub struct TerminalManagerInit {
@@ -111,65 +93,6 @@ pub struct TerminalManagerInit {
 }
 
 impl TerminalManager {
-    fn send_selected_conversation_update_for_viewer_to_current_network(
-        guard: &RemoteUpdateGuard,
-        model: &Arc<FairMutex<TerminalModel>>,
-        current_network: &Arc<FairMutex<Option<ModelHandle<Network>>>>,
-        agent_view_controller: &ModelHandle<AgentViewController>,
-        ai_context_model: &ModelHandle<BlocklistAIContextModel>,
-        ctx: &mut AppContext,
-    ) {
-        let Some(update) =
-            build_selected_conversation_update(agent_view_controller, ai_context_model, ctx)
-        else {
-            return;
-        };
-
-        Self::send_input_context_update_to_current_network(
-            guard,
-            model,
-            current_network,
-            update,
-            ctx,
-        );
-    }
-
-    /// Creates the live-session viewer for an orchestration child pane, with
-    /// both ambient-agent controls and the `FailedToJoin` recovery routing
-    /// that a known child conversation enables. Callers are responsible for
-    /// wiring ambient session events after construction.
-    #[allow(clippy::new_ret_no_self)]
-    pub fn new_for_ambient_orchestration_child(
-        session_id: SessionId,
-        conversation_id: AIConversationId,
-        resources: TerminalViewResources,
-        initial_size: Vector2F,
-        window_id: WindowId,
-        ctx: &mut AppContext,
-    ) -> TerminalManagerInit {
-        let TerminalManagerInit {
-            manager: mut terminal_manager,
-            view: terminal_view,
-        } = Self::new_internal(
-            resources,
-            initial_size,
-            window_id,
-            false,
-            true,
-            Some(conversation_id),
-            ctx,
-        );
-        terminal_manager.connect_session(
-            session_id,
-            SharedSessionInitialLoadMode::ReplaceFromSessionScrollback,
-            ctx,
-        );
-        TerminalManagerInit {
-            manager: terminal_manager,
-            view: terminal_view,
-        }
-    }
-
     fn current_network(
         current_network: &Arc<FairMutex<Option<ModelHandle<Network>>>>,
     ) -> Option<ModelHandle<Network>> {
@@ -233,9 +156,6 @@ impl TerminalManager {
         resources: TerminalViewResources,
         initial_size: Vector2F,
         window_id: WindowId,
-        enable_orchestration_polling: bool,
-        is_ambient_agent: bool,
-        orchestration_child_conversation_id: Option<AIConversationId>,
         ctx: &mut AppContext,
     ) -> TerminalManagerInit {
         // Create all the necessary channels we need for communication.
@@ -258,41 +178,25 @@ impl TerminalManager {
         // TODO: we have to figure out what prompt the viewer will see.
         // For now, just respect the viewer's settings.
         let honor_ps1 = *SessionSettings::as_ref(ctx).honor_ps1;
-        let input_mode = *InputModeSettings::as_ref(ctx).input_mode.value();
+        let input_mode = *crate::settings::InputModeSettings::as_ref(ctx).input_mode.value();
         let is_inverted = input_mode.is_inverted_blocklist();
 
         // TODO: use the sharer's size.
         let sizes = compute_block_size(initial_size, &block_spacing, ctx);
 
-        let model = if is_ambient_agent {
-            TerminalModel::new_for_cloud_mode_shared_session_viewer(
-                sizes,
-                terminal_colors_list(ctx),
-                channel_event_proxy.clone(),
-                ctx.background_executor().clone(),
-                show_memory_stats,
-                honor_ps1,
-                is_inverted,
-                // When viewing a shared session, we don't want to apply our own
-                // secret redaction rules but rather rely on the sharer obfuscating
-                // the contents before reaching us.
-                ObfuscateSecrets::No,
-            )
-        } else {
-            TerminalModel::new_for_shared_session_viewer(
-                sizes,
-                terminal_colors_list(ctx),
-                channel_event_proxy.clone(),
-                ctx.background_executor().clone(),
-                show_memory_stats,
-                honor_ps1,
-                is_inverted,
-                // When viewing a shared session, we don't want to apply our own
-                // secret redaction rules but rather rely on the sharer obfuscating
-                // the contents before reaching us.
-                ObfuscateSecrets::No,
-            )
-        };
+        let model = TerminalModel::new_for_shared_session_viewer(
+            sizes,
+            terminal_colors_list(ctx),
+            channel_event_proxy.clone(),
+            ctx.background_executor().clone(),
+            show_memory_stats,
+            honor_ps1,
+            is_inverted,
+            // When viewing a shared session, we don't want to apply our own
+            // secret redaction rules but rather rely on the sharer obfuscating
+            // the contents before reaching us.
+            ObfuscateSecrets::No,
+        );
 
         let colors = model.colors();
         let model = Arc::new(FairMutex::new(model));
@@ -318,24 +222,9 @@ impl TerminalManager {
                 colors,
                 None, // model_event_sender - not used for viewer
                 prompt_type.clone(),
-                None, // initial_input_config - not used for viewer
-                None, // no conversation restoration for shared session viewer
                 Some(inactive_pty_reads_rx.clone()),
-                is_ambient_agent,
                 ctx,
             )
-        });
-
-        let terminal_view_id = view.id();
-        let agent_view_controller = view.as_ref(ctx).agent_view_controller().clone();
-        let active_session = view.as_ref(ctx).active_session().clone();
-        ActiveAgentViewsModel::handle(ctx).update(ctx, |model, ctx| {
-            model.register_agent_view_controller(
-                &agent_view_controller,
-                &active_session,
-                terminal_view_id,
-                ctx,
-            );
         });
 
         let terminal_view = view.clone();
@@ -352,9 +241,6 @@ impl TerminalManager {
             current_network: Arc::new(FairMutex::new(None)),
             viewer_remote_update_guard: RemoteUpdateGuard::new(),
             outbound_handlers_registered: false,
-            orchestration_viewer_model: Arc::new(FairMutex::new(None)),
-            enable_orchestration_polling,
-            orchestration_child_conversation_id,
         };
         TerminalManagerInit {
             manager,
@@ -378,22 +264,12 @@ impl TerminalManager {
         resources: TerminalViewResources,
         initial_size: Vector2F,
         window_id: WindowId,
-        enable_orchestration_polling: bool,
-        is_ambient_agent: bool,
         ctx: &mut AppContext,
     ) -> TerminalManagerInit {
         let TerminalManagerInit {
             manager: mut terminal_manager,
             view: terminal_view,
-        } = Self::new_internal(
-            resources,
-            initial_size,
-            window_id,
-            enable_orchestration_polling,
-            is_ambient_agent,
-            None,
-            ctx,
-        );
+        } = Self::new_internal(resources, initial_size, window_id, ctx);
 
         terminal_manager.connect_session(
             session_id,
@@ -404,105 +280,6 @@ impl TerminalManager {
         TerminalManagerInit {
             manager: terminal_manager,
             view: terminal_view,
-        }
-    }
-
-    /// Create a new terminal manager for eventually viewing a cloud mode
-    /// shared session that is not yet available. See
-    /// [`Self::enable_orchestration_polling`] for the meaning of the flag.
-    pub fn new_deferred(
-        resources: TerminalViewResources,
-        initial_size: Vector2F,
-        window_id: WindowId,
-        enable_orchestration_polling: bool,
-        ctx: &mut AppContext,
-    ) -> TerminalManagerInit {
-        Self::new_internal(
-            resources,
-            initial_size,
-            window_id,
-            enable_orchestration_polling,
-            true, // is_ambient_agent
-            None,
-            ctx,
-        )
-    }
-
-    /// Connects a deferred terminal manager to a shared session.
-    /// This can only be called on a TerminalManager created with `new_deferred`.
-    /// Returns `true` if the connection was initiated, `false` if already connected.
-    ///
-    /// `append_followup_scrollback` controls whether the initial join uses
-    /// `AppendFollowupScrollback` mode instead of `ReplaceFromSessionScrollback`.
-    /// Local-to-cloud handoff panes set this to `true` so the pre-populated
-    /// forked conversation is not replaced by the cloud session's replay
-    /// scrollback.
-    pub fn connect_to_session(
-        &mut self,
-        session_id: SessionId,
-        append_followup_scrollback: bool,
-        ctx: &mut AppContext,
-    ) -> bool {
-        let load_mode = if append_followup_scrollback {
-            SharedSessionInitialLoadMode::AppendFollowupScrollback
-        } else {
-            SharedSessionInitialLoadMode::ReplaceFromSessionScrollback
-        };
-        match self.network_state {
-            NetworkState::Idle => {
-                self.connect_session(session_id, load_mode, ctx);
-                true
-            }
-            NetworkState::Connecting => {
-                log::warn!("connect_to_session called while already connecting to shared session");
-                false
-            }
-            NetworkState::Active(_) => false,
-        }
-    }
-
-    pub fn attach_execution_session(
-        &mut self,
-        session_id: SessionId,
-        ctx: &mut AppContext,
-    ) -> bool {
-        match std::mem::replace(&mut self.network_state, NetworkState::Connecting) {
-            NetworkState::Active(network) => {
-                network.update(ctx, |network, _| {
-                    network.close_without_reconnection();
-                });
-                self.model
-                    .lock()
-                    .clear_write_to_pty_events_for_shared_session_tx();
-                *self.current_network.lock() = None;
-                self.network_state = NetworkState::Idle;
-            }
-            NetworkState::Idle => {
-                self.network_state = NetworkState::Idle;
-            }
-            NetworkState::Connecting => {
-                self.network_state = NetworkState::Connecting;
-                log::warn!(
-                    "attach_execution_session called while already connecting to shared session"
-                );
-                return false;
-            }
-        }
-        self.connect_session(
-            session_id,
-            SharedSessionInitialLoadMode::AppendFollowupScrollback,
-            ctx,
-        );
-        self.start_cloud_mode_setup_command_tracking();
-        true
-    }
-
-    pub fn start_cloud_mode_setup_command_tracking(&mut self) {
-        if FeatureFlag::CloudModeSetupV2.is_enabled() {
-            self.model
-                .lock()
-                .block_list_mut()
-                .set_is_executing_oz_environment_startup_commands(true);
         }
     }
 
@@ -558,9 +335,6 @@ impl TerminalManager {
             self.current_network.clone(),
             self.network_resources.prompt_type.clone(),
             self.viewer_remote_update_guard.clone(),
-            self.orchestration_viewer_model.clone(),
-            self.enable_orchestration_polling,
-            self.orchestration_child_conversation_id,
             ctx,
         );
         if !self.outbound_handlers_registered {
@@ -572,174 +346,6 @@ impl TerminalManager {
                 ctx,
             );
             Self::handle_network_status_events(&self.view, self.current_network.clone(), ctx);
-
-            // Send model selection updates during session sharing (if viewer has Editor role)
-            let current_network_for_models = self.current_network.clone();
-            let terminal_view_id = self.view.id();
-            let model_clone = self.model.clone();
-            let model_remote_update_guard = self.viewer_remote_update_guard.clone();
-            ctx.subscribe_to_model(&LLMPreferences::handle(ctx), move |_prefs, event, ctx| {
-                // Only react to agent mode LLM changes
-                if !matches!(event, LLMPreferencesEvent::UpdatedActiveAgentModeLLM) {
-                    return;
-                }
-
-                let llm_prefs = &LLMPreferences::as_ref(ctx);
-                let selected_model_id: String = llm_prefs
-                    .get_active_base_model(ctx, Some(terminal_view_id))
-                    .id
-                    .clone()
-                    .into();
-
-                Self::send_input_context_update_to_current_network(
-                    &model_remote_update_guard,
-                    &model_clone,
-                    &current_network_for_models,
-                    UniversalDeveloperInputContextUpdate {
-                        selected_model: Some(SelectedAgentModel::new(selected_model_id)),
-                        ..Default::default()
-                    },
-                    ctx,
-                );
-            });
-
-            // Send input mode updates during session sharing (if viewer has Editor role).
-            // When AgentView is enabled, we only send updates when in an active agent view.
-            // For ambient agent sessions, input mode is controlled locally, so we skip sending updates.
-            let current_network_for_input_mode = self.current_network.clone();
-            let model_clone_for_input = self.model.clone();
-            let ai_input_model = self.view.as_ref(ctx).ai_input_model().clone();
-            let weak_view_for_input_mode = self.view.downgrade();
-            let input_mode_remote_update_guard = self.viewer_remote_update_guard.clone();
-            ctx.subscribe_to_model(&ai_input_model, move |_, event, ctx| {
-                // In ambient agent sessions, input mode is controlled locally.
-                if model_clone_for_input
-                    .lock()
-                    .is_shared_ambient_agent_session()
-                {
-                    return;
-                }
-
-                // When AgentView is enabled, only send input mode updates when in an active agent view.
-                if FeatureFlag::AgentView.is_enabled() {
-                    let Some(view) = weak_view_for_input_mode.upgrade(ctx) else {
-                        return;
-                    };
-                    let agent_view_controller = view.as_ref(ctx).agent_view_controller().clone();
-                    if !agent_view_controller.as_ref(ctx).is_active() {
-                        return;
-                    }
-                }
-
-                let config = event.updated_config();
-
-                Self::send_input_context_update_to_current_network(
-                    &input_mode_remote_update_guard,
-                    &model_clone_for_input,
-                    &current_network_for_input_mode,
-                    UniversalDeveloperInputContextUpdate {
-                        input_mode: Some((*config).into()),
-                        ..Default::default()
-                    },
-                    ctx,
-                );
-            });
-
-            let agent_view_controller = self.view.as_ref(ctx).agent_view_controller().clone();
-            let ai_context_model = self.view.as_ref(ctx).ai_context_model().clone();
-            // Send selected conversation updates during session sharing (if viewer has Editor role)
-            if FeatureFlag::AgentView.is_enabled() {
-                // When agent view is enabled, we listen to the agent view controller
-                // as the authoritative source for which conversation is selected.
-                let current_network_for_conversation = self.current_network.clone();
-                let model_for_conversation = self.model.clone();
-                let ai_context_model_for_conversation = ai_context_model.clone();
-                let conversation_remote_update_guard = self.viewer_remote_update_guard.clone();
-                ctx.subscribe_to_model(
-                    &agent_view_controller,
-                    move |agent_view_controller, event, ctx| match event {
-                        AgentViewControllerEvent::EnteredAgentView { .. }
-                        | AgentViewControllerEvent::ExitedAgentView { .. } => {
-                            Self::send_selected_conversation_update_for_viewer_to_current_network(
-                                &conversation_remote_update_guard,
-                                &model_for_conversation,
-                                &current_network_for_conversation,
-                                &agent_view_controller,
-                                &ai_context_model_for_conversation,
-                                ctx,
-                            );
-                        }
-                        AgentViewControllerEvent::ExitConfirmed { .. } => {}
-                    },
-                );
-            } else {
-                // When agent view is disabled, we fallback to the legacy behavior
-                // of listening for pending query state changes to know which conversation is selected.
-                let current_network_for_conversation = self.current_network.clone();
-                let model_for_conversation = self.model.clone();
-                let agent_view_controller_for_conversation = agent_view_controller.clone();
-                let conversation_remote_update_guard = self.viewer_remote_update_guard.clone();
-                ctx.subscribe_to_model(&ai_context_model, move |ai_context_model, event, ctx| {
-                    if !matches!(event, BlocklistAIContextEvent::PendingQueryStateUpdated) {
-                        return;
-                    }
-
-                    Self::send_selected_conversation_update_for_viewer_to_current_network(
-                        &conversation_remote_update_guard,
-                        &model_for_conversation,
-                        &current_network_for_conversation,
-                        &agent_view_controller_for_conversation,
-                        &ai_context_model,
-                        ctx,
-                    );
-                });
-            }
-
-            // Send auto-approve updates during session sharing (if viewer has Editor role)
-            let current_network_for_auto = self.current_network.clone();
-            let model_clone_for_auto = self.model.clone();
-            let view_id_for_auto = self.view.id();
-            let weak_view_for_auto = self.view.downgrade();
-            let auto_approve_remote_update_guard = self.viewer_remote_update_guard.clone();
-            ctx.subscribe_to_model(
-                &BlocklistAIHistoryModel::handle(ctx),
-                move |_, event, ctx| {
-                    // We intentionally keep this as a full match so new variants
-                    // are forced to be handled here
-                    #[allow(clippy::single_match)]
-                    match event {
-                        BlocklistAIHistoryEvent::UpdatedAutoexecuteOverride {
-                            terminal_surface_id,
-                        } => {
-                            if *terminal_surface_id != view_id_for_auto {
-                                return;
-                            }
-
-                            let Some(view) = weak_view_for_auto.upgrade(ctx) else {
-                                return;
-                            };
-
-                            let auto_approve = view
-                                .as_ref(ctx)
-                                .ai_context_model()
-                                .as_ref(ctx)
-                                .pending_query_autoexecute_override(ctx)
-                                .is_autoexecute_any_action();
-                            Self::send_input_context_update_to_current_network(
-                                &auto_approve_remote_update_guard,
-                                &model_clone_for_auto,
-                                &current_network_for_auto,
-                                UniversalDeveloperInputContextUpdate {
-                                    auto_approve_agent_actions: Some(auto_approve),
-                                    ..Default::default()
-                                },
-                                ctx,
-                            );
-                        }
-                        _ => {}
-                    }
-                },
-            );
 
             // Broadcast CLI agent rich input open/close changes from viewer back to sharer.
             let current_network_for_cli = self.current_network.clone();
@@ -802,9 +408,6 @@ impl TerminalManager {
         current_network: Arc<FairMutex<Option<ModelHandle<Network>>>>,
         prompt_type: ModelHandle<PromptType>,
         viewer_remote_update_guard: RemoteUpdateGuard,
-        orchestration_viewer_model: Arc<FairMutex<Option<ModelHandle<OrchestrationViewerModel>>>>,
-        enable_orchestration_polling: bool,
-        orchestration_child_conversation_id: Option<AIConversationId>,
         ctx: &mut AppContext,
     ) {
         // We use a weak view handle instead of a strong reference because we may add a subscription to the view which moves a strong reference of the Model into the callback,
@@ -862,63 +465,12 @@ impl TerminalManager {
                     return;
                 };
 
-                let ambient_task_id: Option<AmbientAgentTaskId> = source
-                    .orchestrator_task_id()
-                    .and_then(|s| s.parse().ok());
-
-                // Mark terminal view as a shared ambient agent session view.
-                if matches!(&source.source_type, SessionSourceType::AmbientAgent { .. }) {
-                    let terminal_view_id = view.id();
-                    BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, _ctx| {
-                        history.mark_terminal_surface_as_ambient_agent_session_view(terminal_view_id);
-                    });
-
-                    // Register this ambient session as active for conversation list tracking.
-                    if let Some(task_id) = ambient_task_id {
-                        ActiveAgentViewsModel::handle(ctx).update(ctx, |model, ctx| {
-                            model.register_ambient_session(terminal_view_id, task_id, ctx);
-                        });
-                    }
-                }
-
-                if enable_orchestration_polling
-                    && orchestration_viewer_model.lock().is_none()
-                    && let Some(task_id) = ambient_task_id {
-                        let terminal_view_id = view.id();
-                        let weak_view_handle_for_orch = weak_view_handle.clone();
-                        let orchestration_viewer_model_slot =
-                            orchestration_viewer_model.clone();
-                        let model = ctx.add_model(|model_ctx| {
-                            OrchestrationViewerModel::new(
-                                task_id,
-                                terminal_view_id,
-                                weak_view_handle_for_orch,
-                                model_ctx,
-                            )
-                        });
-                        *orchestration_viewer_model_slot.lock() = Some(model);
-                    }
-
                 let session_id = network.as_ref(ctx).session_id();
                 Manager::handle(ctx).update(ctx, |manager, ctx| {
                     manager.joined_share(weak_view_handle.clone(), session_id, ctx);
                 });
 
                 view.update(ctx, |terminal_view, ctx| {
-                    if let Some(task_id) = ambient_task_id {
-                        let had_model = terminal_view.ambient_agent_view_model().is_some();
-                        // Begin viewing the ambient run. For top-level ambient viewers
-                        // (`enable_orchestration_polling`) that joined without a model — e.g.
-                        // a raw `shared_session` link that turns out to be a cloud run — this
-                        // creates and wires the model now that the source is known to be
-                        // ambient. Hidden orchestration child viewers intentionally have no
-                        // model, so we only initialize an already-present one for them.
-                        if enable_orchestration_polling || had_model {
-                            terminal_view
-                                .begin_viewing_ambient_session(task_id, session_id, ctx);
-                        }
-                    }
-
                     terminal_view.on_session_share_joined(
                         viewer_id.clone(),
                         *viewer_firebase_uid,
@@ -937,14 +489,11 @@ impl TerminalManager {
                 let Some(view) = weak_view_handle.upgrade(ctx) else {
                     return;
                 };
-                let is_ambient_agent = model.lock().is_shared_ambient_agent_session();
                 if !Self::handle_viewer_session_end(
                     &view,
                     model.clone(),
                     &current_network,
                     &network,
-                    &orchestration_viewer_model,
-                    is_ambient_agent,
                     ctx,
                 ) {
                     return;
@@ -954,17 +503,6 @@ impl TerminalManager {
                     match reason {
                         SessionEndedReason::EndedBySharer
                         | SessionEndedReason::ExceededSizeLimit => {}
-                        SessionEndedReason::InactivityLimitReached => {
-                            terminal_view.show_persistent_toast(
-                                reason_string,
-                                ToastFlavor::Error,
-                                ctx,
-                            );
-                        }
-                        SessionEndedReason::InternalServerError if is_ambient_agent => {
-                            // Don't show toast for cloud mode sessions - the error message
-                            // "ask sharer to reshare" doesn't apply.
-                        }
                         _ => {
                             terminal_view.show_persistent_toast(
                                 reason_string,
@@ -980,18 +518,11 @@ impl TerminalManager {
                     return;
                 };
                 // Viewer access was removed and the network will not re-attach.
-                // Ambient agent panes route through the resumable
-                // execution-ended path (clearing the now-dead live session) so
-                // an owner can still start a cloud follow-up; non-ambient
-                // viewers fall back to the generic finished-viewer teardown.
-                let is_ambient_agent = model.lock().is_shared_ambient_agent_session();
                 if !Self::handle_viewer_session_end(
                     &view,
                     model.clone(),
                     &current_network,
                     &network,
-                    &orchestration_viewer_model,
-                    is_ambient_agent,
                     ctx,
                 ) {
                     return;
@@ -1005,30 +536,11 @@ impl TerminalManager {
                 let session_id = network.as_ref(ctx).session_id();
                 log::debug!(
                     "[shared-session] viewer TerminalManager: NetworkEvent::FailedToJoin \
-                     session_id={session_id} reason={reason:?} \
-                     orchestration_child_conversation_id={orchestration_child_conversation_id:?}"
+                     session_id={session_id} reason={reason:?}"
                 );
                 let Some(view) = weak_view_handle.upgrade(ctx) else {
                     return;
                 };
-                if FeatureFlag::OrchestrationUnifiedStack.is_enabled()
-                    && matches!(
-                        reason,
-                        FailedToJoinReason::SessionNotFound
-                            | FailedToJoinReason::SessionNotAccessible
-                    )
-                    && let Some(conversation_id) = orchestration_child_conversation_id
-                {
-                    view.update(ctx, |_terminal_view, ctx| {
-                        ctx.emit(
-                            TerminalViewEvent::OrchestrationChildSharedSessionJoinFailed {
-                                conversation_id,
-                                session_id,
-                            },
-                        );
-                    });
-                    return;
-                }
                 view.update(ctx, |terminal_view, ctx| {
                     terminal_view.show_persistent_toast(
                         reason.user_facing_error_message().to_string(),
@@ -1041,27 +553,17 @@ impl TerminalManager {
                 let Some(view) = weak_view_handle.upgrade(ctx) else {
                     return;
                 };
-                // Reconnection has been abandoned. Ambient agent panes route
-                // through the resumable execution-ended path (which clears the
-                // stale live-session state so an owner can start a cloud
-                // follow-up); non-ambient viewers fall back to the generic
-                // finished-viewer teardown.
-                let is_ambient_agent = model.lock().is_shared_ambient_agent_session();
+                // Reconnection has been abandoned.
                 if !Self::handle_viewer_session_end(
                     &view,
                     model.clone(),
                     &current_network,
                     &network,
-                    &orchestration_viewer_model,
-                    is_ambient_agent,
                     ctx,
                 ) {
                     return;
                 }
-                // Ambient panes surface the resumable tombstone / follow-up
-                // input instead, so the generic "please try again" toast (which
-                // implies a retryable transport error) would be misleading.
-                if !is_ambient_agent {
+                {
                     view.update(ctx, |terminal_view, ctx| {
                         terminal_view.show_persistent_toast(
                             "Failed to reconnect. Please try again later.".to_owned(),
@@ -1082,55 +584,6 @@ impl TerminalManager {
             }
             NetworkEvent::UniversalDeveloperInputContextUpdated(context_update) => {
                 let active_remote_update = viewer_remote_update_guard.start_remote_update();
-
-                if let Some(ref model) = context_update.selected_model {
-                    Self::handle_selected_agent_model_update(&weak_view_handle, model, &active_remote_update, ctx);
-                }
-                if let Some(ref input_mode) = context_update.input_mode {
-                    Self::handle_input_mode_update(&weak_view_handle, input_mode, &active_remote_update, ctx);
-                }
-                if let Some(ref selected_conversation) = context_update.selected_conversation {
-                    Self::handle_selected_conversation_update(
-                        &weak_view_handle,
-                        selected_conversation,
-                        &active_remote_update,
-                        ctx,
-                    );
-                }
-                if let Some(auto_approve) = context_update.auto_approve_agent_actions {
-                    apply_auto_approve_agent_actions_update(&weak_view_handle, auto_approve, &active_remote_update, ctx);
-                }
-
-                if model
-                    .lock()
-                    .block_list()
-                    .active_block()
-                    .is_active_and_long_running()
-                {
-                    if let Some(interaction) =
-                        context_update.long_running_command_agent_interaction.clone()
-                    {
-                        if let Some(view) = weak_view_handle.upgrade(ctx) {
-                            view.update(ctx, |view, ctx| {
-                                view.apply_long_running_command_agent_interaction(interaction, ctx);
-                            });
-                        }
-                    } else if let Some(interaction_state) =
-                        context_update.long_running_command_agent_interaction_state
-                    {
-                        // TODO (roland): this is kept around for backward compatibility. Remove after 6 weeks (around Jul 23, 2026) 
-                        // once clients have updated to use context_update.long_running_command_agent_interaction above.
-                        if let Some(view) = weak_view_handle.upgrade(ctx) {
-                            view.update(ctx, |view, ctx| {
-                                view.apply_long_running_command_agent_interaction_state(
-                                    interaction_state,
-                                    None,
-                                    ctx,
-                                );
-                            });
-                        }
-                    }
-                }
 
                 if let Some(ref cli_agent_session) = context_update.cli_agent_session {
                     apply_cli_agent_state_update(
@@ -1221,21 +674,6 @@ impl TerminalManager {
                 };
 
                 view.update(ctx, |view, ctx| {
-                    // In cloud-mode startup (before the first exchange), shared-session input
-                    // sync reflects environment setup commands. Skip applying remote edits so
-                    // the visible input isn't populated with setup-command text.
-                    let skip_during_setup = FeatureFlag::CloudModeSetupV2.is_enabled() && {
-                        let model = view.model.lock();
-                        is_cloud_agent_pre_first_exchange(
-                            view.ambient_agent_view_model(),
-                            view.agent_view_controller(),
-                            &model,
-                            ctx,
-                        )
-                    };
-                    if skip_during_setup {
-                        return;
-                    }
                     view.apply_viewer_shared_session_input_update(block_id, operations.clone(), ctx);
                 })
             }
@@ -1510,58 +948,6 @@ impl TerminalManager {
         });
     }
 
-    fn handle_selected_agent_model_update(
-        weak_view_handle: &WeakViewHandle<TerminalView>,
-        selected_model: &SelectedAgentModel,
-        guard: &ActiveRemoteUpdate,
-        ctx: &mut AppContext,
-    ) {
-        let Some(view) = weak_view_handle.upgrade(ctx) else {
-            return;
-        };
-
-        let terminal_view_id = view.id();
-        apply_selected_agent_model_update(terminal_view_id, selected_model, guard, ctx);
-    }
-
-    fn handle_input_mode_update(
-        weak_view_handle: &WeakViewHandle<TerminalView>,
-        input_mode: &session_sharing_protocol::common::InputMode,
-        guard: &ActiveRemoteUpdate,
-        ctx: &mut AppContext,
-    ) {
-        let Some(view) = weak_view_handle.upgrade(ctx) else {
-            return;
-        };
-        // During cloud startup (pre-first-exchange), keep local input mode stable
-        // and ignore remote shell/ai mode toggles from session-sharing context sync.
-        let is_pre_first_exchange = FeatureFlag::CloudModeSetupV2.is_enabled() && {
-            let view_ref = view.as_ref(ctx);
-            let model = view_ref.model.lock();
-            is_cloud_agent_pre_first_exchange(
-                view_ref.ambient_agent_view_model(),
-                view_ref.agent_view_controller(),
-                &model,
-                ctx,
-            )
-        };
-        let suppress_input_mode_update =
-            view.as_ref(ctx).is_shared_ambient_agent_session() || is_pre_first_exchange;
-        if suppress_input_mode_update {
-            return;
-        }
-        apply_input_mode_update(weak_view_handle, input_mode, guard, ctx);
-    }
-
-    fn handle_selected_conversation_update(
-        weak_view_handle: &WeakViewHandle<TerminalView>,
-        selected_conversation: &session_sharing_protocol::common::SelectedConversation,
-        guard: &ActiveRemoteUpdate,
-        ctx: &mut AppContext,
-    ) {
-        apply_selected_conversation_update(weak_view_handle, selected_conversation, guard, ctx);
-    }
-
     fn handle_view_events(
         current_network: Arc<FairMutex<Option<ModelHandle<Network>>>>,
         view: &ViewHandle<TerminalView>,
@@ -1751,83 +1137,18 @@ impl TerminalManager {
         });
     }
 
-    /// Drops the [`OrchestrationViewerModel`] from the shared slot if one
-    /// exists. Called from terminal session-end paths. The model's
-    /// `ctx.spawn` continuations are entity-scoped, so dropping the
-    /// entity makes them no-ops; no explicit `.abort()` needed.
-    ///
-    /// The model also holds a viewer-mode registration on the shared
-    /// [`OrchestrationEventStreamer`]; we unregister explicitly here so
-    /// the streamer can refcount-tear-down the ancestor SSE on the last
-    /// pane close. The unregister API is idempotent.
-    fn stop_orchestration_polling(
-        orchestration_viewer_model: &Arc<FairMutex<Option<ModelHandle<OrchestrationViewerModel>>>>,
-        ctx: &mut AppContext,
-    ) {
-        let Some(handle) = orchestration_viewer_model.lock().take() else {
-            return;
-        };
-        let parent_task_id = handle.as_ref(ctx).parent_task_id();
-        let consumer_id = handle.id();
-        log::debug!(
-            "[orch-viewer] stopping orchestration viewer model parent_task_id={parent_task_id} \
-             consumer_id={consumer_id:?}"
-        );
-        OrchestrationEventStreamer::handle(ctx).update(ctx, move |streamer, _ctx| {
-            streamer.unregister_viewer_mode_consumer(parent_task_id, consumer_id);
-        });
-        // `handle` drops here, releasing the per-pane viewer model.
-        drop(handle);
-    }
-
     /// Common teardown for the viewer session-end network events
     /// (`SessionEnded`, `ViewerRemoved`, `FailedToReconnect`).
-    ///
-    /// Ambient agent panes route through [`Self::end_current_ambient_session`],
-    /// which clears the live `active_execution_session_id`, records the ended
-    /// session, and surfaces the resumable tombstone / follow-up input — so a
-    /// session lost via reconnect failure or access removal lands in the same
-    /// editable post-run state as a clean `SessionEnded`, rather than leaving a
-    /// stale "session is live" gate that misroutes follow-ups to a local agent.
-    /// Non-ambient panes use the generic [`Self::shared_session_ended`]
-    /// finished-viewer teardown (which cancels in-progress conversations).
-    ///
-    /// Returns `false` when an ambient end was ignored because the ended network
-    /// is no longer the current one (a stale event); callers should bail without
-    /// surfacing an end-of-session toast.
     fn handle_viewer_session_end(
         terminal_view: &ViewHandle<TerminalView>,
         model: Arc<FairMutex<TerminalModel>>,
         current_network: &Arc<FairMutex<Option<ModelHandle<Network>>>>,
         ended_network: &ModelHandle<Network>,
-        orchestration_viewer_model: &Arc<FairMutex<Option<ModelHandle<OrchestrationViewerModel>>>>,
-        is_ambient_agent: bool,
         ctx: &mut AppContext,
     ) -> bool {
-        if is_ambient_agent {
-            if !Self::end_current_ambient_session(
-                terminal_view,
-                model,
-                current_network,
-                ended_network,
-                ctx,
-            ) {
-                return false;
-            }
-            // Non-owner viewers (read-only) won't get a follow-up session;
-            // owners may handoff via `attach_execution_session` (same
-            // `TerminalManager`, same orchestrator `task_id`), so keep their
-            // model.
-            let is_owner = terminal_view.read(ctx, |terminal_view, app| {
-                terminal_view.owned_ambient_agent_task_id(app).is_some()
-            });
-            if !is_owner {
-                Self::stop_orchestration_polling(orchestration_viewer_model, ctx);
-            }
-        } else {
-            Self::stop_orchestration_polling(orchestration_viewer_model, ctx);
-            Self::shared_session_ended(terminal_view, model, ctx);
-        }
+        let _ = ended_network;
+        let _ = current_network;
+        Self::shared_session_ended(terminal_view, model, ctx);
         true
     }
 
@@ -1837,24 +1158,6 @@ impl TerminalManager {
         ctx: &mut AppContext,
     ) {
         let terminal_view_id = terminal_view.id();
-
-        // When a shared session ends for a viewer, cancel any in-progress conversations.
-        BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
-            history_model
-                .all_live_conversations_for_terminal_surface(terminal_view_id)
-                .filter(|conversation| conversation.status().is_in_progress())
-                .map(|conversation| conversation.id())
-                .collect::<Vec<_>>()
-                .into_iter()
-                .for_each(|conversation_id| {
-                    history_model.update_conversation_status(
-                        terminal_view_id,
-                        conversation_id,
-                        ConversationStatus::Cancelled,
-                        ctx,
-                    )
-                });
-        });
 
         Manager::handle(ctx).update(ctx, |manager, _| {
             manager.left_share(terminal_view_id);
@@ -1872,58 +1175,6 @@ impl TerminalManager {
             .clear_write_to_pty_events_for_shared_session_tx();
     }
 
-    fn end_current_ambient_session(
-        terminal_view: &ViewHandle<TerminalView>,
-        model: Arc<FairMutex<TerminalModel>>,
-        current_network: &Arc<FairMutex<Option<ModelHandle<Network>>>>,
-        ended_network: &ModelHandle<Network>,
-        ctx: &mut AppContext,
-    ) -> bool {
-        let ended_session_id = ended_network.as_ref(ctx).session_id();
-        if !Self::current_network(current_network)
-            .is_some_and(|network| network.as_ref(ctx).session_id() == ended_session_id)
-        {
-            return false;
-        }
-        Manager::handle(ctx).update(ctx, |manager, _| {
-            manager.left_share(terminal_view.id());
-        });
-
-        model
-            .lock()
-            .clear_write_to_pty_events_for_shared_session_tx();
-        if FeatureFlag::HandoffCloudCloud.is_enabled() {
-            terminal_view.update(ctx, |terminal_view, ctx| {
-                // Owned ambient tasks remain editable Cloud Mode panes after their live shared
-                // session ends; non-owners are still read-only viewers of a finished session.
-                let owns_ambient_task = terminal_view.owned_ambient_agent_task_id(ctx).is_some();
-                model
-                    .lock()
-                    .set_shared_session_status(if owns_ambient_task {
-                        SharedSessionStatus::NotShared
-                    } else {
-                        SharedSessionStatus::FinishedViewer
-                    });
-                if let Some(ambient_agent_view_model) =
-                    terminal_view.ambient_agent_view_model().cloned()
-                {
-                    ambient_agent_view_model.update(ctx, |model, ctx| {
-                        model.record_ambient_execution_ended(ended_session_id, ctx);
-                    });
-                }
-                terminal_view.on_ambient_agent_execution_ended(ctx);
-            });
-        }
-        terminal_view.update(ctx, |terminal_view, ctx| {
-            terminal_view.notify_shared_session_link_changed(ctx);
-        });
-        if Self::current_network(current_network)
-            .is_some_and(|network| network.as_ref(ctx).session_id() == ended_session_id)
-        {
-            *current_network.lock() = None;
-        }
-        true
-    }
 }
 
 impl crate::terminal::TerminalManager for TerminalManager {
@@ -1932,36 +1183,16 @@ impl crate::terminal::TerminalManager for TerminalManager {
     }
 
     fn on_view_detached(&self, detach_type: DetachType, app: &mut AppContext) {
-        // Keep the network + shared-session state — and the orchestration
-        // viewer model (OVM) — alive for non-permanent detaches:
+        // Keep the network + shared-session state alive for non-permanent detaches:
         // - `HiddenForClose`: the pane may be restored from the undo-close stack within the
-        //   grace window (~60s default). We deliberately leave the OVM (and its ancestor
-        //   streamer registration) in place so undo-close-tab restores the pill bar
-        //   seamlessly. If the tab is never restored, we'll be invoked again with `Closed`
-        //   from the grace-period expiry and tear down then.
+        //   grace window (~60s default). If the tab is never restored, we'll be invoked again
+        //   with `Closed` from the grace-period expiry and tear down then.
         // - `Moved`: the same `TerminalManager` is reused in the target pane group (the
         //   `Box<dyn AnyPaneContent>` is transferred via `remove_pane_for_move` and then
-        //   immediately re-attached), so tearing down the network or OVM would break the
-        //   live session.
-        // Only `Closed` tears down the OVM here.
+        //   immediately re-attached), so tearing down the network would break the live session.
         if !matches!(detach_type, DetachType::Closed) {
             return;
         }
-
-        let terminal_view_id = self.view.id();
-        ActiveAgentViewsModel::handle(app).update(app, |model, ctx| {
-            model.unregister_agent_view_controller(terminal_view_id, ctx);
-            model.unregister_ambient_session(terminal_view_id, ctx);
-        });
-
-        // Tear down the orchestration viewer model so its streamer
-        // registration is released and the ancestor SSE can close. The
-        // network-event paths (SessionEnded / ViewerRemoved /
-        // FailedToReconnect) also call this, but pane-close doesn't flow
-        // through them — without this, the SSE leaks until the app exits.
-        // `stop_orchestration_polling` is idempotent, so a later
-        // network-event-driven call is a no-op.
-        Self::stop_orchestration_polling(&self.orchestration_viewer_model, app);
 
         if let NetworkState::Active(ref network) = self.network_state {
             network.update(app, |network, _| {

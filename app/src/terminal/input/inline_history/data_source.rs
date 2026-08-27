@@ -83,7 +83,6 @@ impl SyncDataSource for InlineHistoryMenuDataSource {
 
         let history = History::handle(app).as_ref(app);
         let suggestions = history.up_arrow_suggestions_for_terminal_surface(
-            self.terminal_view_id,
             session_id,
             UpArrowHistoryConfig::default(),
             app,

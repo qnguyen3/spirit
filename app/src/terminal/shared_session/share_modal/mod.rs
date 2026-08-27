@@ -162,7 +162,7 @@ impl ShareSessionModal {
         self.open_source = open_source;
         self.modal.update(ctx, |modal, ctx| {
             modal.body().update(ctx, |modal, ctx| {
-                modal.open(open_source, model, terminal_view_id, ctx);
+                modal.open(open_source, model, ctx);
             });
         });
         ctx.notify();

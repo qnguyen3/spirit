@@ -12,7 +12,7 @@ use super::terminal_manager::BlockSpacing;
 use super::{ShellLaunchState, TerminalManager, TerminalModel, TerminalView};
 use crate::context_chips::prompt_type::PromptType;
 use crate::pane_group::TerminalViewResources;
-use crate::terminal::view::ConversationRestorationInNewPaneType;
+use crate::terminal::model::block::SerializedBlock;
 
 pub struct MockTerminalManager {
     model: Arc<FairMutex<TerminalModel>>,
@@ -28,7 +28,6 @@ impl MockTerminalManager {
         shell_state: ShellLaunchState,
         resources: TerminalViewResources,
         restored_blocks: Option<&Vec<SerializedBlock>>,
-        conversation_restoration: Option<ConversationRestorationInNewPaneType>,
         initial_size: Vector2F,
         window_id: WindowId,
         ctx: &mut AppContext,
@@ -73,12 +72,7 @@ impl MockTerminalManager {
                 colors,
                 None,
                 prompt_type,
-                None,
-                // We use conversation restoration to load a view-only cloud conversation
-                // into the web view.
-                conversation_restoration,
                 None, // inactive_pty_reads_rx
-                false,
                 ctx,
             )
         });
@@ -117,13 +111,6 @@ impl TerminalManager for MockTerminalManager {
         _detach_type: crate::pane_group::pane::DetachType,
         app: &mut AppContext,
     ) {
-        // If this is a conversation transcript viewer, unregister the ambient session.
-        if self.model.lock().is_conversation_transcript_viewer() {
-            let terminal_view_id = self.view.id();
-            ActiveAgentViewsModel::handle(app).update(app, |model, ctx| {
-                model.unregister_ambient_session(terminal_view_id, ctx);
-            });
-        }
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

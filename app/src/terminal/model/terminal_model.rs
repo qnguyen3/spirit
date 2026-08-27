@@ -1006,7 +1006,6 @@ impl TerminalModel {
         honor_ps1: bool,
         is_inverted: bool,
         obfuscate_secrets: ObfuscateSecrets,
-        is_ai_ugc_telemetry_enabled: bool,
         session_startup_path: Option<PathBuf>,
         shell_state: ShellLaunchState,
         shared_session_status: SharedSessionStatus,
@@ -1029,7 +1028,6 @@ impl TerminalModel {
             honor_ps1,
             is_inverted,
             obfuscate_secrets,
-            is_ai_ugc_telemetry_enabled,
         );
 
         Self {
@@ -1090,7 +1088,6 @@ impl TerminalModel {
         honor_ps1: bool,
         is_inverted: bool,
         obfuscate_secrets: ObfuscateSecrets,
-        is_ai_ugc_telemetry_enabled: bool,
         session_startup_path: Option<PathBuf>,
         shell_state: ShellLaunchState,
     ) -> Self {
@@ -1106,7 +1103,6 @@ impl TerminalModel {
             honor_ps1,
             is_inverted,
             obfuscate_secrets,
-            is_ai_ugc_telemetry_enabled,
             session_startup_path,
             shell_state,
             SharedSessionStatus::NotShared,
@@ -1116,41 +1112,6 @@ impl TerminalModel {
 
     /// Creates a terminal model for a cloud mode pane before it has connected to a shared session.
     #[allow(clippy::too_many_arguments)]
-    pub fn new_for_cloud_mode_shared_session_viewer(
-        sizes: BlockSize,
-        colors: color::List,
-        event_proxy: ChannelEventListener,
-        background_executor: Arc<Background>,
-        show_memory_stats: bool,
-        honor_ps1: bool,
-        is_inverted: bool,
-        obfuscate_secrets: ObfuscateSecrets,
-    ) -> Self {
-        Self::new_internal(
-            None,
-            sizes,
-            colors,
-            event_proxy,
-            background_executor,
-            false,
-            false,
-            show_memory_stats,
-            honor_ps1,
-            is_inverted,
-            obfuscate_secrets,
-            false,
-            None,
-            // TODO: use the same shell type as the sharer
-            ShellLaunchState::ShellSpawned {
-                available_shell: None,
-                display_name: ShellName::blank(),
-                shell_type: ShellType::Zsh,
-            },
-            SharedSessionStatus::ViewPending,
-            true,
-        )
-    }
-
     #[allow(clippy::too_many_arguments)]
     fn new_for_shared_session_viewer_internal(
         sizes: BlockSize,
@@ -1174,7 +1135,6 @@ impl TerminalModel {
             honor_ps1,
             is_inverted,
             obfuscate_secrets,
-            false,
             None,
             // TODO: use the same shell type as the sharer
             ShellLaunchState::ShellSpawned {
