@@ -30,7 +30,6 @@ use warpui::{
     ViewContext, ViewHandle, WeakViewHandle,
 };
 
-use super::SettingsSection;
 use super::admin_actions::AdminActions;
 use super::billing_and_usage::overage_limit_modal::{SpendingLimitModal, SpendingLimitModalEvent};
 use super::settings_page::{
@@ -51,7 +50,6 @@ use crate::ui_components::blended_colors;
 use crate::ui_components::buttons::icon_button;
 use crate::ui_components::icons::Icon;
 use crate::ui_components::menu_button::{MenuDirection, icon_button_with_context_menu};
-use crate::ui_components::tab_selector::{self, SettingsTab};
 use crate::view_components::ToastFlavor;
 use crate::view_components::action_button::{ActionButton, PrimaryTheme, SecondaryTheme};
 use crate::workspaces::update_manager::TeamUpdateManager;
@@ -838,6 +836,7 @@ impl From<&BillingAndUsagePageAction> for LoginGatedFeature {
     }
 }
 
+impl BillingAndUsagePageView {
     fn render_usage_based_pricing_section(
         &self,
         enabled: bool,
@@ -1850,23 +1849,16 @@ impl BillingAndUsagePageView {
     }
 }
 
-    #[allow(clippy::too_many_arguments)]
+impl BillingAndUsagePageView {
     fn render_usage_content(
         &self,
         appearance: &Appearance,
         app: &AppContext,
-        ai_request_usage_model: &AIRequestUsageModel,
-        formatted_next_refresh_time: &str,
         workspace_is_delinquent_due_to_payment_issue: bool,
-        prorated_request_limits_info_mouse_states: &[MouseStateHandle],
     ) -> Box<dyn Element> {
         let mut usage = Flex::column();
 
         let workspace = UserWorkspaces::as_ref(app).current_workspace();
-        // Check if we should show the sort button (admin with team size > 1)
-        let workspace_team_members = workspace
-            .map(|workspace| workspace.members.clone())
-            .unwrap_or_default();
         let current_user_email = AuthStateProvider::as_ref(app)
             .get()
             .user_email()
@@ -1877,306 +1869,26 @@ impl BillingAndUsagePageView {
         let has_admin_permissions =
             team.is_some_and(|team| team.has_admin_permissions(&current_user_email));
 
-        let mut usage_header_right_side = Flex::row()
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_child(
-                appearance
-                    .ui_builder()
-                    .paragraph(format!("Resets {formatted_next_refresh_time}"))
-                    .with_style(UiComponentStyles {
-                        font_color: Some(blended_colors::text_sub(
-                            appearance.theme(),
-                            appearance.theme().surface_1(),
-                        )),
-                        ..Default::default()
-                    })
-                    .build()
-                    .finish(),
-            )
-            .with_child(
-                Container::new(
-                    icon_button(
-                        appearance,
-                        Icon::Refresh,
-                        false,
-                        self.refresh_icon_mouse_state.clone(),
-                    )
-                    .build()
-                    .on_click(move |ctx, _, _| {
-                        ctx.dispatch_typed_action(BillingAndUsagePageAction::RefreshWorkspaceData);
-                    })
-                    .finish(),
-                )
-                .with_margin_left(8.)
-                .finish(),
-            );
-
-        // only show sort button if user is admin and has more than 1 member
-        if has_admin_permissions && workspace_team_members.len() > 1 {
-            usage_header_right_side.add_child(
-                Container::new({
-                    let mut button = icon_button_with_context_menu(
-                        Icon::Sort,
-                        move |ctx, _, _| {
-                            ctx.dispatch_typed_action(BillingAndUsagePageAction::ToggleSortingMenu)
-                        },
-                        self.sort_icon_mouse_state.clone(),
-                        &self.sorting_menu,
-                        self.sorting_menu_open,
-                        MenuDirection::Right,
-                        Some(Cursor::PointingHand),
-                        None,
-                        appearance,
-                    );
-
-                    let hoverable =
-                        Hoverable::new(self.sort_icon_mouse_state.clone(), |mouse_state| {
-                            if mouse_state.is_hovered() {
-                                let tooltip =
-                                    appearance.ui_builder().tool_tip("Sort by".to_string());
-
-                                button.add_positioned_overlay_child(
-                                    tooltip.build().finish(),
-                                    OffsetPositioning::offset_from_parent(
-                                        vec2f(0., 4.),
-                                        ParentOffsetBounds::Unbounded,
-                                        ParentAnchor::BottomMiddle,
-                                        ChildAnchor::TopMiddle,
-                                    ),
-                                );
-                            }
-                            button.finish()
-                        });
-
-                    hoverable.finish()
-                })
-                .with_margin_left(8.)
-                .finish(),
-            );
-        }
-
-        // Render the ambient agent trial widget if the user has ambient-only credits.
-        if let Some(ambient_trial_widget) =
-            self.render_ambient_agent_trial_widget(ai_request_usage_model, appearance, app)
-        {
-            usage.add_child(ambient_trial_widget);
-        }
-
         let show_addon_credits_panel = workspace.is_some()
             || workspaces
                 .purchase_policy()
                 .is_some_and(|policy| policy.allows_purchases());
         if show_addon_credits_panel {
-            let bonus_credit_balance = workspace.map_or_else(
-                || ai_request_usage_model.total_user_interactive_bonus_credits_remaining(),
-                |workspace| {
-                    ai_request_usage_model
-                        .total_workspace_and_team_bonus_credits_remaining(workspace.uid)
-                },
-            );
-
-            // Hide addon credits panel for Enterprise PAYG users when they have 0 credits.
-            let is_enterprise_payg_with_zero_credits = workspace.is_some_and(|workspace| {
-                workspace
-                    .billing_metadata
-                    .is_enterprise_pay_as_you_go_enabled()
-            }) && bonus_credit_balance == 0;
-
             let can_manage_addon_credits =
                 team.is_none_or(|team| team.has_admin_permissions(&current_user_email));
 
-            if !is_enterprise_payg_with_zero_credits {
-                usage.add_child(self.render_addon_credits_panel(
-                    self.selected_addon_denomination,
-                    workspace,
-                    team.map(|team| team.uid),
-                    can_manage_addon_credits,
-                    bonus_credit_balance,
-                    &self.addon_credits_options,
-                    &self.addon_credit_denomination_buttons,
-                    self.purchase_addon_credits_loading,
-                    workspace_is_delinquent_due_to_payment_issue,
-                    app,
-                ));
-            }
-        }
-
-        let usage_header = Container::new(
-            Flex::row()
-                .with_main_axis_size(MainAxisSize::Max)
-                .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
-                .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                .with_child(
-                    build_sub_header(
-                        appearance,
-                        "Usage",
-                        Some(
-                            appearance
-                                .theme()
-                                .main_text_color(appearance.theme().surface_2()),
-                        ),
-                    )
-                    .finish(),
-                )
-                .with_child(usage_header_right_side.finish())
-                .finish(),
-        )
-        .with_padding_bottom(HEADER_PADDING)
-        .finish();
-
-        usage.add_child(usage_header);
-
-        // For enterprise plan users with base limit = 0, show a limited usage reporting callout
-        // as this is not applicable to them
-        if let Some(billing_metadata) = billing_metadata
-            && billing_metadata.customer_type == CustomerType::Enterprise
-            && billing_metadata
-                .tier
-                .warp_ai_policy
-                .is_some_and(|p| p.limit == 0)
-        {
-            usage.add_child(self.render_enterprise_usage_card(
+            usage.add_child(self.render_addon_credits_panel(
+                self.selected_addon_denomination,
+                workspace,
                 team.map(|team| team.uid),
-                has_admin_permissions,
-                appearance,
-            ));
-            return usage.finish();
-        }
-
-        // Show a summed "Team total" row first.
-        let num_team_members = workspace_team_members.len();
-        let should_show_team_total = num_team_members > 1 && has_admin_permissions;
-        if should_show_team_total {
-            let team_total_used: usize = workspace_team_members
-                .iter()
-                .map(|m| m.usage_info.requests_used_since_last_refresh as usize)
-                .sum();
-            let is_unlimited = ai_request_usage_model.is_unlimited();
-
-            let team_divisor = if is_unlimited {
-                Some(Divisor::Unlimited)
-            } else {
-                None
-            };
-
-            usage.add_child(self.render_ai_usage_limit_row(
-                "Team total".to_string(),
-                team_total_used,
-                team_divisor,
-                ai_request_usage_model.refresh_duration_to_string(),
+                can_manage_addon_credits,
+                &self.addon_credits_options,
+                &self.addon_credit_denomination_buttons,
+                self.purchase_addon_credits_loading,
                 workspace_is_delinquent_due_to_payment_issue,
-                appearance,
-                None,
-            ));
-            let divider = Container::new(
-                ConstrainedBox::new(Empty::new().finish())
-                    .with_height(1.)
-                    .finish(),
-            )
-            .with_background_color(appearance.theme().outline().into_solid())
-            .with_margin_bottom(16.)
-            .finish();
-
-            usage.add_child(divider);
-        }
-
-        // Build UserSortingCriteria with (display_name, requests_used, rendered_row)
-        // Note: display_name already has email as fallback
-        let mut user_information = if !has_admin_permissions {
-            vec![]
-        } else {
-            workspace_team_members
-                .iter()
-                .enumerate()
-                .map(|(i, member)| {
-                    // Compute effective display name (fallback to email if missing or empty)
-                    let display_name = UserProfiles::as_ref(app)
-                        .profile_for_uid(member.uid)
-                        .and_then(|profile| profile.display_name.clone())
-                        .filter(|s| !s.trim().is_empty())
-                        .unwrap_or_else(|| member.email.clone());
-
-                    let requests_used = member.usage_info.requests_used_since_last_refresh as usize;
-
-                    let row = self.render_ai_usage_limit_row(
-                        display_name.clone(),
-                        requests_used,
-                        if member.usage_info.is_unlimited {
-                            Some(Divisor::Unlimited)
-                        } else {
-                            Some(Divisor::Limit(member.usage_info.request_limit as usize))
-                        },
-                        ai_request_usage_model.refresh_duration_to_string(),
-                        workspace_is_delinquent_due_to_payment_issue,
-                        appearance,
-                        Some(ProratedRequestLimitsInfo {
-                            is_request_limit_prorated: member.usage_info.is_request_limit_prorated,
-                            mouse_state: prorated_request_limits_info_mouse_states[i].clone(),
-                            is_current_user: member.email == current_user_email,
-                        }),
-                    );
-
-                    UserSortingCriteria::new(display_name, requests_used, row)
-                })
-                .collect_vec()
-        };
-
-        if user_information.is_empty() {
-            let display_name = AuthStateProvider::as_ref(app)
-                .get()
-                .display_name()
-                .filter(|s| !s.trim().is_empty())
-                .unwrap_or_else(|| current_user_email.clone());
-            let user_workspace_member = workspace_team_members
-                .iter()
-                .find(|m| m.email == current_user_email);
-
-            let row = self.render_ai_usage_limit_row(
-                display_name.clone(),
-                ai_request_usage_model.requests_used(),
-                if ai_request_usage_model.is_unlimited() {
-                    Some(Divisor::Unlimited)
-                } else {
-                    Some(Divisor::Limit(ai_request_usage_model.request_limit()))
-                },
-                ai_request_usage_model.refresh_duration_to_string(),
-                workspace_is_delinquent_due_to_payment_issue,
-                appearance,
-                user_workspace_member.map(|member| ProratedRequestLimitsInfo {
-                    is_request_limit_prorated: member.usage_info.is_request_limit_prorated,
-                    mouse_state: prorated_request_limits_info_mouse_states[0].clone(), // We know the workspace has at least one member, so just take the first mouse state handle since we don't use the others.
-                    is_current_user: true,
-                }),
-            );
-            user_information.push(UserSortingCriteria::new(
-                display_name,
-                ai_request_usage_model.requests_used(),
-                row,
+                app,
             ));
         }
-
-        // Apply sort according to current_sort_key/current_sort_order via shared helper
-        // Get current user's display name (with email fallback) for pinning
-        let current_user_display_name = AuthStateProvider::as_ref(app)
-            .get()
-            .display_name()
-            .filter(|s| !s.trim().is_empty())
-            .unwrap_or_else(|| current_user_email.clone());
-
-        // TODO: move sorting once per initial load or sort option change https://github.com/warpdotdev/warp-internal/pull/18288/files#r2392139761
-        sort_user_items_in_place(
-            &mut user_information,
-            &current_user_display_name,
-            self.current_sort_key,
-            self.current_sort_order,
-        );
-
-        let user_information = user_information
-            .into_iter()
-            .map(|item| item.data)
-            .collect_vec();
-
-        usage.extend(user_information);
 
         let auth_state = AuthStateProvider::as_ref(app).get();
 
@@ -2192,7 +1904,7 @@ impl BillingAndUsagePageView {
                                 team_uid: team.uid,
                             },
                         ),
-                        FormattedTextFragment::plain_text(" to regain access to AI features."),
+                        FormattedTextFragment::plain_text(" to regain access to paid features."),
                     ]
                 } else {
                     // Non-admin team member - show message to contact admin
@@ -2215,21 +1927,13 @@ impl BillingAndUsagePageView {
                                 ),
                             ]
                         } else {
-                            let mut fragments = vec![FormattedTextFragment::hyperlink(
-                                "Upgrade to the Build plan",
-                                upgrade_url,
-                            )];
-                            if billing_metadata.is_byo_api_key_enabled() {
-                                fragments.push(FormattedTextFragment::plain_text(" or "));
-                                fragments.push(FormattedTextFragment::hyperlink_action(
-                                    "bring your own key",
-                                    BillingAndUsagePageAction::NavigateToByokSettings,
-                                ));
-                            }
-                            fragments.push(FormattedTextFragment::plain_text(
-                                " for increased access to AI features.",
-                            ));
-                            fragments
+                            vec![
+                                FormattedTextFragment::hyperlink(
+                                    "Upgrade to the Build plan",
+                                    upgrade_url,
+                                ),
+                                FormattedTextFragment::plain_text(" for increased access."),
+                            ]
                         }
                     } else {
                         let upgrade_text = match billing_metadata.customer_type {
@@ -2237,22 +1941,16 @@ impl BillingAndUsagePageView {
                             CustomerType::Turbo => "Upgrade to Lightspeed plan",
                             _ => "Upgrade",
                         };
-                        vec![
-                            FormattedTextFragment::hyperlink(upgrade_text, upgrade_url),
-                            FormattedTextFragment::plain_text(" to get more AI usage."),
-                        ]
+                        vec![FormattedTextFragment::hyperlink(upgrade_text, upgrade_url)]
                     }
                 } else {
                     vec![]
                 }
             } else if billing_metadata.is_on_build_plan() {
-                vec![
-                    FormattedTextFragment::hyperlink(
-                        "Upgrade to Max",
-                        UserWorkspaces::upgrade_link_for_team(team.uid),
-                    ),
-                    FormattedTextFragment::plain_text(" for more AI credits."),
-                ]
+                vec![FormattedTextFragment::hyperlink(
+                    "Upgrade to Max",
+                    UserWorkspaces::upgrade_link_for_team(team.uid),
+                )]
             } else if billing_metadata.is_on_build_max_plan() {
                 vec![
                     FormattedTextFragment::hyperlink(
@@ -2273,32 +1971,16 @@ impl BillingAndUsagePageView {
                     ),
                     FormattedTextFragment::plain_text(" for custom limits and dedicated support."),
                 ]
-            } else if !billing_metadata.is_usage_based_pricing_toggleable() {
-                vec![
-                    FormattedTextFragment::hyperlink("Contact support", "mailto:support@warp.dev"),
-                    FormattedTextFragment::plain_text(" for more AI usage."),
-                ]
             } else {
                 vec![]
             }
         } else if billing_metadata.is_none_or(BillingMetadata::can_upgrade_to_build_plan) {
             let user_id = auth_state.user_id().unwrap_or_default();
             let upgrade_url = UserWorkspaces::upgrade_link(user_id);
-            let mut fragments = vec![FormattedTextFragment::hyperlink(
+            vec![FormattedTextFragment::hyperlink(
                 "Upgrade to the Build plan",
                 upgrade_url,
-            )];
-            if UserWorkspaces::as_ref(app).is_byo_api_key_enabled(app) {
-                fragments.push(FormattedTextFragment::plain_text(" or "));
-                fragments.push(FormattedTextFragment::hyperlink_action(
-                    "bring your own key",
-                    BillingAndUsagePageAction::NavigateToByokSettings,
-                ));
-            }
-            fragments.push(FormattedTextFragment::plain_text(
-                " for more credits and access to more models.",
-            ));
-            fragments
+            )]
         } else {
             vec![]
         };
@@ -2371,67 +2053,6 @@ impl BillingAndUsagePageView {
     }
 }
 
-/// Sorts items in-place. The current user is always pinned first.
-/// For display name sort, comparison is case-insensitive on display name.
-/// For requests sort, ties are broken by display name ascending.
-pub(crate) fn sort_user_items_in_place<T>(
-    items: &mut [UserSortingCriteria<T>],
-    display_name: &str,
-    key: Option<SortKey>,
-    order: SortOrder,
-) {
-    let pin_current_user =
-        |a: &UserSortingCriteria<T>, b: &UserSortingCriteria<T>| -> Option<std::cmp::Ordering> {
-            if a.display_name == display_name {
-                Some(std::cmp::Ordering::Less)
-            } else if b.display_name == display_name {
-                Some(std::cmp::Ordering::Greater)
-            } else {
-                None
-            }
-        };
-
-    let compare_by_name = |a: &UserSortingCriteria<T>,
-                           b: &UserSortingCriteria<T>,
-                           ascending: bool|
-     -> std::cmp::Ordering {
-        let a_key = a.display_name.to_lowercase();
-        let b_key = b.display_name.to_lowercase();
-        if ascending {
-            a_key.cmp(&b_key)
-        } else {
-            b_key.cmp(&a_key)
-        }
-    };
-
-    items.sort_by(|a, b| {
-        if let Some(ordering) = pin_current_user(a, b) {
-            return ordering;
-        }
-
-        match (key, order) {
-            (Some(SortKey::DisplayName), SortOrder::Asc) => compare_by_name(a, b, true),
-            (Some(SortKey::DisplayName), SortOrder::Desc) => compare_by_name(a, b, false),
-            (Some(SortKey::Requests), SortOrder::Asc) => {
-                let primary = a.requests_used.cmp(&b.requests_used);
-                if primary == std::cmp::Ordering::Equal {
-                    compare_by_name(a, b, true)
-                } else {
-                    primary
-                }
-            }
-            (Some(SortKey::Requests), SortOrder::Desc) => {
-                let primary = b.requests_used.cmp(&a.requests_used);
-                if primary == std::cmp::Ordering::Equal {
-                    compare_by_name(a, b, true)
-                } else {
-                    primary
-                }
-            }
-            _ => a.display_name.cmp(&b.display_name),
-        }
-    });
-}
 
 impl BillingAndUsagePageView {
     fn render_anonymous_account_info(

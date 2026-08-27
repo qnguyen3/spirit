@@ -292,17 +292,11 @@ pub enum TerminalAction {
         source: PaletteSource,
     },
     DismissCodeToolbeltTooltip,
-    /// Start a Language Server for the current working directory (if supported)
-    StartLspServer,
     /// Open the Environment Management pane.
     OpenEnvironmentManagementPane,
     OpenInlineHistoryMenu,
     /// Toggle PTY recording for this session.
     ToggleSessionRecording,
-    /// Toggle the rich input editor for composing a prompt to send to a CLI agent.
-    /// Triggered by Ctrl-G when a CLI agent is detected, or from the footer button.
-    ToggleCLIAgentRichInput,
-
     /// Allow the blocked clipboard operation by adjusting the OSC 52 clipboard access setting.
     Osc52AllowBlockedClipboardOperation,
 }
@@ -507,11 +501,9 @@ impl fmt::Debug for TerminalAction {
             PickRepoToOpen => write!(f, "PickRepoToOpen"),
             OpenFilesPalette { .. } => write!(f, "OpenFilesPalette"),
             DismissCodeToolbeltTooltip => write!(f, "DismissCodeToolbeltTooltip"),
-            StartLspServer => write!(f, "StartLspServer"),
             OpenEnvironmentManagementPane => write!(f, "OpenEnvironmentManagementPane"),
             OpenInlineHistoryMenu => write!(f, "OpenInlineHistoryMenu"),
             ToggleSessionRecording => write!(f, "ToggleSessionRecording"),
-            ToggleCLIAgentRichInput => write!(f, "ToggleCLIAgentRichInput"),
             Osc52AllowBlockedClipboardOperation => {
                 write!(f, "Osc52AllowBlockedClipboardOperation")
             }

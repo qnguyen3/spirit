@@ -27,17 +27,13 @@ use warpui::{
     ViewContext, ViewHandle, WeakViewHandle,
 };
 
-use super::billing_and_usage::billing_cycle_usage_section::BillingCycleUsageSectionView;
 use super::billing_and_usage::overage_limit_modal::{SpendingLimitModal, SpendingLimitModalEvent};
-use super::billing_and_usage::usage_history_entry::UsageHistoryEntry;
-use super::billing_and_usage::usage_history_model::UsageHistoryModel;
 pub use super::billing_and_usage_page::BillingAndUsagePageEvent;
 use super::billing_and_usage_page::{
-    BillingAndUsagePageAction, BillingUsageTab, CHECKOUT_PENDING_MESSAGE,
-    render_premium_upgrade_savings_note,
+    BillingAndUsagePageAction, CHECKOUT_PENDING_MESSAGE, render_premium_upgrade_savings_note,
 };
+use super::plan_header_presentation;
 use super::settings_page::{AdditionalInfo, render_customer_type_badge, render_info_icon};
-use super::{SettingsSection, plan_header_presentation};
 use crate::auth::auth_state::AuthState;
 use crate::auth::auth_view_modal::AuthViewVariant;
 use crate::auth::{AuthManager, AuthStateProvider};
@@ -70,38 +66,7 @@ const RESTRICTED_BILLING_USAGE_NON_ADMIN_WARNING_STRING: &str = "Auto reload is 
 
 const HEADER_FONT_SIZE: f32 = 16.;
 
-pub(super) const BASE_CREDITS_DOT_COLOR: ColorU = ColorU {
-    r: 207,
-    g: 145,
-    b: 216,
-    a: 255,
-};
-pub(super) const BONUS_CREDITS_DOT_COLOR: ColorU = ColorU {
-    r: 236,
-    g: 148,
-    b: 85,
-    a: 255,
-};
-pub(super) const PAYG_CREDITS_DOT_COLOR: ColorU = ColorU {
-    r: 94,
-    g: 177,
-    b: 239,
-    a: 255,
-};
-pub(super) const AMBIENT_CREDITS_DOT_COLOR: ColorU = ColorU {
-    r: 99,
-    g: 102,
-    b: 241,
-    a: 255,
-};
-pub(super) const AGGREGATE_CREDITS_DOT_COLOR: ColorU = ColorU {
-    r: 140,
-    g: 140,
-    b: 140,
-    a: 255,
-};
 const DEFAULT_MAX_MONTHLY_SPEND_CENTS: i32 = 20_000;
-const AMBIENT_AGENT_TRIAL_TITLE: &str = "Cloud agent trial";
 
 #[derive(Default)]
 struct PlanSectionMouseStates {
@@ -119,19 +84,6 @@ struct BuyCreditsMouseStates {
     auto_reload_info: MouseStateHandle,
     buy_button: MouseStateHandle,
 }
-#[derive(Default)]
-struct AmbientTrialMouseStates {
-    new_agent_button: MouseStateHandle,
-    buy_more_button: MouseStateHandle,
-    dismiss_button: MouseStateHandle,
-}
-
-#[derive(Default)]
-struct TabMouseStates {
-    overview: MouseStateHandle,
-    usage_history: MouseStateHandle,
-}
-
 struct AddonCreditsState {
     selected_denomination: usize,
     options: Vec<AddonCreditsOption>,
@@ -174,108 +126,14 @@ struct AddonCreditsPurchaseState {
     premium_bps: i32,
 }
 
-struct UsageHistoryState {
-    model: ModelHandle<UsageHistoryModel>,
-    expanded_entries: HashMap<String, bool>,
-    entry_mouse_states: RefCell<HashMap<String, MouseStateHandle>>,
-    tooltip_mouse_states: RefCell<HashMap<String, MouseStateHandle>>,
-    load_more_button: ViewHandle<ActionButton>,
-}
-
-struct GrantBucket {
-    grants: Vec<BonusGrant>,
-}
-
-impl GrantBucket {
-    fn is_empty(&self) -> bool {
-        self.grants.is_empty()
-    }
-
-    fn total_balance(&self) -> i64 {
-        self.grants
-            .iter()
-            .map(|g| g.request_credits_remaining as i64)
-            .sum()
-    }
-
-    fn expiry_label(&self) -> String {
-        let expiries: Vec<_> = self.grants.iter().filter_map(|g| g.expiration).collect();
-        if expiries.is_empty() {
-            return String::new();
-        }
-        let first = expiries[0];
-        if expiries
-            .iter()
-            .all(|e| e.date_naive() == first.date_naive())
-        {
-            let local = first.with_timezone(&Local);
-            format!("Expires {}", local.format("%b %d, %Y"))
-        } else {
-            String::new()
-        }
-    }
-}
-
-struct ClassifiedGrants {
-    personal: GrantBucket,
-    team: GrantBucket,
-    workspace: GrantBucket,
-}
-
-impl ClassifiedGrants {
-    fn new(grants: &[BonusGrant], workspace_uid: Option<WorkspaceUid>) -> Self {
-        let now = chrono::Utc::now();
-        let mut personal = Vec::new();
-        let mut team = Vec::new();
-        let mut workspace = Vec::new();
-
-        for grant in grants {
-            if grant.expiration.is_some_and(|exp| now >= exp) {
-                continue;
-            }
-            if grant.request_credits_remaining <= 0 {
-                continue;
-            }
-            if grant.grant_type == BonusGrantType::AmbientOnly {
-                continue;
-            }
-            match grant.scope {
-                BonusGrantScope::User => personal.push(grant.clone()),
-                BonusGrantScope::Team(uid) if workspace_uid == Some(uid) => {
-                    team.push(grant.clone())
-                }
-                BonusGrantScope::Workspace(uid) if workspace_uid == Some(uid) => {
-                    workspace.push(grant.clone())
-                }
-                BonusGrantScope::Team(_) | BonusGrantScope::Workspace(_) => {}
-            }
-        }
-
-        Self {
-            personal: GrantBucket { grants: personal },
-            team: GrantBucket { grants: team },
-            workspace: GrantBucket { grants: workspace },
-        }
-    }
-
-    fn has_any(&self) -> bool {
-        !self.personal.is_empty() || !self.team.is_empty() || !self.workspace.is_empty()
-    }
-}
-
 pub struct BillingAndUsagePageV2View {
     self_handle: WeakViewHandle<Self>,
     auth_state: Arc<AuthState>,
     addon_credit_modal_state: ModalViewState<Modal<SpendingLimitModal>>,
-    selected_tab: BillingUsageTab,
-    usage_history: UsageHistoryState,
     addon_credits: AddonCreditsState,
     pending_auto_reload_toast: Option<String>,
-    tab_mouse_states: TabMouseStates,
     plan_mouse_states: PlanSectionMouseStates,
     buy_credits_mouse_states: BuyCreditsMouseStates,
-    ambient_trial_mouse_states: AmbientTrialMouseStates,
-    billing_cycle_usage_section: ViewHandle<BillingCycleUsageSectionView>,
 }
 
 impl BillingAndUsagePageV2View {
@@ -295,10 +153,6 @@ impl BillingAndUsagePageV2View {
             ctx.notify();
         });
 
-        ctx.subscribe_to_model(&AIRequestUsageModel::handle(ctx), |_, _, _, ctx| {
-            ctx.notify()
-        });
-
         ctx.subscribe_to_model(
             &PricingInfoModel::handle(ctx),
             |me, _handle, _event, ctx| {
@@ -307,12 +161,6 @@ impl BillingAndUsagePageV2View {
                 ctx.notify();
             },
         );
-
-        let usage_history_model = ctx.add_model(UsageHistoryModel::new);
-        ctx.subscribe_to_model(&usage_history_model, |_, _, _, ctx| {
-            ctx.notify();
-        });
-        usage_history_model.update(ctx, |m, ctx| m.refresh_usage_history_async(ctx));
 
         let auth_state = AuthStateProvider::as_ref(ctx).get().clone();
 
@@ -340,27 +188,10 @@ impl BillingAndUsagePageV2View {
             me.handle_addon_credit_modal_close_event(event, ctx);
         });
 
-        let load_more_button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new("Load more", SecondaryTheme).on_click(|ctx| {
-                ctx.dispatch_typed_action(BillingAndUsagePageAction::RenderMoreUsageEntries);
-            })
-        });
-
-        let billing_cycle_usage_section =
-            ctx.add_typed_action_view(BillingCycleUsageSectionView::new);
-
         let mut me = Self {
             self_handle: ctx.handle(),
             auth_state,
             addon_credit_modal_state: ModalViewState::new(addon_credit_modal_view),
-            selected_tab: BillingUsageTab::Overview,
-            usage_history: UsageHistoryState {
-                model: usage_history_model,
-                expanded_entries: HashMap::new(),
-                entry_mouse_states: RefCell::new(HashMap::new()),
-                tooltip_mouse_states: RefCell::new(HashMap::new()),
-                load_more_button,
-            },
             addon_credits: AddonCreditsState {
                 selected_denomination: 0,
                 options: Default::default(),
@@ -368,11 +199,8 @@ impl BillingAndUsagePageV2View {
                 purchase_loading: false,
             },
             pending_auto_reload_toast: None,
-            tab_mouse_states: Default::default(),
             plan_mouse_states: Default::default(),
             buy_credits_mouse_states: Default::default(),
-            ambient_trial_mouse_states: Default::default(),
-            billing_cycle_usage_section,
         };
         me.update_addon_credits_options(ctx);
         me.refresh_addon_credits_settings(ctx);
@@ -445,8 +273,6 @@ impl BillingAndUsagePageV2View {
                     ToastFlavor::Success,
                     ctx,
                 );
-                AIRequestUsageModel::handle(ctx)
-                    .update(ctx, |m, ctx| m.refresh_request_usage_async(ctx));
             }
             UserWorkspacesEvent::PurchaseAddonCreditsCheckoutRequired { checkout_url } => {
                 if self.addon_credits.purchase_loading {
@@ -790,293 +616,6 @@ impl BillingAndUsagePageV2View {
             ctx.dispatch_typed_action(BillingAndUsagePageAction::RefreshWorkspaceData);
         })
         .finish()
-    }
-
-    fn render_balance_section(
-        &self,
-        appearance: &Appearance,
-        app: &AppContext,
-    ) -> Option<Box<dyn Element>> {
-        let theme = appearance.theme();
-        let ai_model = AIRequestUsageModel::as_ref(app);
-
-        let has_base_credits = ai_model.request_limit() > 0;
-
-        let grants = ai_model.bonus_grants();
-        let workspace_uid = UserWorkspaces::as_ref(app)
-            .current_workspace()
-            .map(|ws| ws.uid);
-        let classified = ClassifiedGrants::new(grants, workspace_uid);
-
-        if !has_base_credits && !classified.has_any() {
-            return None;
-        }
-
-        let mut cards_row = Flex::row()
-            .with_spacing(8.)
-            .with_main_axis_size(MainAxisSize::Max);
-
-        let outline_color = theme.outline().into_solid();
-
-        if has_base_credits {
-            let reset_str = ai_model
-                .next_refresh_time_local()
-                .format("Resets %b %d at %-I:%M %p")
-                .to_string();
-            let base_remaining = ai_model
-                .request_limit()
-                .saturating_sub(ai_model.requests_used()) as i64;
-            let base_limit = (!ai_model.is_unlimited()).then(|| ai_model.request_limit() as i64);
-            cards_row.add_child(
-                Expanded::new(
-                    1.,
-                    render_balance_card(
-                        appearance,
-                        BASE_CREDITS_DOT_COLOR,
-                        "Base credits",
-                        &reset_str,
-                        base_remaining,
-                        base_limit,
-                        outline_color,
-                    ),
-                )
-                .finish(),
-            );
-        }
-
-        if !classified.personal.is_empty() {
-            cards_row.add_child(
-                Expanded::new(
-                    1.,
-                    render_balance_card(
-                        appearance,
-                        BONUS_CREDITS_DOT_COLOR,
-                        "Personal credits",
-                        &classified.personal.expiry_label(),
-                        classified.personal.total_balance(),
-                        None,
-                        outline_color,
-                    ),
-                )
-                .finish(),
-            );
-        }
-
-        if !classified.team.is_empty() {
-            cards_row.add_child(
-                Expanded::new(
-                    1.,
-                    render_balance_card(
-                        appearance,
-                        BONUS_CREDITS_DOT_COLOR,
-                        "Team credits",
-                        &classified.team.expiry_label(),
-                        classified.team.total_balance(),
-                        None,
-                        outline_color,
-                    ),
-                )
-                .finish(),
-            );
-        }
-
-        if !classified.workspace.is_empty() {
-            cards_row.add_child(
-                Expanded::new(
-                    1.,
-                    render_balance_card(
-                        appearance,
-                        BONUS_CREDITS_DOT_COLOR,
-                        "Workspace credits",
-                        &classified.workspace.expiry_label(),
-                        classified.workspace.total_balance(),
-                        None,
-                        outline_color,
-                    ),
-                )
-                .finish(),
-            );
-        }
-
-        Some(
-            Flex::column()
-                .with_child(
-                    Container::new(
-                        Text::new_inline("Balance", appearance.ui_font_family(), HEADER_FONT_SIZE)
-                            .with_style(Properties::default().weight(Weight::Bold))
-                            .with_color(theme.active_ui_text_color().into())
-                            .finish(),
-                    )
-                    .with_margin_bottom(12.)
-                    .finish(),
-                )
-                .with_child(cards_row.finish())
-                .with_child(
-                    ConstrainedBox::new(Empty::new().finish())
-                        .with_height(24.)
-                        .finish(),
-                )
-                .finish(),
-        )
-    }
-
-    fn render_ambient_agent_trial_widget(
-        &self,
-        ai_model: &AIRequestUsageModel,
-        appearance: &Appearance,
-        app: &AppContext,
-    ) -> Option<Box<dyn Element>> {
-        let credits_remaining = ai_model.ambient_only_credits_remaining()?;
-        if credits_remaining == 0 {
-            return None;
-        }
-
-        if *AISettings::as_ref(app).ambient_agent_trial_widget_dismissed {
-            return None;
-        }
-
-        let theme = appearance.theme();
-        let ui_builder = appearance.ui_builder();
-        let fg = theme.foreground().into_solid();
-        let bg = theme.background().into_solid();
-
-        let title = Text::new_inline(AMBIENT_AGENT_TRIAL_TITLE, appearance.ui_font_family(), 14.)
-            .with_color(theme.active_ui_text_color().into())
-            .with_style(Properties::default().weight(Weight::Semibold))
-            .finish();
-
-        let credits_text = if credits_remaining == 1 {
-            "1 credit remaining".to_string()
-        } else {
-            format!(
-                "{} credits remaining",
-                credits_remaining.separate_with_commas()
-            )
-        };
-        let credits_label = Text::new_inline(credits_text, appearance.ui_font_family(), 12.)
-            .with_color(blended_colors::text_sub(theme, theme.surface_1()))
-            .finish();
-
-        let left_side = Flex::row()
-            .with_child(title)
-            .with_child(Container::new(credits_label).with_margin_left(8.).finish())
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .finish();
-
-        let mut right_side = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
-
-        if credits_remaining >= AMBIENT_AGENT_TRIAL_CREDIT_THRESHOLD {
-            let new_agent_button = ui_builder
-                .button(
-                    ButtonVariant::Secondary,
-                    self.ambient_trial_mouse_states.new_agent_button.clone(),
-                )
-                .with_text_label("New agent".to_string())
-                .with_style(UiComponentStyles {
-                    font_color: Some(bg),
-                    background: Some(fg.into()),
-                    font_size: Some(14.),
-                    font_weight: Some(Weight::Semibold),
-                    padding: Some(Coords {
-                        top: 7.,
-                        bottom: 7.,
-                        left: 12.,
-                        right: 12.,
-                    }),
-                    ..Default::default()
-                })
-                .build()
-                .on_click(|ctx, _, _| {
-                    ctx.dispatch_typed_action(WorkspaceAction::AddAmbientAgentTab);
-                })
-                .finish();
-            right_side.add_child(
-                Container::new(new_agent_button)
-                    .with_margin_right(8.)
-                    .finish(),
-            );
-        }
-
-        let is_on_paid_plan = UserWorkspaces::as_ref(app)
-            .current_workspace()
-            .is_some_and(|workspace| workspace.billing_metadata.is_user_on_paid_plan());
-        if !is_on_paid_plan {
-            let user_id = AuthStateProvider::as_ref(app).get().user_id();
-            let buy_more_button = ui_builder
-                .button(
-                    ButtonVariant::Secondary,
-                    self.ambient_trial_mouse_states.buy_more_button.clone(),
-                )
-                .with_text_label("Buy more".to_string())
-                .with_style(UiComponentStyles {
-                    background: Some(bg.into()),
-                    font_size: Some(14.),
-                    font_weight: Some(Weight::Semibold),
-                    padding: Some(Coords {
-                        top: 7.,
-                        bottom: 7.,
-                        left: 12.,
-                        right: 12.,
-                    }),
-                    ..Default::default()
-                })
-                .build()
-                .on_click(move |ctx, _, _| {
-                    if let Some(user_id) = user_id {
-                        ctx.dispatch_typed_action(BillingAndUsagePageAction::Upgrade {
-                            team_uid: None,
-                            user_id,
-                        });
-                    }
-                })
-                .finish();
-            right_side.add_child(buy_more_button);
-        }
-
-        if credits_remaining < AMBIENT_AGENT_TRIAL_CREDIT_THRESHOLD {
-            let dismiss_button = icon_button(
-                appearance,
-                Icon::X,
-                false,
-                self.ambient_trial_mouse_states.dismiss_button.clone(),
-            )
-            .with_style(UiComponentStyles {
-                width: Some(32.),
-                height: Some(32.),
-                padding: Some(Coords::uniform(8.)),
-                ..Default::default()
-            })
-            .build()
-            .on_click(move |ctx, _, _| {
-                ctx.dispatch_typed_action(
-                    BillingAndUsagePageAction::DismissAmbientAgentTrialWidget,
-                );
-            })
-            .finish();
-            right_side.add_child(Container::new(dismiss_button).with_margin_left(4.).finish());
-        }
-
-        let row_content = Flex::row()
-            .with_child(Shrinkable::new(1., left_side).finish())
-            .with_child(right_side.finish())
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
-            .with_main_axis_size(MainAxisSize::Max)
-            .finish();
-
-        let bright_blue: ColorU = theme.terminal_colors().bright.blue.into();
-        let gradient_start = ColorU::transparent_black();
-        let gradient_end = ColorU::new(bright_blue.r, bright_blue.g, bright_blue.b, 40);
-
-        Some(
-            Container::new(row_content)
-                .with_horizontal_background_gradient(gradient_start, gradient_end)
-                .with_border(Border::all(1.).with_border_color(theme.accent_overlay().into()))
-                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
-                .with_margin_bottom(16.)
-                .with_uniform_padding(12.)
-                .finish(),
-        )
     }
 
     fn render_addon_credits_panel(
@@ -1758,17 +1297,8 @@ impl BillingAndUsagePageV2View {
         .finish()
     }
 
-    fn render_overview_tab(&self, appearance: &Appearance, app: &AppContext) -> Box<dyn Element> {
+    fn render_overview_tab(&self, app: &AppContext) -> Box<dyn Element> {
         let mut content = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
-        let ai_model = AIRequestUsageModel::as_ref(app);
-        if let Some(ambient_trial_widget) =
-            self.render_ambient_agent_trial_widget(ai_model, appearance, app)
-        {
-            content.add_child(ambient_trial_widget);
-        }
-        if let Some(balance) = self.render_balance_section(appearance, app) {
-            content.add_child(balance);
-        }
 
         let workspaces = UserWorkspaces::as_ref(app);
         let delinquent = workspaces.current_workspace().is_some_and(|workspace| {
@@ -1784,195 +1314,20 @@ impl BillingAndUsagePageV2View {
                 .purchase_policy()
                 .is_some_and(|policy| policy.allows_purchases());
         if show_addon_credits_panel {
-            let is_payg_zero = ws.is_some_and(|ws| {
-                ws.billing_metadata.is_enterprise_pay_as_you_go_enabled()
-                    && ai_model.total_workspace_and_team_bonus_credits_remaining(ws.uid) == 0
+            let current_user_is_admin = team.is_none_or(|team| {
+                let email = AuthStateProvider::as_ref(app)
+                    .get()
+                    .user_email()
+                    .unwrap_or_default();
+                team.has_admin_permissions(&email)
             });
-
-            if !is_payg_zero {
-                let current_user_is_admin = team.is_none_or(|team| {
-                    let email = AuthStateProvider::as_ref(app)
-                        .get()
-                        .user_email()
-                        .unwrap_or_default();
-                    team.has_admin_permissions(&email)
-                });
-                content.add_child(self.render_addon_credits_panel(
-                    ws,
-                    team.map(|team| team.uid),
-                    current_user_is_admin,
-                    delinquent,
-                    app,
-                ));
-            }
-        }
-
-        let mut billing_cycle_usage_section =
-            Container::new(ChildView::new(&self.billing_cycle_usage_section).finish());
-        if !content.is_empty() {
-            billing_cycle_usage_section = billing_cycle_usage_section
-                .with_margin_top(16.)
-                .with_padding_top(24.)
-                .with_border(
-                    Border::top(1.).with_border_color(appearance.theme().outline().into()),
-                );
-        }
-        content.add_child(billing_cycle_usage_section.finish());
-
-        content.finish()
-    }
-
-    fn render_usage_history_tab(
-        &self,
-        appearance: &Appearance,
-        app: &AppContext,
-    ) -> Box<dyn Element> {
-        let history = self.usage_history.model.as_ref(app);
-        if history.entries().is_empty() {
-            return self.render_empty_usage_history(history.is_loading(), appearance, app);
-        }
-
-        let mut content = Flex::column()
-            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .with_main_axis_alignment(MainAxisAlignment::Center)
-            .with_child(
-                Container::new(
-                    Text::new_inline("Last 30 days", appearance.ui_font_family(), 14.)
-                        .with_color(blended_colors::text_sub(
-                            appearance.theme(),
-                            appearance.theme().surface_1(),
-                        ))
-                        .finish(),
-                )
-                .with_vertical_margin(12.)
-                .finish(),
-            );
-
-        let mut list = Flex::column().with_spacing(8.);
-        for entry in history.entries().iter() {
-            let expanded = self
-                .usage_history
-                .expanded_entries
-                .get(&entry.conversation_id)
-                .copied()
-                .unwrap_or(false);
-            let entry_mouse_state = self
-                .usage_history
-                .entry_mouse_states
-                .borrow_mut()
-                .entry(entry.conversation_id.clone())
-                .or_default()
-                .clone();
-            let entry_tooltip_mouse_state = self
-                .usage_history
-                .tooltip_mouse_states
-                .borrow_mut()
-                .entry(entry.conversation_id.clone())
-                .or_default()
-                .clone();
-            list.add_child(
-                Container::new(
-                    UsageHistoryEntry::new(
-                        Some(entry.clone()),
-                        expanded,
-                        Some(entry_mouse_state),
-                        entry_tooltip_mouse_state,
-                    )
-                    .render(appearance, app),
-                )
-                .finish(),
-            );
-        }
-        content.add_child(list.finish());
-
-        if history.has_more_entries() {
-            content.add_child(
-                Container::new(
-                    Flex::row()
-                        .with_child(self.usage_history.load_more_button.as_ref(app).render(app))
-                        .with_main_axis_alignment(MainAxisAlignment::Center)
-                        .with_main_axis_size(MainAxisSize::Max)
-                        .finish(),
-                )
-                .with_margin_top(24.)
-                .finish(),
-            );
-        }
-
-        content.finish()
-    }
-
-    fn render_empty_usage_history(
-        &self,
-        loading: bool,
-        appearance: &Appearance,
-        app: &AppContext,
-    ) -> Box<dyn Element> {
-        let mut content = Flex::column()
-            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .with_main_axis_alignment(MainAxisAlignment::Center);
-
-        if loading {
-            let mut list = Flex::column().with_spacing(8.);
-            for _ in 0..3 {
-                list.add_child(
-                    UsageHistoryEntry::new(None, false, None, MouseStateHandle::default())
-                        .render(appearance, app),
-                );
-            }
-            content.add_child(list.finish());
-        } else {
-            let zero = Flex::column()
-                .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                .with_child(
-                    Container::new(
-                        ConstrainedBox::new(
-                            Icon::Conversation
-                                .to_warpui_icon(
-                                    blended_colors::text_sub(
-                                        appearance.theme(),
-                                        appearance.theme().surface_1(),
-                                    )
-                                    .into(),
-                                )
-                                .finish(),
-                        )
-                        .with_width(24.)
-                        .with_height(24.)
-                        .finish(),
-                    )
-                    .with_margin_bottom(12.)
-                    .finish(),
-                )
-                .with_child(
-                    Container::new(
-                        Text::new("No usage history", appearance.ui_font_family(), 14.)
-                            .with_color(blended_colors::text_sub(
-                                appearance.theme(),
-                                appearance.theme().surface_1(),
-                            ))
-                            .finish(),
-                    )
-                    .with_margin_bottom(4.)
-                    .finish(),
-                )
-                .with_child(
-                    Text::new(
-                        "Kick off an agent task to view usage history here.",
-                        appearance.ui_font_family(),
-                        14.,
-                    )
-                    .with_color(blended_colors::text_disabled(
-                        appearance.theme(),
-                        appearance.theme().surface_1(),
-                    ))
-                    .finish(),
-                );
-            content.add_child(
-                Container::new(zero.finish())
-                    .with_vertical_margin(160.)
-                    .finish(),
-            );
+            content.add_child(self.render_addon_credits_panel(
+                ws,
+                team.map(|team| team.uid),
+                current_user_is_admin,
+                delinquent,
+                app,
+            ));
         }
 
         content.finish()
@@ -1990,10 +1345,6 @@ impl BillingAndUsagePageV2View {
             TeamUpdateManager::handle(ctx)
                 .update(ctx, |mgr, ctx| mgr.refresh_workspace_metadata(ctx)),
         );
-        AIRequestUsageModel::handle(ctx).update(ctx, |m, ctx| m.refresh_request_usage_async(ctx));
-        self.usage_history
-            .model
-            .update(ctx, |m, ctx| m.refresh_usage_history_async(ctx));
         self.refresh_addon_credits_settings(ctx);
     }
 }
@@ -2012,33 +1363,7 @@ impl View for BillingAndUsagePageV2View {
         let mut page = Flex::column();
         page.add_child(self.render_plan_section(appearance, app));
 
-        let tabs = vec![
-            SettingsTab::new(
-                BillingUsageTab::Overview.label(),
-                self.tab_mouse_states.overview.clone(),
-            ),
-            SettingsTab::new(
-                BillingUsageTab::UsageHistory.label(),
-                self.tab_mouse_states.usage_history.clone(),
-            ),
-        ];
-
-        page.add_child(tab_selector::render_tab_selector(
-            tabs,
-            self.selected_tab.label(),
-            |label, ctx| {
-                ctx.dispatch_typed_action(BillingAndUsagePageAction::SelectTab(
-                    BillingUsageTab::get_tab_from_label(label),
-                ));
-            },
-            appearance,
-        ));
-
-        if self.selected_tab == BillingUsageTab::Overview {
-            page.add_child(self.render_overview_tab(appearance, app));
-        } else {
-            page.add_child(self.render_usage_history_tab(appearance, app));
-        }
+        page.add_child(self.render_overview_tab(appearance, app));
 
         page.finish()
     }
@@ -2103,39 +1428,11 @@ impl TypedActionView for BillingAndUsagePageV2View {
             // Not applicable in v2
             BillingAndUsagePageAction::UpdateUsageBasedPricingSettings { .. }
             | BillingAndUsagePageAction::ShowOverageLimitModal => {}
-            // Not applicable in v2
-            BillingAndUsagePageAction::ToggleSortingMenu
-            | BillingAndUsagePageAction::ChangeUsageSort { .. } => {}
             BillingAndUsagePageAction::RefreshWorkspaceData => {
                 std::mem::drop(
                     TeamUpdateManager::handle(ctx)
                         .update(ctx, |mgr, ctx| mgr.refresh_workspace_metadata(ctx)),
                 );
-                AIRequestUsageModel::handle(ctx)
-                    .update(ctx, |m, ctx| m.refresh_request_usage_async(ctx));
-            }
-            BillingAndUsagePageAction::SelectTab(tab) => {
-                if self.selected_tab != *tab {
-                    self.selected_tab = tab.clone();
-                    ctx.notify();
-                }
-            }
-            BillingAndUsagePageAction::ToggleUsageEntryExpanded { conversation_id } => {
-                let expanded = self
-                    .usage_history
-                    .expanded_entries
-                    .get(conversation_id)
-                    .copied()
-                    .unwrap_or(false);
-                self.usage_history
-                    .expanded_entries
-                    .insert(conversation_id.clone(), !expanded);
-                ctx.notify();
-            }
-            BillingAndUsagePageAction::RenderMoreUsageEntries => {
-                self.usage_history
-                    .model
-                    .update(ctx, |m, ctx| m.load_more_usage_history_async(ctx));
             }
             BillingAndUsagePageAction::SelectTopupDenomination(i) => {
                 self.addon_credits.selected_denomination = *i;
@@ -2236,20 +1533,6 @@ impl TypedActionView for BillingAndUsagePageV2View {
                         auto_reload_denomination_credits,
                         ctx,
                     );
-                });
-            }
-            BillingAndUsagePageAction::DismissAmbientAgentTrialWidget => {
-                AISettings::handle(ctx).update(ctx, |settings, ctx| {
-                    let _ = settings
-                        .ambient_agent_trial_widget_dismissed
-                        .set_value(true, ctx);
-                });
-                ctx.notify();
-            }
-            BillingAndUsagePageAction::NavigateToByokSettings => {
-                ctx.dispatch_typed_action_deferred(WorkspaceAction::ShowSettingsPageWithSearch {
-                    search_query: "api".to_string(),
-                    section: Some(SettingsSection::WarpAgent),
                 });
             }
         }
