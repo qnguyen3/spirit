@@ -27,8 +27,8 @@ use crate::terminal::shared_session::{SharedSessionStatus, join_link};
 use crate::terminal::view::Event;
 use crate::terminal::{TerminalManager, TerminalView};
 use crate::view_components::ToastFlavor;
-use crate::workspace::sync_inputs::SyncedInputState;
 use crate::workspace::PaneViewLocator;
+use crate::workspace::sync_inputs::SyncedInputState;
 
 pub type TerminalPaneView = PaneView<TerminalView>;
 
@@ -329,7 +329,6 @@ fn retrieve_shared_session_link(manager: &Manager, terminal_view_id: &EntityId) 
     }
     None
 }
-
 
 /// Attaches a terminal view to the pane group by subscribing to its events
 /// and setting the file tree code model.

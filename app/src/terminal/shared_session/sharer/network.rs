@@ -1473,9 +1473,7 @@ impl Network {
                 ctx.emit(NetworkEvent::WriteToPtyRequested { id, bytes })
             }
             DownstreamMessage::AgentPromptRequested {
-                id,
-                participant_id,
-                ..
+                id, participant_id, ..
             } => {
                 ctx.emit(NetworkEvent::AgentPromptRequested { id, participant_id });
             }

@@ -1,6 +1,6 @@
-pub use warp_terminal::model::secrets::*;
 use std::sync::Arc;
 
+pub use warp_terminal::model::secrets::*;
 use warpui::elements::SecretRange;
 
 /// Returns the ranges of detected secrets in the given text along with their SecretLevel.
@@ -34,5 +34,3 @@ pub fn redact_secrets(input: &mut String) {
         input.replace_range(range.start..range.end, &replacement);
     }
 }
-
-

@@ -54,8 +54,8 @@ use crate::editor::{
 use crate::server::cloud_objects::update_manager::{
     InitiatedBy, ObjectOperation, OperationSuccessType, UpdateManager, UpdateManagerEvent,
 };
-use crate::server::sync_queue::QueueItem;
 use crate::server::ids::{ClientId, ServerId, SyncId};
+use crate::server::sync_queue::QueueItem;
 use crate::themes::theme::Fill as ThemeFill;
 use crate::ui_components::blended_colors;
 use crate::ui_components::buttons::icon_button_with_color;
@@ -793,7 +793,6 @@ impl EnvironmentsPageView {
             }
         }
     }
-
 }
 
 #[derive(Debug, Clone)]

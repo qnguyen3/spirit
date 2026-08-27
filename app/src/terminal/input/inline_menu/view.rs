@@ -340,7 +340,13 @@ impl<A: InlineMenuAction> InlineMenuView<A> {
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         let inline_menu_model = ctx.add_model(|_| InlineMenuModel::new());
-        Self::new_inner(mixer, positioner, input_suggestions_model, inline_menu_model, ctx)
+        Self::new_inner(
+            mixer,
+            positioner,
+            input_suggestions_model,
+            inline_menu_model,
+            ctx,
+        )
     }
 }
 
@@ -355,7 +361,13 @@ impl<A: InlineMenuAction, T: 'static + Send + Sync + Clone + PartialEq> InlineMe
     ) -> Self {
         let inline_menu_model =
             ctx.add_model(|_| InlineMenuModel::new_with_tabs(tab_configs, initial_tab));
-        Self::new_inner(mixer, positioner, input_suggestions_model, inline_menu_model, ctx)
+        Self::new_inner(
+            mixer,
+            positioner,
+            input_suggestions_model,
+            inline_menu_model,
+            ctx,
+        )
     }
 }
 

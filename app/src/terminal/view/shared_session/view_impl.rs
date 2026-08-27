@@ -591,7 +591,6 @@ impl TerminalView {
                 .update(ctx, |prompt_display, ctx| {
                     prompt_display.update_shared_session_viewer_status(true, ctx);
                 });
-
         });
 
         // If viewer joined as an executor, make sure the view state is updated.
@@ -1606,8 +1605,7 @@ impl TerminalView {
                     });
                     no_other_user
                         && manager.get_sharer().is_some_and(|s| {
-                            s.info.profile_data.firebase_uid
-                                == manager.firebase_uid().as_string()
+                            s.info.profile_data.firebase_uid == manager.firebase_uid().as_string()
                         })
                 }
             })

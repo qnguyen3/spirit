@@ -18,10 +18,10 @@ use super::{WarpificationSource, render, subshell_bootstrap_success_block_bytes}
 use crate::appearance::Appearance;
 use crate::terminal::model::terminal_model::SubshellInitializationInfo;
 use crate::terminal::shell::{Shell, ShellType};
+use crate::ui_components::blended_colors;
 use crate::ui_components::code_block::{
     CodeSnippetButtonHandles, ProgrammingLanguage, render_runnable_code_snippet,
 };
-use crate::ui_components::blended_colors;
 use crate::ui_components::icons::Icon as UiIcon;
 use crate::workspace::WorkspaceAction;
 

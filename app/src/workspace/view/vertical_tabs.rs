@@ -61,10 +61,10 @@ use crate::themes::theme::Fill as ThemeFill;
 use crate::ui_components::agent_icon::terminal_view_agent_icon_variant;
 use crate::ui_components::buttons::combo_inner_button;
 use crate::ui_components::icon_with_status::{IconWithStatusVariant, render_icon_with_status};
+use crate::ui_components::icons::Icon as UiIcon;
 use crate::ui_components::status_icons::{
     ConversationStatus, StatusColorStyle, render_status_element,
 };
-use crate::ui_components::icons::Icon as UiIcon;
 use crate::util::bindings::keybinding_name_to_display_string;
 use crate::util::color::Opacity;
 use crate::workspace::action::{NewSessionMenuAnchor, WorkspaceAction};
@@ -3460,8 +3460,7 @@ fn render_pane_row(props: PaneProps<'_>, app: &AppContext) -> Box<dyn Element> {
             app,
         )
     } else {
-        let has_indicator =
-            props.typed.badge(app).is_some();
+        let has_indicator = props.typed.badge(app).is_some();
         let mut title_row = Flex::row()
             .with_main_axis_size(MainAxisSize::Max)
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
@@ -4245,7 +4244,6 @@ fn resolved_terminal_working_directory(
     terminal_view: &TerminalView,
     app: &AppContext,
 ) -> Option<String> {
-    
     terminal_view
         .display_working_directory(app)
         .filter(|wd| !wd.trim().is_empty())

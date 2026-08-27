@@ -8,8 +8,7 @@ use warpui::keymap::FixedBinding;
 use warpui::presenter::ChildView;
 use warpui::ui_components::components::UiComponentStyles;
 use warpui::{
-    AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext,
-    ViewHandle,
+    AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
 };
 
 use crate::modal::{Modal, ModalEvent};

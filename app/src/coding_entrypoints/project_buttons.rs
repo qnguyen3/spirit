@@ -7,8 +7,8 @@ use warp_core::ui::appearance::Appearance;
 use warp_core::ui::color::blend::Blend as _;
 use warp_core::ui::theme::color::internal_colors;
 use warpui::elements::{
-    ChildAnchor, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, DropShadow,
-    Flex, Hoverable, MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement as _,
+    ChildAnchor, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, DropShadow, Flex,
+    Hoverable, MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement as _,
     ParentOffsetBounds, Radius, Stack,
 };
 use warpui::fonts::Weight;
@@ -27,16 +27,14 @@ const BUTTON_MIN_WIDTH: f32 = 149.;
 pub fn init(app: &mut AppContext) {
     use warpui::keymap::macros::*;
 
-    app.register_editable_bindings([
-        EditableBinding::new(
-            "project_buttons:open_repository",
-            "Open repository",
-            ProjectButtonsAction::OpenRepository,
-        )
-        .with_context_predicate(id!("ProjectButons"))
-        .with_group(BindingGroup::Folders.as_str())
-        .with_custom_action(CustomAction::OpenRepository),
-    ]);
+    app.register_editable_bindings([EditableBinding::new(
+        "project_buttons:open_repository",
+        "Open repository",
+        ProjectButtonsAction::OpenRepository,
+    )
+    .with_context_predicate(id!("ProjectButons"))
+    .with_group(BindingGroup::Folders.as_str())
+    .with_custom_action(CustomAction::OpenRepository)]);
 }
 
 #[derive(Default)]

@@ -11,14 +11,16 @@ use warpui::{App, SingletonEntity, ViewHandle, WindowId};
 use watcher::HomeDirectoryWatcher;
 
 use super::settings::initialize_history_persistence_for_tests;
-use crate::persisted_workspace::PersistedWorkspace;
 use crate::auth::AuthStateProvider;
 use crate::auth::auth_manager::AuthManager;
+use crate::auth::github_auth_notifier::GitHubAuthNotifier;
 use crate::changelog_model::ChangelogModel;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::code_review::git_repo_model::GitRepoModels;
 use crate::context_chips::prompt::Prompt;
+use crate::experiments;
 use crate::network::NetworkStatus;
+use crate::persisted_workspace::PersistedWorkspace;
 use crate::pricing::PricingInfoModel;
 use crate::search::files::model::FileSearchModel;
 use crate::server::cloud_objects::listener::Listener;
@@ -32,6 +34,7 @@ use crate::suggestions::ignored_suggestions_model::IgnoredSuggestionsModel;
 use crate::system::{SystemInfo, SystemStats};
 use crate::terminal::alt_screen_reporting::AltScreenReporting;
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
+use crate::terminal::model::block::SerializedBlock;
 use crate::terminal::resizable_data::ResizableData;
 use crate::terminal::shared_session::permissions_manager::SessionPermissionsManager;
 use crate::terminal::{History, TerminalView};
@@ -43,9 +46,6 @@ use crate::workspace::{ActiveSession, WorkspaceRegistry};
 use crate::workspaces::team_tester::TeamTesterStatus;
 use crate::workspaces::update_manager::TeamUpdateManager;
 use crate::workspaces::user_workspaces::UserWorkspaces;
-use crate::auth::github_auth_notifier::GitHubAuthNotifier;
-use crate::experiments;
-use crate::terminal::model::block::SerializedBlock;
 
 /// Initializes all of the necessary models to use a terminal view.
 pub fn initialize_app_for_terminal_view(app: &mut App) {

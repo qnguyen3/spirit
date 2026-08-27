@@ -82,7 +82,6 @@ impl RichContentItem {
             should_hide: false,
         }
     }
-
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -651,8 +650,7 @@ impl BlockList {
 
             let mut processor = Processor::new();
 
-            self.restored_session_ts =
-                restored_blocks.last().and_then(|block| block.completed_ts);
+            self.restored_session_ts = restored_blocks.last().and_then(|block| block.completed_ts);
 
             for block in restored_blocks {
                 // For session-restoration, we only want to restore blocks
@@ -1721,9 +1719,7 @@ impl BlockList {
                         let block_index = block_heights_cursor.start().block_count;
                         if let Some(block) = self.blocks.get_mut(block_index) {
                             block_update_fn(block);
-                            new_sum_tree.push(BlockHeightItem::Block(
-                                block.height().into(),
-                            ));
+                            new_sum_tree.push(BlockHeightItem::Block(block.height().into()));
                         } else {
                             report_error!("invalid block index in block heights");
                         }
@@ -2216,9 +2212,8 @@ impl BlockList {
             block.set_prompt_grids_from_cached_data(prompt_grid, rprompt_grid);
         }
 
-        self.block_heights.push(BlockHeightItem::Block(
-            block.height().into(),
-        ));
+        self.block_heights
+            .push(BlockHeightItem::Block(block.height().into()));
         self.block_id_to_block_index
             .insert(block.id().clone(), block.index());
         self.blocks.push(block);
@@ -3207,9 +3202,8 @@ impl ansi::Handler for BlockList {
                 self.reset_internal_block_index(BlockIndex::zero());
 
                 if let Some(block) = self.blocks.last() {
-                    self.block_heights = SumTree::from_item(BlockHeightItem::Block(
-                        block.height().into(),
-                    ));
+                    self.block_heights =
+                        SumTree::from_item(BlockHeightItem::Block(block.height().into()));
                 } else {
                     self.block_heights = SumTree::new();
                 }

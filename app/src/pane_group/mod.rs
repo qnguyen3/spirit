@@ -83,7 +83,7 @@ use crate::server::telemetry::{
     AnonymousUserSignupEntrypoint, PaletteSource, SharingDialogSource, TelemetryEvent,
 };
 use crate::session_management::SessionNavigationData;
-use crate::settings::{PaneSettings};
+use crate::settings::PaneSettings;
 use crate::settings_view::SettingsSection;
 use crate::shell_indicator::ShellIndicatorType;
 use crate::terminal::available_shells::{AvailableShell, AvailableShells};
@@ -96,6 +96,7 @@ use crate::terminal::local_tty::TerminalManager as LocalTtyTerminalManager;
 use crate::terminal::local_tty::{
     TerminalViewSurfaceConfig, create_terminal_view_surface, terminal_view_restored_blocks,
 };
+use crate::terminal::model::block::SerializedBlock;
 use crate::terminal::model::session::Session;
 #[cfg(feature = "remote_tty")]
 use crate::terminal::remote_tty::TerminalManager as RemoteTtyTerminalManager;
@@ -112,7 +113,6 @@ use crate::terminal::view::ssh_file_upload::FileUploadId;
 use crate::terminal::view::{
     BlockNotification, ExecuteCommandEvent, LeftPanelTargetView, SyncEvent, TerminalViewState,
 };
-use crate::terminal::model::block::SerializedBlock;
 use crate::terminal::{
     ShareBlockModal, ShareBlockModalEvent, ShellLaunchData, TerminalManager, TerminalModel,
     TerminalView,
@@ -700,7 +700,6 @@ pub struct NewTerminalOptions {
     /// Whether or not to start sharing the terminal session as soon as it's ready.
     pub is_shared_session_creator: IsSharedSessionCreator,
 }
-
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NewPaneVisibility {

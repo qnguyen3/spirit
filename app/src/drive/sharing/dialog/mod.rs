@@ -2594,12 +2594,13 @@ impl TypedActionView for SharingDialog {
                         update_manager.set_object_link_permissions(*id, *access_level, ctx);
                     });
                 } else if let Some(ShareableObject::Session { handle, .. }) = self.target.as_ref()
-                    && let Some(view) = handle.upgrade(ctx) {
-                        let role = access_level.map(|access_level| access_level.into());
-                        view.update(ctx, |view, ctx| {
-                            view.update_session_link_permissions(role, ctx)
-                        });
-                    }
+                    && let Some(view) = handle.upgrade(ctx)
+                {
+                    let role = access_level.map(|access_level| access_level.into());
+                    view.update(ctx, |view, ctx| {
+                        view.update_session_link_permissions(role, ctx)
+                    });
+                }
                 ctx.notify();
             }
             SharingDialogAction::SetTeamPermissions(access_level) => {

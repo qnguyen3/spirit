@@ -146,12 +146,14 @@ fn render_message_bar_items(items: &[MessageItem], app: &AppContext) -> Box<dyn 
                 keystroke,
                 color,
                 background_color,
-            } => Container::new(crate::terminal::input::inline_menu::styles::render_keystroke_with_color_overrides(
-                keystroke,
-                *color,
-                *background_color,
-                app,
-            ))
+            } => Container::new(
+                crate::terminal::input::inline_menu::styles::render_keystroke_with_color_overrides(
+                    keystroke,
+                    *color,
+                    *background_color,
+                    app,
+                ),
+            )
             .finish(),
             MessageItem::Text { content, color } => {
                 let font_color = color.unwrap_or(default_font_color);

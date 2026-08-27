@@ -121,12 +121,8 @@ pub struct ObjectOperationResult {
 
 #[derive(Debug)]
 pub enum UpdateManagerEvent {
-    ObjectOperationComplete {
-        result: ObjectOperationResult,
-    },
-    CloudPreferencesUpdated {
-        updated: Vec<Preference>,
-    },
+    ObjectOperationComplete { result: ObjectOperationResult },
+    CloudPreferencesUpdated { updated: Vec<Preference> },
 }
 
 /// An enum for choosing the behavior of the fetch_single_cloud_object function.

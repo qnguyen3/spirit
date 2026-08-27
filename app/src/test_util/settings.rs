@@ -31,11 +31,11 @@ pub fn initialize_settings_for_tests_with_mode(
     use crate::settings::app_icon::AppIconSettings;
     use crate::settings::manager::SettingsManager;
     use crate::settings::{
-        AccessibilitySettings, AliasExpansionSettings, AppEditorSettings,
-        BlockVisibilitySettings, ChangelogSettings, CloudPreferencesSettings, CodeSettings,
-        DebugSettings, EmacsBindingsSettings, FontSettings, GPUSettings, InputModeSettings,
-        InputSettings, LocalControlSettings, NativePreferenceSettings, NewSessionSettings,
-        PaneSettings, SameLinePromptBlockSettings, ScrollSettings, SelectionSettings,
+        AccessibilitySettings, AliasExpansionSettings, AppEditorSettings, BlockVisibilitySettings,
+        ChangelogSettings, CloudPreferencesSettings, CodeSettings, DebugSettings,
+        EmacsBindingsSettings, FontSettings, GPUSettings, InputModeSettings, InputSettings,
+        LocalControlSettings, NativePreferenceSettings, NewSessionSettings, PaneSettings,
+        SameLinePromptBlockSettings, ScrollSettings, SelectionSettings,
         SharedObjectLimitBannerSettings, SshSettings, ThemeSettings, VimBannerSettings,
         init_and_register_user_preferences,
     };

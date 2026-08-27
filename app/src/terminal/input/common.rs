@@ -434,4 +434,3 @@ fn render_command_token_description(
     .with_width(TOKEN_DESCRIPTION_WIDTH)
     .finish()
 }
-

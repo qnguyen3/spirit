@@ -165,19 +165,24 @@ impl Input {
 
         let completion_session = completion_context.session.clone();
 
-        self.decorations_future_handle = Some(ctx.spawn_abortable(
-            async move { parse_current_commands_and_tokens(buffer_text, &completion_context).await },
-            move |input, parsed_tokens, ctx| {
-                input.last_parsed_tokens = Some(parsed_tokens);
+        self.decorations_future_handle =
+            Some(
+                ctx.spawn_abortable(
+                    async move {
+                        parse_current_commands_and_tokens(buffer_text, &completion_context).await
+                    },
+                    move |input, parsed_tokens, ctx| {
+                        input.last_parsed_tokens = Some(parsed_tokens);
 
-                if mode.command_decoration {
-                    input.apply_decorations(ctx);
-                }
-            },
-            move |_, _| {
-                completion_session.cancel_active_commands();
-            },
-        ));
+                        if mode.command_decoration {
+                            input.apply_decorations(ctx);
+                        }
+                    },
+                    move |_, _| {
+                        completion_session.cancel_active_commands();
+                    },
+                ),
+            );
     }
 
     /// Applies error underlining and/or syntax highlighting as appropriate,

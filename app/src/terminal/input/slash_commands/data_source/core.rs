@@ -182,7 +182,6 @@ pub trait SlashCommandDataSource {
         })
     }
 
-
     /// Update the active repository root for this terminal. Returns whether the value changed,
     /// so the caller can decide whether to recompute active commands.
     fn update_active_repo_root(&mut self, repo_root: Option<PathBuf>) -> bool {
@@ -345,7 +344,6 @@ pub trait SlashCommandDataSource {
         results
     }
 
-
     /// Active commands ordered for the zero-state (empty query) menu.
     ///
     /// DataSource implementations must return highest priority items last (results sorted in
@@ -413,8 +411,6 @@ impl InlineItem {
         }
     }
 
-
-
     fn with_name_match_result(mut self, result: Option<FuzzyMatchResult>) -> Self {
         self.name_match_result = result;
         self
@@ -430,4 +426,3 @@ impl InlineItem {
         self
     }
 }
-

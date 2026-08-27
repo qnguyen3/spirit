@@ -28,9 +28,9 @@ use super::kitty::{
 };
 use super::terminal_model::BlockIndex;
 use super::{ObfuscateSecrets, TerminalModel};
-use crate::terminal::model::block::SerializedBlock;
 use crate::terminal::color::{self, Colors};
 use crate::terminal::event_listener::ChannelEventListener;
+use crate::terminal::model::block::SerializedBlock;
 use crate::terminal::{BlockPadding, SizeInfo};
 
 pub fn block_size() -> BlockSize {

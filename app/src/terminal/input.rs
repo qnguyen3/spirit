@@ -78,14 +78,12 @@ use warpui::{
 
 use self::decorations::InputBackgroundJobOptions;
 use super::alias::is_expandable_alias;
+use super::event::{BlockCompletedEvent, BlockType, UserBlockCompleted};
 use super::history_autosuggestions::{
     get_reverse_chronological_potential_autosuggestions, is_command_valid,
 };
-use super::event::{BlockCompletedEvent, BlockType, UserBlockCompleted};
 use super::ligature_settings::LigatureSettings;
-use super::model::block::{
-    BlockId, BlockMetadata, BlocklistEnvVarMetadata,
-};
+use super::model::block::{BlockId, BlockMetadata, BlocklistEnvVarMetadata};
 use super::model::session::{Session, SessionId, Sessions};
 use super::prompt_render_helper::{
     PromptRenderHelper, SameLinePromptElements, should_render_prompt_on_same_line,
@@ -162,9 +160,9 @@ use crate::suggestions::ignored_suggestions_model::{
     IgnoredSuggestionsModel, IgnoredSuggestionsModelEvent, SuggestionType,
 };
 use crate::terminal::CLIAgent;
+use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 #[cfg(not(target_family = "wasm"))]
 use crate::terminal::cli_agent_sessions::plugin_manager::PluginModalKind;
-use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::input::buffer_model::InputBufferModel;
 use crate::terminal::input::inline_history::InlineHistoryMenuView;
 use crate::terminal::input::inline_menu::InlineMenuPositioner;
@@ -1217,7 +1215,7 @@ pub fn init(app: &mut AppContext) {
                 & !id!("VoltronActive")
                 & !id!("WorkflowInfoBox")
                 & !id!("ProfileModelSelectorOpen")
-                & !id!("PromptChipMenuOpen")
+                & !id!("PromptChipMenuOpen"),
         ),
     ]);
 
@@ -2002,9 +2000,10 @@ impl Input {
                 // Snapshot the current input so we can restore it after the command completes.
                 let current_input = self.buffer_text(ctx);
                 if self.try_execute_command_from_source(&command, CommandExecutionSource::User, ctx)
-                    && !current_input.is_empty() {
-                        self.input_contents_before_prompt_chip_command = Some(current_input);
-                    }
+                    && !current_input.is_empty()
+                {
+                    self.input_contents_before_prompt_chip_command = Some(current_input);
+                }
             }
         }
     }
@@ -2595,7 +2594,6 @@ impl Input {
             .active_block_mut()
             .set_cloud_env_var_state(env_var_collection_id);
 
-
         let did_execute = if self
             .model
             .lock()
@@ -2603,7 +2601,6 @@ impl Input {
             .active_block()
             .has_received_precmd()
         {
-
             self.tips_completed.update(ctx, |tips, ctx| {
                 mark_feature_used_and_write_to_user_defaults(
                     Tip::Hint(TipHint::CreateBlock),
@@ -3987,8 +3984,8 @@ impl Input {
             .is_inline_history_menu()
         {
             self.inline_history_menu_view.update(ctx, |view, ctx| {
-                    view.select_down(ctx);
-                });
+                view.select_down(ctx);
+            });
             return;
         }
 
@@ -4791,21 +4788,19 @@ impl Input {
             EditorEvent::HideXRay => {
                 self.hide_x_ray(ctx);
             }
-            EditorEvent::TryToShowXRay(token_at) => {
-                match token_at {
-                    CommandXRayAnchor::Cursor => {
-                        let pos = self.start_byte_index_of_first_selection(ctx);
-                        self.start_xray_at_offset(pos, CommandXRayTrigger::Keystroke, ctx);
-                    }
-                    CommandXRayAnchor::Hover(mouse_position) => {
-                        if let Some(offset) = self.start_byte_index_at_point(mouse_position, ctx)
-                            && !self.suggestions_mode_model.as_ref(ctx).is_visible()
-                        {
-                            self.start_xray_at_offset(offset, CommandXRayTrigger::Hover, ctx);
-                        }
+            EditorEvent::TryToShowXRay(token_at) => match token_at {
+                CommandXRayAnchor::Cursor => {
+                    let pos = self.start_byte_index_of_first_selection(ctx);
+                    self.start_xray_at_offset(pos, CommandXRayTrigger::Keystroke, ctx);
+                }
+                CommandXRayAnchor::Hover(mouse_position) => {
+                    if let Some(offset) = self.start_byte_index_at_point(mouse_position, ctx)
+                        && !self.suggestions_mode_model.as_ref(ctx).is_visible()
+                    {
+                        self.start_xray_at_offset(offset, CommandXRayTrigger::Hover, ctx);
                     }
                 }
-            }
+            },
             EditorEvent::InsertLastWordPrevCommand => self.insert_last_word_previous_command(ctx),
             // For this particular view, the terminal Input, we ignore search direction because in
             // this context, search means search through History which isn't actually sensitive to
@@ -4886,7 +4881,6 @@ impl Input {
             );
         });
     }
-
 
     /// Updates the tab completion menu given the current text of the editor and location of the
     /// cursor. Returns whether the input suggestions should be closed.
@@ -5172,7 +5166,6 @@ impl Input {
             .completions_open_while_typing
             .value()
     }
-
 
     fn is_classic_completions_enabled(&self, ctx: &AppContext) -> bool {
         (FeatureFlag::ClassicCompletions.is_enabled()
@@ -7023,7 +7016,6 @@ impl Input {
     pub fn should_show_universal_developer_input(&self, app: &AppContext) -> bool {
         InputSettings::as_ref(app).is_universal_developer_input_enabled(app)
     }
-
 }
 
 impl Entity for Input {

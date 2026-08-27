@@ -356,9 +356,7 @@ impl PaneId {
     pub fn is_warp_drive_object_pane(&self) -> bool {
         matches!(
             self.0.pane_type,
-            IPaneType::Notebook
-                | IPaneType::Workflow
-                | IPaneType::EnvVarCollection
+            IPaneType::Notebook | IPaneType::Workflow | IPaneType::EnvVarCollection
         )
     }
 

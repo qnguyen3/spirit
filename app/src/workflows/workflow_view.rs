@@ -71,13 +71,13 @@ use crate::server::cloud_objects::update_manager::{
     UpdateManagerEvent,
 };
 use crate::server::ids::{ClientId, ServerId, SyncId};
-use crate::terminal::model::secrets::find_secrets_in_text;
 use crate::server::telemetry::{
     CloudObjectTelemetryMetadata, SharingDialogSource, TelemetryCloudObjectType, TelemetryEvent,
 };
 use crate::settings::app_installation_detection::{
     UserAppInstallDetectionSettings, UserAppInstallStatus,
 };
+use crate::terminal::model::secrets::find_secrets_in_text;
 use crate::terminal::safe_mode_settings::get_secret_obfuscation_mode;
 use crate::ui_components::breadcrumb::{BreadcrumbState, render_breadcrumbs};
 use crate::ui_components::buttons::{accent_icon_button, icon_button};
@@ -156,7 +156,6 @@ const BUTTON_PADDING: f32 = 12.;
 const BUTTON_FONT_SIZE: f32 = 14.;
 const BUTTON_BORDER_RADIUS: f32 = 4.;
 const BUTTON_HEIGHT: f32 = 32.;
-
 
 const ALIAS_HELP_TEXT: &str = "Aliases allow you to create short strings to execute workflows. Each alias can have different argument values and environment variables, and aliases are personal to you.";
 
@@ -383,7 +382,6 @@ impl WorkflowView {
         ctx.subscribe_to_view(&content_editor, |me, _, event, ctx| {
             me.handle_content_editor_event(event, ctx);
         });
-
 
         let enum_creation_dialog = ctx.add_typed_action_view(EnumCreationDialog::new);
         ctx.subscribe_to_view(&enum_creation_dialog, |me, _, event, ctx| {

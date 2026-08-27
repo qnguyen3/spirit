@@ -93,9 +93,12 @@ impl SyncDataSource for InlineHistoryMenuDataSource {
             }
 
             let display_timestamp = entry.start_ts.unwrap_or_else(Local::now);
-            let search_item =
-                InlineHistoryItem::command(command, entry.linked_workflow_data(), display_timestamp)
-                    .with_prefix_match_len(prefix_match_len);
+            let search_item = InlineHistoryItem::command(
+                command,
+                entry.linked_workflow_data(),
+                display_timestamp,
+            )
+            .with_prefix_match_len(prefix_match_len);
             let score = OrderedFloat(results.len() as f64);
             results.push(QueryResult::from(search_item.with_score(score)));
         }

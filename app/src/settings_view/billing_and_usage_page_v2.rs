@@ -35,6 +35,7 @@ use crate::auth::auth_view_modal::AuthViewVariant;
 use crate::auth::{AuthManager, AuthStateProvider};
 use crate::modal::{Modal, ModalEvent, ModalViewState};
 use crate::pricing::PricingInfoModel;
+use crate::send_telemetry_from_ctx;
 use crate::server::ids::ServerId;
 use crate::server::telemetry::TelemetryEvent;
 use crate::ui_components::blended_colors;
@@ -45,7 +46,6 @@ use crate::view_components::action_button::{ActionButton, PrimaryTheme, Secondar
 use crate::workspaces::update_manager::TeamUpdateManager;
 use crate::workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent};
 use crate::workspaces::workspace::{CustomerType, Workspace};
-use crate::send_telemetry_from_ctx;
 
 const ADDON_CREDITS_DESCRIPTION: &str = "Add-on credits are purchased in prepaid packages that roll over each billing cycle and expire after one year. The more you purchase, the better the per-credit rate. Once your base plan credits are used, add-on credits will be consumed.";
 const ADDITIONAL_ADDON_CREDITS_DESCRIPTION_FOR_TEAM: &str =

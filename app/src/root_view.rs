@@ -3,11 +3,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::SyncSender;
 
+use ai::LLMId;
 use anyhow::Result;
 use cfg_if::cfg_if;
 use itertools::Itertools;
 use lazy_static::lazy_static;
-use ai::LLMId;
 use onboarding::{
     AgentOnboardingEvent, AgentOnboardingView, OfferVariant, OnboardingAuthState, OnboardingEvent,
     OnboardingIntention, SelectedSettings,
@@ -83,10 +83,10 @@ use crate::settings_view::{OpenTeamsSettingsModalArgs, SettingsSection, flags};
 use crate::terminal::available_shells::AvailableShell;
 use crate::terminal::general_settings::GeneralSettings;
 use crate::terminal::keys_settings::KeysSettings;
+use crate::terminal::model::block::SerializedBlock;
 use crate::terminal::shell::ShellType;
 use crate::terminal::view::cell_size_and_padding;
 use crate::themes::onboarding_theme_picker_themes;
-use crate::terminal::model::block::SerializedBlock;
 use crate::themes::theme::{AnsiColorIdentifier, Blend, Fill, ThemeKind, WarpThemeConfig};
 use crate::uri::{OpenSettingsArgs, url_reports_checkout_success};
 use crate::util::bindings::{self, is_binding_pty_compliant};

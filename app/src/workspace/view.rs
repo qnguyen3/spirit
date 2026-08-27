@@ -31,6 +31,7 @@ use std::time::Duration;
 #[cfg(target_os = "macos")]
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use ::onboarding::OnboardingIntention;
 use ::settings::{Setting, ToggleableSetting};
 #[cfg(target_os = "macos")]
 use anyhow::Result;
@@ -41,7 +42,6 @@ use futures::Future;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 pub(crate) use onboarding::OnboardingTutorial;
-use ::onboarding::OnboardingIntention;
 use parking_lot::FairMutex;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::rect::RectF;
@@ -321,12 +321,12 @@ use crate::themes::theme_creator_modal::{ThemeCreatorModal, ThemeCreatorModalEve
 use crate::themes::theme_deletion_modal::{ThemeDeletionModal, ThemeDeletionModalEvent};
 use crate::tips::{TipsEvent, TipsView};
 use crate::ui_components::avatar::{Avatar, AvatarContent, StatusElementTypes};
-use crate::ui_components::buttons::{combo_inner_button, icon_button_with_color};
-use crate::ui_components::red_notification_dot::RedNotificationDot;
-use crate::ui_components::window_focus_dimming::WindowFocusDimming;
 #[cfg(target_family = "wasm")]
 use crate::ui_components::blended_colors;
+use crate::ui_components::buttons::{combo_inner_button, icon_button_with_color};
 use crate::ui_components::icons;
+use crate::ui_components::red_notification_dot::RedNotificationDot;
+use crate::ui_components::window_focus_dimming::WindowFocusDimming;
 use crate::undo_close::UndoCloseStack;
 #[cfg(target_family = "wasm")]
 use crate::uri::browser_url_handler::{parse_current_url, update_browser_url};
@@ -347,9 +347,7 @@ use crate::util::file::external_editor::EditorSettings;
 use crate::util::links;
 use crate::util::openable_file_type::FileTarget;
 #[cfg(feature = "local_fs")]
-use crate::util::openable_file_type::{
-    EditorLayout, resolve_file_target_with_editor_choice,
-};
+use crate::util::openable_file_type::{EditorLayout, resolve_file_target_with_editor_choice};
 use crate::util::traffic_lights::{TrafficLightMouseStates, TrafficLightSide, traffic_light_data};
 use crate::util::truncation::truncate_from_end;
 #[cfg(target_family = "wasm")]
@@ -2391,8 +2389,7 @@ impl Workspace {
 
         let close_session_confirmation_dialog = Self::build_close_session_confirmation_dialog(ctx);
 
-        let command_search_view =
-            ctx.add_typed_action_view(CommandSearchView::new);
+        let command_search_view = ctx.add_typed_action_view(CommandSearchView::new);
         ctx.subscribe_to_view(&command_search_view, |me, _, event, ctx| {
             me.handle_command_search_event(event, ctx);
         });
@@ -10555,7 +10552,6 @@ impl Workspace {
             None, /*custom_tab_title*/
             ctx,
         );
-
     }
 
     /// Returns where a newly-opened tab should be inserted and the group it
@@ -11579,10 +11575,7 @@ impl Workspace {
         ctx: &mut ViewContext<Self>,
     ) {
         // If the invite modal is open, don't show the palette since it won't be visible anyway
-        if !self
-            .current_workspace_state
-            .is_any_non_palette_modal_open()
-        {
+        if !self.current_workspace_state.is_any_non_palette_modal_open() {
             let is_palette_mode_already_open =
                 self.palette.as_ref(ctx).is_mode_enabled(palette_mode, ctx)
                     && ((matches!(source, PaletteSource::CtrlTab { .. })
@@ -11977,10 +11970,8 @@ impl Workspace {
             .file_notebook_paths(ctx)
             .filter_map(|(id, path)| path.map(|p| (id, p)))
             .collect();
-        let local_paths: Vec<(EntityId, LocalOrRemotePath)> = code_paths
-            .into_iter()
-            .chain(notebook_paths)
-            .collect();
+        let local_paths: Vec<(EntityId, LocalOrRemotePath)> =
+            code_paths.into_iter().chain(notebook_paths).collect();
 
         // Get the focused terminal ID to prioritize it in the repo_to_terminal map
         let focused_terminal_id = pane_group
@@ -12463,7 +12454,6 @@ impl Workspace {
                     self.set_selected_object(None, ctx);
                     self.set_focused_index(None, ctx);
                 }
-
             }
             pane_group::Event::RepoChanged => {
                 self.refresh_working_directories_for_pane_group(&pane_group, ctx);
@@ -13321,30 +13311,24 @@ impl Workspace {
         match pane_group_handle.as_ref(ctx).active_session_view(ctx) {
             Some(terminal_handle) => {
                 #[cfg_attr(not(feature = "local_fs"), allow(unused_variables))]
-                let (
-                    session,
-                    pwd_location,
-                    is_local,
-                    is_wsl_session,
-                    session_id,
-                    has_pending_ssh,
-                ) = terminal_handle.read(ctx, |terminal, ctx| {
-                    let active_session_id = terminal.active_block_session_id();
-                    let session = active_session_id
-                        .and_then(|id| terminal.sessions_model().as_ref(ctx).get(id));
-                    let pwd_location = terminal.pwd_as_local_or_remote(ctx);
-                    let is_local = terminal.active_session_is_local(ctx);
-                    let is_wsl_session = session.as_ref().map(|s| s.is_wsl()).unwrap_or(false);
-                    let has_pending_ssh = terminal.has_pending_ssh_command();
-                    (
-                        session,
-                        pwd_location,
-                        is_local,
-                        is_wsl_session,
-                        active_session_id,
-                        has_pending_ssh,
-                    )
-                });
+                let (session, pwd_location, is_local, is_wsl_session, session_id, has_pending_ssh) =
+                    terminal_handle.read(ctx, |terminal, ctx| {
+                        let active_session_id = terminal.active_block_session_id();
+                        let session = active_session_id
+                            .and_then(|id| terminal.sessions_model().as_ref(ctx).get(id));
+                        let pwd_location = terminal.pwd_as_local_or_remote(ctx);
+                        let is_local = terminal.active_session_is_local(ctx);
+                        let is_wsl_session = session.as_ref().map(|s| s.is_wsl()).unwrap_or(false);
+                        let has_pending_ssh = terminal.has_pending_ssh_command();
+                        (
+                            session,
+                            pwd_location,
+                            is_local,
+                            is_wsl_session,
+                            active_session_id,
+                            has_pending_ssh,
+                        )
+                    });
 
                 let window_id = ctx.window_id();
                 ActiveSession::handle(ctx).update(ctx, |active_session, ctx| {
@@ -14611,8 +14595,7 @@ impl Workspace {
         });
 
         self.active_tab_pane_group().update(ctx, |pane_group, ctx| {
-            let pane_id =
-                pane_group.add_terminal_pane(pane_group::Direction::Right, None, ctx);
+            let pane_id = pane_group.add_terminal_pane(pane_group::Direction::Right, None, ctx);
 
             if let Some(terminal_view) = pane_group.terminal_view_from_pane_id(pane_id, ctx) {
                 terminal_view.update(ctx, |view, ctx| {
@@ -15569,11 +15552,7 @@ impl Workspace {
         pane_group
             .pane_ids()
             .filter(|id| !pane_group.is_pane_hidden_for_close(*id))
-            .any(|id| {
-                id.is_terminal_pane()
-                    || id.is_file_pane()
-                    || id.is_code_pane()
-            })
+            .any(|id| id.is_terminal_pane() || id.is_file_pane() || id.is_code_pane())
     }
 
     fn render_right_panel_button(
@@ -18533,7 +18512,8 @@ impl TypedActionView for Workspace {
                 match effective_mode {
                     DefaultSessionMode::TabConfig => {
                         let new_session_settings = NewSessionSettings::as_ref(ctx);
-                        if let Some(config) = new_session_settings.resolved_default_tab_config(ctx) {
+                        if let Some(config) = new_session_settings.resolved_default_tab_config(ctx)
+                        {
                             self.open_tab_config(config, ctx);
                         } else {
                             // Config missing or deleted — clear and fall through to Terminal.

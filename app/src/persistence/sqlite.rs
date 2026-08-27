@@ -48,8 +48,8 @@ use super::block_list::{delete_blocks, save_block};
 use super::model::{
     self, AI_DOCUMENT_PANE_KIND, AI_FACT_PANE_KIND, ActiveMCPServer, CODE_PANE_KIND,
     CurrentUserInformation, ENV_VAR_COLLECTION_PANE_KIND, EXECUTION_PROFILE_EDITOR_PANE_KIND,
-    MCP_SERVER_PANE_KIND, NOTEBOOK_PANE_KIND, NewActiveMCPServer, NewApp,
-    NewCommand, NewServerExperiment, NewTab, NewTabGroup, NewTeam, NewWindow, NewWorkspace,
+    MCP_SERVER_PANE_KIND, NOTEBOOK_PANE_KIND, NewActiveMCPServer, NewApp, NewCommand,
+    NewServerExperiment, NewTab, NewTabGroup, NewTeam, NewWindow, NewWorkspace,
     NewWorkspaceMetadata, NewWorkspaceTeam, Project, SETTINGS_PANE_KIND, TERMINAL_PANE_KIND, Tab,
     TabGroup, WORKFLOW_PANE_KIND, Window, WorkspaceMetadata as WorkspaceMetadataModel,
 };
@@ -64,7 +64,6 @@ use crate::app_state::{
     SplitDirection, TabGroupSnapshot, TabSnapshot, TerminalPaneSnapshot, WindowSnapshot,
     WorkflowPaneSnapshot,
 };
-use crate::persisted_workspace::EnablementState;
 use crate::auth::UserUid;
 use crate::auth::auth_manager::PersistedCurrentUserInformation;
 use crate::auth::auth_state::AuthStateProvider;
@@ -76,6 +75,7 @@ use crate::cloud_object::{CloudObject, ObjectIdType};
 use crate::code::editor_management::CodeSource;
 use crate::drive::OpenWarpDriveObjectSettings;
 use crate::notebooks::NotebookId;
+use crate::persisted_workspace::EnablementState;
 use crate::persistence::block_list::get_all_restored_blocks;
 use crate::persistence::model::{
     CODE_REVIEW_PANE_KIND, GET_STARTED_PANE_KIND, NewPersistedObjectAction, NewTeamSettings,

@@ -1075,7 +1075,6 @@ fn member_byo_policy_resolved_from_a_view_handle_matches_its_window() {
     })
 }
 
-
 /// Reconciliation can move a window onto a different team, and the policy read has to move
 /// with it rather than keep answering for the team the window was on before.
 #[test]

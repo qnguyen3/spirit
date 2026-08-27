@@ -1114,7 +1114,6 @@ impl LeftPanelView {
             });
         }
     }
-
 }
 
 impl TypedActionView for LeftPanelView {

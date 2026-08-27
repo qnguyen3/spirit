@@ -20,7 +20,7 @@ use crate::features::FeatureFlag;
 use crate::local_control::LocalControlBridge;
 use crate::local_control::resolver::{reject_target_families, require_active_window_id_for_action};
 use crate::pane_group::{PaneGroup, PaneId};
-use crate::settings::{CodeSettings};
+use crate::settings::CodeSettings;
 use crate::workspace::Workspace;
 use crate::workspace::tab_settings::TabSettings;
 
@@ -354,9 +354,7 @@ pub(crate) fn surface_unavailable_reason(
             Some("vertical tabs are unavailable or disabled")
         }
         SurfaceDestination::VerticalTabs => None,
-        SurfaceDestination::AgentManagement => {
-            Some("agent management is unavailable or disabled")
-        }
+        SurfaceDestination::AgentManagement => Some("agent management is unavailable or disabled"),
     }
 }
 

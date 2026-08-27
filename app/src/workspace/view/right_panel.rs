@@ -1562,8 +1562,9 @@ impl RightPanelView {
         repo_path: &LocalOrRemotePath,
         ctx: &AppContext,
     ) -> Option<ViewHandle<TerminalView>> {
-        let is_available =
-            |tv: &ViewHandle<TerminalView>| Self::is_terminal_available_for_review(tv, repo_path, ctx);
+        let is_available = |tv: &ViewHandle<TerminalView>| {
+            Self::is_terminal_available_for_review(tv, repo_path, ctx)
+        };
 
         // Try the focused terminal first.
         if let Some(tv) = focused_terminal

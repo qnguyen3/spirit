@@ -1989,9 +1989,7 @@ pub enum PromptChipShellCommand {
 pub enum PromptDisplayChipEvent {
     OpenFile(String),
     OpenTextFileInCodeEditor(String),
-    ToggleMenu {
-        open: bool,
-    },
+    ToggleMenu { open: bool },
     OpenCodeReview,
     OpenCommandPaletteFiles,
     TryExecuteCommand(PromptChipShellCommand),

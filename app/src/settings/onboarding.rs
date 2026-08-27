@@ -15,7 +15,10 @@ pub(crate) fn apply_account_first_onboarding_settings(
 }
 
 /// Applies onboarding settings based on the user's selected mode.
-pub(crate) fn apply_onboarding_settings(selected_settings: &SelectedSettings, app: &mut AppContext) {
+pub(crate) fn apply_onboarding_settings(
+    selected_settings: &SelectedSettings,
+    app: &mut AppContext,
+) {
     match selected_settings {
         SelectedSettings::AgentDrivenDevelopment {
             ui_customization, ..

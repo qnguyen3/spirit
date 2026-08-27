@@ -131,7 +131,6 @@ impl BlockClient for ServerApi {
             }
         }
     }
-
 }
 
 impl TryFrom<GqlBlock> for Block {

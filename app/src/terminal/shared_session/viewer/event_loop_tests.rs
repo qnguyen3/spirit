@@ -80,9 +80,14 @@ fn test_terminal_model_is_correct() {
         });
 
         // Before we receive any events, the block list only contains hidden blocks.
-        assert!(model.lock().block_list().blocks().iter().all(|block| {
-            block.height() == Lines::zero()
-        }));
+        assert!(
+            model
+                .lock()
+                .block_list()
+                .blocks()
+                .iter()
+                .all(|block| { block.height() == Lines::zero() })
+        );
 
         // Load shared session scrollback.
         let scrollback = &[
@@ -94,21 +99,9 @@ fn test_terminal_model_is_correct() {
             model.load_shared_session_scrollback(scrollback);
             // A hidden block, a completed scrollback block, then the active block.
             assert_eq!(model.block_list().blocks().len(), 3);
-            assert_eq!(
-                model.block_list().blocks()[0]
-                    .height(),
-                Lines::zero()
-            );
-            assert_ne!(
-                model.block_list().blocks()[1]
-                    .height(),
-                Lines::zero()
-            );
-            assert_eq!(
-                model.block_list().blocks()[2]
-                    .height(),
-                Lines::zero()
-            );
+            assert_eq!(model.block_list().blocks()[0].height(), Lines::zero());
+            assert_ne!(model.block_list().blocks()[1].height(), Lines::zero());
+            assert_eq!(model.block_list().blocks()[2].height(), Lines::zero());
         }
 
         // Write some PTY events after starting active block.
@@ -121,21 +114,9 @@ fn test_terminal_model_is_correct() {
         let model = model.lock();
         // After writing bytes, active block should no longer have height 0.
         assert_eq!(model.block_list().blocks().len(), 3);
-        assert_eq!(
-            model.block_list().blocks()[0]
-                .height(),
-            Lines::zero()
-        );
-        assert_ne!(
-            model.block_list().blocks()[1]
-                .height(),
-            Lines::zero()
-        );
-        assert_ne!(
-            model.block_list().blocks()[2]
-                .height(),
-            Lines::zero()
-        );
+        assert_eq!(model.block_list().blocks()[0].height(), Lines::zero());
+        assert_ne!(model.block_list().blocks()[1].height(), Lines::zero());
+        assert_ne!(model.block_list().blocks()[2].height(), Lines::zero());
     })
 }
 
@@ -371,4 +352,3 @@ fn test_pty_bytes_buffered_before_command_execution_started() {
         assert_eq!(command_grid, "abc");
     })
 }
-

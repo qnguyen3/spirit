@@ -1,10 +1,10 @@
-pub mod github_auth_notifier;
 pub mod auth_manager;
 mod auth_override_warning_body;
 pub mod auth_override_warning_modal;
 mod auth_view_body;
 pub mod auth_view_modal;
 mod auth_view_shared_helpers;
+pub mod github_auth_notifier;
 mod login_error_modal;
 mod login_failure_notification;
 pub mod login_slide;

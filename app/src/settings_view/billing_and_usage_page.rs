@@ -11,9 +11,9 @@ use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::Fill;
 use warp_graphql::billing::AddonCreditsOption;
 use warpui::elements::{
-    Align, Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty,
-    Flex, FormattedTextElement, HighlightedHyperlink, HyperlinkUrl, MainAxisAlignment,
-    MainAxisSize, MouseStateHandle, ParentElement, Radius, Shrinkable, Text, Wrap,
+    Align, Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty, Flex,
+    FormattedTextElement, HighlightedHyperlink, HyperlinkUrl, MainAxisAlignment, MainAxisSize,
+    MouseStateHandle, ParentElement, Radius, Shrinkable, Text, Wrap,
 };
 use warpui::fonts::{Properties, Weight};
 use warpui::prelude::ChildView;
@@ -21,15 +21,14 @@ use warpui::ui_components::button::{ButtonVariant, TextAndIcon, TextAndIconAlign
 use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 use warpui::ui_components::switch::SwitchStateHandle;
 use warpui::{
-    AppContext, Element, Entity, SingletonEntity, TypedActionView, UpdateView, View,
-    ViewContext, ViewHandle, WeakViewHandle,
+    AppContext, Element, Entity, SingletonEntity, TypedActionView, UpdateView, View, ViewContext,
+    ViewHandle, WeakViewHandle,
 };
 
 use super::admin_actions::AdminActions;
 use super::billing_and_usage::overage_limit_modal::{SpendingLimitModal, SpendingLimitModalEvent};
 use super::settings_page::{
-    AdditionalInfo, HEADER_PADDING, render_body_item, render_customer_type_badge,
-    render_info_icon,
+    AdditionalInfo, HEADER_PADDING, render_body_item, render_customer_type_badge, render_info_icon,
 };
 use crate::auth::auth_manager::LoginGatedFeature;
 use crate::auth::auth_state::AuthState;
@@ -37,6 +36,7 @@ use crate::auth::auth_view_modal::AuthViewVariant;
 use crate::auth::{AuthManager, AuthStateProvider, UserUid};
 use crate::modal::{Modal, ModalEvent, ModalViewState};
 use crate::pricing::{PricingInfoModel, PricingInfoModelEvent};
+use crate::send_telemetry_from_ctx;
 use crate::server::ids::ServerId;
 use crate::server::telemetry::TelemetryEvent;
 use crate::settings_view::settings_page::TOGGLE_BUTTON_RIGHT_PADDING;
@@ -48,7 +48,6 @@ use crate::view_components::action_button::{ActionButton, PrimaryTheme, Secondar
 use crate::workspaces::update_manager::TeamUpdateManager;
 use crate::workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent};
 use crate::workspaces::workspace::{BillingMetadata, CustomerType, Workspace};
-use crate::send_telemetry_from_ctx;
 
 const HEADER_FONT_SIZE: f32 = 16.;
 const OVERAGE_USAGE_LINK_TEXT: &str = "View details on overage usage";
@@ -58,7 +57,6 @@ const OVERAGE_TOGGLE_USER_HEADER_DISABLED: &str = "Premium model usage overages 
 const OVERAGE_TOGGLE_DESCRIPTION: &str = "Continue using premium models beyond your plan's limits. Usage is charged in $20 increments up to your spending limit, with any remaining balance charged on your scheduled billing date.";
 const OVERAGE_TOGGLE_USER_DESCRIPTION: &str =
     "Ask a team admin to enable overages for more AI usage.";
-
 
 const AUTO_RELOAD_EXCEED_LIMIT_WARNING_STRING: &str = "Auto reload is disabled, as the next reload would exceed your monthly spend limit. Increase your limit to use auto reload.";
 const AUTO_RELOAD_DELINQUENT_WARNING_STRING: &str =
@@ -1837,7 +1835,11 @@ impl BillingAndUsagePageView {
             .map(BillingMetadata::is_delinquent_due_to_payment_issue)
             .unwrap_or_default();
 
-        self.render_usage_content(appearance, app, workspace_is_delinquent_due_to_payment_issue)
+        self.render_usage_content(
+            appearance,
+            app,
+            workspace_is_delinquent_due_to_payment_issue,
+        )
     }
 }
 
@@ -2044,7 +2046,6 @@ impl BillingAndUsagePageView {
         usage.finish()
     }
 }
-
 
 impl BillingAndUsagePageView {
     fn render_anonymous_account_info(

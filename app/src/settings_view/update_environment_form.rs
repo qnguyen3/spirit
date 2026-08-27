@@ -1426,7 +1426,6 @@ impl UpdateEnvironmentForm {
             needs_custom_image,
             reason,
         };
-
     }
 
     #[cfg(not(target_family = "wasm"))]

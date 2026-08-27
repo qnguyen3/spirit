@@ -890,8 +890,7 @@ impl WorkspaceAction {
             | OpenNewWindowForTeam { .. }
             | ShowTeamSwitcherMenu => false,
             #[cfg(debug_assertions)]
-            InstallOpenCodeWarpPlugin
-            | UseLocalOpenCodeWarpPlugin => false,
+            InstallOpenCodeWarpPlugin | UseLocalOpenCodeWarpPlugin => false,
             #[cfg(not(target_family = "wasm"))]
             ViewLogs => false,
             #[cfg(target_os = "macos")]

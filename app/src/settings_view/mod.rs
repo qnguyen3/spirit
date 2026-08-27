@@ -44,6 +44,7 @@ use warpui::{
 };
 
 use self::telemetry::SettingsTelemetryEvent;
+use crate::GlobalResourceHandlesProvider;
 use crate::appearance::Appearance;
 use crate::editor::{
     EditorView, Event as EditorEvent, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions,
@@ -62,7 +63,6 @@ use crate::util::bindings::{BindingGroup, CustomAction, keybinding_name_to_displ
 use crate::view_components::ToastFlavor;
 use crate::workspace::WorkspaceAction;
 use crate::workspaces::workspace::{BillingMetadata, CustomerType};
-use crate::GlobalResourceHandlesProvider;
 
 mod about_page;
 mod admin_actions;

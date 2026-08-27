@@ -72,10 +72,7 @@ pub fn should_render_ps1_prompt(terminal_model: &TerminalModel, app: &AppContext
 }
 
 /// Returns whether the prompt should be rendered on the same line as the input editor's contents.
-pub fn should_render_prompt_on_same_line(
-    terminal_model: &TerminalModel,
-    app: &AppContext,
-) -> bool {
+pub fn should_render_prompt_on_same_line(terminal_model: &TerminalModel, app: &AppContext) -> bool {
     // We render the prompt on the same line, in the input editor, if the user is using a custom
     // prompt (PS1).
     should_render_ps1_prompt(terminal_model, app)

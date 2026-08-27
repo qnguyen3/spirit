@@ -1,8 +1,6 @@
 use warp_core::context_flag::ContextFlag;
 use warpui::AppContext;
-use warpui::keymap::{
-    BindingDescription, EditableBinding, FixedBinding, PerPlatformKeystroke,
-};
+use warpui::keymap::{BindingDescription, EditableBinding, FixedBinding, PerPlatformKeystroke};
 use warpui::platform::OperatingSystem;
 use warpui::units::IntoLines;
 
@@ -667,4 +665,3 @@ pub fn init(app: &mut AppContext) {
     .with_enabled(|| FeatureFlag::Projects.is_enabled())
     .with_context_predicate(id!("Workspace") & id!(flags::IS_ANY_AI_ENABLED))]);
 }
-

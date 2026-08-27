@@ -48,7 +48,6 @@ use crate::terminal::event::{
 };
 use crate::terminal::event_listener::ChannelEventListener;
 use crate::terminal::model::GridStorage;
-use crate::terminal::model::secrets::redact_secrets;
 use crate::terminal::model::ansi::{
     self, Handler, PrecmdValue, PreexecValue, Processor, PromptMetadata,
 };
@@ -57,7 +56,7 @@ use crate::terminal::model::blocks::BlockList;
 use crate::terminal::model::grid::grid_handler::TermMode;
 use crate::terminal::model::index::{Point, VisibleRow};
 use crate::terminal::model::iterm_image::ITermImage;
-use crate::terminal::model::secrets::ObfuscateSecrets;
+use crate::terminal::model::secrets::{ObfuscateSecrets, redact_secrets};
 use crate::terminal::model::session::SessionId;
 use crate::terminal::model::terminal_model::{BlockIndex, WithinBlock};
 use crate::terminal::shell::ShellType;

@@ -34,6 +34,7 @@ use crate::server::telemetry::context_provider::AppTelemetryContextProvider;
 use crate::settings::WarpPromptSeparator;
 #[cfg(windows)]
 use crate::system::SystemInfo;
+use crate::terminal::History;
 use crate::terminal::model::block::BlockMetadata;
 use crate::terminal::model::session::{
     CommandExecutor, ExecuteCommandOptions, SessionId, SessionInfo, Sessions,
@@ -41,7 +42,6 @@ use crate::terminal::model::session::{
 use crate::terminal::session_settings::SessionSettings;
 use crate::terminal::shell::Shell;
 use crate::terminal::view::PromptPosition;
-use crate::terminal::History;
 #[cfg(feature = "local_fs")]
 use crate::util::git::PrInfo;
 

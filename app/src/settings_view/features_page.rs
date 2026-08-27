@@ -62,19 +62,19 @@ use crate::search::command_search::settings::{
 use crate::server::telemetry::TelemetryEvent;
 use crate::settings::native_preference::{NativePreferenceSettings, UserNativePreference};
 use crate::settings::{
-    AliasExpansionEnabled, AliasExpansionSettings, AppEditorSettings,
-    AtContextMenuInTerminalMode, AutocompleteSymbols, AutosuggestionKeybindingHint,
-    ChangelogSettings, CloudPreferencesSettings, CodeSettings, CommandCorrections,
-    CompletionsOpenWhileTyping, CopyOnSelect, CtrlTabBehavior, DEFAULT_QUAKE_MODE_SIZE_PERCENTAGES,
-    DefaultSessionMode, ErrorUnderliningEnabled, ExtraMetaKeys, GPUSettings, GlobalHotkeyMode,
-    InputSettings, InputSettingsChangedEvent, LinuxSelectionClipboard, MiddleClickPasteEnabled,
-    MouseScrollMultiplier, NewSessionSettings, NewSessionSettingsChangedEvent,
-    OutlineCodebaseSymbolsForAtContextMenu, PreferLowPowerGPU, PreferredGraphicsBackend,
-    QUAKE_WINDOW_AUTOHIDE_SUPPORTED, QuakeModeSettings, RightClickBehavior,
-    RightClickBehaviorSetting, ScrollSettings, ScrollSettingsChangedEvent, SelectionSettings,
-    SelectionSettingsChangedEvent, ShowAutosuggestionIgnoreButton, ShowChangelogAfterUpdate,
-    ShowTerminalInputMessageBar, SshSettings, SyntaxHighlighting, TabBehavior,
-    UserNativeRedirectPreference, VimModeEnabled, VimStatusBar, VimUnnamedSystemClipboard,
+    AliasExpansionEnabled, AliasExpansionSettings, AppEditorSettings, AtContextMenuInTerminalMode,
+    AutocompleteSymbols, AutosuggestionKeybindingHint, ChangelogSettings, CloudPreferencesSettings,
+    CodeSettings, CommandCorrections, CompletionsOpenWhileTyping, CopyOnSelect, CtrlTabBehavior,
+    DEFAULT_QUAKE_MODE_SIZE_PERCENTAGES, DefaultSessionMode, ErrorUnderliningEnabled,
+    ExtraMetaKeys, GPUSettings, GlobalHotkeyMode, InputSettings, InputSettingsChangedEvent,
+    LinuxSelectionClipboard, MiddleClickPasteEnabled, MouseScrollMultiplier, NewSessionSettings,
+    NewSessionSettingsChangedEvent, OutlineCodebaseSymbolsForAtContextMenu, PreferLowPowerGPU,
+    PreferredGraphicsBackend, QUAKE_WINDOW_AUTOHIDE_SUPPORTED, QuakeModeSettings,
+    RightClickBehavior, RightClickBehaviorSetting, ScrollSettings, ScrollSettingsChangedEvent,
+    SelectionSettings, SelectionSettingsChangedEvent, ShowAutosuggestionIgnoreButton,
+    ShowChangelogAfterUpdate, ShowTerminalInputMessageBar, SshSettings, SyntaxHighlighting,
+    TabBehavior, UserNativeRedirectPreference, VimModeEnabled, VimStatusBar,
+    VimUnnamedSystemClipboard,
 };
 use crate::terminal::alt_screen_reporting::{
     AltScreenReporting, FocusReportingEnabled, MouseReportingEnabled, ScrollReportingEnabled,
@@ -2216,7 +2216,10 @@ impl FeaturesPageView {
         });
 
         ctx.subscribe_to_model(&NewSessionSettings::handle(ctx), |me, _, event, ctx| {
-            if matches!(event, NewSessionSettingsChangedEvent::DefaultSessionMode { .. }) {
+            if matches!(
+                event,
+                NewSessionSettingsChangedEvent::DefaultSessionMode { .. }
+            ) {
                 Self::update_default_session_mode_dropdown(
                     me.default_session_mode_dropdown.clone(),
                     ctx,

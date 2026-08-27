@@ -85,10 +85,12 @@ pub fn header_row(
 }
 
 fn green_check_icon(appearance: &Appearance, size: f32) -> Box<dyn Element> {
-    ConstrainedBox::new(crate::ui_components::inline_action_icons::green_check_icon(appearance).finish())
-        .with_max_height(size)
-        .with_max_width(size)
-        .finish()
+    ConstrainedBox::new(
+        crate::ui_components::inline_action_icons::green_check_icon(appearance).finish(),
+    )
+    .with_max_height(size)
+    .with_max_width(size)
+    .finish()
 }
 
 /// UI helper to render the ssh command that caused the warpification prompt.

@@ -14,8 +14,6 @@ use warpui::{AppContext, Entity, ModelContext, SingletonEntity, UpdateModel};
 
 use super::cloud_preferences_syncer::CloudPreferencesSyncer;
 use crate::auth::AuthStateProvider;
-use crate::workspaces::user_workspaces::UserWorkspaces;
-use crate::workspaces::workspace::UgcCollectionEnablementSetting;
 use crate::auth::auth_state::AuthState;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::server::cloud_objects::update_manager::UpdateManager;
@@ -24,7 +22,8 @@ use crate::server::server_api::ServerApiProvider;
 use crate::server::server_api::auth::MockAuthClient;
 use crate::server::server_api::auth::{AuthClient, SyncedUserSettings};
 use crate::terminal::safe_mode_settings::SafeModeSettings;
-use crate::workspaces::workspace::EnterpriseSecretRegex;
+use crate::workspaces::user_workspaces::UserWorkspaces;
+use crate::workspaces::workspace::{EnterpriseSecretRegex, UgcCollectionEnablementSetting};
 
 pub const TELEMETRY_ENABLED_DEFAULTS_KEY: &str = "TelemetryEnabled";
 pub const CRASH_REPORTING_ENABLED_DEFAULTS_KEY: &str = "CrashReportingEnabled";

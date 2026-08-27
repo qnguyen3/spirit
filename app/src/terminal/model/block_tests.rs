@@ -47,10 +47,7 @@ pub fn test_find() {
 
     block.prompt_only_precmd(PromptMetadata::default());
     block.start();
-    assert_lines_approx_eq!(
-        block.height(),
-        3.
-    );
+    assert_lines_approx_eq!(block.height(), 3.);
 
     assert_approx_eq!(
         BlockSection,
@@ -88,10 +85,7 @@ pub fn test_find() {
     block.header_grid.command_grid_linefeed();
     block.header_grid.command_grid_linefeed();
 
-    assert_lines_approx_eq!(
-        block.height(),
-        6.
-    );
+    assert_lines_approx_eq!(block.height(), 6.);
 
     assert_approx_eq!(
         BlockSection,
@@ -156,10 +150,7 @@ pub fn test_find() {
 
     assert_eq!(block.header_grid.prompt_and_command_number_of_rows(), 3);
     assert_eq!(block.output_grid.len(), 3);
-    assert_lines_approx_eq!(
-        block.height(),
-        8.5
-    );
+    assert_lines_approx_eq!(block.height(), 8.5);
 
     assert_approx_eq!(
         BlockSection,
@@ -260,10 +251,7 @@ pub fn test_find() {
 
     assert_eq!(block.header_grid.prompt_and_command_number_of_rows(), 2);
     assert_eq!(block.output_grid.len(), 3);
-    assert_lines_approx_eq!(
-        block.height(),
-        7.5
-    );
+    assert_lines_approx_eq!(block.height(), 7.5);
 
     assert_approx_eq!(
         BlockSection,
@@ -530,10 +518,7 @@ pub fn test_block_height_non_bootstrapped_block() {
     block.start();
 
     // The block should be non-empty even though it wasn't bootstrapped.
-    assert_lines_approx_eq!(
-        block.height(),
-        5.
-    );
+    assert_lines_approx_eq!(block.height(), 5.);
 }
 
 #[test]
@@ -560,10 +545,7 @@ fn test_background_block() {
     // Background blocks have the usual top and bottom padding, but no
     // between-grid padding because there's only one grid.
     assert_lines_approx_eq!(block.output_grid_displayed_height(), 3);
-    assert_lines_approx_eq!(
-        block.height(),
-        4.2
-    );
+    assert_lines_approx_eq!(block.height(), 4.2);
 }
 
 #[test]

@@ -36,9 +36,7 @@ use crate::terminal::model::block::{Block, BlockMetadata};
 use crate::terminal::model::session::{ExecuteCommandOptions, Session, Sessions, SessionsEvent};
 use crate::terminal::model::terminal_model::TerminalModel;
 use crate::terminal::model_events::{ModelEvent, ModelEventDispatcher};
-use crate::terminal::session_settings::{
-    SessionSettings, SessionSettingsChangedEvent,
-};
+use crate::terminal::session_settings::{SessionSettings, SessionSettingsChangedEvent};
 use crate::terminal::view::{ContextMenuAction, PromptPart, PromptPosition, TerminalAction};
 
 #[cfg(test)]
@@ -1207,7 +1205,6 @@ impl CurrentPrompt {
             // suppression state.
             self.update_states_with_new_context(ctx);
         }
-
     }
 
     fn clear_chips(&mut self) {

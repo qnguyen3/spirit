@@ -24,7 +24,6 @@ use watcher::HomeDirectoryWatcher;
 
 use super::*;
 use crate::auth::github_auth_notifier::GitHubAuthNotifier;
-use crate::persisted_workspace::PersistedWorkspace;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::cloud_object::model::view::CloudViewModel;
 use crate::context_chips::prompt::Prompt;
@@ -34,6 +33,7 @@ use crate::network::NetworkStatus;
 use crate::notebooks::editor::keys::NotebookKeybindings;
 use crate::notebooks::notebook::NotebookView;
 use crate::pane_group::{Direction, PaneGroupAction, PaneId};
+use crate::persisted_workspace::PersistedWorkspace;
 use crate::pricing::PricingInfoModel;
 use crate::resource_center::Tip;
 use crate::server::cloud_objects::listener::Listener;

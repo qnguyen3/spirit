@@ -4,8 +4,8 @@ use warpui::integration::TestStep;
 use warpui::windowing::WindowManager;
 
 use crate::integration_testing::step::new_step_with_default_assertions;
-use crate::integration_testing::view_getters::single_terminal_view;
 use crate::integration_testing::terminal::assert_context_menu_is_open;
+use crate::integration_testing::view_getters::single_terminal_view;
 use crate::terminal::view::TerminalAction;
 
 pub fn open_input_context_menu() -> TestStep {
@@ -27,4 +27,3 @@ pub fn open_input_context_menu() -> TestStep {
         })
         .add_assertion(assert_context_menu_is_open(true))
 }
-

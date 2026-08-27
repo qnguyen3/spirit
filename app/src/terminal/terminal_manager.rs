@@ -8,9 +8,8 @@ use settings::Setting as _;
 use warpui::{AppContext, SingletonEntity};
 
 use super::event_listener::ChannelEventListener;
-use super::model::block::BlockSize;
+use super::model::block::{BlockSize, SerializedBlock};
 use super::safe_mode_settings::get_secret_obfuscation_mode;
-use super::model::block::SerializedBlock;
 use super::session_settings::SessionSettings;
 use super::settings::TerminalSettings;
 use super::view::{WARP_PROMPT_HEIGHT_LINES, create_size_info_for_blocklist};

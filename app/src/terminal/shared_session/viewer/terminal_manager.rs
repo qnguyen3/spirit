@@ -29,7 +29,7 @@ use crate::context_chips::prompt_type::PromptType;
 use crate::network::{NetworkStatus, NetworkStatusEvent, NetworkStatusKind};
 use crate::pane_group::TerminalViewResources;
 use crate::pane_group::pane::DetachType;
-use crate::settings::{WarpPromptSeparator};
+use crate::settings::WarpPromptSeparator;
 use crate::terminal::cli_agent_sessions::{
     CLIAgentInputState, CLIAgentSessionsModel, CLIAgentSessionsModelEvent,
 };
@@ -175,7 +175,9 @@ impl TerminalManager {
         // TODO: we have to figure out what prompt the viewer will see.
         // For now, just respect the viewer's settings.
         let honor_ps1 = *SessionSettings::as_ref(ctx).honor_ps1;
-        let input_mode = *crate::settings::InputModeSettings::as_ref(ctx).input_mode.value();
+        let input_mode = *crate::settings::InputModeSettings::as_ref(ctx)
+            .input_mode
+            .value();
         let is_inverted = input_mode.is_inverted_blocklist();
 
         // TODO: use the sharer's size.
@@ -1114,7 +1116,6 @@ impl TerminalManager {
             .lock()
             .clear_write_to_pty_events_for_shared_session_tx();
     }
-
 }
 
 impl crate::terminal::TerminalManager for TerminalManager {

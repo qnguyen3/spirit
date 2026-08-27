@@ -53,7 +53,8 @@ impl DefaultSessionMode {
     /// Display name for the settings dropdown.
     pub fn display_name(&self) -> &'static str {
         match self {
-            DefaultSessionMode::Terminal | DefaultSessionMode::Agent
+            DefaultSessionMode::Terminal
+            | DefaultSessionMode::Agent
             | DefaultSessionMode::CloudAgent => "Terminal",
             DefaultSessionMode::TabConfig => "Tab config",
             DefaultSessionMode::DockerSandbox => "Docker sandbox",
@@ -103,7 +104,10 @@ impl NewSessionSettings {
 
     /// Looks up the `TabConfig` matching the stored `default_tab_config_path`.
     /// Returns `None` if the path is empty or no loaded config matches.
-    pub fn resolved_default_tab_config(&self, app: &AppContext) -> Option<crate::tab_configs::TabConfig> {
+    pub fn resolved_default_tab_config(
+        &self,
+        app: &AppContext,
+    ) -> Option<crate::tab_configs::TabConfig> {
         let path_str = self.default_tab_config_path.as_str();
         if path_str.is_empty() {
             return None;

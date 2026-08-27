@@ -42,6 +42,7 @@ use crate::terminal::event_listener::ChannelEventListener;
 #[cfg(unix)]
 use crate::terminal::local_tty::terminal_attributes::Event as TerminalAttributesPollerEvent;
 use crate::terminal::local_tty::{Pty, PtyOptions};
+use crate::terminal::model::block::SerializedBlock;
 use crate::terminal::model::session::Sessions;
 #[cfg(unix)]
 use crate::terminal::model::terminal_model::BlockIndex;
@@ -49,7 +50,6 @@ use crate::terminal::model::terminal_model::ExitReason;
 #[cfg(unix)]
 use crate::terminal::model_events::ModelEvent as TerminalModelEvent;
 use crate::terminal::model_events::{ModelEventDispatcher, SshRemoteServerSupport};
-use crate::terminal::model::block::SerializedBlock;
 use crate::terminal::session_settings::SessionSettings;
 use crate::terminal::shared_session::sharer::network::Network;
 use crate::terminal::shared_session::{IsSharedSessionCreator, SharedSessionStatus};

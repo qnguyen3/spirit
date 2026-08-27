@@ -103,12 +103,7 @@ impl ScrollLines {
                 //
                 // Otherwise we want to use scroll bottom so that the block that is growing
                 // above you doesn't make you lose your position when you are scrolled down.
-                if is_long_running
-                    && scroll_top
-                        < active_block
-                            .height()
-                            .into_lines()
-                {
+                if is_long_running && scroll_top < active_block.height().into_lines() {
                     ScrollLines::ScrollTop(scroll_top)
                 } else {
                     ScrollLines::ScrollBottom(
@@ -688,11 +683,9 @@ impl<'a> ViewportState<'a> {
                 {
                     Some(height) => Some(height.into_lines()),
                     None => index.and_then(|last_index| {
-                        self.block_list.block_at(last_index).map(|block| {
-                            block
-                                .height()
-                                .into_lines()
-                        })
+                        self.block_list
+                            .block_at(last_index)
+                            .map(|block| block.height().into_lines())
                     }),
                 };
 
@@ -1544,9 +1537,7 @@ impl<'a> ViewportState<'a> {
         let block_height = self
             .block_list
             .block_at(block_index)
-            .map_or(Lines::zero(), |b| {
-                b.height()
-            });
+            .map_or(Lines::zero(), |b| b.height());
         top_of_block + block_height
     }
 

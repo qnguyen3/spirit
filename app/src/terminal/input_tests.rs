@@ -5388,4 +5388,3 @@ fn hash_trigger_disabled_keeps_hash_literal_and_does_not_open_ai_command_search(
         );
     });
 }
-

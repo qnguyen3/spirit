@@ -50,8 +50,8 @@ mod network;
 mod notebooks;
 mod notification;
 mod palette;
-mod persistence;
 pub mod persisted_workspace;
+mod persistence;
 mod platform;
 #[cfg(feature = "plugin_host")]
 mod plugin;
@@ -82,12 +82,7 @@ mod throttle;
 mod tips;
 mod tracing;
 #[cfg(feature = "tui")]
-mod tui;
-#[cfg(feature = "tui")]
-#[cfg(feature = "tui")]
 mod tui_onboarding_markers;
-#[cfg(all(feature = "tui", any(test, feature = "test-util")))]
-mod tui_test_support;
 mod ui_components;
 mod undo_close;
 mod uri;
@@ -204,6 +199,7 @@ use workspace::sync_inputs::SyncedInputState;
 use self::features::FeatureFlag;
 use crate::antivirus::AntivirusInfo;
 use crate::app_state::AppState;
+use crate::auth::github_auth_notifier::GitHubAuthNotifier;
 use crate::autoupdate::{AutoupdateState, RelaunchModel};
 use crate::changelog_model::ChangelogModel;
 use crate::cloud_object::model::actions::{ObjectAction, ObjectActions};
@@ -226,7 +222,6 @@ use crate::notebooks::editor::keys::NotebookKeybindings;
 use crate::notebooks::manager::NotebookManager;
 use crate::notification::NotificationContext;
 use crate::palette::PaletteMode;
-use crate::auth::github_auth_notifier::GitHubAuthNotifier;
 use crate::persisted_workspace::PersistedWorkspace;
 use crate::persistence::PersistenceWriter;
 use crate::projects::ProjectManagementModel;
@@ -1209,19 +1204,9 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
             FeatureFlag::UseTantivySearch.set_enabled(true);
         }
 
-        // The TUI front-end reuses the full `initialize_app` bootstrap above (so
-        // auth, `Appearance`, settings, etc. exist), then runs the device-login
-        // flow and mounts the TUI (via `crate::tui::init`) instead of the
-        // GUI/CLI `launch()` path.
         match launch_mode {
-            #[cfg(feature = "tui")]
-            LaunchMode::Tui { entrypoint } => match entrypoint {
-                TuiEntryPoint::Interactive { mount, .. } => crate::tui::init(mount, ctx),
-                TuiEntryPoint::CliCommand { execute } => execute(ctx),
-            },
-            #[cfg(not(feature = "tui"))]
             LaunchMode::Tui { .. } => {
-                unreachable!("the `tui` launch mode requires the `tui` feature")
+                unreachable!("the TUI front-end is not part of this build")
             }
             other => launch(ctx, app_state, other),
         }

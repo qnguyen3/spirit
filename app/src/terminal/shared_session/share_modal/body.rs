@@ -65,7 +65,6 @@ impl Body {
             radio_button_mouse_states: Default::default(),
         }
     }
-
 }
 
 impl Body {

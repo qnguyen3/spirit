@@ -27,8 +27,7 @@ use warpui::image_cache::ImageType;
 use super::super::{AltScreen, BlockList};
 use super::ansi::{BootstrappedValue, FinishUpdateValue, InputBufferValue, Mode, PendingHook};
 use super::block::{
-    Block, BlockId, BlockMetadata, BlockSize, BlockState,
-    BlocklistEnvVarMetadata, SerializedBlock,
+    Block, BlockId, BlockMetadata, BlockSize, BlockState, BlocklistEnvVarMetadata, SerializedBlock,
 };
 use super::blockgrid::BlockGrid;
 use super::blocks::ActiveBlockCompletion;

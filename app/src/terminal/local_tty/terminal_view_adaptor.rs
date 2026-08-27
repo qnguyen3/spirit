@@ -5,13 +5,13 @@ use std::sync::Arc;
 use std::sync::mpsc::SyncSender;
 
 use parking_lot::FairMutex;
+#[cfg(not(any(test, feature = "integration_tests")))]
+use session_sharing_protocol::common::UniversalDeveloperInputContext;
 use session_sharing_protocol::common::{
     ActivePrompt, AgentPromptFailureReason, CLIAgentSessionState, CommandExecutionFailureReason,
     ControlAction, ControlActionFailureReason, LongRunningCommandAgentInteraction,
     UniversalDeveloperInputContextUpdate, WriteToPtyFailureReason,
 };
-#[cfg(not(any(test, feature = "integration_tests")))]
-use session_sharing_protocol::common::UniversalDeveloperInputContext;
 use session_sharing_protocol::sharer::{
     AddGuestsResponse, FailedToInitializeSessionReason, Lifetime, LinkAccessLevelUpdateResponse,
     QuotaType, RemoveGuestResponse, SessionEndedReason, SessionSourceType,
@@ -34,13 +34,13 @@ use crate::persistence::ModelEvent;
 use crate::terminal::cli_agent_sessions::{
     CLIAgentInputState, CLIAgentSessionsModel, CLIAgentSessionsModelEvent,
 };
+use crate::terminal::model::block::SerializedBlock;
 use crate::terminal::safe_mode_settings::get_secret_obfuscation_mode;
 use crate::terminal::session_settings::{SessionSettings, SessionSettingsChangedEvent};
 use crate::terminal::shared_session::manager::Manager;
 use crate::terminal::shared_session::permissions_manager::SessionPermissionsManager;
 use crate::terminal::shared_session::presence_manager::PresenceManager;
 use crate::terminal::shared_session::settings::SharedSessionSettings;
-use crate::terminal::model::block::SerializedBlock;
 use crate::terminal::shared_session::shared_handlers::RemoteUpdateGuard;
 use crate::terminal::shared_session::sharer::network::{
     Network, NetworkEvent, failed_to_add_guests_user_error,
@@ -71,9 +71,7 @@ pub(crate) struct TerminalViewSurfaceConfig {
 pub(crate) fn terminal_view_restored_blocks(
     restored_blocks: Option<&Vec<SerializedBlock>>,
 ) -> Option<Vec<SerializedBlock>> {
-    restored_blocks
-        .filter(|blocks| !blocks.is_empty())
-        .cloned()
+    restored_blocks.filter(|blocks| !blocks.is_empty()).cloned()
 }
 
 /// Creates the GUI terminal surface and its manager-owned post-wiring closure.
@@ -416,7 +414,6 @@ impl TerminalManager<TerminalView> {
                         source.source_type.clone(),
                         ctx,
                     );
-
                 });
                 Self::log_shared_session_lifecycle(
                     &terminal_view,
@@ -448,12 +445,8 @@ impl TerminalManager<TerminalView> {
                         );
                     });
                 }
-
             }
-            NetworkEvent::FailedToCreateSharedSession {
-                reason,
-                cause,
-            } => {
+            NetworkEvent::FailedToCreateSharedSession { reason, cause } => {
                 log::warn!("Failed to create shared session: reason={reason:?}, cause={cause:?}");
 
                 model
@@ -570,8 +563,9 @@ impl TerminalManager<TerminalView> {
                 }
             }
             NetworkEvent::ParticipantListUpdated(participant_list) => {
-                let was_viewer_driven_sizing_eligible = terminal_view
-                    .update(ctx, |view, ctx| view.is_viewer_driven_sizing_eligible(true, ctx));
+                let was_viewer_driven_sizing_eligible = terminal_view.update(ctx, |view, ctx| {
+                    view.is_viewer_driven_sizing_eligible(true, ctx)
+                });
 
                 if let Some(presence_manager) =
                     terminal_view.as_ref(ctx).shared_session_presence_manager()
@@ -584,8 +578,12 @@ impl TerminalManager<TerminalView> {
                 // Check eligibility from the incoming participant list directly,
                 // since the presence manager processes new viewers asynchronously.
                 if was_viewer_driven_sizing_eligible {
-                    let sharer_uid =
-                        participant_list.sharer.info.profile_data.firebase_uid.as_str();
+                    let sharer_uid = participant_list
+                        .sharer
+                        .info
+                        .profile_data
+                        .firebase_uid
+                        .as_str();
                     let still_eligible =
                         PresenceManager::single_distinct_present_viewer_uid_from_viewers(
                             participant_list.viewers.iter(),
@@ -773,9 +771,7 @@ impl TerminalManager<TerminalView> {
                 });
             }
             NetworkEvent::AgentPromptRequested {
-                id,
-                participant_id,
-                ..
+                id, participant_id, ..
             } => {
                 network.update(ctx, |network, _ctx| {
                     network.send_agent_prompt_rejection(
@@ -865,14 +861,13 @@ impl TerminalManager<TerminalView> {
                     });
                 }
             }
-            NetworkEvent::ViewerTerminalSizeReported {
-                window_size,
-            } => {
+            NetworkEvent::ViewerTerminalSizeReported { window_size } => {
                 if !*SharedSessionSettings::as_ref(ctx).viewer_driven_sizing_enabled {
                     return;
                 }
-                let eligible = terminal_view
-                    .update(ctx, |view, ctx| view.is_viewer_driven_sizing_eligible(true, ctx));
+                let eligible = terminal_view.update(ctx, |view, ctx| {
+                    view.is_viewer_driven_sizing_eligible(true, ctx)
+                });
                 if eligible {
                     terminal_view.update(ctx, |view, ctx| {
                         view.resize_from_viewer_report(*window_size, ctx);

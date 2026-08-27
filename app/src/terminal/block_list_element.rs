@@ -54,8 +54,8 @@ use super::shared_session::presence_manager::{
 };
 use super::shared_session::render_util::SHARED_SESSION_AVATAR_DIAMETER;
 use super::view::{
-    BLOCK_BANNER_HEIGHT, InlineBannerId, RichContentMetadata,
-    SeparatorId, SharedSessionBanners, TerminalEditor, TerminalViewRenderContext,
+    BLOCK_BANNER_HEIGHT, InlineBannerId, RichContentMetadata, SeparatorId, SharedSessionBanners,
+    TerminalEditor, TerminalViewRenderContext,
 };
 use super::warpify::render::{draw_flag_pole, render_subshell_flag};
 use super::{HEIGHT_FUDGE_FACTOR_LINES, TerminalModel, heights_approx_eq};
@@ -63,9 +63,7 @@ use crate::appearance::Appearance;
 use crate::drive::settings::WarpDriveSettings;
 use crate::features::FeatureFlag;
 use crate::pane_group::SplitPaneState;
-use crate::settings::{
-    DebugSettings, EnforceMinimumContrast, PrivacySettings, TerminalSpacing,
-};
+use crate::settings::{DebugSettings, EnforceMinimumContrast, PrivacySettings, TerminalSpacing};
 use crate::terminal::alt_screen::{should_intercept_mouse, should_intercept_scroll};
 use crate::terminal::block_list_viewport::AutoscrollBehavior;
 use crate::terminal::blockgrid_renderer::BlockGridParams;
@@ -144,7 +142,6 @@ const LINEAR_SCROLLING: ScrollingAcceleration = ScrollingAcceleration::Polynomia
 /// Without making the vertical size fixed, for some reason some elements (bookmark, block filter, shared session avatar)
 /// have a height that extends down to the bottom of the window when there's a horizontal scroll bar, which messes with the on-hover behavior.
 const BLOCK_HOVER_BUTTON_HEIGHT: f32 = 28.;
-
 
 const SAVE_AS_WORKFLOW_TEXT: &str = "Save as Workflow";
 const SAVE_AS_WORKFLOW_SECRETS_TEXT: &str = "Blocks containing secrets cannot be saved.";
@@ -3736,8 +3733,7 @@ impl Element for BlockListElement {
                     }
 
                     // TODO(vorporeal): should probably use `Pixels` here
-                    let block_pixel_height =
-                        block.height().as_f64() as f32 * cell_size.y();
+                    let block_pixel_height = block.height().as_f64() as f32 * cell_size.y();
 
                     let block_bottom_y = grid_origin.y() + block_pixel_height;
                     let selection_bottom_y = snackbar_header
@@ -4224,9 +4220,7 @@ impl Element for BlockListElement {
                 .iter()
                 .flat_map(|selection| self.segment_blocklist_selection(selection, block_list));
 
-            let text_selection_color = {
-                self.warp_theme.text_selection_color().into_solid()
-            };
+            let text_selection_color = { self.warp_theme.text_selection_color().into_solid() };
 
             for current_range in selection_ranges {
                 self.render_selection(

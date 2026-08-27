@@ -49,12 +49,12 @@ use crate::cloud_object::{
 };
 use crate::drive::folders::CloudFolder;
 use crate::notebooks::CloudNotebook;
+use crate::persisted_workspace::EnablementState;
 use crate::server::experiments::ServerExperiment;
 use crate::server::ids::SyncId;
 use crate::suggestions::ignored_suggestions_model::SuggestionType;
 use crate::terminal::history::PersistedCommand;
 use crate::terminal::model::block::SerializedBlock;
-use crate::persisted_workspace::EnablementState;
 use crate::terminal::model::session::SessionId;
 use crate::workflows::CloudWorkflow;
 use crate::workspaces::user_profiles::UserProfileWithUID;

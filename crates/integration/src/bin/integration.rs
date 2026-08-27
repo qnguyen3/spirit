@@ -424,7 +424,6 @@ fn register_tests() -> HashMap<&'static str, BoxedBuilderFn> {
 
     register_test!(test_middle_click_paste);
 
-
     register_test!(test_git_prompt_chips);
 
     // These tests are only invoked manually, and not included in the

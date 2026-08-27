@@ -10,9 +10,8 @@ use warpui::{
 
 use super::{
     EnvironmentFormCopy, EnvironmentFormInitArgs, EnvironmentFormValues, SuggestImageState,
-    UpdateEnvironmentForm, UpdateEnvironmentFormAction,
+    UpdateEnvironmentForm, UpdateEnvironmentFormAction, settings_environments_auth_url_with_next,
 };
-use super::settings_environments_auth_url_with_next;
 use crate::auth::AuthStateProvider;
 use crate::auth::github_auth_notifier::GitHubAuthNotifier;
 use crate::cloud_object::model::persistence::CloudModel;
@@ -98,10 +97,7 @@ fn test_build_auth_url_with_next_uses_scheme_param() {
         .query_pairs()
         .find(|(key, _)| key == "next")
         .map(|(_, value)| value.into_owned());
-    assert_eq!(
-        next_value,
-        Some("warp://settings/environments".to_string())
-    );
+    assert_eq!(next_value, Some("warp://settings/environments".to_string()));
 }
 
 #[derive(Default)]

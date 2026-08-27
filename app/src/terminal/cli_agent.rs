@@ -19,12 +19,12 @@ use warp_editor::content::markdown::MarkdownStyle;
 use warp_util::path::EscapeChar;
 use warpui::{AppContext, SingletonEntity};
 
-use crate::code_review::agent_handoff::{AgentReviewCommentBatch, DiffSetHunk};
-use crate::util::color::CLAUDE_ORANGE;
 use crate::code::editor::line::EditorLineLocation;
+use crate::code_review::agent_handoff::{AgentReviewCommentBatch, DiffSetHunk};
 use crate::code_review::comments::AttachedReviewCommentTarget;
 use crate::server::telemetry::CLIAgentType;
 use crate::ui_components::icons::Icon;
+use crate::util::color::CLAUDE_ORANGE;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 
 /// UID for the Uber team.
