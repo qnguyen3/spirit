@@ -193,11 +193,13 @@ impl EventLoop {
                         if should_clear_input && let Some(view) = self.terminal_view.upgrade(ctx) {
                             view.update(ctx, |view, ctx| {
                                 view.input().update(ctx, |input, ctx| {
-                                    // Reinitialize the buffer here: for shell commands the block
-                                    // transition will reset the CRDT with a new block ID shortly
-                                    // after, so the brief CRDT inconsistency is harmless. This
-                                    // pre-emptive clear gives the viewer an empty buffer while the
-                                    // command runs rather than showing the command text.
+                                    // Restore frozen visual state. Then also reinitialize the
+                                    // buffer here: for shell commands the block transition will
+                                    // reset the CRDT with a new block ID shortly after, so the
+                                    // brief CRDT inconsistency is harmless. This pre-emptive
+                                    // clear gives the viewer an empty buffer while the command
+                                    // runs rather than showing the command text.
+                                    input.unfreeze_shared_session_input(ctx);
                                     let editor = input.editor().clone();
                                     editor.update(ctx, |editor, ctx| {
                                         editor.reinitialize_buffer(None, ctx);

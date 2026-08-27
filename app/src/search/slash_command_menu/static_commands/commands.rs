@@ -57,6 +57,18 @@ pub static SET_TAB_COLOR: LazyLock<StaticCommand> = LazyLock::new(|| StaticComma
     argument: Some(Argument::required().with_hint_text(SET_TAB_COLOR_HINT.as_str())),
 });
 
+pub const CREATE_DOCKER_SANDBOX: StaticCommand = StaticCommand {
+    name: "/docker-sandbox",
+    description: "Create a new docker sandbox terminal session",
+    kind: SlashCommandKind::CreateDockerSandbox,
+    supported_surfaces: SlashCommandSurfaces::GuiOnly {
+        icon_path: "bundled/svg/docker.svg",
+    },
+    availability: Availability::LOCAL,
+    auto_enter_ai_mode: false,
+    argument: None,
+};
+
 pub const OPEN_CODE_REVIEW: StaticCommand = StaticCommand {
     name: "/open-code-review",
     description: "Open code review",
@@ -199,6 +211,10 @@ fn all_commands_for_all_surfaces() -> Vec<StaticCommand> {
 
     if FeatureFlag::SettingsFile.is_enabled() && cfg!(feature = "local_fs") {
         commands.push(OPEN_SETTINGS_FILE);
+    }
+
+    if FeatureFlag::LocalDockerSandbox.is_enabled() {
+        commands.push(CREATE_DOCKER_SANDBOX);
     }
 
     commands

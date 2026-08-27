@@ -2450,6 +2450,30 @@ impl Input {
         });
     }
 
+    /// Restores a shared-session editor frozen by [`Self::freeze_input_in_loading_state`] once
+    /// the sharer reports the command as started. The sharer's delete ops arrive separately via
+    /// `InputUpdated` and clear the regular buffer.
+    pub fn unfreeze_shared_session_input(&mut self, ctx: &mut ViewContext<Self>) {
+        if !matches!(
+            self.model.lock().shared_session_status(),
+            SharedSessionStatus::ActiveViewer { .. } | SharedSessionStatus::ActiveSharer
+        ) {
+            return;
+        }
+
+        self.editor.update(ctx, |editor, ctx| {
+            if let SharedSessionStatus::ActiveViewer { role } =
+                self.model.lock().shared_session_status()
+            {
+                editor.set_interaction_state(role.into(), ctx);
+                editor.exit_ephemeral_loading_state(ctx);
+            }
+
+            let appearance: &Appearance = Appearance::as_ref(ctx);
+            editor.set_text_colors(TextColors::from_appearance(appearance), ctx);
+        });
+    }
+
     pub fn try_execute_command(&mut self, command: &str, ctx: &mut ViewContext<Self>) -> bool {
         self.try_execute_command_with_options(command, false, ctx)
     }

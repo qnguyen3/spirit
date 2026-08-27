@@ -464,6 +464,12 @@ impl Input {
                     entrypoint: CodeReviewPaneEntrypoint::SlashCommand,
                 });
             }
+            SlashCommandKind::CreateDockerSandbox => {
+                if !FeatureFlag::LocalDockerSandbox.is_enabled() {
+                    return false;
+                }
+                ctx.dispatch_typed_action(&WorkspaceAction::AddDockerSandboxTab);
+            }
             SlashCommandKind::OpenSettingsFile => {
                 if !FeatureFlag::SettingsFile.is_enabled() || !cfg!(feature = "local_fs") {
                     return false;

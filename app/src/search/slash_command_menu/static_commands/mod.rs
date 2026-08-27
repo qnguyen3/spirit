@@ -52,6 +52,7 @@ bitflags! {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SlashCommandKind {
     Edit,
+    CreateDockerSandbox,
     RenameTab,
     SetTabColor,
     OpenCodeReview,

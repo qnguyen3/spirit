@@ -628,3 +628,64 @@ fn test_session_sharing_context_menu_copy_link_enabled_when_session_link_availab
         });
     });
 }
+
+#[test]
+fn test_on_session_share_ended_makes_viewer_input_uneditable() {
+    App::test((), |mut app| async move {
+        let terminal = terminal_view_for_viewer(&mut app);
+
+        terminal.update(&mut app, |view, ctx| {
+            view.model
+                .lock()
+                .set_shared_session_status(SharedSessionStatus::ActiveViewer {
+                    role: Default::default(),
+                });
+            view.input().update(ctx, |input, ctx| {
+                input.editor().update(ctx, |editor, ctx| {
+                    editor.set_interaction_state(InteractionState::Editable, ctx);
+                });
+            });
+        });
+
+        terminal.update(&mut app, |view, ctx| {
+            view.on_session_share_ended(ctx);
+        });
+
+        terminal.read(&app, |view, ctx| {
+            let state = view
+                .input()
+                .as_ref(ctx)
+                .editor()
+                .as_ref(ctx)
+                .interaction_state(ctx);
+            assert_eq!(state, InteractionState::Selectable);
+        });
+    });
+}
+
+#[test]
+fn test_on_session_share_ended_keeps_sharer_input_editable() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        terminal.update(&mut app, |view, ctx| {
+            view.input().update(ctx, |input, ctx| {
+                input.editor().update(ctx, |editor, ctx| {
+                    editor.set_interaction_state(InteractionState::Editable, ctx);
+                });
+            });
+            view.on_session_share_ended(ctx);
+        });
+
+        terminal.read(&app, |view, ctx| {
+            let state = view
+                .input()
+                .as_ref(ctx)
+                .editor()
+                .as_ref(ctx)
+                .interaction_state(ctx);
+            assert_eq!(state, InteractionState::Editable);
+        });
+    });
+}
