@@ -82,14 +82,11 @@ use crate::code::local_code_editor::{
 };
 use crate::code::view::PendingSaveIntent;
 use crate::code_review::DiffSetScope;
+use crate::code_review::agent_handoff::{AgentReviewCommentBatch, CurrentHead, DiffBase, DiffSetHunk};
 use crate::code_review::comments::{
     AttachedReviewCommentTarget, CommentId, ReviewCommentBatch, ReviewCommentBatchEvent,
 };
 use crate::code_review::context::convert_file_diffs_to_diffset_hunks;
-#[cfg(feature = "local_fs")]
-use crate::code_review::context::{
-    create_attachment_reference_and_key, register_diffset_attachment,
-};
 use crate::code_review::diff_selector::{DiffSelector, DiffSelectorEvent, DiffTarget};
 use crate::code_review::diff_state::{
     DiffHunk, DiffLineType, DiffMode, DiffState, DiffStateModel, DiffStateModelEvent, DiffStats,
@@ -112,17 +109,16 @@ use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields};
 use crate::pane_group::PaneId;
 use crate::pane_group::focus_state::{PaneFocusHandle, PaneGroupFocusEvent};
 use crate::pane_group::pane::{BackingView, PaneEvent, view};
+#[cfg(feature = "local_fs")]
+use crate::persisted_workspace::{LspTask, PersistedWorkspace, PersistedWorkspaceEvent};
 use crate::quit_warning::UnsavedStateSummary;
 use crate::send_telemetry_from_ctx;
 #[cfg(feature = "local_fs")]
 use crate::server::telemetry::CodePanelsFileOpenEntrypoint;
 use crate::settings::CodeSettings;
 use crate::settings_view::SettingsSection;
-use crate::terminal::cli_agent::{
-    build_selection_line_range_prompt, build_selection_substring_prompt,
-};
 use crate::terminal::input::MenuPositioning;
-use crate::terminal::view::{CliAgentRouting, InitProjectModel, TerminalAction, TerminalView};
+use crate::terminal::view::{CliAgentRouting, TerminalAction, TerminalView};
 use crate::themes::theme::WarpTheme;
 use crate::ui_components::blended_colors::{neutral_2, neutral_3};
 use crate::ui_components::buttons::icon_button_with_color;
@@ -793,7 +789,6 @@ impl CodeReviewView {
         ctx: &mut ViewContext<Self>,
     ) {
         match event {
-            CodeFooterViewEvent::RunTabConfigSkill { .. } => {}
             CodeFooterViewEvent::RestartAllServers { servers } => {
                 for server in servers {
                     server.update(ctx, |server, ctx| {
@@ -1367,7 +1362,7 @@ impl CodeReviewView {
     }
 
     pub fn debug_review_comment_state(&self, ctx: &AppContext) -> CodeReviewCommentDebugState {
-        let comment_list = self.comment_list_view.as_ref(ctx).debug_state(ctx);
+        let comment_list = self.comment_list_view.as_ref(ctx).debug_state();
 
         CodeReviewCommentDebugState {
             repo_path: self.repo_path().cloned(),
@@ -7186,7 +7181,7 @@ impl TypedActionView for CodeReviewView {
                 ctx.notify();
             }
             CodeReviewAction::SubmitReviewComments => {
-                if self.comment_list_view.as_ref(ctx).can_send(ctx) {
+                if self.comment_list_view.as_ref(ctx).can_send() {
                     self.handle_submit_review_with_comments(ctx);
                     ctx.notify();
                 }

@@ -1,10 +1,7 @@
 mod element;
-mod figma_utils;
 mod model;
 mod movement;
 mod snapshot;
-#[cfg(feature = "voice_input")]
-mod voice;
 
 use core::f32;
 use std::borrow::Cow;
@@ -12,19 +9,13 @@ use std::cmp::{self, Ordering};
 use std::collections::HashMap;
 use std::fmt;
 use std::ops::Range;
-use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
-use async_fs;
-use base64::Engine as _;
-use base64::engine::general_purpose;
 use element::CommandXRayMouseStateHandle;
-use figma_utils::is_figma_png;
 use itertools::{Either, Itertools};
-use mime_guess::from_path;
 use model::{
     Anchor, AnchorBias, Bias, DisplayMap, DrawableSelection, EditorModel, EditorModelEvent, Edits,
     LocalPendingSelection, LocalSelection, MarkedTextState, MovementResult, SelectionMode,
@@ -50,32 +41,28 @@ use vim::{
 };
 use warp_completer::completer::Description;
 use warp_core::semantic_selection::SemanticSelection;
-use warp_core::{safe_error, send_telemetry_from_ctx};
 use warp_editor::editor::NavigationKey;
 use warp_util::path::ShellFamily;
 use warp_util::user_input::UserInput;
 use warpui::accessibility::{AccessibilityContent, ActionAccessibilityContent, WarpA11yRole};
 use warpui::actions::StandardAction;
-use warpui::r#async::{SpawnedFutureHandle, Timer};
+use warpui::r#async::Timer;
 use warpui::clipboard::ClipboardContent;
 use warpui::elements::{
-    ChildView, Container, CornerRadius, CrossAxisAlignment, DEFAULT_UI_LINE_HEIGHT_RATIO, Flex,
-    Hoverable, MainAxisSize, MouseStateHandle, ParentElement, Radius, Shrinkable,
+    CornerRadius, DEFAULT_UI_LINE_HEIGHT_RATIO, Hoverable, MouseStateHandle, ParentElement, Radius,
 };
 use warpui::fonts::{Cache as FontCache, FamilyId, Properties, Weight};
 use warpui::keymap::{EditableBinding, FixedBinding, Keystroke, PerPlatformKeystroke};
-use warpui::platform::keyboard::KeyCode;
-use warpui::platform::{Cursor, FilePickerConfiguration, OperatingSystem};
+use warpui::platform::{Cursor, OperatingSystem};
 use warpui::text::TextBuffer;
 use warpui::text::word_boundaries::WordBoundariesPolicy;
 use warpui::text_layout::TextStyle;
-use warpui::ui_components::button::ButtonTooltipPosition;
-use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
+use warpui::ui_components::components::{UiComponent, UiComponentStyles};
 use warpui::windowing::WindowManager;
 use warpui::{
     AppContext, BlurContext, CursorInfo, Element, Entity, EntityId, FocusContext, ModelAsRef,
     ModelContext, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
-    WindowId, elements, windowing,
+    WindowId, windowing,
 };
 /// The editor interfaces that we publicly expose to consumers.
 /// This should be a very limited set; if you need to add something here,
@@ -92,53 +79,30 @@ pub use {
 use self::model::{LocalSelections, Selection, UpdateBufferOption};
 use super::Point;
 use super::soft_wrap::{ClampDirection, DisplayPointAndClampDirection};
-use crate::BlocklistAIHistoryModel;
 use crate::appearance::Appearance;
 use crate::channel::{Channel, ChannelState};
 use crate::editor::RangeExt;
 use crate::editor::accept_autosuggestion_keybinding_view::AcceptAutosuggestionKeybinding;
 use crate::editor::autosuggestion_ignore_view::{AutosuggestionIgnore, AutosuggestionIgnoreEvent};
 use crate::features::FeatureFlag;
-use crate::search::ai_context_menu::mixer::AIContextMenuSearchableAction;
-use crate::search::ai_context_menu::view::{
-    AIContextMenu, AIContextMenuCategory, AIContextMenuEvent,
-};
-use crate::server::telemetry::TelemetryEvent;
-#[cfg(feature = "voice_input")]
-use crate::settings::AISettingsChangedEvent;
 use crate::settings::{
     AppEditorSettings, AppEditorSettingsChangedEvent, CursorBlink, CursorDisplayType,
-    InputSettings, SelectionSettings,
+    SelectionSettings,
 };
 use crate::settings_view::flags;
-use crate::suggestions::ignored_suggestions_model::{IgnoredSuggestionsModel, SuggestionType};
 use crate::terminal::grid_size_util::grid_cell_dimensions;
-use crate::terminal::model::block::BlockId;
 use crate::themes::theme::Fill;
 use crate::ui_components::avatar::{Avatar, AvatarContent};
-use crate::ui_components::buttons::icon_button;
-use crate::ui_components::icons;
 use crate::util::bindings::{CustomAction, cmd_or_ctrl_shift, keybinding_name_to_keystroke};
 use crate::util::clipboard::clipboard_content_with_escaped_paths;
 use crate::util::color::{ContrastingColor, MinimumAllowedContrast};
-use crate::util::image::{MAX_IMAGE_COUNT_FOR_QUERY, MAX_IMAGE_SIZE_BYTES, resize_image};
 use crate::util::merge_ranges;
-use crate::view_components::DismissibleToast;
-#[cfg(feature = "voice_input")]
-use crate::view_components::FeaturePopup;
 use crate::vim_registers::{RegisterContent, VimRegisters};
-use crate::workspace::{ToastStack, Workspace};
 
 const CURSOR_BLINK_INTERVAL: Duration = Duration::from_millis(500);
 const DEFAULT_TAB_SIZE: usize = 4;
 
 pub const ACCEPT_AUTOSUGGESTION_KEYBINDING_NAME: &str = "editor_view:insert_autosuggestion";
-pub const VOICE_LIMIT_HIT_TOAST_TEXT: &str = "You have hit the limit for Voice requests. Your limit will be refreshed as a part of your next cycle.";
-pub const VOICE_ERROR_TOAST_TEXT: &str = "An error occurred while processing your voice input.";
-
-pub const MAX_IMAGES_PER_CONVERSATION: usize = 200;
-
-use warpui::clipboard_utils::CLIPBOARD_IMAGE_MIME_TYPES;
 
 #[derive(Clone, Copy)]
 pub enum AutosuggestionLocation {
@@ -151,20 +115,6 @@ pub enum AutosuggestionType {
     Command {
         was_intelligent_autosuggestion: bool,
     },
-    AgentModeQuery {
-        context_block_ids: Vec<BlockId>,
-        was_intelligent_autosuggestion: bool,
-    },
-}
-
-impl AutosuggestionType {
-    pub fn matches_input_type(&self, input_type: InputType) -> bool {
-        if input_type.is_ai() {
-            matches!(self, AutosuggestionType::AgentModeQuery { .. })
-        } else {
-            matches!(self, AutosuggestionType::Command { .. })
-        }
-    }
 }
 
 impl fmt::Display for AutosuggestionLocation {
@@ -1088,18 +1038,6 @@ pub enum EditorAction {
     ShowCharacterPalette,
     InsertAutosuggestion,
     EmacsBinding,
-    #[cfg(feature = "voice_input")]
-    ToggleVoiceInput(voice_input::VoiceInputToggledFrom),
-    AttachFiles,
-    SetAIContextMenuOpen(bool),
-    ReadAndProcessImagesAsync {
-        num_images_user_attached: usize,
-        file_paths: Vec<String>,
-    },
-    /// Stores non-image file paths picked via the attach-file button into the pending files state.
-    ProcessNonImageFiles {
-        file_paths: Vec<String>,
-    },
 }
 
 impl EditorAction {
@@ -1407,30 +1345,7 @@ pub enum BaselinePositionComputationMethod {
     Default,
 }
 
-// Re-export voice transcription types for backwards compatibility
 use warp_errors::report_error;
-
-pub use crate::voice::transcriber::{Transcriber, VoiceTranscriber};
-
-/// Similar to [`ImageContext`], but contains un-processed and un-resized image data.
-#[derive(Clone)]
-pub struct AttachedImage {
-    pub data: Vec<u8>,
-    pub mime_type: String,
-    pub file_name: String,
-}
-
-impl fmt::Debug for AttachedImage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // We log dispatching typed actions (with `AttachedImage` as an argument) and we don't want
-        // to log any UGC in prod.
-        f.debug_struct("AttachedImage")
-            .field("data", &"REDACTED_B64_IMAGE_DATA_UGC")
-            .field("mime_type", &self.mime_type)
-            .field("file_name", &"REDACTED_FILE_NAME_UGC")
-            .finish()
-    }
-}
 
 /// Interface for picking different options for the editor's behavior.
 pub struct EditorOptions {
@@ -1462,14 +1377,11 @@ pub struct EditorOptions {
     /// If true, the user's [`CursorDisplayType`] will be respected.
     pub allow_user_cursor_preference: bool,
     pub convert_newline_to_space: bool,
-    pub include_ai_context_menu: bool,
     /// If true, this editor will delegate handling of paste events to its parent instead of
     /// inserting clipboard contents directly.
     pub delegate_paste_handling: bool,
     /// Optional hook that transforms each dropped path before it's escaped and inserted into
-    /// the buffer. Invoked for non-image paths only; image paths are forwarded via
-    /// [`Event::DroppedImageFiles`] unchanged so the host can still read them from the
-    /// filesystem.
+    /// the buffer.
     pub drag_drop_path_transformer: Option<PathTransformerFn>,
     /// If true, this is treated as a password field:
     /// * Text is rendered as dots instead of the actual characters
@@ -1505,7 +1417,6 @@ impl Default for EditorOptions {
             middle_click_paste: true,
             allow_user_cursor_preference: false,
             convert_newline_to_space: false,
-            include_ai_context_menu: false,
             delegate_paste_handling: false,
             drag_drop_path_transformer: None,
             is_password: false,
@@ -1540,7 +1451,6 @@ impl From<SingleLineEditorOptions> for EditorOptions {
             middle_click_paste: options.middle_click_paste,
             allow_user_cursor_preference: options.allow_user_cursor_preference,
             convert_newline_to_space: options.convert_newline_to_space,
-            include_ai_context_menu: false,
             delegate_paste_handling: false,
             drag_drop_path_transformer: None,
             is_password: options.is_password,
@@ -1619,149 +1529,6 @@ pub fn default_cursor_colors(ctx: &AppContext) -> CursorColors {
     }
 }
 
-#[derive(Debug)]
-pub enum VoiceTranscriptionOptions {
-    /// Voice transcription is enabled, possibly showing a microphone button.
-    Enabled { show_button: bool },
-
-    /// Voice transcription is disabled.
-    Disabled,
-}
-
-impl VoiceTranscriptionOptions {
-    pub fn is_enabled(&self) -> bool {
-        matches!(self, VoiceTranscriptionOptions::Enabled { .. })
-    }
-
-    pub fn should_show_button(&self) -> bool {
-        matches!(
-            self,
-            VoiceTranscriptionOptions::Enabled { show_button: true }
-        )
-    }
-}
-
-#[derive(Debug)]
-pub enum ImageContextOptions {
-    /// Attaching image context is enabled, possibly showing an image button if LLM supports vision.
-    Enabled {
-        unsupported_model: bool,
-        is_processing_attached_images: bool,
-        num_images_attached: usize,
-        num_images_in_conversation: usize,
-    },
-
-    /// Attaching image context is disabled.
-    Disabled,
-}
-
-impl ImageContextOptions {
-    pub fn is_enabled(&self) -> bool {
-        match self {
-            ImageContextOptions::Enabled {
-                unsupported_model,
-                is_processing_attached_images,
-                num_images_attached,
-                num_images_in_conversation,
-            } => {
-                if *unsupported_model {
-                    return false;
-                }
-
-                if *is_processing_attached_images {
-                    return false;
-                }
-
-                if *num_images_attached >= MAX_IMAGE_COUNT_FOR_QUERY {
-                    return false;
-                }
-
-                let total_images = *num_images_attached + *num_images_in_conversation;
-                if total_images >= MAX_IMAGES_PER_CONVERSATION {
-                    return false;
-                }
-
-                true
-            }
-            ImageContextOptions::Disabled => false,
-        }
-    }
-
-    pub fn should_show_button(&self) -> bool {
-        matches!(self, ImageContextOptions::Enabled { .. })
-    }
-
-    pub fn tooltip_text(&self) -> String {
-        if let ImageContextOptions::Enabled {
-            unsupported_model,
-            is_processing_attached_images,
-            num_images_attached,
-            num_images_in_conversation,
-        } = self
-        {
-            if *unsupported_model {
-                return "Image attachment isn't supported by this model".into();
-            }
-
-            if *is_processing_attached_images {
-                return "Loading...".into();
-            }
-
-            if *num_images_attached >= MAX_IMAGE_COUNT_FOR_QUERY {
-                return format!(
-                    "Image attachment is disabled — limit is {MAX_IMAGE_COUNT_FOR_QUERY} per query"
-                );
-            }
-
-            let total_images = *num_images_attached + *num_images_in_conversation;
-            if total_images >= MAX_IMAGES_PER_CONVERSATION {
-                return format!(
-                    "Image attachment is disabled — limit is {MAX_IMAGES_PER_CONVERSATION} per conversation"
-                );
-            }
-        }
-
-        "Attach images".into()
-    }
-
-    pub fn num_images_attached(&self) -> usize {
-        match self {
-            ImageContextOptions::Enabled {
-                num_images_attached,
-                ..
-            } => *num_images_attached,
-            _ => 0,
-        }
-    }
-
-    pub fn num_images_in_conversation(&self) -> usize {
-        match self {
-            ImageContextOptions::Enabled {
-                num_images_in_conversation,
-                ..
-            } => *num_images_in_conversation,
-            _ => 0,
-        }
-    }
-
-    pub fn is_unsupported_model(&self) -> bool {
-        matches!(
-            self,
-            ImageContextOptions::Enabled {
-                unsupported_model: true,
-                ..
-            }
-        )
-    }
-}
-
-pub struct AIContextMenuState {
-    ai_context_menu: ViewHandle<AIContextMenu>,
-
-    /// The mouse handle for the at context menu icon.
-    at_context_menu_button_mouse_handle: MouseStateHandle,
-}
-
 pub struct EditorView {
     view_id: EntityId,
     editor_model: ModelHandle<EditorModel>,
@@ -1797,7 +1564,6 @@ pub struct EditorView {
     cursor_display_override: Option<CursorDisplayType>,
     window_id: WindowId,
     autosuggestion_state: Option<Arc<AutosuggestionState>>,
-    next_command_model: Option<ModelHandle<NextCommandModel>>,
 
     /// The height of the editor at the last render.
     /// This is needed because autosuggestions soft wrap and can increase the height of the editor.
@@ -1869,53 +1635,12 @@ pub struct EditorView {
     show_autosuggestion_keybinding_hint: bool,
     show_autosuggestion_ignore_button: bool,
 
-    /// The state of voice input for this editor.
-    /// Must only be mutated through [`Self::set_voice_input_state`], which keeps
-    /// the editor's [`InteractionState`] in sync (locking input during voice).
-    #[cfg(feature = "voice_input")]
-    voice_input_state: voice::VoiceInputState,
-
-    /// The interaction state before voice input was activated, to restore when voice input ends.
-    #[cfg(feature = "voice_input")]
-    interaction_state_before_voice: Option<InteractionState>,
-
-    /// Options for voice transcription.
-    #[cfg(feature = "voice_input")]
-    voice_transcription_options: VoiceTranscriptionOptions,
-
-    /// The mouse handle for the voice transcription icon.
-    #[cfg(feature = "voice_input")]
-    voice_transcription_button_mouse_handle: MouseStateHandle,
-
-    /// The new feature popup for voice transcription.
-    #[cfg(feature = "voice_input")]
-    voice_new_feature_popup: ViewHandle<FeaturePopup>,
-
-    context_model: Option<ModelHandle<BlocklistAIContextModel>>,
-
-    /// Options for attaching image context.
-    /// Made public to allow terminal input to access image attachment state and limits.
-    pub image_context_options: ImageContextOptions,
-
-    /// The mouse handle for the image context icon.
-    image_context_button_mouse_handle: MouseStateHandle,
-
-    /// Because the AIContextMenu also contains a text editor,
-    /// we need to avoid infinite recursion and selectively
-    /// allow the creation of AIContextMenuState.
-    pub ai_context_menu_state: Option<AIContextMenuState>,
-
-    /// Whether this editor is in AI input mode.
-    is_ai_input: bool,
-
     /// Whether this editor should delegate handling of paste events to its parent.
     delegate_paste_handling: bool,
 
     /// Optional hook that transforms each dropped path before it is escaped and inserted into
     /// the buffer. See [`EditorOptions::drag_drop_path_transformer`].
     drag_drop_path_transformer: Option<PathTransformerFn>,
-
-    process_attached_images_future_handle: Option<SpawnedFutureHandle>,
 
     is_password: bool,
 
@@ -2953,9 +2678,6 @@ impl EditorView {
 
             baseline_position_computation_method: self.baseline_position_computation_method.clone(),
 
-            #[cfg(feature = "voice_input")]
-            voice_input_state: self.voice_input_state.clone(),
-
             editor_height_shrink_delay: self.editor_height_shrink_delay.clone(),
         }
     }
@@ -3005,23 +2727,6 @@ impl EditorView {
         Self::new_internal("", options, ctx)
     }
 
-    pub fn with_next_command_model(
-        self,
-        next_command_model: ModelHandle<NextCommandModel>,
-    ) -> Self {
-        Self {
-            next_command_model: Some(next_command_model),
-            ..self
-        }
-    }
-
-    pub fn with_context_model(self, context_model: ModelHandle<BlocklistAIContextModel>) -> Self {
-        Self {
-            context_model: Some(context_model),
-            ..self
-        }
-    }
-
     /// Creates an [`EditorView`] with the initial text
     /// equal to `base_text` and with behaviour specified by `options`.
     #[cfg(test)]
@@ -3048,28 +2753,6 @@ impl EditorView {
                 }
             },
         );
-
-        #[cfg(feature = "voice_input")]
-        {
-            use crate::workspaces::user_workspaces::UserWorkspaces;
-
-            ctx.subscribe_to_model(&UserWorkspaces::handle(ctx), |me, _handle, _event, ctx| {
-                me.update_voice_transcription_options(Self::voice_options(ctx), ctx);
-                // Re-render if teams-related data changed that may affect whether features such as voice input are enabled.
-                ctx.notify();
-            });
-
-            ctx.subscribe_to_model(
-                &AISettings::handle(ctx),
-                |editor, _, event, ctx| match event {
-                    AISettingsChangedEvent::VoiceInputEnabled { .. } => {
-                        editor.update_voice_transcription_options(Self::voice_options(ctx), ctx)
-                    }
-                    AISettingsChangedEvent::VoiceInputToggleKey { .. } => ctx.notify(),
-                    _ => {}
-                },
-            );
-        }
 
         let editor_model = ctx.add_model(|ctx| {
             EditorModel::new(
@@ -3112,75 +2795,6 @@ impl EditorView {
             },
         );
 
-        let ai_context_menu_state = if options.include_ai_context_menu {
-            let ai_context_menu = ctx.add_typed_action_view(AIContextMenu::new);
-            ctx.subscribe_to_view(
-                &ai_context_menu,
-                |me, _, event: &AIContextMenuEvent, ctx| {
-                    let is_udi_enabled =
-                        InputSettings::as_ref(ctx).is_universal_developer_input_enabled(ctx);
-                    let current_input_mode = if me.is_ai_input {
-                        InputType::AI
-                    } else {
-                        InputType::Shell
-                    };
-                    match event {
-                        AIContextMenuEvent::Close {
-                            item_count,
-                            query_length,
-                        } => {
-                            send_telemetry_from_ctx!(
-                                TelemetryEvent::AtMenuInteracted {
-                                    action: "cancelled".to_string(),
-                                    item_count: *item_count,
-                                    query_length: Some(*query_length),
-                                    is_udi_enabled,
-                                    current_input_mode,
-                                },
-                                ctx
-                            );
-
-                            ctx.emit(Event::SetAIContextMenuOpen(false));
-                            ctx.focus_self();
-                            ctx.notify();
-                        }
-                        AIContextMenuEvent::ResultAccepted {
-                            action,
-                            item_count,
-                            query_length,
-                        } => {
-                            send_telemetry_from_ctx!(
-                                TelemetryEvent::AtMenuInteracted {
-                                    action: "item_selected".to_string(),
-                                    item_count: *item_count,
-                                    query_length: Some(*query_length),
-                                    is_udi_enabled,
-                                    current_input_mode,
-                                },
-                                ctx
-                            );
-
-                            ctx.emit(Event::AcceptAIContextMenuItem(action.clone()));
-                            ctx.focus_self();
-                            ctx.notify();
-                        }
-                        AIContextMenuEvent::CategorySelected { category } => {
-                            ctx.emit(Event::SelectAIContextMenuCategory(*category));
-                            ctx.focus_self();
-                            ctx.notify();
-                        }
-                    }
-                },
-            );
-
-            Some(AIContextMenuState {
-                at_context_menu_button_mouse_handle: Default::default(),
-                ai_context_menu,
-            })
-        } else {
-            None
-        };
-
         Self {
             view_id: ctx.view_id(),
             editor_model,
@@ -3204,7 +2818,6 @@ impl EditorView {
             autocomplete_symbols_setting: *editor_settings_handle.as_ref(ctx).autocomplete_symbols,
             cursor_display_override,
             autosuggestion_state: None,
-            next_command_model: None,
             editor_height_shrink_delay: Arc::new(Mutex::new(EditorHeightShrinkDelay {
                 editor_height_before_shrink: 0.,
                 editor_height_shrink_start: None,
@@ -3235,55 +2848,12 @@ impl EditorView {
             show_autosuggestion_ignore_button: *editor_settings_handle
                 .as_ref(ctx)
                 .show_autosuggestion_ignore_button,
-            #[cfg(feature = "voice_input")]
-            voice_transcription_button_mouse_handle: Default::default(),
-            #[cfg(feature = "voice_input")]
-            voice_input_state: Default::default(),
-            #[cfg(feature = "voice_input")]
-            interaction_state_before_voice: None,
-            #[cfg(feature = "voice_input")]
-            voice_transcription_options: Self::voice_options(ctx),
-            #[cfg(feature = "voice_input")]
-            voice_new_feature_popup: Self::create_voice_new_feature_popup(ctx),
-            is_ai_input: false,
             convert_newline_to_space: options.convert_newline_to_space,
-            context_model: None,
-            image_context_options: ImageContextOptions::Disabled,
-            image_context_button_mouse_handle: Default::default(),
-            ai_context_menu_state,
             delegate_paste_handling: options.delegate_paste_handling,
             drag_drop_path_transformer: options.drag_drop_path_transformer,
-            process_attached_images_future_handle: None,
             is_password: options.is_password,
             keymap_context_modifier: options.keymap_context_modifier,
         }
-    }
-
-    pub fn set_is_ai_input(&mut self, is_ai_input: bool, ctx: &mut ViewContext<Self>) {
-        self.is_ai_input = is_ai_input;
-        if !self.is_ai_input && !FeatureFlag::AtMenuOutsideOfAIMode.is_enabled() {
-            ctx.emit(Event::SetAIContextMenuOpen(false));
-        }
-        ctx.notify();
-    }
-
-    pub fn update_image_context_options(
-        &mut self,
-        options: ImageContextOptions,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        log::debug!("update_image_context_options: {options:?}");
-        self.image_context_options = options;
-        ctx.notify();
-    }
-
-    pub fn abort_attached_images_future_handle(&mut self, ctx: &mut ViewContext<Self>) {
-        if let Some(process_attached_images_future_handle) =
-            self.process_attached_images_future_handle.take()
-        {
-            process_attached_images_future_handle.abort();
-        }
-        ctx.emit(Event::ProcessingAttachedImages(false));
     }
 
     /// The replica ID of the collaborative buffer.
@@ -3501,14 +3071,6 @@ impl EditorView {
         buffer.to_point(char_offset)
     }
 
-    fn next_command_state<'a, A: ModelAsRef>(&self, ctx: &'a A) -> &'a NextCommandSuggestionState {
-        self.next_command_model
-            .as_ref()
-            .map_or(&NextCommandSuggestionState::None, |model| {
-                model.as_ref(ctx).get_state()
-            })
-    }
-
     /// Set an autosuggestion that is rendered natively within the editor as "ghosted" text. This
     /// autosuggestion will continue to be displayed as long as the text in the editor stays the
     /// same or a user inserts a prefix of autosuggestion text.
@@ -3538,54 +3100,6 @@ impl EditorView {
             });
 
             ctx.notify();
-        }
-    }
-
-    /// Clears any existing autosuggestions (intelligent or not) that weren't for the current input_type.
-    /// If there's an empty buffer, populates the input with an intelligent autosuggestion for the input_type.
-    pub fn maybe_populate_intelligent_autosuggestion(
-        &mut self,
-        input_type: InputType,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        // If our existing autosuggestion is not meant for the current input type, clear it.
-        if self
-            .autosuggestion_state
-            .as_ref()
-            .is_some_and(|state| !state.autosuggestion_type.matches_input_type(input_type))
-        {
-            self.clear_autosuggestion(ctx);
-        }
-        if input_type.is_ai() {
-            // The server does not return AI query suggestions currently.
-            // If we switched to AI input, clear the next command state.
-            // This way when switching back to shell input, there should be no next command suggestion populated.
-            self.clear_next_command_state(ctx);
-        } else if let Some(command) = self
-            .next_command_state(ctx)
-            .command_suggestion()
-            .map(|command| command.to_owned())
-        {
-            // Check if this suggestion is ignored before applying it
-            let is_ignored = IgnoredSuggestionsModel::as_ref(ctx)
-                .is_ignored(&command, SuggestionType::ShellCommand);
-
-            if !is_ignored {
-                // If input type is shell, populate with suggested shell command.
-                // The suggestion must contain the current buffer text as a prefix.
-                let Some(autosuggestion) = command.strip_prefix(self.buffer_text(ctx).as_str())
-                else {
-                    return;
-                };
-                self.set_autosuggestion(
-                    autosuggestion,
-                    AutosuggestionLocation::EndOfBuffer,
-                    AutosuggestionType::Command {
-                        was_intelligent_autosuggestion: true,
-                    },
-                    ctx,
-                );
-            }
         }
     }
 
@@ -3642,7 +3156,6 @@ impl EditorView {
     }
 
     /// Clears the current autosuggestion (ghosted text).
-    /// Next command state is not cleared so it may be used to populate an autosuggestion again.
     pub fn clear_autosuggestion(&mut self, ctx: &mut ViewContext<Self>) {
         self.autosuggestion_state.take();
 
@@ -3651,16 +3164,6 @@ impl EditorView {
             view.set_current_autosuggestion(None);
         });
 
-        ctx.notify();
-    }
-
-    /// Clears any next command state. Autosuggestion (ghosted text) is not cleared.
-    fn clear_next_command_state(&mut self, ctx: &mut ViewContext<Self>) {
-        if let Some(next_command_model) = &self.next_command_model {
-            next_command_model.update(ctx, |model, _| {
-                model.clear_state();
-            });
-        }
         ctx.notify();
     }
 
@@ -3750,14 +3253,6 @@ impl EditorView {
         interaction_state: InteractionState,
         ctx: &mut ViewContext<Self>,
     ) {
-        #[cfg(feature = "voice_input")]
-        if self.is_voice_input_active() {
-            // Voice has locked the editor to Selectable. Stash the requested
-            // state so it's restored correctly when voice ends.
-            self.interaction_state_before_voice = Some(interaction_state);
-            return;
-        }
-
         self.editor_model.update(ctx, |model, _| {
             model.set_interaction_state(interaction_state);
         });
@@ -4383,11 +3878,6 @@ impl EditorView {
     /// Clears editor buffer if the vim mode allows for it, but does not
     /// clear the undo/redo stack.
     pub fn handle_ctrl_c(&mut self, ctx: &mut ViewContext<Self>) {
-        #[cfg(feature = "voice_input")]
-        {
-            self.stop_voice_input(true, ctx);
-        }
-
         #[cfg(windows)]
         // On Windows, if there is selected text, users expect ctrl-c to copy.
         if !self.selected_text(ctx).is_empty() {
@@ -4399,67 +3889,16 @@ impl EditorView {
             return;
         }
 
-        let terminal_view = ctx
-            .windows()
-            .active_window()
-            .and_then(|active_window| {
-                ctx
-                    // Need to get the workspace info since we don't have access to the terminal view
-                    // from the ClearBuffer action.
-                    .views_of_type::<Workspace>(active_window)
-                    .and_then(|views| views.first().cloned())
-            })
-            .and_then(|workspace| {
-                workspace
-                    .as_ref(ctx)
-                    .active_tab_pane_group()
-                    .as_ref(ctx)
-                    .active_session_view(ctx)
-            });
-
-        // If an agent is responding, we don't want ctrl+c to clear the persistent input.
-        let is_agent_responding = terminal_view
-            .as_ref()
-            .and_then(|terminal_view| {
-                BlocklistAIHistoryModel::as_ref(ctx).active_conversation(terminal_view.id())
-            })
-            .is_some_and(|conversation| {
-                conversation.status().is_in_progress() && conversation.exchange_count() > 0
-            });
-
-        // If there is a pending passive ai block, we don't want ctrl+c to clear the buffer.
-        let is_pending_passive_ai_block = terminal_view.is_some_and(|terminal_view| {
-            let terminal_model = terminal_view.as_ref(ctx).model.lock();
-            terminal_model
-                .block_list()
-                .last_non_hidden_ai_block_handle(ctx)
-                .is_some_and(|ai_block| {
-                    let block = ai_block.as_ref(ctx);
-                    // Ctrl+c should dismiss the passive ai block only if the keybindings for the block are not hidden.
-                    block.is_passive_conversation()
-                        && (block.find_undismissed_code_diff(ctx).is_some()
-                            || block.pending_unit_test_suggestion(ctx).is_some_and(
-                                |suggested_prompt| {
-                                    !suggested_prompt.as_ref(ctx).is_keybindings_hidden()
-                                },
-                            ))
-                })
-        });
-
         let mut cleared_buffer_len = 0;
-        if (!self.vim_mode_enabled(ctx)
+        if !self.vim_mode_enabled(ctx)
             || self
                 .vim_mode(ctx)
-                .is_some_and(|vim_mode| matches![vim_mode, VimMode::Normal | VimMode::Insert]))
-            && !is_agent_responding
-            && !is_pending_passive_ai_block
+                .is_some_and(|vim_mode| matches![vim_mode, VimMode::Normal | VimMode::Insert])
         {
             cleared_buffer_len = self.buffer_size(ctx).as_usize();
             self.clear_buffer(ctx);
         }
-        if !is_agent_responding || !is_pending_passive_ai_block {
-            self.vim_interrupt(ctx);
-        }
+        self.vim_interrupt(ctx);
 
         ctx.emit(Event::CtrlC { cleared_buffer_len });
     }
@@ -5026,415 +4465,6 @@ impl EditorView {
                 }
             }),
         );
-    }
-
-    fn voice_input_toggle_key_code(&self, ctx: &AppContext) -> Option<KeyCode> {
-        let ai_settings_handle = &AISettings::handle(ctx);
-        ai_settings_handle
-            .as_ref(ctx)
-            .voice_input_toggle_key
-            .value()
-            .to_key_code()
-    }
-
-    pub fn attach_files(&mut self, ctx: &mut ViewContext<Self>) {
-        let window_id = ctx.window_id();
-        let view_id = self.view_id;
-
-        let file_picker_config = FilePickerConfiguration::new().allow_multi_select();
-
-        let is_unsupported_model = self.image_context_options.is_unsupported_model();
-        let num_images_attached = self.image_context_options.num_images_attached();
-        let num_images_in_conversation = self.image_context_options.num_images_in_conversation();
-
-        ctx.open_file_picker(
-            move |result, ctx| {
-                match result {
-                    Ok(paths) => {
-                        // Split picked paths into image and non-image files by MIME type.
-                        let mut image_paths = Vec::new();
-                        let mut non_image_paths = Vec::new();
-                        for path in &paths {
-                            let mime = mime_guess::from_path(path)
-                                .first_or_octet_stream()
-                                .to_string();
-                            if CLIPBOARD_IMAGE_MIME_TYPES.contains(&mime.as_str()) {
-                                image_paths.push(path.clone());
-                            } else {
-                                non_image_paths.push(path.clone());
-                            }
-                        }
-
-                        // If the model doesn't support vision, show toast and clear images.
-                        if !image_paths.is_empty() && is_unsupported_model {
-                            ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                                toast_stack.add_ephemeral_toast(
-                                    DismissibleToast::error(
-                                        "The selected model does not support images as context."
-                                            .to_string(),
-                                    ),
-                                    window_id,
-                                    ctx,
-                                );
-                            });
-                            image_paths.clear();
-                        }
-
-                        // Apply image count limits.
-                        let num_images_user_attached = image_paths.len();
-                        let num_excess_images_by_query_limit = (image_paths.len()
-                            + num_images_attached)
-                            .saturating_sub(MAX_IMAGE_COUNT_FOR_QUERY);
-                        let num_excess_images_by_conversation_limit =
-                            (image_paths.len() + num_images_attached + num_images_in_conversation)
-                                .saturating_sub(MAX_IMAGES_PER_CONVERSATION);
-                        let num_excess_images = num_excess_images_by_query_limit
-                            .max(num_excess_images_by_conversation_limit);
-
-                        if num_excess_images > 0 {
-                            let limit_reason = if num_excess_images
-                                == num_excess_images_by_query_limit
-                            {
-                                format!("limit is {MAX_IMAGE_COUNT_FOR_QUERY} per query")
-                            } else {
-                                format!("limit is {MAX_IMAGES_PER_CONVERSATION} per conversation")
-                            };
-
-                            let message = if num_excess_images == 1 {
-                                format!("1 image wasn't attached - {limit_reason}.")
-                            } else {
-                                format!(
-                                    "{num_excess_images} images weren't attached - {limit_reason}."
-                                )
-                            };
-
-                            ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                                toast_stack.add_persistent_toast(
-                                    DismissibleToast::error(message),
-                                    window_id,
-                                    ctx,
-                                );
-                            });
-                        }
-
-                        // Process image paths (excluding excess).
-                        let image_paths_to_process: Vec<String> =
-                            image_paths[0..(image_paths.len() - num_excess_images)].to_vec();
-
-                        if !image_paths_to_process.is_empty() {
-                            ctx.dispatch_typed_action_for_view(
-                                window_id,
-                                view_id,
-                                &EditorAction::ReadAndProcessImagesAsync {
-                                    num_images_user_attached,
-                                    file_paths: image_paths_to_process,
-                                },
-                            );
-                        }
-
-                        // Process non-image file paths.
-                        if !non_image_paths.is_empty() {
-                            ctx.dispatch_typed_action_for_view(
-                                window_id,
-                                view_id,
-                                &EditorAction::ProcessNonImageFiles {
-                                    file_paths: non_image_paths,
-                                },
-                            );
-                        }
-                    }
-                    Err(err) => {
-                        ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                            toast_stack.add_persistent_toast(
-                                DismissibleToast::error(format!("{err}")),
-                                window_id,
-                                ctx,
-                            );
-                        });
-                    }
-                }
-            },
-            file_picker_config,
-        );
-
-        ctx.notify();
-    }
-
-    /// Reads and processes images asynchronously from file paths.
-    ///
-    /// This function reads image files from the given paths, validates they are supported formats,
-    /// and processes them for AI context attachment via `process_and_attach_images_as_ai_context`.
-    pub fn read_and_process_images_async(
-        &mut self,
-        num_images_user_attached: usize,
-        file_paths: Vec<String>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if !self.image_context_options.is_enabled() {
-            if self.image_context_options.is_unsupported_model() {
-                let window_id = ctx.window_id();
-                ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                    toast_stack.add_ephemeral_toast(
-                        DismissibleToast::error(
-                            "The selected model does not support images as context".to_owned(),
-                        ),
-                        window_id,
-                        ctx,
-                    );
-                });
-            }
-            return;
-        }
-
-        let window_id = ctx.window_id();
-
-        ctx.spawn(
-            async move {
-                let mut images = vec![];
-                let mut num_unsupported_images: usize = 0;
-                let mut num_read_errors: usize = 0;
-
-                for path_str in &file_paths {
-                    match async_fs::read(path_str).await {
-                        Ok(bytes) => {
-                            let path = Path::new(path_str);
-                            let Some(file_name) = path
-                                .file_name()
-                                .and_then(|path| path.to_str())
-                                .map(|path| path.to_string())
-                            else {
-                                continue;
-                            };
-
-                            let mime_type = from_path(path).first_or_octet_stream().to_string();
-
-                            if !CLIPBOARD_IMAGE_MIME_TYPES.contains(&mime_type.as_str()) {
-                                num_unsupported_images += 1;
-                                continue;
-                            }
-
-                            images.push(AttachedImage {
-                                data: bytes,
-                                mime_type,
-                                file_name,
-                            });
-                        }
-                        Err(e) => {
-                            safe_error!(
-                                safe: ("Failed to read file: {e}"),
-                                full: ("Failed to read file {path_str}: {e}")
-                            );
-                            num_read_errors += 1;
-                        }
-                    }
-                }
-
-                (images, num_unsupported_images, num_read_errors)
-            },
-            move |this, (images, num_unsupported_images, num_read_errors), ctx| {
-                if num_unsupported_images > 0 {
-                    let message = if num_unsupported_images == 1 && num_images_user_attached == 1 {
-                        "Image cannot be attached - supported types are PNG, JPG, GIF, WEBP.".into()
-                    } else if num_unsupported_images == 1 {
-                        "1 image wasn't attached - supported types are PNG, JPG, GIF, WEBP.".into()
-                    } else {
-                        format!("{num_unsupported_images} images weren't attached - supported types are PNG, JPG, GIF, WEBP.")
-                    };
-
-                    ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                        toast_stack.add_persistent_toast(
-                            DismissibleToast::error(message),
-                            window_id,
-                            ctx,
-                        );
-                    });
-                }
-
-                if num_read_errors > 0 {
-                    let message = if num_read_errors == 1 && num_images_user_attached == 1 {
-                        "Image cannot be attached - failed to read file.".into()
-                    } else if num_read_errors == 1 {
-                        "1 image wasn't attached - failed to read file.".into()
-                    } else {
-                        format!("{num_read_errors} images weren't attached - failed to read files.")
-                    };
-
-                    ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                        toast_stack.add_persistent_toast(
-                            DismissibleToast::error(message),
-                            window_id,
-                            ctx,
-                        );
-                    });
-                }
-
-                if !images.is_empty() {
-                    this.process_and_attach_images_as_ai_context(num_images_user_attached, images, ctx);
-                }
-            },
-        );
-    }
-
-    /// Processes and attaches images to the AI context model.
-    ///
-    /// This function handles the final step of image attachment after validation,
-    /// updating the context model and UI state accordingly.
-    pub fn process_and_attach_images_as_ai_context(
-        &mut self,
-        num_images_user_attached: usize,
-        pending_images: Vec<AttachedImage>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if !self.image_context_options.is_enabled() {
-            if self.image_context_options.is_unsupported_model() {
-                let window_id = ctx.window_id();
-                ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                    toast_stack.add_ephemeral_toast(
-                        DismissibleToast::error(
-                            "The selected model does not support images as context".to_owned(),
-                        ),
-                        window_id,
-                        ctx,
-                    );
-                });
-            }
-            return;
-        }
-
-        let is_udi_enabled = InputSettings::as_ref(ctx).is_universal_developer_input_enabled(ctx);
-
-        send_telemetry_from_ctx!(
-            TelemetryEvent::AttachedImagesToAgentModeQuery {
-                num_images: pending_images.len(),
-                is_udi_enabled,
-            },
-            ctx
-        );
-
-        self.process_attached_images_future_handle = Some(ctx.spawn(
-            async move {
-                let mut processed_pending_images = vec![];
-                let mut num_oversized_images: usize = 0;
-                let mut num_unprocessed_images: usize = 0;
-
-                for image in pending_images {
-                    let is_figma = is_figma_png(&image.data);
-
-                    let resized_image_bytes = match resize_image(&image.data) {
-                        Ok(resized_image_bytes) => resized_image_bytes,
-                        Err(err) => {
-                            num_unprocessed_images += 1;
-                            log::warn!("Error resizing attached image {err:?}");
-                            continue;
-                        }
-                    };
-
-                    if resized_image_bytes.len() > MAX_IMAGE_SIZE_BYTES {
-                        num_oversized_images += 1;
-                        continue;
-                    }
-
-                    let base64_str = general_purpose::STANDARD.encode(&resized_image_bytes);
-
-                    processed_pending_images.push(ImageContext {
-                        data: base64_str,
-                        mime_type: image.mime_type,
-                        file_name: image.file_name,
-                        is_figma,
-                    });
-                }
-
-                (
-                    num_oversized_images,
-                    num_unprocessed_images,
-                    processed_pending_images,
-                )
-            },
-            move |this, (num_oversized_images, num_unprocessed_images, pending_images), ctx| {
-                // Future was aborted
-                if this.process_attached_images_future_handle.is_none() {
-                    return;
-                }
-
-                let window_id = ctx.window_id();
-
-                if num_oversized_images > 0 {
-                    let message = if num_oversized_images == 1 && num_images_user_attached == 1 {
-                        "Image cannot be attached - file is too large.".into()
-                    } else if num_oversized_images == 1 {
-                        "1 image wasn't attached — file is too large.".into()
-                    } else {
-                        format!(
-                            "{num_oversized_images} images weren't attached — files are too large."
-                        )
-                    };
-
-                    ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                        toast_stack.add_persistent_toast(
-                            DismissibleToast::error(message),
-                            window_id,
-                            ctx,
-                        );
-                    });
-                }
-
-                if num_unprocessed_images > 0 {
-                    let message = if num_unprocessed_images == 1 && num_images_user_attached == 1 {
-                        "Image cannot be attached - error processing.".into()
-                    } else if num_unprocessed_images == 1 {
-                        "1 image wasn't attached - error processing.".into()
-                    } else {
-                        format!(
-                            "{num_unprocessed_images} images weren't attached - error processing."
-                        )
-                    };
-
-                    ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                        toast_stack.add_persistent_toast(
-                            DismissibleToast::error(message),
-                            window_id,
-                            ctx,
-                        );
-                    });
-                }
-
-                if let Some(context_model) = &this.context_model {
-                    context_model.update(ctx, |context_model, ctx| {
-                        context_model.append_pending_images(pending_images, ctx);
-                    });
-                }
-
-                ctx.emit(Event::ProcessingAttachedImages(false));
-            },
-        ));
-
-        ctx.emit(Event::ProcessingAttachedImages(true));
-    }
-
-    /// Stores non-image files selected via the file picker into the pending files context.
-    fn process_non_image_files(&mut self, file_paths: Vec<String>, ctx: &mut ViewContext<Self>) {
-        let attachments: Vec<PendingAttachment> = file_paths
-            .iter()
-            .filter_map(|path_str| {
-                let path = std::path::Path::new(path_str);
-                let file_name = path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .map(|s| s.to_string())?;
-                let mime_type = from_path(path).first_or_octet_stream().to_string();
-                Some(PendingAttachment::File(PendingFile {
-                    file_name,
-                    file_path: path.to_path_buf(),
-                    mime_type,
-                }))
-            })
-            .collect();
-
-        if let Some(context_model) = &self.context_model {
-            context_model.update(ctx, |context_model, ctx| {
-                context_model.append_pending_attachments(attachments, ctx);
-            });
-        }
     }
 
     /// Alternate path to Self::user_insert for when Vim mode is enabled. Forwards character
@@ -6196,8 +5226,6 @@ impl EditorView {
                 });
             }
         }
-        #[cfg(feature = "voice_input")]
-        self.stop_voice_input(true, ctx);
     }
 
     fn delete_all(&mut self, direction: CutDirection, cut: bool, ctx: &mut ViewContext<Self>) {
@@ -7605,12 +6633,6 @@ impl EditorView {
     }
 
     fn should_draw_cursors(&self, ctx: &AppContext) -> bool {
-        // Always draw cursors when voice input is active.
-        #[cfg(feature = "voice_input")]
-        if self.voice_input_state.is_active() {
-            return true;
-        }
-
         self.cursors_visible && self.focused_in_active_window(ctx) && self.can_edit(ctx)
     }
 
@@ -8045,22 +7067,7 @@ impl EditorView {
     }
 
     fn drag_and_drop_files(&mut self, paths: &[UserInput<String>], ctx: &mut ViewContext<Self>) {
-        // Image paths are forwarded to the parent unchanged so the host can still read them
-        // from the filesystem (the path transformer, if any, only applies to text insertion).
         let paths_as_strings: Vec<String> = paths.iter().map(|path| path.to_string()).collect();
-        let image_filepaths =
-            warpui::clipboard_utils::get_image_filepaths_from_paths(&paths_as_strings);
-
-        // If we have image file paths, emit event for parent to handle terminal-specific processing
-        let num_image_files = image_filepaths.len();
-        if num_image_files > 0 {
-            ctx.emit(Event::DroppedImageFiles(image_filepaths));
-
-            // If dropped only image file paths, we are done
-            if num_image_files == paths.len() {
-                return; // Return early, don't insert file paths as text
-            }
-        }
 
         let transformed_paths: Vec<String> = match &self.drag_drop_path_transformer {
             Some(transformer) => paths_as_strings.iter().map(|p| transformer(p)).collect(),
@@ -8071,138 +7078,6 @@ impl EditorView {
             warpui::clipboard_utils::escaped_paths_str(&transformed_paths, self.shell_family);
 
         self.user_insert(&input, ctx);
-    }
-
-    fn render_menu_button_tooltip(
-        &self,
-        tooltip_text: String,
-        appearance: &Appearance,
-    ) -> Box<dyn FnOnce() -> Box<dyn Element>> {
-        let tooltip_background = appearance.theme().surface_1().into_solid();
-        let tooltip_text_color = appearance
-            .theme()
-            .main_text_color(tooltip_background.into())
-            .into_solid();
-        let ui_builder = appearance.ui_builder().clone();
-
-        Box::new(move || {
-            let tool_tip_style = UiComponentStyles {
-                background: Some(elements::Fill::Solid(tooltip_background)),
-                font_color: Some(tooltip_text_color),
-                ..Default::default()
-            };
-
-            ui_builder
-                .tool_tip(tooltip_text)
-                .with_style(tool_tip_style)
-                .build()
-                .finish()
-        })
-    }
-
-    fn render_image_context_button(
-        &self,
-        disabled: bool,
-        tooltip_text: String,
-        icon_size: f32,
-        appearance: &Appearance,
-    ) -> Box<dyn Element> {
-        let button = icon_button(
-            appearance,
-            icons::Icon::Image,
-            false,
-            self.image_context_button_mouse_handle.clone(),
-        )
-        .with_tooltip_position(ButtonTooltipPosition::Above)
-        .with_tooltip(self.render_menu_button_tooltip(tooltip_text, appearance))
-        .with_style(UiComponentStyles {
-            width: Some(icon_size),
-            height: Some(icon_size),
-            padding: Some(Coords::uniform(icon_size / 10.)),
-            ..Default::default()
-        });
-
-        let button = if disabled {
-            button
-                .with_style(UiComponentStyles {
-                    font_color: Some(
-                        appearance
-                            .theme()
-                            .disabled_text_color(appearance.theme().background())
-                            .into(),
-                    ),
-                    ..Default::default()
-                })
-                .with_hovered_styles(UiComponentStyles {
-                    background: None,
-                    ..Default::default()
-                })
-                .build()
-                .with_cursor(Cursor::Arrow)
-        } else {
-            button
-                .build()
-                .on_click(move |ctx, _, _| {
-                    ctx.dispatch_typed_action(EditorAction::AttachFiles);
-                })
-                .with_cursor(Cursor::PointingHand)
-        };
-
-        button.finish()
-    }
-
-    pub fn render_ai_context_menu(&self) -> Option<Box<dyn Element>> {
-        if let Some(ai_context_menu_state) = &self.ai_context_menu_state {
-            Some(ChildView::new(&ai_context_menu_state.ai_context_menu).finish())
-        } else {
-            None
-        }
-    }
-
-    pub fn ai_context_menu(&self) -> Option<&ViewHandle<AIContextMenu>> {
-        self.ai_context_menu_state
-            .as_ref()
-            .map(|state| &state.ai_context_menu)
-    }
-
-    fn render_at_context_menu_button(
-        &self,
-        icon_size: f32,
-        appearance: &Appearance,
-    ) -> Option<Box<dyn Element>> {
-        let Some(ai_context_menu_state) = &self.ai_context_menu_state else {
-            return None;
-        };
-
-        let button = icon_button(
-            appearance,
-            icons::Icon::AtSign,
-            false,
-            ai_context_menu_state
-                .at_context_menu_button_mouse_handle
-                .clone(),
-        )
-        .with_style(UiComponentStyles {
-            width: Some(icon_size),
-            height: Some(icon_size),
-            padding: Some(Coords::uniform(icon_size / 10.)),
-            ..Default::default()
-        });
-        let button =
-            button
-                .with_tooltip_position(ButtonTooltipPosition::Above)
-                .with_tooltip(self.render_menu_button_tooltip(
-                    "Search files and directories".to_string(),
-                    appearance,
-                ))
-                .build()
-                .with_cursor(Cursor::PointingHand)
-                .on_click(move |ctx, _, _| {
-                    ctx.dispatch_typed_action(EditorAction::SetAIContextMenuOpen(true));
-                })
-                .finish();
-
-        Some(button)
     }
 
     /// Commits the currently composed text from the IME (if there is any) to properly handle one of the following:
@@ -8277,98 +7152,6 @@ impl EditorView {
         });
     }
 
-    /// If the editor should show any controls, render them.
-    /// Otherwise, return the child element.
-    fn render_controls(&self, ctx: &AppContext) -> Option<Box<dyn Element>> {
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "voice_input")] {
-                let should_show_voice = self.voice_transcription_options.should_show_button();
-            } else {
-                let should_show_voice = false;
-            }
-        }
-        let input_settings = InputSettings::as_ref(ctx);
-        let is_universal_input_enabled = input_settings.is_universal_developer_input_enabled(ctx);
-        let is_any_ai_enabled = AISettings::as_ref(ctx).is_any_ai_enabled(ctx);
-        let should_show_image = !FeatureFlag::AgentView.is_enabled()
-            && self.image_context_options.should_show_button()
-            && !is_universal_input_enabled;
-        let should_show_at_context_menu = !FeatureFlag::AgentView.is_enabled()
-            && !is_universal_input_enabled
-            && is_any_ai_enabled
-            && {
-                if !self.is_ai_input {
-                    // In terminal mode, check the setting
-                    if !*InputSettings::as_ref(ctx).at_context_menu_in_terminal_mode {
-                        false
-                    } else {
-                        self.ai_context_menu_state
-                            .as_ref()
-                            .map(|state| state.ai_context_menu.as_ref(ctx).should_render(ctx))
-                            .unwrap_or(false)
-                    }
-                } else {
-                    // In AI mode, always allow if available
-                    self.ai_context_menu_state
-                        .as_ref()
-                        .map(|state| state.ai_context_menu.as_ref(ctx).should_render(ctx))
-                        .unwrap_or(false)
-                }
-            };
-
-        if !should_show_voice && !should_show_image && !should_show_at_context_menu {
-            return None;
-        }
-
-        let appearance = Appearance::as_ref(ctx);
-        let font_cache = ctx.font_cache();
-        let icon_size = self.line_height(font_cache, appearance);
-
-        let mut controls = Flex::row().with_main_axis_size(MainAxisSize::Min);
-
-        if should_show_at_context_menu {
-            let at_context_menu_button = self.render_at_context_menu_button(icon_size, appearance);
-            if let Some(at_context_menu_button) = at_context_menu_button {
-                controls.add_child(
-                    Container::new(at_context_menu_button)
-                        .with_margin_left(4.)
-                        .finish(),
-                );
-            }
-        }
-
-        if should_show_image {
-            controls.add_child(
-                Container::new(self.render_image_context_button(
-                    !self.image_context_options.is_enabled(),
-                    self.image_context_options.tooltip_text(),
-                    icon_size,
-                    appearance,
-                ))
-                .with_margin_left(4.)
-                .finish(),
-            );
-        }
-
-        #[cfg(feature = "voice_input")]
-        if should_show_voice {
-            controls.add_child(
-                Container::new(self.render_voice_transcription_button(icon_size, appearance, ctx))
-                    .with_margin_left(4.)
-                    .finish(),
-            );
-
-            if self.should_show_voice_new_feature_popup(ctx) {
-                controls.add_child(
-                    Container::new(ChildView::new(&self.voice_new_feature_popup).finish())
-                        .with_margin_left(4.)
-                        .finish(),
-                );
-            }
-        }
-
-        Some(controls.finish())
-    }
 }
 
 /// Try to convert display point to an anchor. If it is not possible, clamp to anchoring at end of buffer.
@@ -8476,16 +7259,6 @@ pub enum Event {
     UpdatePeers {
         operations: Rc<Vec<CrdtOperation>>,
     },
-    SetAIContextMenuOpen(bool),
-    AcceptAIContextMenuItem(AIContextMenuSearchableAction),
-    SelectAIContextMenuCategory(AIContextMenuCategory),
-    ProcessingAttachedImages(bool),
-    VoiceStateUpdated {
-        is_listening: bool,
-        is_transcribing: bool,
-    },
-    /// Request parent to process image file paths from drag-and-drop
-    DroppedImageFiles(Vec<String>),
     IgnoreAutosuggestion {
         suggestion: String,
     },
@@ -8553,22 +7326,6 @@ impl TypedActionView for EditorView {
             Scroll(position) => self.scroll(*position, ctx),
             Select(action) => self.select(action, ctx),
             UserInsert(text) => self.user_insert(text.as_ref(), ctx),
-            #[cfg(feature = "voice_input")]
-            ToggleVoiceInput(source) => {
-                self.toggle_voice_input(source, ctx);
-            }
-            AttachFiles => self.attach_files(ctx),
-            ReadAndProcessImagesAsync {
-                num_images_user_attached,
-                file_paths,
-            } => self.read_and_process_images_async(
-                *num_images_user_attached,
-                file_paths.clone(),
-                ctx,
-            ),
-            ProcessNonImageFiles { file_paths } => {
-                self.process_non_image_files(file_paths.clone(), ctx);
-            }
             Tab => self.tab(ctx),
             ShiftTab => self.shift_tab(ctx),
             Copy => self.copy(ctx),
@@ -8698,19 +7455,6 @@ impl TypedActionView for EditorView {
             DragAndDropFiles(paths) => {
                 self.drag_and_drop_files(paths, ctx);
             }
-            SetAIContextMenuOpen(open) => {
-                if !self.is_ai_input && *open {
-                    // In terminal mode, check the setting before opening
-                    let input_settings = InputSettings::as_ref(ctx);
-                    if *input_settings.at_context_menu_in_terminal_mode {
-                        ctx.emit(Event::SetAIContextMenuOpen(*open));
-                    }
-                    // If setting is false, don't emit the event to open the menu
-                } else {
-                    // In AI mode or when closing, always allow
-                    ctx.emit(Event::SetAIContextMenuOpen(*open));
-                }
-            }
             ImeCommit(text) => self.ime_commit(text, ctx),
             SetMarkedText {
                 marked_text,
@@ -8774,35 +7518,18 @@ impl View for EditorView {
             local_selection_data,
             remote_selections_data,
             self.cursor_display_override,
-            self.voice_input_toggle_key_code(ctx),
         )
         .with_input_editor_icons(
             &self.accept_autosuggestion_keybinding_view,
             &self.autosuggestion_ignore_view,
             self.show_autosuggestion_keybinding_hint,
             self.show_autosuggestion_ignore_button,
-            self.next_command_state(ctx).is_cycling(),
             ctx,
         );
 
-        #[cfg(feature = "voice_input")]
-        let editor_element = self.configure_editor_element_voice(editor_element, appearance);
-
-        let hoverable = Hoverable::new(self.hover_handle.clone(), |_state| editor_element.finish())
+        Hoverable::new(self.hover_handle.clone(), |_state| editor_element.finish())
             .with_cursor(Cursor::IBeam)
-            .finish();
-
-        match self.render_controls(ctx) {
-            Some(controls) => {
-                let mut row = Flex::row()
-                    .with_main_axis_size(MainAxisSize::Max)
-                    .with_cross_axis_alignment(CrossAxisAlignment::End);
-                row.add_child(Shrinkable::new(1., hoverable).finish());
-                row.add_child(controls);
-                row.finish()
-            }
-            _ => hoverable,
-        }
+            .finish()
     }
 
     fn keymap_context(&self, ctx: &AppContext) -> warpui::keymap::Context {
@@ -8826,10 +7553,6 @@ impl View for EditorView {
             if vim_mode == VimMode::Normal {
                 context.set.insert("VimNormalMode");
             }
-        }
-
-        if self.is_ai_input {
-            context.set.insert("AIInput");
         }
 
         // Allow parent views to add additional flags to the context

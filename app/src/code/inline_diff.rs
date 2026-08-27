@@ -5,7 +5,8 @@ use ai::diff_validation::DiffType;
 #[cfg(not(target_family = "wasm"))]
 use futures::FutureExt;
 #[cfg(not(target_family = "wasm"))]
-use warp_files::{FileModel, FileModelEvent};
+use warp_files::FileModel;
+use warp_files::SaveFuture;
 use warp_util::file::FileId;
 #[cfg(not(target_family = "wasm"))]
 use warp_util::file::FileSaveError;

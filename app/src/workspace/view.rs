@@ -14275,23 +14275,6 @@ impl Workspace {
                             ctx,
                         );
                     }
-                    OpenWarpAI => {}
-                    AcceptAIQuery(ai_query) => {
-                        let active_terminal_view = self.active_session_view(ctx).expect("There must be an active terminal view if the user selected a command search result");
-
-                        active_terminal_view.update(ctx, |terminal_view, ctx| {
-                            terminal_view.set_ai_input_mode_with_query(Some(ai_query), ctx);
-                        });
-                    }
-                    RunAIQuery(ai_query) => {
-                        let active_terminal_view = self.active_session_view(ctx).expect("There must be an active terminal view if the user selected a command search result");
-
-                        active_terminal_view.update(ctx, |terminal_view, ctx| {
-                            terminal_view.set_ai_input_mode_with_query(Some(ai_query), ctx);
-                        });
-
-                        active_input_handle.update(ctx, |input, ctx| input.input_enter(ctx));
-                    }
                 }
             }
             Resize => {

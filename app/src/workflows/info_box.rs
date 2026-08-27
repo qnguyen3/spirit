@@ -912,27 +912,9 @@ impl WorkflowsMoreInfoView {
                 workflow,
                 origin: source,
             } => {
-                let icon = if FeatureFlag::AgentMode.is_enabled() {
-                    match source {
-                        AIWorkflowOrigin::AgentMode => {
-                            Icon::new(icons::Icon::Prompt.into(), appearance.theme().accent())
-                                .finish()
-                        }
-                        _ => Icon::new(
-                            icons::Icon::Prompt.into(),
-                            ai_brand_color(appearance.theme()),
-                        )
-                        .finish(),
-                    }
-                } else {
-                    Icon::new(
-                        icons::Icon::AiAssistant.into(),
-                        appearance
-                            .theme()
-                            .main_text_color(appearance.theme().background()),
-                    )
-                    .finish()
-                };
+                let _ = source;
+                let icon =
+                    Icon::new(icons::Icon::Prompt.into(), appearance.theme().accent()).finish();
 
                 let ai_icon = Container::new(
                     ConstrainedBox::new(icon)

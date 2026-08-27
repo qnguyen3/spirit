@@ -95,7 +95,6 @@ mod user_config;
 pub mod util;
 mod view_components;
 mod vim_registers;
-mod voice;
 mod voltron;
 mod warp_managed_paths_watcher;
 #[cfg(target_family = "wasm")]
@@ -152,7 +151,6 @@ use terminal::keys_settings::KeysSettings;
 #[cfg(all(not(target_family = "wasm"), feature = "local_tty"))]
 use terminal::local_shell::LocalShellState;
 pub use util::bindings::cmd_or_ctrl_shift;
-use voice::transcriber::VoiceTranscriber;
 use warp_cli::agent::AgentCommand;
 use warp_cli::{CliCommand, GlobalOptions};
 #[cfg(feature = "local_fs")]

@@ -10,7 +10,6 @@ use ::ai::index::full_source_code_embedding::manager::{
 use ::ai::index::full_source_code_embedding::{
     ContentHash, FragmentMetadata as LocalFragmentMetadata, NodeHash,
 };
-use ::ai::project_context::model::{ProjectContextModel, ProjectContextModelEvent};
 use remote_server::proto::OpenBufferSuccess;
 use repo_metadata::repositories::{DetectedRepositories, RepoDetectionSource};
 use repo_metadata::{RepoMetadataEvent, RepoMetadataModel, RepositoryIdentifier};
@@ -38,30 +37,29 @@ use super::proto::{
     CodebaseIndexLimits, CodebaseIndexStatus, CodebaseIndexStatusUpdated,
     CodebaseIndexStatusesSnapshot, CodebaseResyncMode, DeleteFile, DeleteFileResponse,
     DeleteFileSuccess, DiscardFilesError, DiscardFilesResponse, DiscardFilesSuccess,
-    DropCodebaseIndex, ErrorCode, ErrorResponse, FailedFileRead, FileContextProto,
-    FileOperationError, FragmentMetadata as ProtoFragmentMetadata,
+    DropCodebaseIndex, ErrorCode, ErrorResponse, FileOperationError,
+    FragmentMetadata as ProtoFragmentMetadata,
     FragmentMetadataLookupError as ProtoFragmentMetadataLookupError,
     FragmentMetadataLookupErrorCode, GetBranchesError, GetBranchesResponse, GetBranchesSuccess,
     GetDiffStateResponse, GetFragmentMetadataFromHash, GetFragmentMetadataFromHashResponse,
     GetFragmentMetadataFromHashSuccess, GitCommitChainMode, GitCommitChainRequest,
     GitCommitChainResponse, GitCommitChainSuccess, GitCreatePrRequest, GitCreatePrResponse,
-    GitGenerateCommitMessageRequest, GitGenerateCommitMessageResponse,
-    GitGetCommittedBranchFilesRequest, GitGetCommittedBranchFilesResponse,
-    GitGetCommittedBranchFilesSuccess, GitHubPrInfoPush, GitHubRepositoryInfoPush, GitOpDelta,
-    GitOpError, GitPushRequest, GitPushResponse, GitStatusPush, HomeSkillMetadata, IndexCodebase,
-    Initialize, InitializeResponse, MissingFragmentMetadata, NavigatedToDirectory,
-    NavigatedToDirectoryResponse, OpenBuffer, OpenBufferResponse, ReadFileContextResponse,
-    RemoteAgentContextSnapshot, RemoteContextFileProto, RemoteSkillProto, ResolveConflict,
-    ResolveConflictResponse, ResolveConflictSuccess, ResyncCodebase, RipgrepSearchRequest,
-    RunCommandError, RunCommandErrorCode, RunCommandRequest, RunCommandResponse, RunCommandSuccess,
-    SaveBuffer, SaveBufferResponse, SaveBufferSuccess, ServerMessage, SessionBootstrapped,
-    TextEdit, UpdateGitHubPrInfo, UpdateGitHubRepoInfo, UpdateGitStatus, UploadHandoffSnapshot,
-    WriteFile, WriteFileResponse, WriteFileSuccess, client_message, delete_file_response,
-    discard_files_response, get_diff_state_response, get_fragment_metadata_from_hash_response,
-    git_commit_chain_response, git_create_pr_response, git_generate_commit_message_response,
-    git_get_committed_branch_files_response, git_push_response, host_scoped_request, notification,
-    remote_skill_proto, resolve_conflict_response, run_command_response, save_buffer_response,
-    server_message, session_scoped_request, write_file_response,
+    GitGenerateCommitMessageResponse, GitGetCommittedBranchFilesRequest,
+    GitGetCommittedBranchFilesResponse, GitGetCommittedBranchFilesSuccess, GitHubPrInfoPush,
+    GitHubRepositoryInfoPush, GitOpDelta, GitOpError, GitPushRequest, GitPushResponse,
+    GitStatusPush, IndexCodebase, Initialize, InitializeResponse, MissingFragmentMetadata,
+    NavigatedToDirectory, NavigatedToDirectoryResponse, OpenBuffer, OpenBufferResponse,
+    ResolveConflict, ResolveConflictResponse, ResolveConflictSuccess, ResyncCodebase,
+    RipgrepSearchRequest, RunCommandError, RunCommandErrorCode, RunCommandRequest,
+    RunCommandResponse, RunCommandSuccess, SaveBuffer, SaveBufferResponse, SaveBufferSuccess,
+    ServerMessage, SessionBootstrapped, TextEdit, UpdateGitHubPrInfo, UpdateGitHubRepoInfo,
+    UpdateGitStatus, WriteFile, WriteFileResponse, WriteFileSuccess, client_message,
+    delete_file_response, discard_files_response, get_diff_state_response,
+    get_fragment_metadata_from_hash_response, git_commit_chain_response, git_create_pr_response,
+    git_generate_commit_message_response, git_get_committed_branch_files_response,
+    git_push_response, host_scoped_request, notification, resolve_conflict_response,
+    run_command_response, save_buffer_response, server_message, session_scoped_request,
+    write_file_response,
 };
 use super::server_buffer_tracker::{PendingBufferRequestKind, ServerBufferTracker};
 use super::{diff_state_proto, ripgrep_search};
@@ -800,8 +798,23 @@ impl ServerModel {
                     Some(host_scoped_request::Message::GitCreatePr(m)) => {
                         self.handle_create_pr(m, &request_id, conn_id, ctx)
                     }
-                    Some(host_scoped_request::Message::GitGenerateCommitMessage(m)) => {
-                        self.handle_generate_git_commit_message(m, &request_id, conn_id, ctx)
+                    Some(host_scoped_request::Message::GitGenerateCommitMessage(_)) => {
+                        HandlerOutcome::Sync(
+                            server_message::Message::GitGenerateCommitMessageResponse(
+                                GitGenerateCommitMessageResponse {
+                                    result: Some(
+                                        git_generate_commit_message_response::Result::Error(
+                                            GitOpError {
+                                                message:
+                                                    "Commit message generation is not supported \
+                                                     by this server"
+                                                        .to_string(),
+                                            },
+                                        ),
+                                    ),
+                                },
+                            ),
+                        )
                     }
                     Some(host_scoped_request::Message::GitGetCommittedBranchFiles(m)) => {
                         self.handle_get_committed_branch_files(m, &request_id, conn_id, ctx)
@@ -2641,62 +2654,6 @@ impl ServerModel {
         }
     }
 
-    /// Handles `UploadHandoffSnapshot` by gathering the workspace snapshot
-    /// from the daemon's local filesystem and uploading it to GCS.
-    ///
-    /// Extracts the `AIClient` and HTTP client from `ServerApiProvider`, then
-    /// spawns the async gather+upload pipeline. Returns an
-    /// `UploadHandoffSnapshotResponse` with the token on success.
-    fn handle_upload_handoff_snapshot(
-        &mut self,
-        msg: UploadHandoffSnapshot,
-        request_id: &RequestId,
-        conn_id: ConnectionId,
-        ctx: &mut ModelContext<Self>,
-    ) -> HandlerOutcome {
-        log::info!(
-            "Handling UploadHandoffSnapshot ({} paths, request_id={request_id})",
-            msg.paths.len(),
-        );
-
-        let server_api = ServerApiProvider::handle(ctx);
-        let ai_client = server_api.as_ref(ctx).get_ai_client();
-        let http = server_api.as_ref(ctx).get_http_client();
-
-        // Convert proto strings → StandardizedPath at the boundary; invalid
-        // entries are logged and dropped.
-        let paths: Vec<StandardizedPath> = msg
-            .paths
-            .into_iter()
-            .filter_map(|raw| match StandardizedPath::try_new(&raw) {
-                Ok(sp) => Some(sp),
-                Err(e) => {
-                    log::warn!("UploadHandoffSnapshot: skipping invalid path: {e}");
-                    None
-                }
-            })
-            .collect();
-        let request_id_for_response = request_id.clone();
-
-        let handle = self.spawn_request_handler(
-            request_id.clone(),
-            async move {
-                super::handoff_snapshot::gather_and_upload_handoff_snapshot(paths, ai_client, &http)
-                    .await
-            },
-            move |me, result, _ctx| {
-                let response = upload_result_to_proto(result);
-                me.send_server_message(
-                    Some(conn_id),
-                    Some(&request_id_for_response),
-                    server_message::Message::UploadHandoffSnapshotResponse(response),
-                );
-            },
-            ctx,
-        );
-        HandlerOutcome::Async(Some(handle))
-    }
-
     /// Handles `GetBranches` — request/response.
     ///
     /// Runs `get_all_branches` on the remote filesystem and responds with
@@ -3189,66 +3146,6 @@ impl ServerModel {
         HandlerOutcome::Async(Some(handle))
     }
 
-    /// Handles `GitGenerateCommitMessageRequest` — computes the working-tree
-    /// diff locally, then calls the Warp server's code-review content endpoint
-    /// via the daemon's authenticated `AIClient` and returns the generated
-    /// message.
-    fn handle_generate_git_commit_message(
-        &mut self,
-        msg: GitGenerateCommitMessageRequest,
-        request_id: &RequestId,
-        conn_id: ConnectionId,
-        ctx: &mut ModelContext<Self>,
-    ) -> HandlerOutcome {
-        let repo_path = match requested_repo_path(&msg.repo_path) {
-            Ok(p) => p,
-            Err(e) => return invalid_request_response(e),
-        };
-        log::info!(
-            "Handling GenerateCommitMessage repo={} (request_id={request_id})",
-            msg.repo_path
-        );
-        let include_unstaged = msg.include_unstaged;
-        let branch_name = msg.branch_name;
-        let ai_client = ServerApiProvider::handle(ctx).as_ref(ctx).get_ai_client();
-        let request_id_for_response = request_id.clone();
-        let handle = self.spawn_request_handler(
-            request_id.clone(),
-            async move {
-                git_actions::generate_commit_message(
-                    &repo_path,
-                    &branch_name,
-                    include_unstaged,
-                    ai_client.as_ref(),
-                )
-                .await
-            },
-            move |me, result, _ctx| {
-                let message = match result {
-                    Ok(message) => server_message::Message::GitGenerateCommitMessageResponse(
-                        GitGenerateCommitMessageResponse {
-                            result: Some(git_generate_commit_message_response::Result::Message(
-                                message,
-                            )),
-                        },
-                    ),
-                    Err(e) => server_message::Message::GitGenerateCommitMessageResponse(
-                        GitGenerateCommitMessageResponse {
-                            result: Some(git_generate_commit_message_response::Result::Error(
-                                GitOpError {
-                                    message: format!("{e:#}"),
-                                },
-                            )),
-                        },
-                    ),
-                };
-                me.send_server_message(Some(conn_id), Some(&request_id_for_response), message);
-            },
-            ctx,
-        );
-        HandlerOutcome::Async(Some(handle))
-    }
-
     /// Subscribes the daemon to per-repo local git status updates. On first
     /// creation it wires model events to broadcast a `GitStatusPush`. No-op if
     /// already subscribed, or when the repo is not yet a watched repository;
@@ -3613,53 +3510,6 @@ fn fragment_metadata_to_proto(
         end_line: metadata.location.end_line as u32,
         byte_start: metadata.location.byte_range.start.as_usize() as u64,
         byte_end: metadata.location.byte_range.end.as_usize() as u64,
-    }
-}
-
-/// Converts a [`ReadFileContextResult`] into its protobuf equivalent.
-fn file_context_result_to_proto(result: ReadFileContextResult) -> ReadFileContextResponse {
-
-    let file_contexts = result
-        .file_contexts
-        .into_iter()
-        .map(|fc| {
-            let content = match fc.content {
-                AnyFileContent::StringContent(text) => {
-                    super::proto::file_context_proto::Content::TextContent(text)
-                }
-                AnyFileContent::BinaryContent(bytes) => {
-                    super::proto::file_context_proto::Content::BinaryContent(bytes)
-                }
-            };
-            let last_modified_epoch_millis = fc
-                .last_modified
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_millis() as u64);
-            FileContextProto {
-                file_name: fc.file_name,
-                content: Some(content),
-                line_range_start: fc.line_range.as_ref().map(|r| r.start as u32),
-                line_range_end: fc.line_range.as_ref().map(|r| r.end as u32),
-                last_modified_epoch_millis,
-                line_count: fc.line_count as u32,
-            }
-        })
-        .collect();
-
-    let failed_files = result
-        .failed_files
-        .into_iter()
-        .map(|failed_file| FailedFileRead {
-            path: failed_file.path,
-            error: Some(FileOperationError {
-                message: failed_file.message,
-            }),
-        })
-        .collect();
-
-    ReadFileContextResponse {
-        file_contexts,
-        failed_files,
     }
 }
 
