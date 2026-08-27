@@ -93,55 +93,6 @@ use crate::terminal::model::session::command_executor::{
 };
 use crate::util::git;
 
-/// Resolves the global bundled resources directory populated by the install
-/// script (see [`remote_server::setup::remote_server_bundled_resources_dir`]),
-/// expanding the shell-form `~/` prefix against this process's home directory.
-///
-/// This deliberately does not use `warp_core::paths::bundled_resources_dir`,
-/// whose macOS behavior resolves resources inside an app bundle. The global
-/// location is version-independent: the last install wins, and slight skew
-/// against this daemon's version is accepted.
-fn daemon_bundled_resources_dir() -> Option<PathBuf> {
-    let dir = remote_server::setup::remote_server_bundled_resources_dir();
-    let suffix = dir.strip_prefix("~/")?;
-    let dir = dirs::home_dir()?.join(suffix);
-    dir.is_dir().then_some(dir)
-}
-fn remote_agent_context_snapshot(
-    revision: u64,
-    bundled_skills: &[RemoteSkillProto],
-    ctx: &warpui::AppContext,
-) -> RemoteAgentContextSnapshot {
-    let home_dir = dirs::home_dir()
-        .map(|path| path.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let mut skills = bundled_skills.to_vec();
-    skills.extend(
-        SkillManager::as_ref(ctx)
-            .home_skills()
-            .map(|skill| RemoteSkillProto {
-                path: skill.path.display_path(),
-                content: skill.content.clone(),
-                source: Some(remote_skill_proto::Source::Home(HomeSkillMetadata {})),
-            }),
-    );
-    skills.sort_by(|a, b| a.path.cmp(&b.path));
-    let mut global_rules = ProjectContextModel::as_ref(ctx)
-        .global_rules()
-        .map(|rule| RemoteContextFileProto {
-            path: rule.path.display_path(),
-            content: rule.content,
-        })
-        .collect::<Vec<_>>();
-    global_rules.sort_by(|a, b| a.path.cmp(&b.path));
-    RemoteAgentContextSnapshot {
-        revision,
-        home_dir,
-        skills,
-        global_rules,
-    }
-}
-
 /// Outcome of dispatching a request-style `ClientMessage`.
 ///
 /// Notifications (fire-and-forget messages like `SessionBootstrapped` and
@@ -282,12 +233,6 @@ pub struct ServerModel {
     /// Returned in every `InitializeResponse` so clients can deduplicate
     /// host-scoped models.
     host_id: String,
-    /// Bundled skill source entries detected and rendered on the daemon.
-    bundled_skills: Vec<RemoteSkillProto>,
-    /// Latest revisioned full replacement of all daemon-host Agent Mode context.
-    remote_agent_context_snapshot: RemoteAgentContextSnapshot,
-    /// Connections that have already received the current snapshot revision.
-    remote_agent_context_snapshot_sent: HashSet<ConnectionId>,
     /// Per-session command executors created from `SessionBootstrapped` notifications.
     executors: HashMap<SessionId, Arc<LocalCommandExecutor>>,
     /// Tracks in-flight file write/delete operations and handles cleanup.
@@ -338,17 +283,12 @@ impl ServerModel {
             std::process::id(),
             host_id
         );
-        let bundled_skills = Vec::new();
-        let remote_agent_context_snapshot = remote_agent_context_snapshot(1, &bundled_skills, ctx);
         let mut model = Self {
             connection_senders: HashMap::new(),
             snapshot_sent_roots_by_connection: HashMap::new(),
             grace_timer_cancel: None,
             in_progress: HashMap::new(),
             host_id,
-            bundled_skills,
-            remote_agent_context_snapshot,
-            remote_agent_context_snapshot_sent: HashSet::new(),
             executors: HashMap::new(),
             pending_file_ops: PendingFileOps::new(),
             auth_state: AuthStateProvider::as_ref(ctx).get().clone(),
@@ -677,29 +617,6 @@ impl ServerModel {
                 }
             });
         }
-        {
-            let skill_manager = SkillManager::handle(ctx);
-            ctx.subscribe_to_model(&skill_manager, |me, _, event, ctx| match event {
-                SkillManagerEvent::SkillsChanged {
-                    home_skills_changed: true,
-                } => {
-                    me.refresh_remote_agent_context_snapshot(ctx);
-                }
-                SkillManagerEvent::SkillsChanged {
-                    home_skills_changed: false,
-                } => {}
-            });
-        }
-        {
-            let project_context = ProjectContextModel::handle(ctx);
-            ctx.subscribe_to_model(&project_context, |me, _, event, ctx| match event {
-                ProjectContextModelEvent::GlobalRulesChanged(_) => {
-                    me.refresh_remote_agent_context_snapshot(ctx);
-                }
-                ProjectContextModelEvent::PathIndexed
-                | ProjectContextModelEvent::KnownRulesChanged(_) => {}
-            });
-        }
         // Subscribe to diff state manager events — convert domain dispatches
         // to proto messages and send them to connected clients.
         {
@@ -708,29 +625,6 @@ impl ServerModel {
                 me.handle_diff_state_update(dispatch);
             });
         }
-        // Parse the bundled skill catalog from the global install location.
-        // Parsing never blocks the initialize handshake: connections that
-        // initialize before parsing completes receive the catalog via the
-        // completion broadcast instead. Deliberately not feature-flag gated:
-        // the flag controls exposure on the client (catalog storage and
-        // skill selection), where the connecting user's flag state actually
-        // lives — a headless daemon only sees its own channel defaults.
-        if let Some(resources_dir) = daemon_bundled_resources_dir() {
-            ctx.spawn(
-                BundledSkill::detect_in_resources_dir(resources_dir),
-                |me, catalog, ctx| {
-                    let skills = bundled_skill_snapshot_protos(&catalog);
-                    log::info!("Daemon parsed {} bundled skills", skills.len());
-                    me.bundled_skills = skills;
-                    me.refresh_remote_agent_context_snapshot(ctx);
-                },
-            );
-        } else {
-            log::info!(
-                "Daemon found no global bundled resources directory; \
-                 bundled skills unavailable on this host"
-            );
-        }
         // Start the grace timer immediately so the daemon exits if no proxy
         // connects within GRACE_PERIOD. In practice the spawning proxy connects
         // within milliseconds, so the risk of premature shutdown is negligible;
@@ -738,42 +632,6 @@ impl ServerModel {
         // arrives.
         model.start_grace_timer(ctx);
         model
-    }
-
-    fn refresh_remote_agent_context_snapshot(&mut self, ctx: &warpui::AppContext) {
-        let revision = self
-            .remote_agent_context_snapshot
-            .revision
-            .saturating_add(1);
-        self.remote_agent_context_snapshot =
-            remote_agent_context_snapshot(revision, &self.bundled_skills, ctx);
-        self.broadcast_remote_agent_context_snapshot();
-    }
-
-    fn broadcast_remote_agent_context_snapshot(&mut self) {
-        self.send_server_message(
-            None,
-            None,
-            server_message::Message::RemoteAgentContextSnapshot(
-                self.remote_agent_context_snapshot.clone(),
-            ),
-        );
-        self.remote_agent_context_snapshot_sent
-            .extend(self.connection_senders.keys().copied());
-    }
-
-    fn send_remote_agent_context_snapshot_to_connection(&mut self, conn_id: ConnectionId) {
-        if self.remote_agent_context_snapshot_sent.contains(&conn_id) {
-            return;
-        }
-        self.send_server_message(
-            Some(conn_id),
-            None,
-            server_message::Message::RemoteAgentContextSnapshot(
-                self.remote_agent_context_snapshot.clone(),
-            ),
-        );
-        self.remote_agent_context_snapshot_sent.insert(conn_id);
     }
 
     /// Called when a proxy connects.  Inserts `conn_tx` into the connection
@@ -803,7 +661,6 @@ impl ServerModel {
     /// and starts the grace timer if no connections remain.
     pub fn deregister_connection(&mut self, conn_id: ConnectionId, ctx: &mut ModelContext<Self>) {
         self.snapshot_sent_roots_by_connection.remove(&conn_id);
-        self.remote_agent_context_snapshot_sent.remove(&conn_id);
         // Guard against double-deregister (reader and writer tasks both call
         // this on connection close; the second call must be a safe no-op).
         if self.connection_senders.remove(&conn_id).is_none() {
@@ -897,8 +754,11 @@ impl ServerModel {
                     Some(host_scoped_request::Message::DeleteFile(m)) => {
                         self.handle_delete_file(m, &request_id, conn_id, ctx)
                     }
-                    Some(host_scoped_request::Message::ReadFileContext(m)) => {
-                        self.handle_read_file_context(m, &request_id, conn_id, ctx)
+                    Some(host_scoped_request::Message::ReadFileContext(_)) => {
+                        HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
+                            code: ErrorCode::InvalidRequest.into(),
+                            message: "ReadFileContext is not supported by this server".to_string(),
+                        }))
                     }
                     Some(host_scoped_request::Message::SaveBuffer(m)) => {
                         self.handle_save_buffer(m, &request_id, conn_id, ctx)
@@ -924,8 +784,12 @@ impl ServerModel {
                     Some(host_scoped_request::Message::ResyncCodebase(m)) => {
                         self.handle_resync_codebase(m, &request_id, conn_id, ctx)
                     }
-                    Some(host_scoped_request::Message::UploadHandoffSnapshot(m)) => {
-                        self.handle_upload_handoff_snapshot(m, &request_id, conn_id, ctx)
+                    Some(host_scoped_request::Message::UploadHandoffSnapshot(_)) => {
+                        HandlerOutcome::Sync(server_message::Message::Error(ErrorResponse {
+                            code: ErrorCode::InvalidRequest.into(),
+                            message: "UploadHandoffSnapshot is not supported by this server"
+                                .to_string(),
+                        }))
                     }
                     Some(host_scoped_request::Message::GitCommitChain(m)) => {
                         self.handle_git_commit_chain(m, &request_id, conn_id, ctx)
@@ -961,7 +825,7 @@ impl ServerModel {
             Some(client_message::Message::SessionScoped(wrapper)) => {
                 let outcome = match wrapper.message {
                     Some(session_scoped_request::Message::Initialize(m)) => {
-                        self.handle_initialize(m, &request_id, conn_id, ctx)
+                        self.handle_initialize(m, &request_id, ctx)
                     }
                     Some(session_scoped_request::Message::NavigatedToDirectory(m)) => {
                         self.handle_navigated_to_directory(m, &request_id, conn_id, ctx)
@@ -1618,14 +1482,12 @@ impl ServerModel {
     /// Handles `Initialize` by returning the server version and host id.
     ///
     /// Also configures Sentry crash reporting based on the user's identity and
-    /// preferences supplied by the connecting client, and sends the latest
-    /// remote Agent Mode context snapshot to the initializing connection.
+    /// preferences supplied by the connecting client.
     #[cfg_attr(not(feature = "crash_reporting"), allow(unused_variables))]
     fn handle_initialize(
         &mut self,
         msg: Initialize,
         request_id: &RequestId,
-        conn_id: ConnectionId,
         ctx: &mut ModelContext<Self>,
     ) -> HandlerOutcome {
         log::info!("Handling Initialize (request_id={request_id})");
@@ -1644,10 +1506,6 @@ impl ServerModel {
                 crate::crash_reporting::uninit_sentry();
             }
         }
-
-        // Enqueued on the same channel as the response below, so the client
-        // buffers it as a push event during the handshake.
-        self.send_remote_agent_context_snapshot_to_connection(conn_id);
 
         let server_version = ChannelState::app_version().unwrap_or("").to_string();
         HandlerOutcome::Sync(server_message::Message::InitializeResponse(
@@ -2342,74 +2200,6 @@ impl ServerModel {
 
         // Response sent asynchronously via the event subscription.
         HandlerOutcome::Async(None)
-    }
-
-    /// Handles `ReadFileContext` by spawning an async batch file read on the
-    /// background executor. Returns `HandlerOutcome::Async` with the spawned
-    /// handle so the request can be cancelled via `Abort`.
-    fn handle_read_file_context(
-        &mut self,
-        msg: super::proto::ReadFileContextRequest,
-        request_id: &RequestId,
-        conn_id: ConnectionId,
-        ctx: &mut ModelContext<Self>,
-    ) -> HandlerOutcome {
-        log::info!(
-            "Handling ReadFileContext ({} files, request_id={request_id})",
-            msg.files.len()
-        );
-
-        let max_file_bytes = msg.max_file_bytes.map(|b| b as usize);
-        let max_batch_bytes = msg.max_batch_bytes.map(|b| b as usize);
-        let file_locations: Vec<FileLocations> = msg
-            .files
-            .into_iter()
-            .map(|f| FileLocations {
-                name: f.path,
-                lines: f
-                    .line_ranges
-                    .into_iter()
-                    .map(|r| r.start as usize..r.end as usize)
-                    .collect(),
-            })
-            .collect();
-        let request_id_for_response = request_id.clone();
-
-        let handle = self.spawn_request_handler(
-            request_id.clone(),
-            async move {
-                read_local_file_context(
-                    &file_locations,
-                    None,
-                    None,
-                    max_file_bytes,
-                    max_batch_bytes,
-                )
-                .await
-            },
-            move |me, result: anyhow::Result<ReadFileContextResult>, _ctx| {
-                let response = match result {
-                    Ok(result) => file_context_result_to_proto(result),
-                    Err(err) => ReadFileContextResponse {
-                        file_contexts: vec![],
-                        failed_files: vec![FailedFileRead {
-                            path: String::new(),
-                            error: Some(FileOperationError {
-                                message: format!("{err:#}"),
-                            }),
-                        }],
-                    },
-                };
-                me.send_server_message(
-                    Some(conn_id),
-                    Some(&request_id_for_response),
-                    server_message::Message::ReadFileContextResponse(response),
-                );
-            },
-            ctx,
-        );
-
-        HandlerOutcome::Async(Some(handle))
     }
 
     /// Handles `OpenBuffer` by opening the file via `GlobalBufferModel`.

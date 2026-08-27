@@ -1,3 +1,4 @@
+pub mod github_auth_notifier;
 pub mod auth_manager;
 mod auth_override_warning_body;
 pub mod auth_override_warning_modal;
