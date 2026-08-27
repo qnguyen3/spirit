@@ -30,13 +30,11 @@ use warpui::{
     ViewHandle,
 };
 
-use crate::ai::blocklist::block::keyboard_navigable_buttons::{
+use crate::server::telemetry::TelemetryEvent;
+use crate::ui_components::inline_action_header::{HeaderConfig, INLINE_ACTION_HORIZONTAL_PADDING};
+use crate::ui_components::keyboard_navigable_buttons::{
     KeyboardNavigableButtons, rich_navigation_button,
 };
-use crate::ai::blocklist::inline_action::inline_action_header::{
-    HeaderConfig, INLINE_ACTION_HORIZONTAL_PADDING,
-};
-use crate::server::telemetry::TelemetryEvent;
 use crate::terminal::model::session::SessionId;
 use crate::terminal::warpify::settings::{SshExtensionInstallMode, WarpifySettings};
 use crate::ui_components::blended_colors;

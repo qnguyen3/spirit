@@ -32,7 +32,6 @@ use warpui::{
     ViewContext, ViewHandle, WeakViewHandle,
 };
 
-use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewControllerEvent};
 use crate::search::item::IconLocation;
 use crate::search::mixer::{SearchMixer, SearchMixerEvent};
 use crate::search::result_renderer::{
@@ -320,7 +319,6 @@ pub struct InlineMenuView<A: InlineMenuAction, T: 'static + Send + Sync = ()> {
     weak_handle: WeakViewHandle<Self>,
     positioner: ModelHandle<InlineMenuPositioner>,
     message_bar: ViewHandle<InlineMenuMessageBar<A, T>>,
-    agent_view_controller: ModelHandle<AgentViewController>,
     header_config: InlineMenuHeaderConfig,
     banner_fn: Option<BannerFn>,
     resize_handle: DragResizeHandle,
@@ -339,18 +337,10 @@ impl<A: InlineMenuAction> InlineMenuView<A> {
         mixer: ModelHandle<SearchMixer<A>>,
         positioner: ModelHandle<InlineMenuPositioner>,
         input_suggestions_model: &ModelHandle<InputSuggestionsModeModel>,
-        agent_view_controller: ModelHandle<AgentViewController>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         let inline_menu_model = ctx.add_model(|_| InlineMenuModel::new());
-        Self::new_inner(
-            mixer,
-            positioner,
-            input_suggestions_model,
-            agent_view_controller,
-            inline_menu_model,
-            ctx,
-        )
+        Self::new_inner(mixer, positioner, input_suggestions_model, inline_menu_model, ctx)
     }
 }
 
@@ -359,21 +349,13 @@ impl<A: InlineMenuAction, T: 'static + Send + Sync + Clone + PartialEq> InlineMe
         mixer: ModelHandle<SearchMixer<A>>,
         positioner: ModelHandle<InlineMenuPositioner>,
         input_suggestions_model: &ModelHandle<InputSuggestionsModeModel>,
-        agent_view_controller: ModelHandle<AgentViewController>,
         tab_configs: Vec<InlineMenuTabConfig<T>>,
         initial_tab: Option<T>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         let inline_menu_model =
             ctx.add_model(|_| InlineMenuModel::new_with_tabs(tab_configs, initial_tab));
-        Self::new_inner(
-            mixer,
-            positioner,
-            input_suggestions_model,
-            agent_view_controller,
-            inline_menu_model,
-            ctx,
-        )
+        Self::new_inner(mixer, positioner, input_suggestions_model, inline_menu_model, ctx)
     }
 }
 
@@ -382,22 +364,14 @@ impl<A: InlineMenuAction, T: 'static + Send + Sync> InlineMenuView<A, T> {
         mixer: ModelHandle<SearchMixer<A>>,
         positioner: ModelHandle<InlineMenuPositioner>,
         input_suggestions_model: &ModelHandle<InputSuggestionsModeModel>,
-        agent_view_controller: ModelHandle<AgentViewController>,
         inline_menu_model: ModelHandle<InlineMenuModel<A, T>>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         let menu_bar_args = InlineMenuMessageBarArgs {
             inline_menu_model: inline_menu_model.clone(),
-            agent_view_controller: agent_view_controller.clone(),
             positioner: positioner.clone(),
         };
         let message_bar = ctx.add_view(|ctx| InlineMenuMessageBar::new(menu_bar_args, ctx));
-
-        ctx.subscribe_to_model(&agent_view_controller, |_, _, event, ctx| match event {
-            AgentViewControllerEvent::EnteredAgentView { .. }
-            | AgentViewControllerEvent::ExitedAgentView { .. } => ctx.notify(),
-            _ => (),
-        });
 
         ctx.subscribe_to_model(
             input_suggestions_model,
@@ -504,7 +478,6 @@ impl<A: InlineMenuAction, T: 'static + Send + Sync> InlineMenuView<A, T> {
             model: inline_menu_model,
             positioner,
             message_bar,
-            agent_view_controller,
             selection: InlineMenuSelection::default(),
             hovered_idx: None,
             details_pane_target: DetailsPaneTarget::default(),
@@ -1140,11 +1113,7 @@ impl<A: InlineMenuAction, T: 'static + Send + Sync> View for InlineMenuView<A, T
                             !is_rendering_below_input || !has_header,
                             false,
                         )
-                        .with_border_fill(if self.agent_view_controller.as_ref(app).is_active() {
-                            input::agent::styles::default_border_color(theme)
-                        } else {
-                            input::terminal::styles::default_border_color(theme)
-                        }),
+                        .with_border_fill(input::terminal::styles::default_border_color(theme)),
                 )
                 .finish(),
         )

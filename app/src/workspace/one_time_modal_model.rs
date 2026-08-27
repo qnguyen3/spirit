@@ -9,11 +9,6 @@ use warpui::{AppContext, Entity, ModelContext, SingletonEntity, WindowId};
 
 use super::hoa_onboarding;
 use super::view::feature_intro_modal::{FEATURE_INTROS, FeatureIntroId};
-use super::view::free_ai_removal_modal::{
-    FreeAiRemovalModalTelemetryEvent, FreeAiRemovalModalVariant,
-};
-use crate::ai::blocklist::agent_view::toolbar_item::AgentToolbarItemKind;
-use crate::ai::{AIRequestUsageModel, AIRequestUsageModelEvent};
 use crate::auth::auth_manager::AuthManagerEvent;
 use crate::auth::{AuthManager, AuthStateProvider};
 use crate::channel::{Channel, ChannelState};
@@ -21,7 +16,7 @@ use crate::root_view::has_completed_local_onboarding;
 use crate::settings::cloud_preferences_syncer::{
     CloudPreferencesSyncer, CloudPreferencesSyncerEvent,
 };
-use crate::settings::{AISettings, CodeSettings};
+use crate::settings::{CodeSettings};
 use crate::terminal::general_settings::GeneralSettings;
 use crate::terminal::session_settings::{AgentToolbarChipSelection, SessionSettings};
 use crate::workspaces::user_workspaces::UserWorkspaces;

@@ -66,28 +66,7 @@ impl Input {
 
         let mut column = Flex::column();
 
-        // Render attachment chips (e.g. pasted screenshots) above the editor,
-        // matching the pattern used by the agent view input in agent.rs.
-        if FeatureFlag::ImageAsContext.is_enabled()
-            && let Some(images) = self.render_attachment_chips(appearance)
-        {
-            column.add_child(
-                Container::new(images)
-                    .with_margin_top(spacing::UDI_CHIP_MARGIN)
-                    .finish(),
-            );
-        }
-
         column.add_child(editor_element);
-        column.add_child(
-            SavePosition::new(
-                Container::new(ChildView::new(&self.agent_input_footer).finish())
-                    .with_padding_right(*TERMINAL_VIEW_PADDING_LEFT)
-                    .finish(),
-                &self.prompt_save_position_id(),
-            )
-            .finish(),
-        );
 
         stack.add_child(wrap_input_with_terminal_padding_and_focus_handler(
             self.is_active_session(app),
@@ -122,9 +101,6 @@ impl Input {
 
         let input = SavePosition::new(
             Hoverable::new(self.hoverable_handle.clone(), |_| drop_target)
-                .on_hover(|is_hovered, ctx, _app, _position| {
-                    ctx.dispatch_typed_action(InputAction::SetUDIHovered(is_hovered));
-                })
                 .on_middle_click(|ctx, _app, _position| {
                     ctx.dispatch_typed_action(TerminalAction::MiddleClickOnInput)
                 })
@@ -140,10 +116,6 @@ impl Input {
         let mut outer_column = Flex::column();
         if self.suggestions_mode_model.as_ref(app).is_slash_commands() {
             outer_column.add_child(ChildView::new(&self.inline_slash_commands_view).finish());
-        } else if self.suggestions_mode_model.as_ref(app).is_prompts_menu() {
-            outer_column.add_child(ChildView::new(&self.inline_prompts_menu_view).finish());
-        } else if self.suggestions_mode_model.as_ref(app).is_skill_menu() {
-            outer_column.add_child(ChildView::new(&self.inline_skill_selector_view).finish());
         }
         outer_column.add_child(input);
 
@@ -212,18 +184,10 @@ impl Input {
             CLIAgentSessionsModel::as_ref(ctx).is_input_open(self.terminal_view_id);
 
         let settings = if rich_input_open {
-            let submit_on_ctrl_enter =
-                *crate::settings::AISettings::as_ref(ctx).submit_on_ctrl_enter;
             EnterSettings {
                 // Always Emit so input_enter handles menus before submit/newline.
                 enter: EnterAction::Emit,
-                // Toggle ON  → Emit (submit path in input_ctrl_enter).
-                // Toggle OFF → InsertNewLineIfMultiLine (baseline newline).
-                ctrl_enter: if submit_on_ctrl_enter {
-                    EnterAction::Emit
-                } else {
-                    EnterAction::InsertNewLineIfMultiLine
-                },
+                ctrl_enter: EnterAction::InsertNewLineIfMultiLine,
                 ..Default::default()
             }
         } else {

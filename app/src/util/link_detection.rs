@@ -8,9 +8,6 @@ use warpui::elements::{MouseStateHandle, PartialClickableElement};
 use warpui::platform::Cursor;
 use warpui::text::char_slice;
 
-use crate::ai::agent::{AIAgentActionType, AIAgentOutput, AIAgentTextSection, ReadFilesRequest};
-use crate::ai::blocklist::block::TextLocation;
-use crate::ai::blocklist::block::view_impl::output::LinkActionConstructors;
 use crate::terminal::ShellLaunchData;
 use crate::terminal::links::should_directly_open_link;
 use crate::terminal::model::grid::grid_handler::{is_file_link_separator, is_url_link_separator};
@@ -26,6 +23,23 @@ cfg_if::cfg_if! {
 
 pub const RICH_CONTENT_LINK_FIRST_CHAR_POSITION_ID: &str =
     "ai_block:rich_content_link_first_char_position";
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum TextLocation {
+    Output {
+        section_index: usize,
+        /// Note that this does ***not*** correspond to the frame index of a text frame after layout;
+        /// Instead, it represents the line index of the `FormattedTextLine` after markdown parsing.
+        line_index: usize,
+    },
+    Query {
+        input_index: usize,
+    },
+    Action {
+        action_index: usize,
+        line_index: usize,
+    },
+}
 
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct LinkLocation {
@@ -141,55 +155,6 @@ pub(crate) struct HoverableDetectedLink {
 #[derive(Debug, Default)]
 pub(crate) struct DetectedLinksInTextLocation {
     pub(crate) detected_links: HashMap<Range<usize>, HoverableDetectedLink>,
-}
-
-pub(crate) fn add_link_detection_mouse_interactions<T: PartialClickableElement, A: Action>(
-    mut element: T,
-    detected_links_state: &DetectedLinksState,
-    link_action_constructors: LinkActionConstructors<A>,
-    location: TextLocation,
-) -> T {
-    if let Some(detected_links) = detected_links_state
-        .detected_links_by_location
-        .get(&location)
-    {
-        for (detected_link_range, hoverable_link) in &detected_links.detected_links {
-            let detected_link_range_clone = detected_link_range.clone();
-            element = element.with_clickable_char_range(
-                detected_link_range_clone.clone(),
-                move |modifiers, ctx, _app| {
-                    if should_directly_open_link(modifiers) {
-                        let action = (link_action_constructors.construct_open_link_action)(
-                            detected_link_range_clone.clone(),
-                            location,
-                        );
-                        ctx.dispatch_typed_action(action);
-                    } else {
-                        let action = (link_action_constructors.construct_open_link_tooltip_action)(
-                            detected_link_range_clone.clone(),
-                            location,
-                        );
-                        ctx.dispatch_typed_action(action);
-                    }
-                },
-            );
-            let detected_link_range_clone = detected_link_range.clone();
-            element = element.with_hoverable_char_range(
-                detected_link_range_clone.clone(),
-                hoverable_link.mouse_state.clone(),
-                Some(Cursor::PointingHand),
-                move |is_hovering, ctx, _app| {
-                    let action = (link_action_constructors.construct_changed_hover_on_link_action)(
-                        detected_link_range_clone.clone(),
-                        location,
-                        is_hovering,
-                    );
-                    ctx.dispatch_typed_action(action);
-                },
-            );
-        }
-    }
-    element
 }
 
 /// Returns the char ranges of detected URLs in the given text.
@@ -577,110 +542,11 @@ fn detect_line_ranges_after_file_path(
     (!detected_ranges.is_empty()).then_some(detected_ranges)
 }
 
-/// Pre-extracted hyperlinks keyed by text location. Each entry contains the char ranges
-/// and URL strings for markdown hyperlinks (e.g. `[text](url)`) found in that location.
-type HyperlinksByLocation = Vec<(TextLocation, Vec<(Range<usize>, String)>)>;
-
-/// Collects all text/location pairs and markdown hyperlinks from an AI output.
-/// Only reads in-memory data (no filesystem I/O), safe to call on the main thread.
-/// The returned data is designed to be fed into `detect_all_links` on a background thread.
-/// Returns raw text (no MD formatting) with location to run link detection on, and markdown hyperlinks.
-pub(crate) fn collect_output_data_for_link_detection(
-    output: &AIAgentOutput,
-    current_working_directory: Option<&String>,
-    shell_launch_data: Option<&ShellLaunchData>,
-) -> (Vec<(String, TextLocation)>, HyperlinksByLocation) {
-    let mut texts = Vec::new();
-    let mut hyperlinks = Vec::new();
-
-    // Collect action texts (ReadFiles requests)
-    for (action_index, action) in output.actions().enumerate() {
-        if let AIAgentActionType::ReadFiles(ReadFilesRequest { locations }) = &action.action {
-            for (line_index, file_location) in locations.iter().enumerate() {
-                texts.push((
-                    file_location.to_user_message(
-                        shell_launch_data,
-                        current_working_directory,
-                        None,
-                    ),
-                    TextLocation::Action {
-                        action_index,
-                        line_index,
-                    },
-                ));
-            }
-        }
-    }
-
-    // Collect output text sections and extract hyperlinks from formatted lines
-    for (section_index, section) in output
-        .all_text()
-        .flat_map(|text| text.sections.iter())
-        .enumerate()
-    {
-        match section {
-            AIAgentTextSection::PlainText { text } => match &text.formatted_lines {
-                Some(formatted_lines) => {
-                    for (line_index, line) in formatted_lines.lines().iter().enumerate() {
-                        let location = TextLocation::Output {
-                            section_index,
-                            line_index,
-                        };
-                        texts.push((line.raw_text().to_owned(), location));
-
-                        let url_hyperlinks = line.hyperlinks();
-                        if !url_hyperlinks.is_empty() {
-                            hyperlinks.push((location, url_hyperlinks));
-                        }
-                    }
-                }
-                _ => {
-                    texts.push((
-                        text.text().to_owned(),
-                        TextLocation::Output {
-                            section_index,
-                            line_index: 0,
-                        },
-                    ));
-                }
-            },
-            AIAgentTextSection::Image { image } => {
-                texts.push((
-                    image.markdown_source.clone(),
-                    TextLocation::Output {
-                        section_index,
-                        line_index: 0,
-                    },
-                ));
-                texts.push((
-                    image.source.clone(),
-                    TextLocation::Output {
-                        section_index,
-                        line_index: 1,
-                    },
-                ));
-            }
-            AIAgentTextSection::MermaidDiagram { diagram } => {
-                texts.push((
-                    diagram.markdown_source.clone(),
-                    TextLocation::Output {
-                        section_index,
-                        line_index: 0,
-                    },
-                ));
-            }
-            AIAgentTextSection::Code { .. } | AIAgentTextSection::Table { .. } => {}
-        }
-    }
-
-    (texts, hyperlinks)
-}
-
 /// Runs URL and file path detection on the given texts and combines with pre-extracted markdown hyperlinks.
 /// Designed to run on a background thread (file path detection does filesystem I/O).
 pub(crate) fn detect_all_links(
     texts: &[(String, TextLocation)],
-    md_hyperlinks: HyperlinksByLocation,
+    md_hyperlinks: Vec<(TextLocation, Vec<(Range<usize>, String)>)>,
     #[cfg_attr(not(feature = "local_fs"), allow(unused_variables))]
     current_working_directory: Option<&String>,
     #[cfg_attr(not(feature = "local_fs"), allow(unused_variables))] shell_launch_data: Option<

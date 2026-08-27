@@ -12,7 +12,7 @@ use super::{
     CLIAgent, UBER_TEAM_UID, build_diff_hunk_prompt, build_review_prompt,
     build_selection_line_range_prompt, build_selection_substring_prompt,
 };
-use crate::ai::agent::{AgentReviewCommentBatch, DiffSetHunk};
+use crate::code_review::agent_handoff::{AgentReviewCommentBatch, DiffSetHunk};
 use crate::code::buffer_location::LocalOrRemotePath;
 use crate::code::editor::line::EditorLineLocation;
 use crate::code_review::comments::{

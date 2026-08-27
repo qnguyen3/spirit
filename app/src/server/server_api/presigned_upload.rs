@@ -9,9 +9,6 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use crc::{CRC_32_ISCSI, Crc};
 pub use warp_server_client::HttpStatusError;
 
-#[cfg(feature = "local_fs")]
-use super::ai::FileArtifactUploadTargetInfo;
-use super::harness_support::{UploadFieldValue, UploadTarget};
 
 #[cfg(not(target_family = "wasm"))]
 pub(crate) static CRC32C: Crc<u32> = Crc::<u32>::new(&CRC_32_ISCSI);

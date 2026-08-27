@@ -7,26 +7,14 @@ use warpui::platform::OperatingSystem;
 use warpui::units::IntoLines;
 
 use super::{AgentOnboardingVersion, OnboardingIntention, OnboardingVersion, TerminalAction};
-use crate::ai::blocklist::agent_view::{
-    AgentViewEntryOrigin, ENTER_AGENT_VIEW_NEW_CONVERSATION_KEYSTROKE,
-};
-use crate::ai::predict::prompt_suggestions::ACCEPT_PROMPT_SUGGESTION_KEYBINDING;
 use crate::channel::{Channel, ChannelState};
 use crate::features::FeatureFlag;
-use crate::server::telemetry::{InteractionSource, ToggleBlockFilterSource};
+use crate::server::telemetry::ToggleBlockFilterSource;
 use crate::settings_view::flags;
 use crate::terminal::TerminalView;
-use crate::terminal::input::{
-    SET_INPUT_MODE_AGENT_ACTION_NAME, SET_INPUT_MODE_TERMINAL_ACTION_NAME,
-};
 use crate::terminal::model::escape_sequences::{self, EscCodes};
 use crate::terminal::model::selection::SelectionDirection;
 use crate::terminal::shared_session::{SharedSessionActionSource, SharedSessionStatus};
-use crate::terminal::view::passive_suggestions::PromptSuggestionResolution;
-use crate::terminal::view::{
-    LONG_RUNNING_AGENT_REQUESTED_COMMAND_CONTEXT_KEY,
-    LONG_RUNNING_AGENT_REQUESTED_COMMAND_USER_TOOK_OVER_CONTEXT_KEY,
-};
 use crate::util::bindings;
 use crate::util::bindings::{CustomAction, cmd_or_ctrl_shift, is_binding_pty_compliant};
 
@@ -34,14 +22,7 @@ pub const TOGGLE_BLOCK_FILTER_KEYBINDING: &str =
     "terminal:toggle_block_filter_on_selected_or_last_block";
 
 pub const CANCEL_COMMAND_KEYBINDING: &str = "terminal:cancel_command";
-pub const TOGGLE_AUTOEXECUTE_MODE_KEYBINDING: &str = "terminal:toggle_autoexecute_mode";
-pub const TOGGLE_QUEUE_NEXT_PROMPT_KEYBINDING: &str = "terminal:toggle_queue_next_prompt";
-pub const TOGGLE_HIDE_CLI_RESPONSES_KEYBINDING: &str = "terminal:toggle_hide_cli_responses";
 pub const OPEN_CLI_AGENT_RICH_INPUT_KEYBINDING: &str = "terminal:open_cli_agent_rich_input";
-pub const CYCLE_NEXT_ORCHESTRATION_CHILD_AGENT_KEYBINDING: &str =
-    "terminal:cycle_next_orchestration_child_agent";
-pub const CYCLE_PREVIOUS_ORCHESTRATION_CHILD_AGENT_KEYBINDING: &str =
-    "terminal:cycle_previous_orchestration_child_agent";
 
 const SELECT_NEXT_BLOCK_ACTION_NAME: &str = "terminal:select_next_block";
 pub const SELECT_PREVIOUS_BLOCK_ACTION_NAME: &str = "terminal:select_previous_block";
@@ -82,7 +63,6 @@ pub fn init(app: &mut AppContext) {
     init_overlapping_keybindings(app);
     // Register input mode bindings before warpify bindings so ctrl-i warpifies
     // instead of opening inline agent when a warpify banner is visible.
-    register_input_mode_bindings(app);
 
     app.register_fixed_bindings([
         FixedBinding::new("up", TerminalAction::Up, id!("Terminal") & !id!("IMEOpen")),
@@ -137,30 +117,6 @@ pub fn init(app: &mut AppContext) {
         FixedBinding::new(
             "delete",
             TerminalAction::ControlSequence("\x1b[3~".as_bytes().to_vec()),
-            id!("Terminal") & !id!("IMEOpen"),
-        ),
-        // Resume conversation keybinding
-        FixedBinding::new_per_platform(
-            PerPlatformKeystroke {
-                mac: "cmd-shift-R",
-                linux_and_windows: "ctrl-alt-r",
-            },
-            TerminalAction::ResumeConversation,
-            id!("Terminal") & !id!("IMEOpen") & id!(CAN_RESUME_CONVERSATION_KEY),
-        ),
-        // Fork from the last known good exchange keybinding
-        FixedBinding::new_per_platform(
-            PerPlatformKeystroke {
-                mac: "cmd-alt-y",
-                linux_and_windows: "ctrl-alt-y",
-            },
-            TerminalAction::ForkConversationFromLastKnownGoodState,
-            id!("Terminal") & !id!("IMEOpen") & id!(CAN_FORK_FROM_LAST_KNOWN_GOOD_STATE_KEY),
-        ),
-        // Toggle AI document pane
-        FixedBinding::new(
-            "cmdorctrl-alt-p",
-            TerminalAction::ToggleAIDocumentPane,
             id!("Terminal") & !id!("IMEOpen"),
         ),
         // On the web, we get pastes from system paste events.
@@ -245,15 +201,6 @@ pub fn init(app: &mut AppContext) {
                 TerminalAction::Copy,
                 id!("Terminal") & !id!("IMEOpen"),
             ),
-            FixedBinding::new(
-                cmd_or_ctrl_shift("i"),
-                TerminalAction::SetInputModeAgent,
-                id!("Terminal")
-                    & !id!("IMEOpen")
-                    & (!id!(flags::AGENT_VIEW_ENABLED)
-                        | id!(flags::ACTIVE_AGENT_VIEW)
-                        | id!(flags::ACTIVE_INLINE_AGENT_VIEW)),
-            ),
         ]);
     }
 
@@ -328,26 +275,6 @@ pub fn init(app: &mut AppContext) {
             id!("Terminal") & !id!("IMEOpen") & id!("LongRunningCommand") & id!("SubshellBanner"),
         ),
         EditableBinding::new(
-            ACCEPT_PROMPT_SUGGESTION_KEYBINDING,
-            "Accept Prompt Suggestion",
-            TerminalAction::ResolvePromptSuggestion(PromptSuggestionResolution::Accept {
-                interaction_source: InteractionSource::Keybinding,
-            }),
-        )
-        .with_mac_key_binding(if FeatureFlag::AgentView.is_enabled() {
-            "ctrl-enter"
-        } else {
-            "cmd-enter"
-        })
-        .with_linux_or_windows_key_binding(if FeatureFlag::AgentView.is_enabled() {
-            "alt-shift-enter"
-        } else {
-            "ctrl-shift-enter"
-        })
-        .with_context_predicate(
-            id!("Terminal") & !id!("IMEOpen") & id!(flags::HAS_PENDING_PROMPT_SUGGESTION),
-        ),
-        EditableBinding::new(
             CANCEL_COMMAND_KEYBINDING,
             if cfg!(windows) {
                 "Copy text or cancel active process"
@@ -411,21 +338,6 @@ pub fn init(app: &mut AppContext) {
         )
         .with_key_binding("alt-down")
         .with_context_predicate(id!("Terminal") & !id!("IMEOpen")),
-        EditableBinding::new(
-            "terminal:jump_to_latest_agent_message",
-            "Jump to latest agent message",
-            TerminalAction::JumpToLatestAgentMessage,
-        )
-        // Available from the terminal (enters the latest conversation's agent view)
-        // and from within the agent view it opens, where the rich input — not the
-        // terminal — holds focus, so its context lacks `Terminal` but carries
-        // `Input` plus the active-agent-view flag. The command always opens the
-        // full-screen agent view (`ACTIVE_AGENT_VIEW`), so the inline flag isn't
-        // needed here. Without the `Input` clause the command is unreachable from
-        // the command palette while in the agent view.
-        .with_context_predicate(
-            (id!("Terminal") | (id!("Input") & id!(flags::ACTIVE_AGENT_VIEW))) & !id!("IMEOpen"),
-        ),
         EditableBinding::new(
             "terminal:open_block_list_context_menu_via_keybinding",
             "Open block context menu",
@@ -881,35 +793,6 @@ pub fn init(app: &mut AppContext) {
     .with_context_predicate(id!("Terminal"))]);
 
     app.register_editable_bindings([
-        EditableBinding::new(
-            TOGGLE_AUTOEXECUTE_MODE_KEYBINDING,
-            "Toggle Auto-execute Mode",
-            TerminalAction::ToggleAutoexecuteMode,
-        )
-        .with_key_binding("cmdorctrl-shift-I")
-        .with_group(bindings::BindingGroup::WarpAi.as_str())
-        .with_context_predicate(id!(flags::IS_ANY_AI_ENABLED) & id!("Terminal"))
-        .with_enabled(|| FeatureFlag::FastForwardAutoexecuteButton.is_enabled()),
-        EditableBinding::new(
-            TOGGLE_QUEUE_NEXT_PROMPT_KEYBINDING,
-            "Toggle Queue Next Prompt",
-            TerminalAction::ToggleQueueNextPrompt,
-        )
-        .with_key_binding("cmdorctrl-shift-J")
-        .with_group(bindings::BindingGroup::WarpAi.as_str())
-        .with_context_predicate(id!(flags::IS_ANY_AI_ENABLED) & id!("Terminal"))
-        .with_enabled(|| FeatureFlag::QueueSlashCommand.is_enabled()),
-        EditableBinding::new(
-            "terminal:generate_codebase_index",
-            "[Debug] Generate codebase index",
-            TerminalAction::GenerateCodebaseIndex,
-        )
-        .with_group(bindings::BindingGroup::WarpAi.as_str())
-        .with_context_predicate(id!("Terminal") & !id!("IMEOpen"))
-        .with_enabled(|| {
-            FeatureFlag::FullSourceCodeEmbedding.is_enabled()
-                && ChannelState::enable_debug_features()
-        }),
     ]);
 
     app.register_editable_bindings([EditableBinding::new(
@@ -961,28 +844,6 @@ pub fn init(app: &mut AppContext) {
     .with_context_predicate(id!("Terminal") & id!(CAN_SHOW_CONVERSATION_DETAILS_KEY))]);
 
     app.register_editable_bindings([
-        EditableBinding::new(
-            CYCLE_NEXT_ORCHESTRATION_CHILD_AGENT_KEYBINDING,
-            "Cycle to next orchestration session",
-            TerminalAction::CycleNextOrchestrationChildAgent,
-        )
-        .with_group(bindings::BindingGroup::WarpAi.as_str())
-        .with_context_predicate(
-            id!("Terminal") & id!(flags::IS_ANY_AI_ENABLED) & id!(flags::ACTIVE_AGENT_VIEW),
-        )
-        .with_mac_key_binding("ctrl-alt-]")
-        .with_linux_or_windows_key_binding("ctrl-alt-]"),
-        EditableBinding::new(
-            CYCLE_PREVIOUS_ORCHESTRATION_CHILD_AGENT_KEYBINDING,
-            "Cycle to previous orchestration session",
-            TerminalAction::CyclePreviousOrchestrationChildAgent,
-        )
-        .with_group(bindings::BindingGroup::WarpAi.as_str())
-        .with_context_predicate(
-            id!("Terminal") & id!(flags::IS_ANY_AI_ENABLED) & id!(flags::ACTIVE_AGENT_VIEW),
-        )
-        .with_mac_key_binding("ctrl-alt-[")
-        .with_linux_or_windows_key_binding("ctrl-alt-["),
     ]);
 
     // Register bindings for starting a new cloud agent conversation.
@@ -1016,107 +877,3 @@ pub fn init(app: &mut AppContext) {
     }
 }
 
-/// Registers bindings related to input modes.
-fn register_input_mode_bindings(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
-
-    // A context predicate that matches when the input mode bindings are
-    // available for use. Disabled when a CLI agent session is active — the
-    // Warp agent should not be tagged into a CLI agent's command, and the
-    // `!` prefix is the only way to toggle shell mode in the rich input.
-    let base_context = id!(flags::IS_ANY_AI_ENABLED)
-        & (id!("Input") | id!("Terminal"))
-        & !id!("SubshellBanner")
-        & !id!(CLI_AGENT_SESSION_ACTIVE_KEY);
-
-    // A context predicate that is active when there is a long running command.
-    let command_predicate = id!("LongRunningCommand") | id!("AltScreen");
-
-    // A context predicate that is active when the user can switch input to agent mode.
-    let agent_mode_predicate = base_context.clone()
-        & ContextPredicate::Or(
-            Box::new(id!(flags::TERMINAL_MODE_INPUT)),
-            Box::new(ContextPredicate::Or(
-                Box::new(
-                    !id!(flags::TERMINAL_MODE_INPUT)
-                        & id!(LONG_RUNNING_AGENT_REQUESTED_COMMAND_USER_TOOK_OVER_CONTEXT_KEY),
-                ),
-                Box::new(command_predicate.clone()),
-            )),
-        );
-
-    // A context predicate that is active when the user could switch input to shell mode.
-    // This matches when in AI mode AND either:
-    // - AgentView feature is disabled, OR
-    // - In an active agent view, OR
-    // - Input is unlocked (autodetected) (implying the input is autodetected as AI in terminal mode)
-    let terminal_mode_predicate = base_context.clone()
-        & id!(flags::AGENT_MODE_INPUT)
-        & (!id!(flags::AGENT_VIEW_ENABLED)
-            | id!(flags::ACTIVE_AGENT_VIEW)
-            | id!(flags::ACTIVE_INLINE_AGENT_VIEW)
-            | !id!(flags::LOCKED_INPUT));
-
-    // A context predicate that is active when a user can start a new agent conversation.
-    let agent_conversation_predicate = base_context.clone()
-        & id!("Terminal")
-        & !id!("Input")
-        & !id!(ROOT_CLOUD_MODE_PANE_KEY)
-        & !id!(flags::HAS_PENDING_PROMPT_SUGGESTION);
-
-    app.register_fixed_bindings([
-        FixedBinding::new_per_platform(
-            PerPlatformKeystroke {
-                mac: "cmd-enter",
-                linux_and_windows: "ctrl-shift-enter",
-            },
-            TerminalAction::StartNewAgentConversation {
-                origin: AgentViewEntryOrigin::Keybinding(
-                    ENTER_AGENT_VIEW_NEW_CONVERSATION_KEYSTROKE.clone(),
-                ),
-            },
-            agent_conversation_predicate.clone() & !command_predicate.clone(),
-        )
-        .with_enabled(|| FeatureFlag::AgentView.is_enabled()),
-        FixedBinding::new_per_platform(
-            PerPlatformKeystroke {
-                mac: "cmd-enter",
-                linux_and_windows: "ctrl-shift-enter",
-            },
-            TerminalAction::SetInputModeAgent,
-            agent_conversation_predicate & agent_mode_predicate.clone() & command_predicate,
-        )
-        .with_enabled(|| FeatureFlag::AgentView.is_enabled()),
-    ]);
-
-    app.register_editable_bindings([
-        EditableBinding::new(
-            SET_INPUT_MODE_AGENT_ACTION_NAME,
-            "Set Input Mode to Agent Mode",
-            TerminalAction::SetInputModeAgent,
-        )
-        .with_group(bindings::BindingGroup::WarpAi.as_str())
-        .with_context_predicate(agent_mode_predicate)
-        .with_mac_key_binding("cmd-i")
-        .with_linux_or_windows_key_binding("ctrl-i"),
-        EditableBinding::new(
-            SET_INPUT_MODE_TERMINAL_ACTION_NAME,
-            "Set Input Mode to Terminal Mode",
-            TerminalAction::SetInputModeTerminal,
-        )
-        .with_group(bindings::BindingGroup::WarpAi.as_str())
-        .with_context_predicate(terminal_mode_predicate)
-        .with_mac_key_binding("cmd-i")
-        .with_linux_or_windows_key_binding("ctrl-i"),
-        EditableBinding::new(
-            TOGGLE_HIDE_CLI_RESPONSES_KEYBINDING,
-            "Toggle Hide CLI Responses",
-            TerminalAction::ToggleHideCliResponses,
-        )
-        .with_key_binding("cmdorctrl-g")
-        .with_group(bindings::BindingGroup::WarpAi.as_str())
-        .with_context_predicate(
-            id!(flags::IS_ANY_AI_ENABLED) & !id!(LONG_RUNNING_AGENT_REQUESTED_COMMAND_CONTEXT_KEY),
-        ),
-    ]);
-}

@@ -674,7 +674,7 @@ pub fn test_restore_completed_blocks() {
         .with_terminal_events_tx(events_tx)
         .build();
 
-    let serialized_block: SerializedBlockListItem =
+    let serialized_block: SerializedBlock =
         SerializedBlock::new_for_test("i am".into(), "restored".into()).into();
     let restored_blocks = [serialized_block.clone(), serialized_block];
     let block_list = TestBlockListBuilder::new()
@@ -900,7 +900,7 @@ pub fn test_basic_bootstrapping() {
 
 #[test]
 pub fn test_session_restoration_separator() {
-    let serialized_block: SerializedBlockListItem =
+    let serialized_block: SerializedBlock =
         SerializedBlock::new_for_test("i am".as_bytes().to_vec(), "restored".as_bytes().to_vec())
             .into();
     let restored_blocks = [serialized_block.clone(), serialized_block];

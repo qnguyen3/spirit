@@ -23,9 +23,6 @@ use warpui::{
     ViewContext, ViewHandle, WeakViewHandle,
 };
 
-use super::agent_assisted_environment_modal::{
-    AgentAssistedEnvironmentModal, AgentAssistedEnvironmentModalEvent,
-};
 use super::delete_environment_confirmation_dialog::{
     DeleteEnvironmentConfirmationDialog, DeleteEnvironmentConfirmationDialogEvent,
 };
@@ -38,8 +35,6 @@ use super::update_environment_form::{
     UpdateEnvironmentFormEvent,
 };
 use super::{SettingsSection, editor_text_colors};
-use crate::ai::ambient_agents::github_auth_url::GithubAuthRedirectTarget;
-use crate::ai::cloud_environments::{self, CloudAmbientAgentEnvironment};
 use crate::appearance::Appearance;
 use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
 use crate::cloud_object::{
@@ -55,9 +50,6 @@ use crate::server::cloud_objects::update_manager::{
     ObjectOperation, OperationSuccessType, UpdateManager, UpdateManagerEvent,
 };
 use crate::server::ids::{ClientId, ServerId, SyncId};
-use crate::terminal::view::init_environment::mode_selector::{
-    EnvironmentSetupMode, EnvironmentSetupModeSelector, EnvironmentSetupModeSelectorEvent,
-};
 use crate::themes::theme::Fill as ThemeFill;
 use crate::ui_components::blended_colors;
 use crate::ui_components::buttons::icon_button_with_color;

@@ -1,7 +1,6 @@
 use fuzzy_match::match_indices_case_insensitive;
 use warpui::AppContext;
 
-use crate::ai::conversation_navigation::ConversationNavigationData;
 use crate::search::SyncDataSource;
 use crate::search::command_palette::conversations::DataSource;
 use crate::search::command_palette::conversations::search_item::{

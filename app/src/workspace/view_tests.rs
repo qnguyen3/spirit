@@ -39,7 +39,7 @@ use crate::ai::mcp::gallery::MCPGalleryManager;
 use crate::ai::mcp::templatable_manager::TemplatableMCPServerManager;
 use crate::ai::mcp::{FileBasedMCPManager, FileMCPWatcher};
 use crate::ai::outline::RepoOutlines;
-use crate::ai::persisted_workspace::PersistedWorkspace;
+use crate::persisted_workspace::PersistedWorkspace;
 use crate::ai::restored_conversations::RestoredAgentConversations;
 use crate::ai::skills::SkillManager;
 use crate::cloud_object::model::persistence::CloudModel;
@@ -3005,7 +3005,7 @@ fn add_get_started_tab(workspace: &mut Workspace, ctx: &mut ViewContext<Workspac
             custom_vertical_tabs_title: None,
             contents: LeafContents::GetStarted,
         }))),
-        Arc::new(HashMap::<PaneUuid, Vec<SerializedBlockListItem>>::new()),
+        Arc::new(HashMap::<PaneUuid, Vec<SerializedBlock>>::new()),
         None,
         ctx,
     );

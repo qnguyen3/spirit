@@ -15,8 +15,6 @@ use warpui::ui_components::button::ButtonTooltipPosition;
 use warpui::ui_components::components::{UiComponent, UiComponentStyles};
 use warpui::{AppContext, Element, Gradient, SingletonEntity};
 
-use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::blocklist::history_model::BlocklistAIHistoryModel;
 use crate::appearance::Appearance;
 use crate::search::SearchItem;
 use crate::search::command_palette::conversations::search::MatchedConversation;

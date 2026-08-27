@@ -38,10 +38,6 @@ use super::billing_and_usage_page::{
 };
 use super::settings_page::{AdditionalInfo, render_customer_type_badge, render_info_icon};
 use super::{SettingsSection, plan_header_presentation};
-use crate::ai::AIRequestUsageModel;
-use crate::ai::request_usage_model::{
-    AMBIENT_AGENT_TRIAL_CREDIT_THRESHOLD, BonusGrant, BonusGrantScope, BonusGrantType,
-};
 use crate::auth::auth_state::AuthState;
 use crate::auth::auth_view_modal::AuthViewVariant;
 use crate::auth::{AuthManager, AuthStateProvider};
@@ -49,7 +45,6 @@ use crate::modal::{Modal, ModalEvent, ModalViewState};
 use crate::pricing::PricingInfoModel;
 use crate::server::ids::ServerId;
 use crate::server::telemetry::TelemetryEvent;
-use crate::settings::ai::AISettings;
 use crate::ui_components::blended_colors;
 use crate::ui_components::buttons::icon_button;
 use crate::ui_components::icons::Icon;

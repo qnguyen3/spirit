@@ -18,7 +18,6 @@ use regex::Regex;
 use warpui::{AppContext, Entity, SingletonEntity, ViewContext, WeakViewHandle, WindowId};
 
 use super::UserWorkspaces;
-use crate::ai::llms::{LLMId, LLMProvider};
 use crate::server::ids::ServerId;
 use crate::settings::AgentModeCommandExecutionPredicate;
 use crate::workspaces::gql_convert::ToAgentModeCommandExecutionPredicates;

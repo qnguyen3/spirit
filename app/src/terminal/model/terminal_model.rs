@@ -29,7 +29,7 @@ use warpui::image_cache::ImageType;
 use super::super::{AltScreen, BlockList};
 use super::ansi::{BootstrappedValue, FinishUpdateValue, InputBufferValue, Mode, PendingHook};
 use super::block::{
-    AgentInteractionMetadata, Block, BlockId, BlockMetadata, BlockSize, BlockState,
+    Block, BlockId, BlockMetadata, BlockSize, BlockState,
     BlocklistEnvVarMetadata, SerializedBlock,
 };
 use super::blockgrid::BlockGrid;
@@ -51,8 +51,6 @@ use super::secrets::{RespectObfuscatedSecrets, SecretAndHandle};
 use super::selection::ScrollDelta;
 use super::session::{BootstrapSessionType, InBandCommandOutputReceiver, SessionId};
 use super::{Secret, SecretHandle};
-use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::ai::blocklist::SerializedBlockListItem;
 use crate::terminal::available_shells::AvailableShell;
 use crate::terminal::block_filter::BlockFilterQuery;
 use crate::terminal::block_list_element::GridType;
@@ -78,7 +76,6 @@ use crate::terminal::model::index::VisibleRow;
 use crate::terminal::model::iterm_image::{ITermImage, ITermImageMetadata};
 use crate::terminal::model::secrets::ObfuscateSecrets;
 use crate::terminal::model::session::SessionInfo;
-use crate::terminal::shared_session::ai_agent::encode_agent_response_event;
 use crate::terminal::shared_session::{SharedSessionSource, SharedSessionStatus};
 use crate::terminal::shell::{ShellName, ShellType};
 use crate::terminal::ssh::util::{InteractiveSshCommand, SshLoginState};
@@ -89,18 +86,6 @@ use crate::terminal::{
 
 /// Max size of the window title stack.
 const TITLE_STACK_MAX_DEPTH: usize = 4096;
-
-/// The status of a conversation transcript viewer.
-/// This tracks both the loading state and the type of conversation being viewed.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ConversationTranscriptViewerStatus {
-    /// Loading conversation data from the server.
-    Loading,
-    /// Viewing a local conversation (not from ambient agent).
-    ViewingLocalConversation,
-    /// Viewing an ambient agent conversation with the associated task ID.
-    ViewingAmbientConversation(AmbientAgentTaskId),
-}
 
 #[derive(Debug, Clone, Default)]
 pub struct FindOptions {
@@ -487,10 +472,6 @@ pub struct TerminalModel {
     /// (no local shell process, deferred shared-session viewer backing).
     is_dummy_cloud_mode_session: bool,
 
-    /// If Some, this terminal is displaying a read-only conversation transcript.
-    /// Tracks both the loading state and the type of conversation being viewed.
-    conversation_transcript_viewer_status: Option<ConversationTranscriptViewerStatus>,
-
     /// A sender for terminal-state updates that must be ordered against each other.
     /// This goes through the [`TerminalModel`] because the [`TerminalModel`] is exposed as
     /// a synchronized data structure (i.e. [`FairMutex<TerminalModel>`]) and thus multiple
@@ -505,11 +486,6 @@ pub struct TerminalModel {
     ///
     /// This field is only [`Some`] if this session is shared.
     write_to_pty_events_for_shared_session_tx: Option<Sender<Vec<u8>>>,
-
-    /// Whether this viewer is currently receiving historical agent conversation replay.
-    /// Used to suppress live-conversation-specific actions (e.g. tombstone insertion)
-    /// until the replay is complete.
-    is_receiving_agent_conversation_replay: bool,
 
     /// When some, the TerminalModel emits the event [Event::DetectedEndOfSshLogin]. This
     /// event is emitted either as the initial check or the confirmation check.
@@ -955,7 +931,7 @@ impl TerminalModel {
         event_proxy: ChannelEventListener,
         background_executor: Arc<Background>,
         should_show_bootstrap_block: bool,
-        restored_blocks: Option<&[SerializedBlockListItem]>,
+        restored_blocks: Option<&[SerializedBlock]>,
         honor_ps1: bool,
         is_inverted: bool,
         session_startup_path: Option<PathBuf>,
@@ -1019,7 +995,7 @@ impl TerminalModel {
 
     #[allow(clippy::too_many_arguments)]
     fn new_internal(
-        restored_blocks: Option<&[SerializedBlockListItem]>,
+        restored_blocks: Option<&[SerializedBlock]>,
         sizes: BlockSize,
         colors: color::List,
         event_proxy: ChannelEventListener,
@@ -1089,10 +1065,8 @@ impl TerminalModel {
             shared_session_status,
             shared_session_source: None,
             is_dummy_cloud_mode_session,
-            conversation_transcript_viewer_status: None,
             ordered_terminal_events_for_shared_session_tx: None,
             write_to_pty_events_for_shared_session_tx: None,
-            is_receiving_agent_conversation_replay: false,
             notify_on_end_of_ssh_login: None,
             is_receiving_hook: IsReceivingHook::No,
             image_id_to_metadata: HashMap::new(),
@@ -1105,7 +1079,7 @@ impl TerminalModel {
     /// Creates a terminal model for a local terminal session.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        restored_blocks: Option<&[SerializedBlockListItem]>,
+        restored_blocks: Option<&[SerializedBlock]>,
         sizes: BlockSize,
         colors: color::List,
         event_proxy: ChannelEventListener,
@@ -1248,17 +1222,6 @@ impl TerminalModel {
         self.ordered_terminal_events_for_shared_session_tx = None;
     }
 
-    fn ai_metadata_to_protocol(metadata: &AgentInteractionMetadata) -> AICommandMetadata {
-        AICommandMetadata {
-            tool_call_id: metadata
-                .requested_command_action_id()
-                .map(|id| id.to_string())
-                .unwrap_or_default(),
-            // Any command with a long-running control state is considered agent-monitored.
-            is_agent_monitored: metadata.long_running_control_state().is_some(),
-        }
-    }
-
     pub fn set_write_to_pty_events_for_shared_session_tx(&mut self, tx: Sender<Vec<u8>>) {
         self.write_to_pty_events_for_shared_session_tx = Some(tx);
     }
@@ -1281,63 +1244,6 @@ impl TerminalModel {
         self.write_to_pty_events_for_shared_session_tx = None;
     }
 
-    /// Sends an Agent ResponseEvent to viewers if this session is shared.
-    /// The participant_id should be the ID of the participant who initiated the query.
-    /// The forked_from_conversation_token is used for forked conversations to help viewers
-    /// link the new server-assigned token to an existing conversation from historical replay.
-    pub fn send_agent_response_for_shared_session(
-        &mut self,
-        response: &warp_multi_agent_api::ResponseEvent,
-        response_initiator: Option<ParticipantId>,
-        forked_from_conversation_token: Option<String>,
-    ) {
-        // We should always have a response initiator for shared sessions,
-        // but if we don't we should still send the response event to the viewers
-        // (as opposed to completely failing and skipping the send).
-        if response_initiator.is_none() {
-            report_error!(anyhow::anyhow!(
-                "No response initiator tracked for agent response event."
-            ));
-        }
-
-        if self.shared_session_status().is_sharer() {
-            if let Some(tx) = &self.ordered_terminal_events_for_shared_session_tx {
-                let encoded = encode_agent_response_event(response);
-                if let Err(e) = tx.try_send(OrderedTerminalEventType::AgentResponseEvent {
-                    response_initiator,
-                    response_event: encoded,
-                    forked_from_conversation_token,
-                }) {
-                    log::warn!("Failed to send OrderedTerminalEventType::AgentResponseEvent: {e}");
-                }
-            }
-        } else {
-            log::debug!("Not sharing this session; ignoring agent response event");
-        }
-    }
-
-    pub fn send_agent_conversation_replay_started_for_shared_session(&mut self) {
-        if self.shared_session_status().is_sharer()
-            && let Some(tx) = &self.ordered_terminal_events_for_shared_session_tx
-            && let Err(e) = tx.try_send(OrderedTerminalEventType::AgentConversationReplayStarted)
-        {
-            log::warn!(
-                "Failed to send OrderedTerminalEventType::AgentConversationReplayStarted: {e}"
-            );
-        }
-    }
-
-    pub fn send_agent_conversation_replay_ended_for_shared_session(&mut self) {
-        if self.shared_session_status().is_sharer()
-            && let Some(tx) = &self.ordered_terminal_events_for_shared_session_tx
-            && let Err(e) = tx.try_send(OrderedTerminalEventType::AgentConversationReplayEnded)
-        {
-            log::warn!(
-                "Failed to send OrderedTerminalEventType::AgentConversationReplayEnded: {e}"
-            );
-        }
-    }
-
     /// Signal to viewers that the Cloud Mode Setup V2 phase is complete and no
     /// follow-up `AppendedExchange` is coming (e.g. because the AgentDriver is
     /// short-circuiting an empty-prompt handoff via `skip_initial_turn`).
@@ -1350,16 +1256,6 @@ impl TerminalModel {
         {
             log::warn!("Failed to send OrderedTerminalEventType::CloudModeSetupPhaseEnded: {e}");
         }
-    }
-
-    /// Whether the session sharing server is currently replaying
-    /// conversation events (for conversation reconstruction).
-    pub fn is_receiving_agent_conversation_replay(&self) -> bool {
-        self.is_receiving_agent_conversation_replay
-    }
-
-    pub fn set_is_receiving_agent_conversation_replay(&mut self, value: bool) {
-        self.is_receiving_agent_conversation_replay = value;
     }
 
     pub fn set_shared_session_source(&mut self, source: SharedSessionSource) {
@@ -1389,43 +1285,6 @@ impl TerminalModel {
     #[cfg(test)]
     pub fn set_is_dummy_cloud_mode_session(&mut self, value: bool) {
         self.is_dummy_cloud_mode_session = value;
-    }
-
-    pub fn is_shared_ambient_agent_session(&self) -> bool {
-        matches!(
-            self.shared_session_source.as_ref().map(|s| &s.source_type),
-            Some(SessionSourceType::AmbientAgent { .. })
-        )
-    }
-
-    pub fn ambient_agent_task_id(&self) -> Option<AmbientAgentTaskId> {
-        if let Some(ConversationTranscriptViewerStatus::ViewingAmbientConversation(task_id)) =
-            &self.conversation_transcript_viewer_status
-        {
-            return Some(*task_id);
-        }
-        self.shared_session_source
-            .as_ref()
-            .and_then(|s| s.orchestrator_task_id())
-            .and_then(|s| s.parse().ok())
-    }
-
-    /// Model-only portion of the "is this a cloud agent conversation?" check used for display
-    /// purposes (e.g. the cloud agent icon). Callers holding a [`TerminalView`] should use
-    /// [`TerminalView::is_cloud_agent_session`], which also accounts for the ambient agent view
-    /// model.
-    ///
-    /// This intentionally keys off cloud-execution (ambient agent) semantics — a shared
-    /// *ambient* session or viewing an ambient conversation — NOT the mere presence of an
-    /// orchestrator task id. A manually shared *local* (`User`) session carries a
-    /// `source_task_id` sidecar but is not a cloud agent conversation, so it must fall through
-    /// here (see QUALITY-726).
-    pub fn is_cloud_agent_conversation(&self) -> bool {
-        self.is_shared_ambient_agent_session()
-            || matches!(
-                self.conversation_transcript_viewer_status.as_ref(),
-                Some(ConversationTranscriptViewerStatus::ViewingAmbientConversation(_))
-            )
     }
 
     /// Loads the provided scrollback into the model.
@@ -1498,30 +1357,6 @@ impl TerminalModel {
         self.handled_exit
             || self.is_conversation_transcript_viewer()
             || self.shared_session_status().is_finished_viewer()
-    }
-
-    pub fn is_conversation_transcript_viewer(&self) -> bool {
-        self.conversation_transcript_viewer_status.is_some()
-    }
-
-    pub fn is_loading_conversation_transcript(&self) -> bool {
-        matches!(
-            self.conversation_transcript_viewer_status,
-            Some(ConversationTranscriptViewerStatus::Loading)
-        )
-    }
-
-    pub fn conversation_transcript_viewer_status(
-        &self,
-    ) -> Option<&ConversationTranscriptViewerStatus> {
-        self.conversation_transcript_viewer_status.as_ref()
-    }
-
-    pub fn set_conversation_transcript_viewer_status(
-        &mut self,
-        status: Option<ConversationTranscriptViewerStatus>,
-    ) {
-        self.conversation_transcript_viewer_status = status;
     }
 
     pub fn colors(&self) -> color::List {
@@ -1687,18 +1522,10 @@ impl TerminalModel {
     pub fn start_command_execution_for_shared_session(
         &mut self,
         participant_id: ParticipantId,
-        agent_metadata: Option<AgentInteractionMetadata>,
     ) -> StartCommandOutcome {
         let outcome = self.start_command_execution_for_kind(CommandStartKind::SharedSession);
         if !outcome.is_accepted() {
             return outcome;
-        }
-
-        // If this command has AI metadata, attach it to the active block.
-        if let Some(ai_metadata) = &agent_metadata {
-            self.block_list
-                .active_block_mut()
-                .set_agent_interaction_mode(ai_metadata.clone());
         }
 
         // TODO (suraj): add participant ID to active block metadata.
@@ -1708,25 +1535,10 @@ impl TerminalModel {
         if let Some(tx) = &self.ordered_terminal_events_for_shared_session_tx
             && let Err(e) = tx.try_send(OrderedTerminalEventType::CommandExecutionStarted {
                 participant_id,
-                ai_metadata: agent_metadata.as_ref().map(Self::ai_metadata_to_protocol),
+                ai_metadata: None,
             })
         {
             log::warn!("Failed to send OrderedTerminalEventType::CommandExecutionStarted: {e}");
-        }
-        outcome
-    }
-
-    /// Starts the command execution (per `Self::start_command_execution`) and additionally sets
-    /// the given `ai_metadata` on the active block.
-    pub fn start_command_execution_with_ai_metadata(
-        &mut self,
-        agent_metadata: AgentInteractionMetadata,
-    ) -> StartCommandOutcome {
-        let outcome = self.start_command_execution_for_kind(CommandStartKind::UserOrQueued);
-        if outcome.is_accepted() {
-            self.block_list
-                .active_block_mut()
-                .set_agent_interaction_mode(agent_metadata);
         }
         outcome
     }

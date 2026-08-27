@@ -22,7 +22,7 @@ use crate::ai::blocklist::local_agent_task_sync_model::LocalAgentTaskSyncModel;
 use crate::ai::blocklist::orchestration_event_streamer::OrchestrationEventStreamer;
 use crate::ai::blocklist::orchestration_events::OrchestrationEventService;
 use crate::ai::blocklist::{
-    BlocklistAIHistoryModel, BlocklistAIPermissions, QueuedQueryModel, SerializedBlockListItem,
+    BlocklistAIHistoryModel, BlocklistAIPermissions, QueuedQueryModel, SerializedBlock,
 };
 use crate::ai::cloud_environments::CloudEnvironmentCatalog;
 use crate::ai::connected_self_hosted_workers::ConnectedSelfHostedWorkersModel;
@@ -33,7 +33,7 @@ use crate::ai::llms::LLMPreferences;
 use crate::ai::mcp::gallery::MCPGalleryManager;
 use crate::ai::mcp::templatable_manager::TemplatableMCPServerManager;
 use crate::ai::outline::RepoOutlines;
-use crate::ai::persisted_workspace::PersistedWorkspace;
+use crate::persisted_workspace::PersistedWorkspace;
 use crate::ai::pricing_promotion::PricingPromotionState;
 use crate::ai::restored_conversations::RestoredAgentConversations;
 use crate::ai::skills::SkillManager;
@@ -195,7 +195,7 @@ pub fn initialize_app_for_terminal_view(app: &mut App) {
 /// Returns the handle to that terminal view.
 pub fn add_window_with_terminal(
     app: &mut App,
-    restored_blocks: Option<&[SerializedBlockListItem]>,
+    restored_blocks: Option<&[SerializedBlock]>,
 ) -> ViewHandle<TerminalView> {
     add_window_with_id_and_terminal(app, restored_blocks).1
 }
@@ -204,7 +204,7 @@ pub fn add_window_with_terminal(
 /// Returns the WindowID and the handle to that terminal view.
 pub fn add_window_with_id_and_terminal(
     app: &mut App,
-    restored_blocks: Option<&[SerializedBlockListItem]>,
+    restored_blocks: Option<&[SerializedBlock]>,
 ) -> (WindowId, ViewHandle<TerminalView>) {
     let tips_model = app.add_model(|_| Default::default());
     app.add_window(WindowStyle::NotStealFocus, |ctx| {

@@ -2,7 +2,6 @@ use fuzzy_match::FuzzyMatchResult;
 use warpui::{AppContext, Entity, SingletonEntity};
 
 use super::search_item::RuleSearchItem;
-use crate::ai::facts::{AIFact, CloudAIFactModel};
 use crate::cloud_object::CloudObject;
 use crate::cloud_object::model::generic_string_model::GenericStringObjectId;
 use crate::cloud_object::model::persistence::CloudModel;
