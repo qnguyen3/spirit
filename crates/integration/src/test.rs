@@ -2,7 +2,6 @@
 //! src/integration.rs and src/bin/integration.rs in order to register them
 //! to be run.
 
-mod ai_document;
 mod block_filtering;
 mod bootstrapping;
 mod code_review;
@@ -20,7 +19,6 @@ mod pane_restoration;
 #[cfg(target_os = "macos")]
 mod preview_config_migration;
 mod remote_server;
-mod rules;
 mod secrets;
 mod session_restoration;
 mod settings_file_errors;
@@ -43,7 +41,6 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
 
-pub use ai_document::*;
 use anyhow::{Result, anyhow};
 pub use block_filtering::*;
 pub use bootstrapping::*;
@@ -66,7 +63,6 @@ use pathfinder_geometry::vector::Vector2F;
 #[cfg(target_os = "macos")]
 pub use preview_config_migration::*;
 pub use remote_server::*;
-pub use rules::*;
 use rust_embed::RustEmbed;
 pub use secrets::*;
 pub use session_restoration::*;

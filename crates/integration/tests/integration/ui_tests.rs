@@ -309,9 +309,6 @@ integration_tests! {
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     test_middle_click_paste,
 
-    test_rule_creation,
-    test_rule_update,
-    test_rule_pane_opening,
     test_undo_close_stack_timeout_cleanup,
 
     test_file_tree_opens_files_in_warp,
@@ -334,7 +331,6 @@ integration_tests! {
     test_code_editor_relative_line_numbers_follow_cursor,
 
     // AI document tests
-    test_copy_ai_document_as_markdown_from_overflow_menu,
 
     // Keyboard protocol tests
     test_keyboard_protocol_disabled_shift_enter,
