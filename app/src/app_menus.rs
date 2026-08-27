@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::fs::File;
 use std::path::PathBuf;
 
-use ai::workspace::WorkspaceMetadata;
 use csv::Writer;
 use enclose::enclose;
 use itertools::Itertools;
@@ -34,6 +33,7 @@ use crate::user_config::WarpConfig;
 use crate::util::bindings::{self, CustomAction, trigger_to_keystroke};
 use crate::util::links;
 use crate::workspace::sync_inputs::SyncedInputState;
+use crate::workspace_metadata::WorkspaceMetadata;
 
 type CheckmarkStatusGetter = dyn 'static + Fn(&mut AppContext) -> bool;
 

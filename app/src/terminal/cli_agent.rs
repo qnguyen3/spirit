@@ -6,7 +6,6 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use ai::skills::SkillProvider;
 use enum_iterator::Sequence;
 use markdown_parser::parse_markdown;
 use pathfinder_color::ColorU;
@@ -23,6 +22,7 @@ use crate::code::editor::line::EditorLineLocation;
 use crate::code_review::agent_handoff::{AgentReviewCommentBatch, DiffSetHunk};
 use crate::code_review::comments::AttachedReviewCommentTarget;
 use crate::server::telemetry::CLIAgentType;
+use crate::skills::SkillProvider;
 use crate::ui_components::icons::Icon;
 use crate::util::color::CLAUDE_ORANGE;
 use crate::workspaces::user_workspaces::UserWorkspaces;

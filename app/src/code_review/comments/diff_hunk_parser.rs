@@ -1,9 +1,9 @@
 //! Utilities for parsing unified diff hunks and extracting specific line content.
 
-use ai::agent::action::CommentSide;
 use num_traits::SaturatingSub;
 use warp_editor::render::model::LineCount;
 
+use super::imported::CommentSide;
 use crate::code::editor::line::EditorLineLocation;
 use crate::code_review::comments::LineDiffContent;
 use crate::code_review::diff_state::DiffLineType;

@@ -1,10 +1,10 @@
 use std::cmp::Ordering;
 use std::path::PathBuf;
 
-use ai::agent::action::ReviewCommentThreadItem;
 use chrono::{DateTime, Local};
 
 use super::comment::{ImportedCommentDetails, LineDiffContent};
+use super::threads::ReviewCommentThreadItem;
 use crate::code::editor::line::EditorLineLocation;
 
 /// Pending imported GitHub review comment.

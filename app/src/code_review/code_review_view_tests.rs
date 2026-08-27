@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use ai::agent::action::InsertReviewComment;
 use chrono::Local;
 use lsp::LspManagerModel;
 use repo_metadata::repositories::DetectedRepositories;
@@ -23,7 +22,7 @@ use crate::code::local_code_editor::LocalCodeEditorView;
 use crate::code_review::GlobalCodeReviewModel;
 use crate::code_review::comments::{
     AttachedReviewComment, AttachedReviewCommentTarget, CommentId, CommentOrigin,
-    ImportedCommentDetails, LineDiffContent, PendingImportedReviewComment,
+    ImportedCommentDetails, InsertReviewComment, LineDiffContent, PendingImportedReviewComment,
     PendingImportedReviewCommentTarget, attach_pending_imported_comments,
 };
 use crate::code_review::diff_size_limits::DiffSize;
@@ -113,7 +112,7 @@ fn create_editor_with_content(app: &mut App, content: &str) -> ViewHandle<LocalC
             editor.reset(InitialBufferState::plain_text(&content), ctx);
         });
 
-        LocalCodeEditorView::new(code_editor_view, None, false, ctx)
+        LocalCodeEditorView::new(code_editor_view, ctx)
     });
 
     local_editor
@@ -143,7 +142,7 @@ fn create_editor_with_diff(
             editor.set_base(&base, true, ctx);
         });
 
-        LocalCodeEditorView::new(code_editor_view, None, false, ctx)
+        LocalCodeEditorView::new(code_editor_view, ctx)
     });
 
     local_editor

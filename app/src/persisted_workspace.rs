@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::SyncSender;
 
-use ai::workspace::WorkspaceMetadata;
 use anyhow::Context;
 use chrono::Utc;
 use itertools::Itertools;
@@ -36,6 +35,7 @@ use crate::server::server_api::ServerApiProvider;
 use crate::terminal::TerminalView;
 #[cfg(feature = "local_fs")]
 use crate::terminal::local_shell::LocalShellState;
+use crate::workspace_metadata::WorkspaceMetadata;
 #[cfg(feature = "local_fs")]
 use crate::{view_components::DismissibleToast, workspace::ToastStack};
 
