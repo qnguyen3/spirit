@@ -58,3 +58,23 @@ fn install_docs_urls_are_https() {
         );
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn is_installed_resolves_against_the_supplied_path() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    use super::is_installed;
+
+    let def = &agent_catalog()[0];
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let binary_path = temp_dir.path().join(def.binary);
+    std::fs::write(&binary_path, "#!/bin/sh\n").unwrap();
+    std::fs::set_permissions(&binary_path, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let path_env = temp_dir.path().to_str().unwrap();
+    assert!(is_installed(def, Some(path_env)));
+
+    let empty_dir = tempfile::TempDir::new().unwrap();
+    assert!(!is_installed(def, Some(empty_dir.path().to_str().unwrap())));
+}

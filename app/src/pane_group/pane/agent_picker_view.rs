@@ -17,6 +17,9 @@ use crate::agent_launcher::catalog::{self, AgentDefinition};
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::pane_group::pane::view;
 use crate::pane_group::{BackingView, PaneConfiguration, PaneEvent};
+#[cfg(all(not(target_family = "wasm"), feature = "local_tty"))]
+use crate::terminal::local_shell::LocalShellState;
+use crate::ui_components::icons::Icon;
 use crate::workspace::WorkspaceAction;
 
 pub const AGENT_PICKER_PANE_TITLE: &str = "New Agent";
@@ -33,6 +36,9 @@ const ROW_HORIZONTAL_PADDING: f32 = 10.;
 const ROW_VERTICAL_PADDING: f32 = 8.;
 const ROW_DETAIL_INSET: f32 = ICON_GLYPH_SIZE + 2. * ICON_CIRCLE_PADDING + ROW_ICON_MARGIN_RIGHT;
 const ROW_ICON_MARGIN_RIGHT: f32 = 10.;
+const CHEVRON_SIZE: f32 = 14.;
+const CHEVRON_MARGIN_RIGHT: f32 = 6.;
+const NOT_INSTALLED_SECTION_MARGIN_TOP: f32 = 8.;
 
 pub fn init(app: &mut AppContext) {
     use warpui::keymap::macros::*;
@@ -64,6 +70,7 @@ pub enum AgentPickerAction {
     Confirm,
     Close,
     Select(usize),
+    ToggleNotInstalled,
 }
 
 #[derive(Debug)]
@@ -82,6 +89,10 @@ pub struct AgentPickerView {
     focus_handle: Option<PaneFocusHandle>,
     rows: Vec<AgentPickerRow>,
     selected_index: Option<usize>,
+    shell_path_env: Option<String>,
+    shell_path_requested: bool,
+    not_installed_expanded: bool,
+    not_installed_header_mouse_state: MouseStateHandle,
 }
 
 impl AgentPickerView {
@@ -91,7 +102,7 @@ impl AgentPickerView {
         let rows: Vec<AgentPickerRow> = catalog::agent_catalog()
             .iter()
             .map(|def| AgentPickerRow {
-                is_installed: catalog::is_installed(def),
+                is_installed: catalog::is_installed(def, None),
                 mouse_state: MouseStateHandle::default(),
                 install_link_mouse_state: MouseStateHandle::default(),
             })
@@ -102,6 +113,10 @@ impl AgentPickerView {
             focus_handle: None,
             rows,
             selected_index,
+            shell_path_env: None,
+            shell_path_requested: false,
+            not_installed_expanded: selected_index.is_none(),
+            not_installed_header_mouse_state: MouseStateHandle::default(),
         }
     }
 
@@ -110,9 +125,42 @@ impl AgentPickerView {
     }
 
     fn refresh_install_state(&mut self, ctx: &mut ViewContext<Self>) {
+        self.request_shell_path(ctx);
+        self.apply_install_state(ctx);
+    }
+
+    fn request_shell_path(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.shell_path_requested {
+            return;
+        }
+        #[cfg(all(not(target_family = "wasm"), feature = "local_tty"))]
+        {
+            if !ctx.has_singleton_model::<LocalShellState>() {
+                return;
+            }
+            self.shell_path_requested = true;
+            let path_future = LocalShellState::handle(ctx).update(ctx, |shell_state, ctx| {
+                shell_state.get_interactive_path_env_var(ctx)
+            });
+            ctx.spawn(path_future, |me, path_env, ctx| {
+                if path_env.is_some() {
+                    me.shell_path_env = path_env;
+                    me.apply_install_state(ctx);
+                }
+            });
+        }
+        #[cfg(any(target_family = "wasm", not(feature = "local_tty")))]
+        {
+            self.shell_path_requested = true;
+            let _ = ctx;
+        }
+    }
+
+    fn apply_install_state(&mut self, ctx: &mut ViewContext<Self>) {
+        let path_env = self.shell_path_env.clone();
         let mut changed = false;
         for (row, def) in self.rows.iter_mut().zip(catalog::agent_catalog()) {
-            let is_installed = catalog::is_installed(def);
+            let is_installed = catalog::is_installed(def, path_env.as_deref());
             if row.is_installed != is_installed {
                 row.is_installed = is_installed;
                 changed = true;
@@ -125,6 +173,7 @@ impl AgentPickerView {
             {
                 self.selected_index = self.rows.iter().position(|row| row.is_installed);
             }
+            self.not_installed_expanded = !self.rows.iter().any(|row| row.is_installed);
             ctx.notify();
         }
     }
@@ -140,6 +189,22 @@ impl AgentPickerView {
     #[cfg(test)]
     fn selected_index_for_tests(&self) -> Option<usize> {
         self.selected_index
+    }
+
+    #[cfg(test)]
+    fn apply_shell_path_for_tests(&mut self, path_env: String, ctx: &mut ViewContext<Self>) {
+        self.shell_path_env = Some(path_env);
+        self.apply_install_state(ctx);
+    }
+
+    #[cfg(test)]
+    fn install_state_for_tests(&self) -> Vec<bool> {
+        self.rows.iter().map(|row| row.is_installed).collect()
+    }
+
+    #[cfg(test)]
+    fn not_installed_expanded_for_tests(&self) -> bool {
+        self.not_installed_expanded
     }
 
     fn installed_indices(&self) -> Vec<usize> {
@@ -190,6 +255,61 @@ impl AgentPickerView {
         ctx.dispatch_typed_action(&WorkspaceAction::LaunchAgentFromPicker {
             catalog_index: index,
         });
+    }
+
+    fn render_not_installed_header(&self, count: usize, app: &AppContext) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let muted_color = theme.disabled_text_color(theme.background()).into_solid();
+        let chevron = if self.not_installed_expanded {
+            Icon::ChevronDown
+        } else {
+            Icon::ChevronRight
+        };
+
+        Hoverable::new(
+            self.not_installed_header_mouse_state.clone(),
+            move |state| {
+                let label = appearance
+                    .ui_builder()
+                    .paragraph(format!("Not installed ({count})"))
+                    .with_style(UiComponentStyles {
+                        font_size: Some(DETAIL_FONT_SIZE),
+                        font_color: Some(muted_color),
+                        ..Default::default()
+                    })
+                    .build()
+                    .finish();
+                let chevron = Container::new(
+                    ConstrainedBox::new(chevron.to_warpui_icon(Fill::from(muted_color)).finish())
+                        .with_width(CHEVRON_SIZE)
+                        .with_height(CHEVRON_SIZE)
+                        .finish(),
+                )
+                .with_margin_right(CHEVRON_MARGIN_RIGHT)
+                .finish();
+
+                let mut container = Container::new(
+                    Flex::row()
+                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                        .with_children([chevron, label])
+                        .finish(),
+                )
+                .with_horizontal_padding(ROW_HORIZONTAL_PADDING)
+                .with_vertical_padding(ROW_VERTICAL_PADDING)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(ROW_CORNER_RADIUS)));
+                if state.is_hovered() {
+                    container = container
+                        .with_background(theme.background().blend(&theme.surface_overlay_1()));
+                }
+                container.finish()
+            },
+        )
+        .on_click(|ctx, _, _| {
+            ctx.dispatch_typed_action(AgentPickerAction::ToggleNotInstalled);
+        })
+        .with_cursor(Cursor::PointingHand)
+        .finish()
     }
 
     fn render_row(
@@ -261,44 +381,15 @@ impl AgentPickerView {
                 ..Default::default()
             });
         }
-        let mut first_line = Flex::row()
+        let first_line = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_children([icon, name.build().finish()]);
-        if !row.is_installed {
-            first_line.add_child(
-                Container::new(
-                    appearance
-                        .ui_builder()
-                        .paragraph("Not installed")
-                        .with_style(UiComponentStyles {
-                            font_size: Some(DETAIL_FONT_SIZE),
-                            font_color: Some(muted_color),
-                            ..Default::default()
-                        })
-                        .build()
-                        .finish(),
-                )
-                .with_margin_left(8.)
-                .finish(),
-            );
-        }
 
-        let command = appearance
-            .ui_builder()
-            .paragraph(def.command)
-            .with_style(UiComponentStyles {
-                font_size: Some(DETAIL_FONT_SIZE),
-                font_family_id: Some(appearance.monospace_font_family()),
-                font_color: Some(muted_color),
-                ..Default::default()
-            })
-            .build()
-            .finish();
-        let mut second_line = Flex::row()
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_children([command]);
+        let mut contents = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Start)
+            .with_children([first_line.finish()]);
         if !row.is_installed {
-            second_line.add_child(
+            contents.add_child(
                 Container::new(
                     appearance
                         .ui_builder()
@@ -315,21 +406,12 @@ impl AgentPickerView {
                         .build()
                         .finish(),
                 )
-                .with_margin_left(8.)
+                .with_padding_left(ROW_DETAIL_INSET)
+                .with_margin_top(2.)
                 .finish(),
             );
         }
-
-        let contents = Flex::column()
-            .with_cross_axis_alignment(CrossAxisAlignment::Start)
-            .with_children([
-                first_line.finish(),
-                Container::new(second_line.finish())
-                    .with_padding_left(ROW_DETAIL_INSET)
-                    .with_margin_top(2.)
-                    .finish(),
-            ])
-            .finish();
+        let contents = contents.finish();
 
         let mut container = Container::new(contents)
             .with_horizontal_padding(ROW_HORIZONTAL_PADDING)
@@ -361,6 +443,10 @@ impl TypedActionView for AgentPickerView {
             }
             AgentPickerAction::Close => self.close(ctx),
             AgentPickerAction::Select(index) => self.launch(*index, ctx),
+            AgentPickerAction::ToggleNotInstalled => {
+                self.not_installed_expanded = !self.not_installed_expanded;
+                ctx.notify();
+            }
         }
     }
 }
@@ -409,8 +495,24 @@ impl View for AgentPickerView {
                     .with_margin_bottom(16.)
                     .finish(),
             ]);
-        for (index, def) in catalog::agent_catalog().iter().enumerate() {
+        let (installed, not_installed): (Vec<_>, Vec<_>) = catalog::agent_catalog()
+            .iter()
+            .enumerate()
+            .partition(|(index, _)| self.rows[*index].is_installed);
+        for (index, def) in installed {
             column.add_child(self.render_row(index, def, app));
+        }
+        if !not_installed.is_empty() {
+            column.add_child(
+                Container::new(self.render_not_installed_header(not_installed.len(), app))
+                    .with_margin_top(NOT_INSTALLED_SECTION_MARGIN_TOP)
+                    .finish(),
+            );
+            if self.not_installed_expanded {
+                for (index, def) in not_installed {
+                    column.add_child(self.render_row(index, def, app));
+                }
+            }
         }
 
         Align::new(

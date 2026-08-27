@@ -579,7 +579,7 @@ pub fn init(app: &mut AppContext) {
         .with_enabled(|| ContextFlag::CreateNewSession.is_enabled()),
         EditableBinding::new(
             NEW_AGENT_PICKER_BINDING_NAME,
-            BindingDescription::new("New Agent Picker")
+            BindingDescription::new("Start an Agent")
                 .with_custom_description(bindings::MAC_MENUS_CONTEXT, "New Agent…"),
             WorkspaceAction::AddAgentPickerTab,
         )

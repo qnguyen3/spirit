@@ -79,14 +79,22 @@ pub fn agent_catalog() -> &'static [AgentDefinition] {
     ]
 }
 
-pub fn is_installed(def: &AgentDefinition) -> bool {
+/// A bundled app launched from Finder inherits a minimal PATH, so `path_env` (captured from the
+/// user's shell) must be supplied for detection to see most agent installs.
+pub fn is_installed(def: &AgentDefinition, path_env: Option<&str>) -> bool {
     #[cfg(not(target_family = "wasm"))]
     {
-        warp_util::path::resolve_executable(def.binary).is_some()
+        match path_env {
+            Some(path) => {
+                warp_util::path::resolve_executable_in_path(def.binary, std::ffi::OsStr::new(path))
+                    .is_some()
+            }
+            None => warp_util::path::resolve_executable(def.binary).is_some(),
+        }
     }
     #[cfg(target_family = "wasm")]
     {
-        let _ = def;
+        let _ = (def, path_env);
         false
     }
 }
