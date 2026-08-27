@@ -1302,8 +1302,6 @@ impl<'a> TabComponent<'a> {
         self
     }
 
-    /// Returns the agent indicator for the focused session's CLI agent session, or `None`
-    /// if the focused session is not running a known CLI agent.
     fn agent_indicator(tab: &TabData, app: &AppContext) -> Option<Indicator> {
         let terminal_view = tab.pane_group.as_ref(app).focused_session_view(app)?;
         let session = CLIAgentSessionsModel::as_ref(app).session(terminal_view.id())?;

@@ -5861,14 +5861,6 @@ impl TerminalView {
                                     // is known so the active session's working directory catches up.
                                     ctx.emit(Event::AppStateChanged);
 
-                                    if FeatureFlag::AIContextMenuEnabled.is_enabled() {
-                                        me.input.update(ctx, |input, ctx| {
-                                            input
-                                                .check_and_update_ai_context_menu_disabled_state(
-                                                    ctx,
-                                                );
-                                        });
-                                    }
                                     ctx.emit(Event::Pane(PaneEvent::RemoteRepoNavigated {
                                         remote_path: remote_path.clone(),
                                     }));
@@ -5935,15 +5927,7 @@ impl TerminalView {
                                             );
                                         });
 
-                                        if FeatureFlag::AIContextMenuEnabled.is_enabled() {
-                                            me.input.update(ctx, |input, ctx| {
-                                                input
-                                                    .check_and_update_ai_context_menu_disabled_state(
-                                                        ctx,
-                                                    );
-                                            });
-                                        }
-
+    
                                         me.start_lsp_server_in_active_pwd(ctx);
 
                                         me.update_repo_banner_state(repo_path.clone(), ctx);

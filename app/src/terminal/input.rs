@@ -1583,7 +1583,6 @@ impl Input {
                     // and we don't want to double-paste.
                     middle_click_paste: false,
                     allow_user_cursor_preference: true,
-                    include_ai_context_menu: false,
                     delegate_paste_handling: true,
                     keymap_context_modifier: Some(Box::new(move |context, _app| {
                         context
@@ -5000,30 +4999,8 @@ impl Input {
                 ctx.emit(Event::InputFocusedFromMiddleClick);
             }
             EditorEvent::Focused => ctx.emit(Event::EditorFocused),
-            EditorEvent::ProcessingAttachedImages(_) => {}
-            EditorEvent::SelectAIContextMenuCategory { .. } => {}
-            EditorEvent::VoiceStateUpdated { .. } => {}
-            EditorEvent::SetAIContextMenuOpen(_) => {}
-            EditorEvent::AcceptAIContextMenuItem(_) => {}
             EditorEvent::Paste => {
                 self.process_paste_event(ctx);
-            }
-            EditorEvent::DroppedImageFiles(image_filepaths) => {
-                let shell_family = self.editor.read(ctx, |editor, _| editor.shell_family());
-                let converter = self
-                    .active_session(ctx)
-                    .as_deref()
-                    .and_then(Session::windows_path_converter);
-                let transformed: Vec<String> = match converter {
-                    Some(convert) => image_filepaths.iter().map(|p| convert(p)).collect(),
-                    None => image_filepaths.clone(),
-                };
-                let paths_str =
-                    warpui::clipboard_utils::escaped_paths_str(&transformed, shell_family);
-
-                self.editor.update(ctx, |editor, ctx| {
-                    editor.user_insert(&paths_str, ctx);
-                });
             }
             EditorEvent::IgnoreAutosuggestion { suggestion } => {
                 IgnoredSuggestionsModel::handle(ctx).update(ctx, |model, ctx| {
@@ -6159,19 +6136,6 @@ impl Input {
     /// If tab is not bound to "open completion suggestions menu" nor is the suggestions menu
     /// already open, inserts a tab char into the input editor.
     fn input_tab(&mut self, ctx: &mut ViewContext<Self>) {
-        if matches!(
-            self.suggestions_mode_model.as_ref(ctx).mode(),
-            InputSuggestionsMode::AIContextMenu { .. }
-        ) {
-            self.editor.update(ctx, |editor, ctx| {
-                if let Some(ai_context_menu) = editor.ai_context_menu() {
-                    ai_context_menu.update(ctx, |ai_context_menu, ctx| {
-                        ai_context_menu.select_current_item(ctx);
-                    });
-                }
-            });
-            return;
-        }
         // We have to manually check if "tab" is bound to
         // `InputAction::MaybeOpenCompletionSuggestions` here because the child `EditorView`
         // handles the actual tab keypress event -- the handler method attached to the

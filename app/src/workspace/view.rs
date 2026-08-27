@@ -2231,40 +2231,6 @@ impl Workspace {
                         });
                     }
                 }
-                WarpConfigUpdateEvent::ModelConfigs => {
-                    toast_stack.update(ctx, |toast_stack, ctx| {
-                        toast_stack.dismiss_toasts_by_prefix("model_config_error:", ctx);
-                    });
-                }
-                WarpConfigUpdateEvent::ModelConfigErrors(errors) => {
-                    let home_dir = dirs::home_dir();
-                    for error in errors {
-                        let object_id = format!("model_config_error:{}", error.file_path.display());
-                        let raw_path = error.file_path.display().to_string();
-                        let friendly_path = user_friendly_path(
-                            &raw_path,
-                            home_dir.as_ref().and_then(|h| h.to_str()),
-                        );
-                        let message = format!(
-                            "Failed to load model config {friendly_path}: {}",
-                            error.error_message
-                        );
-                        let path = error.file_path.clone();
-                        let toast = DismissibleToast::error(message)
-                            .with_object_id(object_id.clone())
-                            .with_link(
-                                ToastLink::new("Open file".to_string()).with_onclick_action(
-                                    WorkspaceAction::OpenTabConfigErrorFile {
-                                        path,
-                                        toast_object_id: object_id,
-                                    },
-                                ),
-                            );
-                        toast_stack.update(ctx, |toast_stack, ctx| {
-                            toast_stack.add_persistent_toast(toast, ctx);
-                        });
-                    }
-                }
                 _ => {}
             }
         });
@@ -3087,18 +3053,6 @@ impl Workspace {
             NewWorkspaceSource::FromCloudConversationId { conversation_id } => {
                 self.open_cloud_conversation_from_server_token(conversation_id, ctx);
             }
-            NewWorkspaceSource::AgentSession { options, .. } => {
-                self.add_tab_with_pane_layout(
-                    PanesLayout::SingleTerminal(options),
-                    Arc::new(HashMap::new()),
-                    None,
-                    ctx,
-                );
-                self.check_and_trigger_onboarding(ctx);
-            }
-            NewWorkspaceSource::AmbientAgent => {
-                self.configure_empty_workspace(None, None, ctx);
-            }
             NewWorkspaceSource::TeamSwitched { .. } => {
                 self.configure_empty_workspace(
                     None, /* previous_active_window */
@@ -3214,8 +3168,6 @@ impl Workspace {
             NewWorkspaceSource::Empty { .. }
             | NewWorkspaceSource::FromTemplate { .. }
             | NewWorkspaceSource::Session { .. }
-            | NewWorkspaceSource::AgentSession { .. }
-            | NewWorkspaceSource::AmbientAgent
             | NewWorkspaceSource::TeamSwitched { .. }
             | NewWorkspaceSource::NotebookFromFilePath { .. } => should_default_open,
             #[cfg(not(target_family = "wasm"))]
@@ -11803,7 +11755,6 @@ impl Workspace {
             PaletteMode::LaunchConfig => self.open_launch_config_palette(ctx),
             PaletteMode::WarpDrive => self.open_warp_drive_palette(ctx),
             PaletteMode::Files => self.open_files_palette(ctx),
-            PaletteMode::Conversations => self.open_conversations_palette(ctx),
         }
 
         ctx.focus(&self.palette);
@@ -13297,36 +13248,6 @@ impl Workspace {
             pane_group::Event::OpenThemeChooser => {
                 self.show_theme_chooser_for_custom_theme(ctx);
             }
-            pane_group::Event::OpenConversationHistory => {
-                self.open_palette_action(
-                    PaletteMode::Conversations,
-                    PaletteSource::ConversationManager,
-                    None,
-                    ctx,
-                );
-            }
-            pane_group::Event::OpenAddPromptPane { initial_content } => {
-                if UserWorkspaces::as_ref(ctx).personal_drive(ctx).is_some() {
-                    self.update_warp_drive_view(ctx, |drive_view, ctx| {
-                        if let Some(initial_content) = initial_content {
-                            drive_view.create_workflow_with_content(
-                                Space::Personal,
-                                None,
-                                initial_content.clone(),
-                                true, // is_for_agent_mode
-                                ctx,
-                            );
-                        } else {
-                            drive_view.open_cloud_object_dialog(
-                                DriveObjectType::AgentModeWorkflow,
-                                Space::Personal,
-                                None,
-                                ctx,
-                            );
-                        }
-                    });
-                }
-            }
             pane_group::Event::OpenFilesPalette { source } => {
                 self.open_palette_action(PaletteMode::Files, *source, None, ctx);
             }
@@ -14246,16 +14167,6 @@ impl Workspace {
                                 None,
                                 ctx,
                             );
-                            ctx.notify();
-                        });
-                    }
-                    TranslateUsingWarpAI => {
-                        active_input_handle.update(ctx, |input, ctx| {
-                            let content = format!("# {query}");
-                            input.focus_input_box(ctx);
-                            // Mimic the user replacing the editor text, as the replacement
-                            // is done in response to an explicit user action.
-                            input.user_replace_editor_text(content.as_str(), ctx);
                             ctx.notify();
                         });
                     }
@@ -18147,8 +18058,6 @@ impl Workspace {
                 }
                 Some(ChildView::new(&self.right_panel_view).finish())
             }
-            HeaderToolbarItemKind::AgentManagement
-            | HeaderToolbarItemKind::NotificationsMailbox => None,
         }
     }
 
