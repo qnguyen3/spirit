@@ -38,7 +38,7 @@ use crate::terminal::model::session::{ExecuteCommandOptions, Session, Sessions, 
 use crate::terminal::model::terminal_model::TerminalModel;
 use crate::terminal::model_events::{ModelEvent, ModelEventDispatcher};
 use crate::terminal::session_settings::{
-    SessionSettings, SessionSettingsChangedEvent, ToolbarChipSelection,
+    SessionSettings, SessionSettingsChangedEvent,
 };
 use crate::terminal::view::{ContextMenuAction, PromptPart, PromptPosition, TerminalAction};
 
@@ -1203,10 +1203,6 @@ impl CurrentPrompt {
             self.separator = session_settings.saved_prompt.separator();
         }
 
-        if let SessionSettingsChangedEvent::AgentToolbarChipSelectionSetting { .. } = event {
-            // Recompute which chips to run when the agent footer config changes.
-            self.update_states_with_new_context(ctx);
-        }
         if let SessionSettingsChangedEvent::GithubPrChipDefaultValidation { .. } = event {
             // Re-resolve the default prompt's chip list (which gates the
             // PR chip on `is_suppressed()`) and re-run chips with the new
@@ -1214,9 +1210,6 @@ impl CurrentPrompt {
             self.update_states_with_new_context(ctx);
         }
 
-        if let SessionSettingsChangedEvent::CLIAgentToolbarChipSelectionSetting { .. } = event {
-            self.update_states_with_new_context(ctx);
-        }
     }
 
     fn clear_chips(&mut self) {

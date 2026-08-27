@@ -189,11 +189,6 @@ use crate::code_review::comments::{
     AttachedReviewComment, PendingImportedReviewComment, convert_insert_review_comments,
 };
 #[cfg(feature = "local_fs")]
-use crate::code_review::context::{
-    convert_file_diffs_to_diffset_hunks, create_attachment_reference_and_key,
-    register_diffset_attachment,
-};
-#[cfg(feature = "local_fs")]
 use crate::code_review::diff_state::LocalDiffStateModel;
 use crate::code_review::diff_state::{DiffMode, GitDeltaPreference};
 use crate::code_review::git_repo_model::{GitRepoModels, GitRepoStatusModel, GitStatusMetadata};
@@ -409,11 +404,11 @@ use crate::workflows::workflow::Workflow;
 use crate::workspace::sync_inputs::SyncedInputState;
 use crate::persisted_workspace::PersistedWorkspace;
 use crate::ui_components::shimmering_loading_text::shimmering_warp_loading_text;
-use crate::workspace::{CommandSearchOptions, OneTimeModalModel, ToastStack, WorkspaceAction};
+use crate::workspace::{CommandSearchOptions, ToastStack, WorkspaceAction};
 use crate::workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent};
 use crate::workspaces::workspace::CustomerType;
 use crate::{
-    ActiveSession as WindowActiveSession, safe_error, safe_warn, send_telemetry_from_ctx,
+    ActiveSession as WindowActiveSession, safe_warn, send_telemetry_from_ctx,
     send_telemetry_sync_from_ctx,
 };
 
@@ -7871,7 +7866,6 @@ impl TerminalView {
         let should_show_onboarding = FeatureFlag::AgentOnboarding.is_enabled()
             && !is_onboarded
             && !is_anonymous_or_logged_out;
-        let is_launch_modal_open = OneTimeModalModel::as_ref(ctx).is_oz_launch_modal_open();
 
         let has_plugin_instructions_block = self.rich_content_views.iter().any(|rc| {
             matches!(
@@ -7883,7 +7877,6 @@ impl TerminalView {
         if TerminalSettings::as_ref(ctx).should_show_zero_state_block()
             && !self.model.lock().block_list().is_restored_session()
             && !should_show_onboarding
-            && !is_launch_modal_open
             && !is_subshell_or_ssh
             && !has_plugin_instructions_block
         {
@@ -12209,10 +12202,6 @@ impl TerminalView {
             return;
         }
 
-        if OneTimeModalModel::as_ref(ctx).is_any_modal_open() {
-            return;
-        }
-
         self.last_focus_ts = Some(Local::now().naive_local());
 
         let is_input_visible = {
@@ -13622,16 +13611,6 @@ impl TerminalView {
             .ranges()
             .last()
             .map(|range| range.pivot())
-    }
-
-    #[cfg(any(test, feature = "integration_tests"))]
-    fn dummy_server_output_id() -> crate::ai::agent::ServerOutputId {
-        use rand::distributions::{Alphanumeric, DistString};
-
-        crate::ai::agent::ServerOutputId::new(format!(
-            "test_output_id_{}",
-            Alphanumeric.sample_string(&mut rand::thread_rng(), 24)
-        ))
     }
 
     pub fn auth_secret_delete_confirmation_dialog_element(

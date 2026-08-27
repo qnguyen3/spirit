@@ -1,6 +1,7 @@
 #[cfg(not(target_family = "wasm"))]
 use std::collections::HashMap;
 
+use cloud_object_models::{AmbientAgentEnvironment, GithubRepo};
 use instant::{Duration, Instant};
 use log::debug;
 use url::Url;
@@ -30,6 +31,7 @@ use super::editor_text_colors;
 use super::settings_page::{InputListItem, render_input_list};
 use crate::ChannelState;
 use crate::appearance::Appearance;
+use crate::auth::github_auth_notifier::{GitHubAuthEvent, GitHubAuthNotifier};
 use crate::editor::{
     EditorOptions, EditorView, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions, TextOptions,
 };
@@ -293,7 +295,6 @@ pub struct UpdateEnvironmentForm {
     mode: EnvironmentFormMode,
     form_state: EnvironmentFormValues,
     repos_input: String,
-    github_auth_redirect_target: GithubAuthRedirectTarget,
     copy: EnvironmentFormCopy,
     field_max_width: f32,
     field_spacing: f32,
@@ -359,10 +360,6 @@ pub struct UpdateEnvironmentForm {
     /// When true, pressing Escape in any editor will emit a Cancelled event.
     /// This should only be enabled for contexts where the form is used as a modal (e.g., first-time setup).
     should_handle_escape_from_editor: bool,
-
-    /// Indicates where the GitHub authorization flow was initiated from.
-    /// Affects the redirect URL used after auth completes.
-    auth_source: AuthSource,
 }
 
 const DESCRIPTION_MAX_CHARS: usize = 240;
@@ -621,7 +618,6 @@ impl UpdateEnvironmentForm {
             mode,
             form_state: EnvironmentFormValues::default(),
             repos_input: String::new(),
-            github_auth_redirect_target: GithubAuthRedirectTarget::SettingsEnvironments,
             copy,
             field_max_width: DROPDOWN_MAX_WIDTH,
             field_spacing: FORM_FIELD_SPACING,
@@ -663,7 +659,6 @@ impl UpdateEnvironmentForm {
             show_footer_cancel_button: false,
             show_share_with_team_controls: true,
             should_handle_escape_from_editor: false,
-            auth_source: AuthSource::default(),
         };
 
         // Initialize based on init args
@@ -681,10 +676,6 @@ impl UpdateEnvironmentForm {
 
     pub fn github_dropdown_state(&self) -> &GithubReposDropdownState {
         &self.github_dropdown_state
-    }
-
-    pub fn set_github_auth_redirect_target(&mut self, target: GithubAuthRedirectTarget) {
-        self.github_auth_redirect_target = target;
     }
 
     pub fn set_copy(&mut self, copy: EnvironmentFormCopy, ctx: &mut ViewContext<Self>) {
@@ -746,25 +737,6 @@ impl UpdateEnvironmentForm {
         ctx.notify();
     }
 
-    #[cfg(test)]
-    pub(crate) fn uses_orchestration_modal_configuration_for_test(&self) -> bool {
-        self.copy == EnvironmentFormCopy::orchestration_modal()
-            && !self.show_header
-            && self.show_footer_cancel_button
-            && !self.show_share_with_team_controls
-            && (self.field_spacing - 10.).abs() < f32::EPSILON
-            && (self.description_height - 52.).abs() < f32::EPSILON
-            && !self.show_repo_helper_text
-            && self.github_auth_redirect_target == GithubAuthRedirectTarget::FocusCloudMode
-            && self.auth_source == AuthSource::CloudSetup
-            && self.should_handle_escape_from_editor
-    }
-
-    #[cfg(test)]
-    pub(crate) fn github_auth_redirect_target_for_test(&self) -> GithubAuthRedirectTarget {
-        self.github_auth_redirect_target
-    }
-
     fn try_close_repos_dropdown(&mut self, ctx: &mut ViewContext<Self>) -> bool {
         if !self.github_dropdown_state.is_expanded {
             return false;
@@ -821,13 +793,6 @@ impl UpdateEnvironmentForm {
     /// This should only be enabled for modal contexts (e.g., first-time setup).
     pub fn set_should_handle_escape_from_editor(&mut self, should_handle: bool) {
         self.should_handle_escape_from_editor = should_handle;
-    }
-
-    /// Sets the auth source, which affects the redirect URL used after GitHub auth completes.
-    /// When set to `CloudSetup`, the redirect URL will include a source parameter that tells
-    /// the URI handler to skip opening the settings page.
-    pub fn set_auth_source(&mut self, source: AuthSource) {
-        self.auth_source = source;
     }
 
     /// Focus the Name editor (the first field in the form).
@@ -2844,31 +2809,7 @@ impl UpdateEnvironmentForm {
     }
 
     fn auth_url_with_next(&self, base_auth_url: &str) -> String {
-        match (self.github_auth_redirect_target, self.auth_source) {
-            (GithubAuthRedirectTarget::SettingsEnvironments, AuthSource::Settings) => {
-                github_auth_url::settings_environments_auth_url_with_next(base_auth_url)
-            }
-            (GithubAuthRedirectTarget::FocusCloudMode, AuthSource::CloudSetup) => {
-                github_auth_url::cloud_setup_auth_url_with_next(base_auth_url)
-            }
-            (target, auth_source) => {
-                github_auth_url::auth_url_with_next(base_auth_url, target, auth_source)
-            }
-        }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn build_auth_url_with_next(
-        base_auth_url: &str,
-        target: GithubAuthRedirectTarget,
-        scheme: &str,
-    ) -> String {
-        github_auth_url::build_auth_url_with_next(
-            base_auth_url,
-            target,
-            scheme,
-            AuthSource::Settings,
-        )
+        settings_environments_auth_url_with_next(base_auth_url)
     }
 
     /// Parses a Docker image reference and returns the Docker Hub URL if it looks like a Docker Hub image.
@@ -3590,6 +3531,54 @@ impl View for UpdateEnvironmentForm {
             self.focus(ctx);
         }
     }
+}
+
+fn settings_environments_next_url(scheme_for_next: &str) -> String {
+    if cfg!(target_family = "wasm")
+        && let Ok(mut url) = Url::parse(&ChannelState::server_root_url())
+    {
+        url.set_query(None);
+        url.set_path("/settings/environments");
+        url.query_pairs_mut().append_pair("oauth", "github");
+        return url.to_string();
+    }
+    format!("{scheme_for_next}://settings/environments")
+}
+
+fn settings_environments_auth_url_with_next(base_auth_url: &str) -> String {
+    let Ok(mut url) = Url::parse(base_auth_url) else {
+        return base_auth_url.to_string();
+    };
+
+    let scheme_for_next = std::env::var("WARP_OAUTH_NEXT_SCHEME")
+        .ok()
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            url.query_pairs()
+                .find(|(key, _)| key == "scheme")
+                .map(|(_, value)| value.into_owned())
+        })
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| ChannelState::url_scheme().to_string());
+
+    let next_url = settings_environments_next_url(&scheme_for_next);
+
+    let existing_pairs = url
+        .query_pairs()
+        .filter(|(key, _)| key != "next")
+        .map(|(key, value)| (key.into_owned(), value.into_owned()))
+        .collect::<Vec<_>>();
+
+    {
+        let mut query_pairs = url.query_pairs_mut();
+        query_pairs.clear();
+        for (key, value) in existing_pairs {
+            query_pairs.append_pair(&key, &value);
+        }
+        query_pairs.append_pair("next", &next_url);
+    }
+
+    url.to_string()
 }
 
 #[cfg(test)]

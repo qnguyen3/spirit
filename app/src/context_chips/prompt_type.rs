@@ -7,7 +7,7 @@ use super::{ChipResult, ChipValue, ContextChipKind};
 use crate::menu::{MenuItem, MenuItemFields};
 use crate::settings::WarpPromptSeparator;
 use crate::terminal::model::session::Sessions;
-use crate::terminal::session_settings::{SessionSettings, ToolbarChipSelection};
+use crate::terminal::session_settings::SessionSettings;
 use crate::terminal::view::{ContextMenuAction, PromptPart, PromptPosition, TerminalAction};
 
 /// The type of warp prompt being used

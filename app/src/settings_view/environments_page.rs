@@ -1,5 +1,9 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
+use cloud_object_models::{
+    AmbientAgentEnvironment, CloudAmbientAgentEnvironment, CloudAmbientAgentEnvironmentModel,
+};
 use instant::Instant;
 use pathfinder_geometry::vector::vec2f;
 use warp_core::ui::color::blend::Blend;
@@ -36,19 +40,21 @@ use super::update_environment_form::{
 };
 use super::{SettingsSection, editor_text_colors};
 use crate::appearance::Appearance;
+use crate::auth::AuthStateProvider;
+use crate::cloud_object::model::generic_string_model::StringModel;
 use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
 use crate::cloud_object::{
-    CloudObjectLocation, CloudObjectLookup as _, GenericStringObjectFormat, JsonObjectType, Owner,
-    Space,
+    CloudObjectLocation, CloudObjectLookup as _, GenericStringObjectFormat,
+    GenericStringObjectUniqueKey, JsonObjectType, ObjectType, Owner, Revision, Space,
 };
 use crate::drive::CloudObjectTypeAndId;
 use crate::editor::{
     EditorView, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions, TextOptions,
 };
-use crate::root_view::CreateEnvironmentArg;
 use crate::server::cloud_objects::update_manager::{
-    ObjectOperation, OperationSuccessType, UpdateManager, UpdateManagerEvent,
+    InitiatedBy, ObjectOperation, OperationSuccessType, UpdateManager, UpdateManagerEvent,
 };
+use crate::server::sync_queue::QueueItem;
 use crate::server::ids::{ClientId, ServerId, SyncId};
 use crate::themes::theme::Fill as ThemeFill;
 use crate::ui_components::blended_colors;
@@ -223,13 +229,8 @@ pub struct EnvironmentsPageView {
     pending_share_server_id: Option<ServerId>,
     // Delete confirmation dialog
     delete_confirmation_dialog: ViewHandle<DeleteEnvironmentConfirmationDialog>,
-    // Agent-assisted environment creation modal
-    agent_assisted_environment_modal: ViewHandle<AgentAssistedEnvironmentModal>,
     // New environment button (search -> tab focus target)
     new_env_button: ViewHandle<NewEnvironmentButtonView>,
-    // Mode selector modal for new environment setup
-    environment_setup_mode_selector: ViewHandle<EnvironmentSetupModeSelector>,
-    is_environment_setup_mode_selector_open: bool,
     // Environment form
     environment_form: ViewHandle<UpdateEnvironmentForm>,
     // Pane configuration for BackingView support
@@ -390,62 +391,6 @@ impl EnvironmentsPageView {
             me.handle_delete_confirmation_event(event, ctx);
         });
 
-        let agent_assisted_environment_modal =
-            ctx.add_typed_action_view(AgentAssistedEnvironmentModal::new);
-        ctx.subscribe_to_view(
-            &agent_assisted_environment_modal,
-            |me, _, event, ctx| match event {
-                AgentAssistedEnvironmentModalEvent::Cancelled => {
-                    me.agent_assisted_environment_modal
-                        .update(ctx, |modal, ctx| {
-                            modal.hide(ctx);
-                        });
-                    ctx.emit(SettingsPageEvent::AgentAssistedEnvironmentModalToggled {
-                        is_open: false,
-                    });
-                    ctx.notify();
-                }
-                AgentAssistedEnvironmentModalEvent::Confirmed { repo_paths } => {
-                    me.agent_assisted_environment_modal
-                        .update(ctx, |modal, ctx| {
-                            modal.hide(ctx);
-                        });
-                    ctx.emit(SettingsPageEvent::AgentAssistedEnvironmentModalToggled {
-                        is_open: false,
-                    });
-
-                    let arg = CreateEnvironmentArg {
-                        repos: repo_paths.clone(),
-                    };
-
-                    let window_id = ctx.window_id();
-                    let primary_window_and_view = ctx
-                        .root_view_id(window_id)
-                        .map(|view_id| (window_id, view_id));
-
-                    if let Some((primary_window_id, root_view_id)) = primary_window_and_view {
-                        ctx.dispatch_action(
-                            primary_window_id,
-                            &[root_view_id],
-                            "root_view:create_environment_in_existing_window_and_run",
-                            &arg,
-                            log::Level::Info,
-                        );
-                    } else {
-                        ctx.dispatch_global_action("root_view:create_environment_and_run", arg);
-                    }
-
-                    ctx.notify();
-                }
-            },
-        );
-
-        let environment_setup_mode_selector =
-            ctx.add_typed_action_view(EnvironmentSetupModeSelector::new);
-        ctx.subscribe_to_view(&environment_setup_mode_selector, |me, _, event, ctx| {
-            me.handle_environment_setup_mode_selector_event(event, ctx);
-        });
-
         // Create the environment form (starts in Create mode)
         let environment_form = ctx.add_typed_action_view(|ctx| {
             UpdateEnvironmentForm::new(EnvironmentFormInitArgs::Create, ctx)
@@ -524,10 +469,7 @@ impl EnvironmentsPageView {
             pending_delete_env_id: None,
             pending_share_server_id: None,
             delete_confirmation_dialog,
-            agent_assisted_environment_modal,
             new_env_button,
-            environment_setup_mode_selector,
-            is_environment_setup_mode_selector_open: false,
             environment_form,
             pane_configuration,
             focus_handle: None,
@@ -544,36 +486,9 @@ impl EnvironmentsPageView {
         &self.current_page
     }
 
-    /// Returns the environment setup mode selector view handle for tab-level rendering.
-    pub fn environment_setup_mode_selector_handle(
-        &self,
-    ) -> Option<&ViewHandle<EnvironmentSetupModeSelector>> {
-        self.is_environment_setup_mode_selector_open
-            .then_some(&self.environment_setup_mode_selector)
-    }
-
-    /// Returns the agent-assisted environment modal view handle for tab-level rendering.
-    pub fn agent_assisted_environment_modal_handle(
-        &self,
-        app: &AppContext,
-    ) -> Option<&ViewHandle<AgentAssistedEnvironmentModal>> {
-        self.agent_assisted_environment_modal
-            .as_ref(app)
-            .is_visible()
-            .then_some(&self.agent_assisted_environment_modal)
-    }
-
     /// Returns the pane configuration for BackingView support.
     pub fn pane_configuration(&self) -> ModelHandle<crate::pane_group::pane::PaneConfiguration> {
         self.pane_configuration.clone()
-    }
-    pub fn set_github_auth_redirect_target(
-        &mut self,
-        target: GithubAuthRedirectTarget,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        self.environment_form
-            .update(ctx, |form, _| form.set_github_auth_redirect_target(target));
     }
 
     /// Focus the environments page view.
@@ -741,9 +656,9 @@ impl EnvironmentsPageView {
                 self.pending_create_client_id = Some(client_id);
 
                 let owner = if *share_with_team {
-                    cloud_environments::owner_for_new_environment(ctx)
+                    owner_for_new_environment(ctx)
                 } else {
-                    cloud_environments::owner_for_new_personal_environment(ctx)
+                    owner_for_new_personal_environment(ctx)
                 };
 
                 let Some(owner) = owner else {
@@ -756,10 +671,14 @@ impl EnvironmentsPageView {
 
                 // Create via UpdateManager
                 UpdateManager::handle(ctx).update(ctx, |update_manager, ctx| {
-                    update_manager.create_ambient_agent_environment(
-                        environment.clone(),
-                        client_id,
+                    update_manager.create_object(
+                        CloudAmbientAgentEnvironmentModel::new(environment.clone()),
                         owner,
+                        client_id,
+                        Default::default(),
+                        false,
+                        None,
+                        InitiatedBy::User,
                         ctx,
                     );
                 });
@@ -789,8 +708,8 @@ impl EnvironmentsPageView {
 
                 // Update via UpdateManager
                 UpdateManager::handle(ctx).update(ctx, |update_manager, ctx| {
-                    update_manager.update_ambient_agent_environment(
-                        environment.clone(),
+                    update_manager.update_object(
+                        CloudAmbientAgentEnvironmentModel::new(environment.clone()),
                         *env_id,
                         revision,
                         ctx,

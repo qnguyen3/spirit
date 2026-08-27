@@ -142,11 +142,11 @@ use crate::context_chips::display_chip::{DisplayChipConfig, PromptChipShellComma
 use crate::context_chips::prompt_type::PromptType;
 use crate::context_chips::spacing;
 use crate::editor::{
-    AttachedImage as AttachedImageRawData, AutosuggestionLocation, AutosuggestionType,
+    AutosuggestionLocation, AutosuggestionType,
     BaselinePositionComputationMethod, CommandXRayAnchor, CrdtOperation, CursorColors,
     DisplayPoint, EditOrigin, EditorAction, EditorDecoratorElements, EditorOptions, EditorSnapshot,
-    EditorView, Event as EditorEvent, ImageContextOptions, InteractionState,
-    MAX_IMAGES_PER_CONVERSATION, PathTransformerFn, PlainTextEditorViewAction,
+    EditorView, Event as EditorEvent, InteractionState, PathTransformerFn,
+    PlainTextEditorViewAction,
     Point as BufferPoint, PropagateAndNoOpEscapeKey, PropagateAndNoOpNavigationKeys,
     PropagateHorizontalNavigationKeys, ReplicaId, TextColors, TextRun, default_cursor_colors,
     position_id_for_cached_point, position_id_for_cursor, position_id_for_first_cursor,
@@ -172,7 +172,6 @@ use crate::search::slash_command_menu::static_commands::commands::{self, COMMAND
 use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::ids::SyncId;
 use crate::server::server_api::ServerApi;
-use crate::server::server_api::presigned_upload::upload_to_target;
 use crate::server::telemetry::{
     AICommandSearchEntrypoint, AgentModeAutoDetectionFalsePositivePayload,
     AgentModeAutoDetectionSettingOrigin, AnonymousUserSignupEntrypoint, CommandXRayTrigger,
@@ -236,10 +235,7 @@ use crate::workflows::local_workflows::LocalWorkflows;
 use crate::workflows::workflow_enum::EnumVariants;
 use crate::workflows::{self, WorkflowSelectionSource, WorkflowSource, WorkflowType};
 use crate::workspace::sync_inputs::SyncedInputState;
-use crate::workspace::{
-    CommandSearchOptions, ForkFromExchange, ForkedConversationDestination, InitContent,
-    RestoreConversationLayout, ToastStack, WorkspaceAction,
-};
+use crate::workspace::{CommandSearchOptions, InitContent, ToastStack, WorkspaceAction};
 use crate::workspaces::user_workspaces::{TeamContext, UserWorkspaces, UserWorkspacesEvent};
 #[allow(unused_imports)]
 use crate::{AgentModeEntrypoint, ServerApiProvider, cmd_or_ctrl_shift, send_telemetry_from_ctx};

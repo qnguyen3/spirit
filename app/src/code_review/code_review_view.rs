@@ -2344,7 +2344,6 @@ impl CodeReviewView {
                 self.update_diff_selector_selection(ctx);
             }
             DiffStateModelEvent::GitOpCompleted(_)
-            | DiffStateModelEvent::CommitMessageGenerated(_)
             | DiffStateModelEvent::BranchCommittedFilesReceived(_) => {
                 // Handled by GitDialog's own subscription.
             }
@@ -2969,7 +2968,6 @@ impl CodeReviewView {
             // populates the editor with content_at_head.
             self.create_code_review_model(file, ctx)
         } else {
-            let self_handle = ctx.handle();
             // Join host-aware: for local repos this yields a local absolute
             // PathBuf; for remote repos this yields a `RemotePath` with the
             // same host id as `repo_path`.
@@ -3021,11 +3019,6 @@ impl CodeReviewView {
                     None,
                     ctx,
                 )
-                .with_selection_as_context(Box::new(move |_, app| {
-                    self_handle.upgrade(app).and_then(|code_review_view| {
-                        code_review_view.as_ref(app).attach_target_terminal(app)
-                    })
-                }))
             });
 
             let inner_editor = local_code_view.as_ref(ctx).editor().clone();
@@ -3066,7 +3059,6 @@ impl CodeReviewView {
         if file.file_diff.is_binary {
             None
         } else {
-            let self_handle = ctx.handle();
             let code_editor_view = ctx.add_typed_action_view(|ctx| {
                 let mut editor_view = CodeEditorView::new(
                     None,

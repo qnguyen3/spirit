@@ -37,22 +37,21 @@ pub enum InlineDiffViewEvent {
 
 /// An inline diff viewer with optional file-backed save support.
 ///
-/// When a backing file is registered (via [`Self::register_file`]), this view supports the full
-/// accept/save/revert lifecycle through `FileModel`. Without a registered file, it behaves
-/// as a read-only diff viewer (e.g. for WASM or restored conversations).
+/// With a backing file, this view supports the full accept/save/revert lifecycle through
+/// `FileModel`. Without one, it behaves as a read-only diff viewer (e.g. for WASM).
 pub struct InlineDiffView {
     editor: ViewHandle<CodeEditorView>,
     diff_type: Option<DiffType>,
     file_path: Option<StandardizedPath>,
     /// Whether the user has edited the diff content.
     was_edited: bool,
-    /// `FileModel` file ID for the backing file. Set via [`Self::register_file`].
+    /// `FileModel` file ID for the backing file.
     ///
     /// When `Some`:
     /// - The editor is editable (interaction state follows the `DisplayMode` rules).
     /// - Accept, save, and revert operations write through `FileModel`.
     ///
-    /// When `None` (WASM, restored conversations, or before registration):
+    /// When `None`:
     /// - The editor is selection-only (never editable).
     /// - Accept, save, and revert are no-ops.
     backing_file_id: Option<FileId>,
@@ -101,86 +100,6 @@ impl InlineDiffView {
         }
 
         model
-    }
-
-    /// Register a file with `FileModel` for save support.
-    ///
-    /// The `session_type` determines whether the file is local or remote.
-    /// For `Local`, the file is registered by path on the local filesystem.
-    /// For `Remote`, the file is registered against the remote backend so
-    /// that `save()` / `delete()` dispatch over the wire via
-    /// `RemoteServerClient`.
-    ///
-    /// This must be called after construction for non-WASM environments.
-    #[cfg(not(target_family = "wasm"))]
-    pub fn register_file(&mut self, session_type: &DiffSessionType, ctx: &mut ViewContext<Self>) {
-        let Some(file_path) = &self.file_path else {
-            return;
-        };
-
-        let file_model = FileModel::handle(ctx);
-        let file_id = match session_type {
-            DiffSessionType::Local => {
-                let Some(local_path) = file_path.to_local_path() else {
-                    crate::safe_error!(
-                        safe: (
-                            "Failed to convert StandardizedPath to local path; diff will be \
-                            read-only"
-                        ),
-                        full: (
-                            "Failed to convert StandardizedPath to local path: {file_path}; diff \
-                            will be read-only"
-                        )
-                    );
-                    return;
-                };
-                file_model.update(ctx, |file_model, ctx| {
-                    file_model.register_file_path(&local_path, false, ctx)
-                })
-            }
-            DiffSessionType::Remote(host_id) => {
-                let host_id = host_id.clone();
-                let remote_path = file_path.clone();
-                file_model.update(ctx, |file_model, _ctx| {
-                    file_model.register_remote_file(host_id, remote_path)
-                })
-            }
-        };
-
-        self.finish_file_registration(file_id, ctx);
-    }
-
-    /// Common registration logic: subscribes to events and sets the
-    /// backing file ID after a file has been registered with `FileModel`.
-    #[cfg(not(target_family = "wasm"))]
-    fn finish_file_registration(&mut self, file_id: FileId, ctx: &mut ViewContext<Self>) {
-        let file_model = FileModel::handle(ctx);
-
-        let version = self.editor.as_ref(ctx).version(ctx);
-        file_model.update(ctx, |file_model, _ctx| {
-            file_model.set_version(file_id, version);
-        });
-
-        self.backing_file_id = Some(file_id);
-
-        // Subscribe to FileModel events for this file.
-        ctx.subscribe_to_model(&file_model, move |_me, _file_model, event, ctx| {
-            if file_id == event.file_id() {
-                match event {
-                    FileModelEvent::FileSaved { .. } => {
-                        ctx.emit(InlineDiffViewEvent::FileSaved);
-                    }
-                    FileModelEvent::FailedToSave { error, .. } => {
-                        ctx.emit(InlineDiffViewEvent::FailedToSave {
-                            error: error.clone(),
-                        });
-                    }
-                    _ => {}
-                }
-            }
-        });
-
-        ctx.emit(InlineDiffViewEvent::FileLoaded);
     }
 
     fn apply_diffs_if_any(&self, ctx: &mut ViewContext<Self>) {
