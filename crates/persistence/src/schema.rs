@@ -232,10 +232,27 @@ diesel::table! {
 }
 
 diesel::table! {
-    projects (path) {
-        path -> Text,
-        added_ts -> Timestamp,
-        last_opened_ts -> Nullable<Timestamp>,
+    project_worktrees (id) {
+        id -> Text,
+        project_id -> Text,
+        name -> Text,
+        kind -> Text,
+        path -> Nullable<Text>,
+        branch -> Nullable<Text>,
+        base_branch -> Nullable<Text>,
+        created_ts -> BigInt,
+    }
+}
+
+diesel::table! {
+    projects (id) {
+        id -> Text,
+        root_path -> Text,
+        display_name -> Text,
+        kind -> Text,
+        primary_branch -> Nullable<Text>,
+        created_ts -> BigInt,
+        last_opened_ts -> BigInt,
     }
 }
 
@@ -261,6 +278,7 @@ diesel::table! {
         color -> Nullable<Text>,
         collapsed -> Bool,
         pinned -> Bool,
+        project_id -> Nullable<Text>,
     }
 }
 
@@ -272,6 +290,8 @@ diesel::table! {
         color -> Nullable<Text>,
         tab_group_id -> Nullable<Integer>,
         pinned -> Bool,
+        project_id -> Nullable<Text>,
+        worktree_id -> Nullable<Text>,
     }
 }
 
@@ -353,6 +373,7 @@ diesel::table! {
         left_panel_open -> Nullable<Bool>,
         vertical_tabs_panel_open -> Nullable<Bool>,
         team_uid -> Nullable<Text>,
+        active_project_id -> Nullable<Text>,
     }
 }
 

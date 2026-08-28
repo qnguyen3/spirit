@@ -38,7 +38,7 @@ use warp_errors::report_error;
 use warp_graphql::scalars::time::ServerTimestamp;
 use warpui::{AppContext, Entity, SingletonEntity};
 
-use self::model::Project;
+use self::model::{Project as ProjectRow, ProjectWorktree as WorktreeRow};
 use crate::app_state::AppState;
 use crate::auth::auth_manager::PersistedCurrentUserInformation;
 use crate::cloud_object::model::actions::ObjectAction;
@@ -49,6 +49,7 @@ use crate::cloud_object::{
 use crate::drive::folders::CloudFolder;
 use crate::notebooks::CloudNotebook;
 use crate::persisted_workspace::EnablementState;
+use crate::projects::{Project, Worktree};
 use crate::server::experiments::ServerExperiment;
 use crate::server::ids::SyncId;
 use crate::suggestions::ignored_suggestions_model::SuggestionType;
@@ -263,6 +264,7 @@ pub struct PersistedData {
     pub codebase_indices: Vec<CodeWorkspaceMetadata>,
     pub workspace_language_servers: HashMap<PathBuf, HashMap<LSPServerType, EnablementState>>,
     pub projects: Vec<Project>,
+    pub worktrees: Vec<Worktree>,
     pub ignored_suggestions: Vec<(String, SuggestionType)>,
 }
 
@@ -384,10 +386,16 @@ pub enum ModelEvent {
         repo_path: PathBuf,
     },
     UpsertProject {
-        project: Project,
+        project: ProjectRow,
     },
-    DeleteProject {
-        path: String,
+    RemoveProject {
+        project_id: String,
+    },
+    UpsertWorktree {
+        worktree: WorktreeRow,
+    },
+    RemoveWorktree {
+        worktree_id: String,
     },
     AddIgnoredSuggestion {
         suggestion: String,

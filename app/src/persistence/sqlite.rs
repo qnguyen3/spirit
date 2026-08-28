@@ -48,9 +48,9 @@ use super::model::{
     self, AI_DOCUMENT_PANE_KIND, AI_FACT_PANE_KIND, AMBIENT_AGENT_PANE_KIND, CODE_PANE_KIND,
     CurrentUserInformation, ENV_VAR_COLLECTION_PANE_KIND, EXECUTION_PROFILE_EDITOR_PANE_KIND,
     MCP_SERVER_PANE_KIND, NOTEBOOK_PANE_KIND, NewApp, NewCommand, NewServerExperiment, NewTab,
-    NewTabGroup, NewTeam, NewWindow, NewWorkspace, NewWorkspaceMetadata, NewWorkspaceTeam, Project,
-    SETTINGS_PANE_KIND, TERMINAL_PANE_KIND, Tab, TabGroup, WORKFLOW_PANE_KIND, Window,
-    WorkspaceMetadata as WorkspaceMetadataModel,
+    NewTabGroup, NewTeam, NewWindow, NewWorkspace, NewWorkspaceMetadata, NewWorkspaceTeam,
+    Project as ProjectRow, ProjectWorktree as WorktreeRow, SETTINGS_PANE_KIND, TERMINAL_PANE_KIND,
+    Tab, TabGroup, WORKFLOW_PANE_KIND, Window, WorkspaceMetadata as WorkspaceMetadataModel,
 };
 use super::{
     BlockCompleted, FinishedCommandMetadata, ModelEvent, PersistedData, PersistedDataScope,
@@ -80,6 +80,7 @@ use crate::persistence::model::{
     CODE_REVIEW_PANE_KIND, GET_STARTED_PANE_KIND, NewPersistedObjectAction, NewTeamSettings,
     UserProfile,
 };
+use crate::projects::{Project, Worktree};
 use crate::server::experiments::ServerExperiment;
 use crate::server::ids::{ClientId, HashableId, ServerId, SyncId};
 use crate::server::telemetry::TelemetryEvent;
@@ -664,8 +665,14 @@ fn handle_model_event(event: ModelEvent, connection: &mut SqliteConnection) -> a
         ModelEvent::UpsertProject { project } => {
             save_project(connection, project).context("error upserting project")
         }
-        ModelEvent::DeleteProject { path } => {
-            delete_project(connection, &path).context("error deleting project")
+        ModelEvent::RemoveProject { project_id } => {
+            delete_project(connection, &project_id).context("error deleting project")
+        }
+        ModelEvent::UpsertWorktree { worktree } => {
+            save_project_worktree(connection, worktree).context("error upserting worktree")
+        }
+        ModelEvent::RemoveWorktree { worktree_id } => {
+            delete_project_worktree(connection, &worktree_id).context("error deleting worktree")
         }
         ModelEvent::UpsertWorkspace { workspace } => {
             save_workspace(connection, *workspace).context("error upserting workspace")
@@ -866,6 +873,7 @@ fn save_app_state(conn: &mut SqliteConnection, app_state: &AppState) -> Result<(
                 fullscreen_state: window.fullscreen_state as i32,
                 agent_management_filters: None,
                 team_uid: window.team_uid.map(Into::into),
+                active_project_id: None,
             };
             diesel::insert_into(schema::windows::dsl::windows)
                 .values(new_window)
@@ -902,6 +910,7 @@ fn save_app_state(conn: &mut SqliteConnection, app_state: &AppState) -> Result<(
                         },
                         collapsed: group.collapsed,
                         pinned: group.pinned,
+                        project_id: None,
                     })
                     .collect();
                 diesel::insert_into(schema::tab_groups::dsl::tab_groups)
@@ -937,6 +946,8 @@ fn save_app_state(conn: &mut SqliteConnection, app_state: &AppState) -> Result<(
                         .group_id
                         .and_then(|group_id| tab_group_row_ids.get(&group_id).copied()),
                     pinned: tab.pinned,
+                    project_id: None,
+                    worktree_id: None,
                 })
                 .collect();
 
@@ -1414,12 +1425,12 @@ fn delete_codebase_index_metadata(conn: &mut SqliteConnection, index_path: &Path
     Ok(())
 }
 
-fn save_project(conn: &mut SqliteConnection, project: Project) -> Result<()> {
+fn save_project(conn: &mut SqliteConnection, project: ProjectRow) -> Result<()> {
     use schema::projects::dsl::*;
 
     diesel::insert_into(projects)
         .values(project.clone())
-        .on_conflict(path)
+        .on_conflict(id)
         .do_update()
         .set(&project)
         .execute(conn)?;
@@ -1431,15 +1442,66 @@ fn get_all_projects(conn: &mut SqliteConnection) -> Result<Vec<Project>, diesel:
     use schema::projects::dsl::*;
 
     Ok(projects
-        .load_iter::<Project, DefaultLoadingMode>(conn)?
+        .load_iter::<ProjectRow, DefaultLoadingMode>(conn)?
         .filter_map(|item| item.ok())
+        .filter_map(|row| match Project::try_from(row) {
+            Ok(project) => Some(project),
+            Err(err) => {
+                log::warn!("Skipping unreadable project row: {err}");
+                None
+            }
+        })
         .collect_vec())
 }
 
-fn delete_project(conn: &mut SqliteConnection, project_path: &str) -> Result<()> {
+fn delete_project(conn: &mut SqliteConnection, target_id: &str) -> Result<()> {
     use schema::projects::dsl::*;
 
-    diesel::delete(projects.filter(path.eq(project_path))).execute(conn)?;
+    diesel::delete(
+        schema::project_worktrees::dsl::project_worktrees
+            .filter(schema::project_worktrees::dsl::project_id.eq(target_id)),
+    )
+    .execute(conn)?;
+    diesel::delete(projects.filter(id.eq(target_id))).execute(conn)?;
+
+    Ok(())
+}
+
+fn save_project_worktree(conn: &mut SqliteConnection, worktree: WorktreeRow) -> Result<()> {
+    use schema::project_worktrees::dsl::*;
+
+    diesel::insert_into(project_worktrees)
+        .values(worktree.clone())
+        .on_conflict(id)
+        .do_update()
+        .set(&worktree)
+        .execute(conn)?;
+
+    Ok(())
+}
+
+fn get_all_project_worktrees(
+    conn: &mut SqliteConnection,
+) -> Result<Vec<Worktree>, diesel::result::Error> {
+    use schema::project_worktrees::dsl::*;
+
+    Ok(project_worktrees
+        .load_iter::<WorktreeRow, DefaultLoadingMode>(conn)?
+        .filter_map(|item| item.ok())
+        .filter_map(|row| match Worktree::try_from(row) {
+            Ok(worktree) => Some(worktree),
+            Err(err) => {
+                log::warn!("Skipping unreadable worktree row: {err}");
+                None
+            }
+        })
+        .collect_vec())
+}
+
+fn delete_project_worktree(conn: &mut SqliteConnection, target_id: &str) -> Result<()> {
+    use schema::project_worktrees::dsl::*;
+
+    diesel::delete(project_worktrees.filter(id.eq(target_id))).execute(conn)?;
 
     Ok(())
 }
@@ -2034,6 +2096,7 @@ fn read_sqlite_data(
             codebase_indices: get_all_codebase_index_metadata(conn)?,
             workspace_language_servers: Default::default(),
             projects: Default::default(),
+            worktrees: Default::default(),
             ignored_suggestions: Default::default(),
         });
     }
@@ -2398,6 +2461,7 @@ fn read_sqlite_data(
     let codebase_indices = get_all_codebase_index_metadata(conn)?;
     let workspace_language_servers = get_all_workspace_language_servers_by_workspace(conn)?;
     let projects = get_all_projects(conn)?;
+    let worktrees = get_all_project_worktrees(conn)?;
     let ignored_suggestions = get_all_ignored_suggestions(conn)?;
 
     Ok(PersistedData {
@@ -2413,6 +2477,7 @@ fn read_sqlite_data(
         codebase_indices,
         workspace_language_servers,
         projects,
+        worktrees,
         ignored_suggestions,
     })
 }

@@ -197,7 +197,6 @@ use crate::pane_group::{
 };
 use crate::persisted_workspace::PersistedWorkspace;
 use crate::persistence::{self, FinishedCommandMetadata};
-use crate::projects::ProjectManagementModel;
 use crate::remote_server::manager::{
     RemoteServerInitPhase, RemoteServerManager, RemoteServerManagerEvent,
 };
@@ -15811,13 +15810,9 @@ impl TypedActionView for TerminalView {
                 self.open_environment_management_pane(ctx);
             }
             AddProjectAtCurrentDirectory => {
-                // Get the current working directory and add it as a project
                 if let Some(current_dir) = self.pwd() {
-                    let path = PathBuf::from(&current_dir);
-
-                    // Access the ProjectManagementModel and add the project
-                    ProjectManagementModel::handle(ctx).update(ctx, |project_model, ctx| {
-                        project_model.upsert_project(path, ctx);
+                    ctx.dispatch_typed_action(&WorkspaceAction::OpenRepository {
+                        path: Some(current_dir),
                     });
                 }
             }

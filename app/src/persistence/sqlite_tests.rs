@@ -22,8 +22,11 @@ use crate::auth::UserUid;
 use crate::cloud_object::{CloudObjectPermissions, Owner};
 use crate::code::editor_management::CodeSource;
 use crate::notebooks::{CloudNotebook, CloudNotebookModel};
-use crate::persistence::model::ObjectPermissions;
+use crate::persistence::model::{
+    ObjectPermissions, Project as ProjectRow, ProjectWorktree as WorktreeRow,
+};
 use crate::persistence::{BlockCompleted, ModelEvent, PersistedDataScope, PersistenceScope};
+use crate::projects::{Project, ProjectId, ProjectKind, Worktree, WorktreeId, WorktreeKind};
 use crate::server::ids::{ClientId, ServerId};
 use crate::tab::SelectedTabColor;
 use crate::terminal::ShellLaunchData;
@@ -1064,4 +1067,131 @@ fn team_member_is_disabled_round_trips_through_sqlite_cache() {
         .expect("disabled member should be present");
     assert!(!active_member.is_disabled);
     assert!(disabled_member.is_disabled);
+}
+
+#[test]
+fn projects_and_worktrees_round_trip_through_sqlite() {
+    let tempdir = tempfile::tempdir().expect("tempdir should be created");
+    let database_path = tempdir.path().join("warp.sqlite");
+    let conn = setup_database(&database_path).expect("database should initialize");
+
+    let project = Project {
+        id: ProjectId::new(),
+        root_path: PathBuf::from("/tmp/spirit-round-trip"),
+        display_name: "spirit".to_owned(),
+        kind: ProjectKind::Git,
+        primary_branch: Some("main".to_owned()),
+        created_ts: 100,
+        last_opened_ts: 200,
+    };
+    let primary = Worktree {
+        id: WorktreeId::new(),
+        project_id: project.id,
+        name: "spirit".to_owned(),
+        kind: WorktreeKind::Primary,
+        created_ts: 100,
+    };
+    let linked = Worktree {
+        id: WorktreeId::new(),
+        project_id: project.id,
+        name: "auth".to_owned(),
+        kind: WorktreeKind::Linked {
+            path: PathBuf::from("/tmp/spirit-round-trip-wt/auth"),
+            branch: "auth".to_owned(),
+            base_branch: "main".to_owned(),
+        },
+        created_ts: 300,
+    };
+
+    let writer = start_writer(conn, database_path.clone()).expect("writer should start");
+    for event in [
+        ModelEvent::UpsertProject {
+            project: ProjectRow::from(&project),
+        },
+        ModelEvent::UpsertWorktree {
+            worktree: WorktreeRow::from(&primary),
+        },
+        ModelEvent::UpsertWorktree {
+            worktree: WorktreeRow::from(&linked),
+        },
+        ModelEvent::Terminate,
+    ] {
+        writer.sender.send(event).expect("event should send");
+    }
+    writer.handle.join().expect("writer should terminate");
+
+    let mut conn = setup_database(&database_path).expect("database should reopen");
+    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
+        .expect("persisted data should load");
+
+    assert_eq!(restored.projects.len(), 1);
+    assert_eq!(restored.projects[0].id, project.id);
+    assert_eq!(restored.projects[0].root_path, project.root_path);
+    assert_eq!(restored.projects[0].kind, ProjectKind::Git);
+    assert_eq!(restored.projects[0].primary_branch.as_deref(), Some("main"));
+    assert_eq!(restored.worktrees.len(), 2);
+    assert!(
+        restored
+            .worktrees
+            .iter()
+            .any(|worktree| worktree.is_primary() && worktree.id == primary.id)
+    );
+    let restored_linked = restored
+        .worktrees
+        .iter()
+        .find(|worktree| worktree.id == linked.id)
+        .expect("linked worktree should restore");
+    assert_eq!(restored_linked.branch(), Some("auth"));
+    assert_eq!(
+        restored_linked.directory(&restored.projects[0]),
+        std::path::Path::new("/tmp/spirit-round-trip-wt/auth")
+    );
+}
+
+#[test]
+fn removing_a_project_cascades_its_worktree_rows() {
+    let tempdir = tempfile::tempdir().expect("tempdir should be created");
+    let database_path = tempdir.path().join("warp.sqlite");
+    let conn = setup_database(&database_path).expect("database should initialize");
+
+    let project = Project {
+        id: ProjectId::new(),
+        root_path: PathBuf::from("/tmp/spirit-cascade"),
+        display_name: "spirit".to_owned(),
+        kind: ProjectKind::Folder,
+        primary_branch: None,
+        created_ts: 1,
+        last_opened_ts: 1,
+    };
+    let primary = Worktree {
+        id: WorktreeId::new(),
+        project_id: project.id,
+        name: "spirit".to_owned(),
+        kind: WorktreeKind::Primary,
+        created_ts: 1,
+    };
+
+    let writer = start_writer(conn, database_path.clone()).expect("writer should start");
+    for event in [
+        ModelEvent::UpsertProject {
+            project: ProjectRow::from(&project),
+        },
+        ModelEvent::UpsertWorktree {
+            worktree: WorktreeRow::from(&primary),
+        },
+        ModelEvent::RemoveProject {
+            project_id: project.id.to_string(),
+        },
+        ModelEvent::Terminate,
+    ] {
+        writer.sender.send(event).expect("event should send");
+    }
+    writer.handle.join().expect("writer should terminate");
+
+    let mut conn = setup_database(&database_path).expect("database should reopen");
+    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
+        .expect("persisted data should load");
+
+    assert!(restored.projects.is_empty());
+    assert!(restored.worktrees.is_empty());
 }

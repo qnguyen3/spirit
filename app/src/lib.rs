@@ -222,7 +222,7 @@ use crate::notification::NotificationContext;
 use crate::palette::PaletteMode;
 use crate::persisted_workspace::PersistedWorkspace;
 use crate::persistence::PersistenceWriter;
-use crate::projects::ProjectManagementModel;
+use crate::projects::registry::ProjectRegistryModel;
 use crate::root_view::{
     OpenFromRestoredArg, OpenPath, quake_mode_window_id, quake_mode_window_is_open,
 };
@@ -1291,6 +1291,7 @@ pub(crate) fn initialize_app(
         persisted_workspaces,
         workspace_language_servers,
         persisted_projects,
+        persisted_worktrees,
         persisted_ignored_suggestions,
     ) = sqlite_data
         .map(|sqlite_data| {
@@ -1307,11 +1308,13 @@ pub(crate) fn initialize_app(
                 sqlite_data.codebase_indices,
                 sqlite_data.workspace_language_servers,
                 sqlite_data.projects,
+                sqlite_data.worktrees,
                 sqlite_data.ignored_suggestions,
             )
         })
         .unwrap_or_else(|| {
             (
+                Default::default(),
                 Default::default(),
                 Default::default(),
                 Default::default(),
@@ -1601,8 +1604,12 @@ pub(crate) fn initialize_app(
 
     ctx.add_singleton_model(|_| GitRepoModels::new());
 
-    ctx.add_singleton_model(|ctx| {
-        ProjectManagementModel::new(persisted_projects, persistence_writer.sender(), ctx)
+    ctx.add_singleton_model(|_| {
+        ProjectRegistryModel::from_persisted(
+            persisted_projects,
+            persisted_worktrees,
+            persistence_writer.sender(),
+        )
     });
 
     ctx.add_singleton_model(move |_| History::new(command_history));

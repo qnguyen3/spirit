@@ -205,7 +205,6 @@ use crate::pane_group::{
 };
 use crate::persisted_workspace::PersistedWorkspace;
 use crate::persistence::ModelEvent;
-use crate::projects::ProjectManagementModel;
 use crate::prompt::editor_modal::{
     EditorModal as PromptEditorModal, EditorModalEvent as PromptEditorModalEvent,
     OpenSource as PromptEditorOpenSource,
@@ -10921,9 +10920,6 @@ impl Workspace {
 
     fn handle_open_repository(&mut self, path: &str, ctx: &mut ViewContext<Self>) {
         let path_buf = PathBuf::from(path);
-        ProjectManagementModel::handle(ctx).update(ctx, |projects, ctx| {
-            projects.upsert_project(path_buf.clone(), ctx);
-        });
         self.add_tab_with_pane_layout(
             PanesLayout::SingleTerminal(Box::new(NewTerminalOptions {
                 initial_directory: Some(path_buf.clone()),

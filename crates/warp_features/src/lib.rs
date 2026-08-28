@@ -564,6 +564,8 @@ pub enum FeatureFlag {
     /// always forwarded unchanged and the harness process/sandbox are never
     /// signaled or torn down.
     CtrlCCancelsThirdPartyHarness,
+
+    AdeWorkspaces,
 }
 
 static FLAG_STATES: [AtomicBool; cardinality::<FeatureFlag>()] =
@@ -621,6 +623,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::JupyterNotebookRendering,
     FeatureFlag::BoxDrawingGlyphs,
     FeatureFlag::VoiceInput,
+    FeatureFlag::AdeWorkspaces,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).
