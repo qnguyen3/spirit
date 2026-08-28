@@ -330,6 +330,13 @@ impl WorkspaceOverviewView {
                         if worktrees > 0 {
                             badges.push(format!("{worktrees} worktrees"));
                         }
+                        let (working, needs_attention) =
+                            crate::projects::agent_status::project_counts(project_id, app);
+                        if working > 0 || needs_attention > 0 {
+                            badges.push(format!(
+                                "{working} working \u{00B7} {needs_attention} needs attention"
+                            ));
+                        }
                         (
                             project.display_name.clone(),
                             middle_truncate(&project.root_path, 34),

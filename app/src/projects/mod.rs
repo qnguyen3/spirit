@@ -1,3 +1,4 @@
+pub mod agent_status;
 pub mod create_worktree_modal;
 pub mod delete_worktree_dialog;
 pub mod git_ops;

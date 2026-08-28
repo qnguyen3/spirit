@@ -210,7 +210,7 @@ use crate::projects::delete_worktree_dialog::DeleteWorktreeDialog;
 #[cfg(feature = "local_fs")]
 use crate::projects::host::ProjectHostAction;
 use crate::projects::registry::ProjectRegistryModel;
-use crate::projects::{Project, ProjectId, WorktreeId};
+use crate::projects::{Project, ProjectId, WorktreeId, agent_status};
 use crate::prompt::editor_modal::{
     EditorModal as PromptEditorModal, EditorModalEvent as PromptEditorModalEvent,
     OpenSource as PromptEditorOpenSource,
@@ -503,6 +503,10 @@ pub(crate) const TOGGLE_VERTICAL_TABS_PANEL_BINDING_NAME: &str =
 pub(crate) const OPEN_GLOBAL_SEARCH_BINDING_NAME: &str = "workspace:open_global_search";
 pub(crate) const NEW_TAB_BINDING_NAME: &str = "workspace:new_tab";
 pub(crate) const NEW_WORKTREE_BINDING_NAME: &str = "workspace:new_worktree";
+
+pub(crate) fn legacy_worktree_ui_retired() -> bool {
+    FeatureFlag::AdeWorkspaces.is_enabled()
+}
 pub(crate) const NEW_TERMINAL_TAB_BINDING_NAME: &str = "workspace:new_terminal_tab";
 pub(crate) const NEW_FILE_BINDING_NAME: &str = "workspace:new_file";
 pub(crate) const NEW_AGENT_PICKER_BINDING_NAME: &str = "workspace:new_agent_picker";
@@ -4660,8 +4664,17 @@ impl Workspace {
             .filter_map(|project_id| registry.project(*project_id))
             .collect();
         for project in &open_projects {
-            let mut fields = MenuItemFields::new(project.display_name.clone())
-                .with_on_select_action(ProjectHostAction::OpenProject {
+            let label = match agent_status::summarize_project(project.id, ctx) {
+                agent_status::WorktreeAgentSummary::NeedsAttention => {
+                    format!("{} \u{25CF}", project.display_name)
+                }
+                agent_status::WorktreeAgentSummary::Working => {
+                    format!("{} \u{25CB}", project.display_name)
+                }
+                agent_status::WorktreeAgentSummary::None => project.display_name.clone(),
+            };
+            let mut fields =
+                MenuItemFields::new(label).with_on_select_action(ProjectHostAction::OpenProject {
                     project_id: project.id,
                 });
             fields = if Some(project.id) == active_project_id {
@@ -4741,6 +4754,7 @@ impl Workspace {
         let text_color = theme.foreground();
         let pill_bg_normal = internal_colors::fg_overlay_1(theme);
         let pill_bg_hover = internal_colors::fg_overlay_2(theme);
+        let show_attention_dot = agent_status::inactive_screens_need_attention(self.window_id, ctx);
 
         let pill = Hoverable::new(
             self.mouse_states.workspace_switcher_pill.clone(),
@@ -4754,11 +4768,24 @@ impl Workspace {
                 .with_clip(ClipConfig::ellipsis())
                 .finish();
 
-                let row = Flex::row()
+                let mut row = Flex::row()
                     .with_cross_axis_alignment(CrossAxisAlignment::Center)
                     .with_spacing(4.)
-                    .with_child(ConstrainedBox::new(name_text).with_max_width(160.).finish())
-                    .finish();
+                    .with_child(ConstrainedBox::new(name_text).with_max_width(160.).finish());
+                if show_attention_dot {
+                    row.add_child(
+                        ConstrainedBox::new(
+                            Rect::new()
+                                .with_background(theme.accent())
+                                .with_corner_radius(CornerRadius::with_all(Radius::Percentage(50.)))
+                                .finish(),
+                        )
+                        .with_width(6.)
+                        .with_height(6.)
+                        .finish(),
+                    );
+                }
+                let row = row.finish();
 
                 Container::new(row)
                     .with_background(if state.is_hovered() {
@@ -5474,11 +5501,13 @@ impl Workspace {
         // 5. Separator + worktree config entry + new tab config
         if FeatureFlag::TabConfigs.is_enabled() {
             menu_items.push(MenuItem::Separator);
-            menu_items.push(
-                MenuItemFields::new_submenu("New worktree config")
-                    .with_icon(icons::Icon::Dataflow02)
-                    .into_item(),
-            );
+            if !legacy_worktree_ui_retired() {
+                menu_items.push(
+                    MenuItemFields::new_submenu("New worktree config")
+                        .with_icon(icons::Icon::Dataflow02)
+                        .into_item(),
+                );
+            }
 
             // 6. New tab config — V0: opens the TOML template.
             menu_items.push(
@@ -10832,6 +10861,15 @@ impl Workspace {
         self.tabs
             .get(self.active_tab_index)
             .and_then(|tab| tab.worktree_id)
+    }
+
+    pub fn set_active_tab_title(&mut self, title: &str, ctx: &mut ViewContext<Self>) {
+        let Some(tab) = self.tabs.get(self.active_tab_index) else {
+            return;
+        };
+        let pane_group = tab.pane_group.clone();
+        pane_group.update(ctx, |pane_group, ctx| pane_group.set_title(title, ctx));
+        self.update_window_title(ctx);
     }
 
     pub fn bind_active_tab_to_worktree(
@@ -18867,6 +18905,10 @@ impl TypedActionView for Workspace {
                 self.open_tab_config(tab_config.clone(), ctx);
             }
             OpenNewWorktreeModal => {
+                if legacy_worktree_ui_retired() {
+                    log::warn!("The legacy worktree modal is retired while ADE Workspaces is on");
+                    return;
+                }
                 let cwd = self
                     .active_session_view(ctx)
                     .and_then(|view| view.as_ref(ctx).pwd())
@@ -18881,6 +18923,12 @@ impl TypedActionView for Workspace {
                 ctx.notify();
             }
             OpenNewWorktreeRepoPicker => {
+                if legacy_worktree_ui_retired() {
+                    log::warn!(
+                        "The legacy worktree repo picker is retired while ADE Workspaces is on"
+                    );
+                    return;
+                }
                 self.open_repo_picker_for_new_worktree_modal(ctx);
             }
             OpenTabConfigErrorFile {
@@ -18985,9 +19033,17 @@ impl TypedActionView for Workspace {
                 self.open_network_log_pane(ctx);
             }
             OpenWorktreeInRepo { repo_path } => {
+                if legacy_worktree_ui_retired() {
+                    log::warn!("The legacy worktree flow is retired while ADE Workspaces is on");
+                    return;
+                }
                 self.open_worktree_in_repo(repo_path.clone(), ctx);
             }
             OpenWorktreeAddRepoPicker => {
+                if legacy_worktree_ui_retired() {
+                    log::warn!("The legacy worktree flow is retired while ADE Workspaces is on");
+                    return;
+                }
                 self.close_new_session_dropdown_menu(ctx);
                 self.open_folder_picker_for_worktree_submenu(ctx);
             }

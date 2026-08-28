@@ -2,8 +2,8 @@ use warp_core::ui::appearance::Appearance;
 use warp_core::ui::color::blend::Blend as _;
 use warp_core::ui::theme::Fill;
 use warpui::elements::{
-    Align, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Flex, Hoverable,
-    MouseStateHandle, ParentElement as _, Radius,
+    Align, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, DispatchEventResult,
+    EventHandler, Flex, Hoverable, MouseStateHandle, ParentElement as _, Radius,
 };
 use warpui::keymap::FixedBinding;
 use warpui::platform::Cursor;
@@ -320,14 +320,22 @@ impl AgentPickerView {
     ) -> Box<dyn Element> {
         let row = &self.rows[index];
         if row.is_installed {
-            Hoverable::new(row.mouse_state.clone(), |state| {
+            let clickable = Hoverable::new(row.mouse_state.clone(), |state| {
                 self.render_row_contents(index, def, state.is_hovered(), app)
             })
             .on_click(move |ctx, _, _| {
                 ctx.dispatch_typed_action(AgentPickerAction::Select(index));
             })
             .with_cursor(Cursor::PointingHand)
-            .finish()
+            .finish();
+            EventHandler::new(clickable)
+                .on_right_mouse_down(move |ctx, _, _, _| {
+                    ctx.dispatch_typed_action(WorkspaceAction::ShowCreateWorktreeModal {
+                        agent_catalog_index: Some(index),
+                    });
+                    DispatchEventResult::StopPropagation
+                })
+                .finish()
         } else {
             self.render_row_contents(index, def, false, app)
         }

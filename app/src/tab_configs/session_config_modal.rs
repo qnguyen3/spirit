@@ -283,16 +283,18 @@ impl View for SessionConfigModal {
                 .finish(),
         );
 
-        form.add_child(
-            Container::new(self.render_checkboxes(appearance))
-                .with_margin_top(SECTION_GAP)
-                .finish(),
-        );
-        form.add_child(
-            Container::new(self.render_autogenerate_worktree_branch_name_checkbox(appearance))
-                .with_margin_top(8.)
-                .finish(),
-        );
+        if !crate::workspace::view::legacy_worktree_ui_retired() {
+            form.add_child(
+                Container::new(self.render_checkboxes(appearance))
+                    .with_margin_top(SECTION_GAP)
+                    .finish(),
+            );
+            form.add_child(
+                Container::new(self.render_autogenerate_worktree_branch_name_checkbox(appearance))
+                    .with_margin_top(8.)
+                    .finish(),
+            );
+        }
 
         let content = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
