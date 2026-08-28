@@ -1193,8 +1193,15 @@ impl<'a> TabComponent<'a> {
         } else {
             None
         };
-        let are_inputs_synced = SyncedInputState::as_ref(ctx)
-            .should_sync_this_pane_group(tab.pane_group.id(), tab.pane_group.window_id(ctx));
+        let are_inputs_synced = crate::workspace::owning_screen_id(
+            tab.pane_group.id(),
+            tab.pane_group.window_id(ctx),
+            ctx,
+        )
+        .is_some_and(|screen_id| {
+            SyncedInputState::as_ref(ctx)
+                .should_sync_this_pane_group(tab.pane_group.id(), screen_id)
+        });
 
         let pane_state_indicator: Indicator = tab
             .pane_group

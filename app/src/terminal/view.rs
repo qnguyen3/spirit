@@ -4124,7 +4124,9 @@ impl TerminalView {
     /// event must determine how to process this event.
     /// Also emits an event for shared session viewers to notify the sharer of a write to pty request.
     fn emit_non_editor_typed_event(&self, chars: Vec<u8>, ctx: &mut ViewContext<Self>) {
-        if SyncedInputState::as_ref(ctx).is_syncing_any_inputs(ctx.window_id()) {
+        if crate::workspace::owning_screen_id(ctx.view_id(), ctx.window_id(), ctx)
+            .is_some_and(|screen_id| SyncedInputState::as_ref(ctx).is_syncing_any_inputs(screen_id))
+        {
             ctx.emit(Event::SyncInput(SyncEvent {
                 source_view_id: self.view_id,
                 data: SyncInputType::NonEditorTyped {
@@ -11817,7 +11819,11 @@ impl TerminalView {
             InputEvent::InputStateChanged(_) => {}
             InputEvent::InputEmptyStateChanged { .. } => {}
             InputEvent::SyncInput(input) => {
-                if !SyncedInputState::as_ref(ctx).is_syncing_any_inputs(ctx.window_id()) {
+                if !crate::workspace::owning_screen_id(ctx.view_id(), ctx.window_id(), ctx)
+                    .is_some_and(|screen_id| {
+                        SyncedInputState::as_ref(ctx).is_syncing_any_inputs(screen_id)
+                    })
+                {
                     return;
                 }
 

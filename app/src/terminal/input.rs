@@ -4431,7 +4431,9 @@ impl Input {
     /// terminal views can decide to process based on their sync state.
     fn send_input_sync_event(&self, edit_origin: &EditOrigin, ctx: &mut ViewContext<Self>) {
         let is_syncing_inputs =
-            SyncedInputState::as_ref(ctx).is_syncing_any_inputs(ctx.window_id());
+            crate::workspace::owning_screen_id(ctx.view_id(), ctx.window_id(), ctx).is_some_and(
+                |screen_id| SyncedInputState::as_ref(ctx).is_syncing_any_inputs(screen_id),
+            );
 
         if is_syncing_inputs
                     // If the edit we're applying in `handle_editor_event`
@@ -6338,7 +6340,9 @@ impl Input {
                 return;
             }
 
-            if SyncedInputState::as_ref(ctx).is_syncing_any_inputs(ctx.window_id()) {
+            if crate::workspace::owning_screen_id(ctx.view_id(), ctx.window_id(), ctx).is_some_and(
+                |screen_id| SyncedInputState::as_ref(ctx).is_syncing_any_inputs(screen_id),
+            ) {
                 ctx.emit(Event::SyncInput(SyncInputType::RanCommand));
             }
 

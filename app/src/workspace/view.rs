@@ -774,6 +774,7 @@ enum TabBarSlot {
 
 pub struct Workspace {
     window_id: WindowId,
+    screen_id: EntityId,
     project_id: Option<ProjectId>,
     pub(crate) tabs: Vec<TabData>,
     active_tab_index: usize,
@@ -2535,6 +2536,7 @@ impl Workspace {
         );
 
         let mut ws = Self {
+            screen_id: ctx.view_id(),
             project_id,
             tabs: Vec::new(),
             active_tab_index: 0,
@@ -3782,6 +3784,10 @@ impl Workspace {
 
     pub fn project_id(&self) -> Option<ProjectId> {
         self.project_id
+    }
+
+    pub fn screen_id(&self) -> EntityId {
+        self.screen_id
     }
 
     pub fn close_all_tabs_for_screen_teardown(&mut self, ctx: &mut ViewContext<Self>) {
@@ -18409,9 +18415,10 @@ impl Workspace {
         for tab in self.tab_views() {
             // We have to get the latest SyncInputStatus each iteration because
             // tab.update below could potentially change it.
+            let screen_id = self.screen_id;
             let synced_pane_group_ids = SyncedInputState::as_ref(ctx);
 
-            if synced_pane_group_ids.should_sync_this_pane_group(tab.id(), ctx.window_id()) {
+            if synced_pane_group_ids.should_sync_this_pane_group(tab.id(), screen_id) {
                 tab.update(ctx, |pane_group, ctx| {
                     pane_group.send_sync_event_to_panes(event, ctx);
                 });
@@ -18453,9 +18460,10 @@ impl Workspace {
         for tab in self.tab_views() {
             // We have to get the latest SyncInputStatus each iteration because
             // tab.update below could potentially change it.
+            let screen_id = self.screen_id;
             let synced_pane_group_ids = SyncedInputState::as_ref(ctx);
 
-            if synced_pane_group_ids.should_sync_this_pane_group(tab.id(), ctx.window_id()) {
+            if synced_pane_group_ids.should_sync_this_pane_group(tab.id(), screen_id) {
                 tab.update(ctx, |pane_group, pane_group_ctx| {
                     pane_group.send_sync_event_to_panes(&sync_event, pane_group_ctx);
                 });
@@ -19651,10 +19659,11 @@ impl TypedActionView for Workspace {
                 ctx.open_view_tree_debug_window(window_id);
             }
             ToggleSyncAllTerminalInputsInAllTabs => {
+                let screen_id = self.screen_id;
                 let enabled = SyncedInputState::handle(ctx).update(ctx, |status, _| {
-                    status.toggle_sync_all_terminal_inputs_in_all_tabs(window_id);
+                    status.toggle_sync_all_terminal_inputs_in_all_tabs(screen_id);
 
-                    status.is_syncing_all_inputs(window_id)
+                    status.is_syncing_all_inputs(screen_id)
                 });
                 let verb = if enabled { "enabled" } else { "disabled" };
                 let mut message = format!("You {verb} synchronized inputs in all tabs.");
@@ -19677,6 +19686,7 @@ impl TypedActionView for Workspace {
                 self.process_updated_sync_state(ctx);
             }
             ToggleSyncTerminalInputsInTab => {
+                let screen_id = self.screen_id;
                 let enabled = SyncedInputState::handle(ctx).update(ctx, |status, _| {
                     let current_pane_group_id = self.active_tab_pane_group().id();
 
@@ -19684,10 +19694,10 @@ impl TypedActionView for Workspace {
                         current_pane_group_id,
                         self.all_pane_group_ids(),
                         self.tab_count(),
-                        window_id,
+                        screen_id,
                     );
 
-                    status.should_sync_this_pane_group(current_pane_group_id, window_id)
+                    status.should_sync_this_pane_group(current_pane_group_id, screen_id)
                 });
                 let verb = if enabled { "enabled" } else { "disabled" };
                 let mut message = format!("You {verb} synchronized inputs in this tab.");
@@ -19707,8 +19717,9 @@ impl TypedActionView for Workspace {
                 self.process_updated_sync_state(ctx);
             }
             DisableTerminalInputSync => {
+                let screen_id = self.screen_id;
                 SyncedInputState::handle(ctx).update(ctx, |status, _| {
-                    status.disable_sync_terminal_inputs(window_id);
+                    status.disable_sync_terminal_inputs(screen_id);
                 });
 
                 self.process_updated_sync_state(ctx);
@@ -20342,10 +20353,10 @@ impl View for Workspace {
 
         let sync_state = SyncedInputState::as_ref(app);
 
-        if sync_state.is_syncing_all_inputs(self.window_id) {
+        if sync_state.is_syncing_all_inputs(self.screen_id) {
             context.set.insert(flags::SYNC_ALL_TABS_FLAG);
         } else if sync_state
-            .is_syncing_all_panes_in_pane_group(self.window_id, self.active_tab_pane_group().id())
+            .is_syncing_all_panes_in_pane_group(self.screen_id, self.active_tab_pane_group().id())
         {
             context.set.insert(flags::SYNC_ALL_PANES_IN_CURRENT_TAB);
         }

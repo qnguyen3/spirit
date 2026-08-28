@@ -371,13 +371,17 @@ fn make_new_edit_menu(ctx: &AppContext) -> Menu {
             updateable_custom_item_with_checkmark(
                 CustomAction::DisableSyncTerminalInputs,
                 ctx,
-                Box::new(
-                    |ctx| match WindowManager::handle(ctx).as_ref(ctx).active_window() {
-                        Some(window_id) => SyncedInputState::handle(ctx)
-                            .read(ctx, |status, _| !status.is_syncing_any_inputs(window_id)),
+                Box::new(|ctx| {
+                    match WindowManager::handle(ctx)
+                        .as_ref(ctx)
+                        .active_window()
+                        .and_then(|window_id| crate::workspace::active_screen_id(window_id, ctx))
+                    {
+                        Some(screen_id) => SyncedInputState::handle(ctx)
+                            .read(ctx, |status, _| !status.is_syncing_any_inputs(screen_id)),
                         _ => false,
-                    },
-                ),
+                    }
+                }),
             ),
         ],
     )));

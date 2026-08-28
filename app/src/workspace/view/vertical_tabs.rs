@@ -3354,8 +3354,11 @@ fn shows_synced_inputs_indicator(
 fn row_shows_synced_inputs_indicator(props: &PaneProps<'_>, app: &AppContext) -> bool {
     shows_synced_inputs_indicator(
         matches!(props.typed, TypedPane::Terminal(_)),
-        SyncedInputState::as_ref(app)
-            .should_sync_this_pane_group(props.pane_group_id, props.window_id()),
+        crate::workspace::owning_screen_id(props.pane_group_id, props.window_id(), app)
+            .is_some_and(|screen_id| {
+                SyncedInputState::as_ref(app)
+                    .should_sync_this_pane_group(props.pane_group_id, screen_id)
+            }),
         *TabSettings::as_ref(app).show_indicators.value(),
     )
 }

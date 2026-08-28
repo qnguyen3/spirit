@@ -178,8 +178,11 @@ impl PaneContent for TerminalPane {
             group.handle_pane_view_event(terminal_pane_id.into(), event, ctx);
         });
 
-        if SyncedInputState::as_ref(ctx).should_sync_this_pane_group(ctx.view_id(), ctx.window_id())
-            && let Some(active_pane_view) = group.active_session_view(ctx)
+        if crate::workspace::owning_screen_id(ctx.view_id(), ctx.window_id(), ctx).is_some_and(
+            |screen_id| {
+                SyncedInputState::as_ref(ctx).should_sync_this_pane_group(ctx.view_id(), screen_id)
+            },
+        ) && let Some(active_pane_view) = group.active_session_view(ctx)
         {
             let event = active_pane_view
                 .as_ref(ctx)
@@ -492,8 +495,11 @@ fn handle_terminal_view_event(
                 ctx.emit(pane_group::Event::OpenPluginInstructionsPane(*agent, *kind));
             }
             Event::SyncInput(sync_event) => {
-                if SyncedInputState::as_ref(ctx)
-                    .should_sync_this_pane_group(ctx.view_id(), ctx.window_id())
+                if crate::workspace::owning_screen_id(ctx.view_id(), ctx.window_id(), ctx)
+                    .is_some_and(|screen_id| {
+                        SyncedInputState::as_ref(ctx)
+                            .should_sync_this_pane_group(ctx.view_id(), screen_id)
+                    })
                 {
                     ctx.emit(pane_group::Event::SyncInput(sync_event.clone()));
                 }
