@@ -23,6 +23,7 @@ fn single_tab_snapshot(root: PaneNodeSnapshot) -> AppState {
                     right_panel: None,
                     group_id: None,
                     pinned: false,
+                    worktree_id: None,
                 }],
                 active_tab_index: 0,
                 tab_groups: vec![],
@@ -371,6 +372,7 @@ fn test_config_with_active_tab_index() {
                 right_panel: None,
                 group_id: None,
                 pinned: false,
+                worktree_id: None,
             };
             3
         ],
@@ -407,6 +409,7 @@ fn test_config_with_active_tab_index_and_filtered_tabs() {
                 right_panel: None,
                 group_id: None,
                 pinned: false,
+                worktree_id: None,
             },
             TabSnapshot {
                 custom_title: None,
@@ -433,6 +436,7 @@ fn test_config_with_active_tab_index_and_filtered_tabs() {
                 right_panel: None,
                 group_id: None,
                 pinned: false,
+                worktree_id: None,
             },
         ],
     );
@@ -471,6 +475,7 @@ fn test_config_with_active_tab_being_filtered() {
                 right_panel: None,
                 group_id: None,
                 pinned: false,
+                worktree_id: None,
             },
             TabSnapshot {
                 custom_title: None,
@@ -494,6 +499,7 @@ fn test_config_with_active_tab_being_filtered() {
                 right_panel: None,
                 group_id: None,
                 pinned: false,
+                worktree_id: None,
             },
         ],
     );

@@ -1,3 +1,5 @@
+pub mod create_worktree_modal;
+pub mod delete_worktree_dialog;
 pub mod git_ops;
 pub mod host;
 pub mod new_workspace_modal;

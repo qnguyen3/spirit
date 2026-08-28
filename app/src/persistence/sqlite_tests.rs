@@ -366,6 +366,7 @@ fn test_terminal_window_snapshot(vertical_tabs_panel_open: bool) -> WindowSnapsh
                 right_panel: None,
                 group_id: None,
                 pinned: false,
+                worktree_id: None,
             }],
         }],
         active_screen_index: 0,
@@ -474,6 +475,7 @@ fn test_sqlite_round_trips_custom_vertical_tabs_title() {
                     right_panel: None,
                     group_id: None,
                     pinned: false,
+                    worktree_id: None,
                 }],
                 active_tab_index: 0,
                 tab_groups: vec![],
@@ -554,6 +556,7 @@ fn test_sqlite_round_trips_code_pane_with_multiple_tabs() {
                     right_panel: None,
                     group_id: None,
                     pinned: false,
+                    worktree_id: None,
                 }],
                 active_tab_index: 0,
                 tab_groups: vec![],
@@ -635,6 +638,7 @@ fn test_sqlite_round_trips_tab_groups() {
         right_panel: None,
         group_id: Some(group_id),
         pinned: false,
+        worktree_id: None,
     };
     let tab_outside_group = TabSnapshot {
         custom_title: None,
@@ -658,6 +662,7 @@ fn test_sqlite_round_trips_tab_groups() {
         right_panel: None,
         group_id: None,
         pinned: false,
+        worktree_id: None,
     };
 
     let app_state = AppState {
@@ -750,6 +755,7 @@ fn test_sqlite_round_trips_pinned_state() {
         right_panel: None,
         group_id: None,
         pinned: true,
+        worktree_id: None,
     };
     let unpinned_tab = TabSnapshot {
         custom_title: None,
@@ -773,6 +779,7 @@ fn test_sqlite_round_trips_pinned_state() {
         right_panel: None,
         group_id: Some(unpinned_group_id),
         pinned: false,
+        worktree_id: None,
     };
     let tab_in_pinned_group = TabSnapshot {
         custom_title: None,
@@ -796,6 +803,7 @@ fn test_sqlite_round_trips_pinned_state() {
         right_panel: None,
         group_id: Some(pinned_group_id),
         pinned: false,
+        worktree_id: None,
     };
 
     let app_state = AppState {
@@ -1243,6 +1251,7 @@ fn test_screen_snapshot(
             right_panel: None,
             group_id: None,
             pinned: false,
+            worktree_id: None,
         }],
         active_tab_index,
         tab_groups: vec![],

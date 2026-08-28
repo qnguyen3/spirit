@@ -12,6 +12,7 @@ pub(crate) mod tests;
 mod vertical_tabs;
 #[cfg(target_family = "wasm")]
 mod wasm_view;
+mod worktrees;
 
 use std::cell::RefCell;
 use std::cmp::Ordering;
@@ -204,10 +205,12 @@ use crate::pane_group::{
 };
 use crate::persisted_workspace::PersistedWorkspace;
 use crate::persistence::ModelEvent;
+use crate::projects::create_worktree_modal::CreateWorktreeModal;
+use crate::projects::delete_worktree_dialog::DeleteWorktreeDialog;
 #[cfg(feature = "local_fs")]
 use crate::projects::host::ProjectHostAction;
 use crate::projects::registry::ProjectRegistryModel;
-use crate::projects::{Project, ProjectId};
+use crate::projects::{Project, ProjectId, WorktreeId};
 use crate::prompt::editor_modal::{
     EditorModal as PromptEditorModal, EditorModalEvent as PromptEditorModalEvent,
     OpenSource as PromptEditorOpenSource,
@@ -499,6 +502,7 @@ pub(crate) const TOGGLE_VERTICAL_TABS_PANEL_BINDING_NAME: &str =
     "workspace:toggle_vertical_tabs_panel";
 pub(crate) const OPEN_GLOBAL_SEARCH_BINDING_NAME: &str = "workspace:open_global_search";
 pub(crate) const NEW_TAB_BINDING_NAME: &str = "workspace:new_tab";
+pub(crate) const NEW_WORKTREE_BINDING_NAME: &str = "workspace:new_worktree";
 pub(crate) const NEW_TERMINAL_TAB_BINDING_NAME: &str = "workspace:new_terminal_tab";
 pub(crate) const NEW_FILE_BINDING_NAME: &str = "workspace:new_file";
 pub(crate) const NEW_AGENT_PICKER_BINDING_NAME: &str = "workspace:new_agent_picker";
@@ -832,6 +836,8 @@ pub struct Workspace {
     pending_session_config_tab_config_chip: bool,
     show_session_config_tab_config_chip: bool,
     new_worktree_modal: ModalViewState<Modal<NewWorktreeModal>>,
+    create_worktree_modal: ModalViewState<Modal<CreateWorktreeModal>>,
+    delete_worktree_dialog: ModalViewState<DeleteWorktreeDialog>,
     close_session_confirmation_dialog: ViewHandle<CloseSessionConfirmationDialog>,
     resource_center_view: ViewHandle<ResourceCenterView>,
     command_search_view: ViewHandle<CommandSearchView>,
@@ -1232,6 +1238,7 @@ impl Workspace {
                     view.set_title(&title, ctx);
                 }
             });
+            self.rename_bound_worktree(tab_index, &title, ctx);
             self.clear_tab_name_editor(ctx);
             self.update_window_title(ctx);
             ctx.notify();
@@ -2371,6 +2378,8 @@ impl Workspace {
 
         let tab_config_params_modal = Self::build_tab_config_params_modal(ctx);
         let new_worktree_modal = Self::build_new_worktree_modal(ctx);
+        let create_worktree_modal = Self::build_create_worktree_modal(ctx);
+        let delete_worktree_dialog = Self::build_delete_worktree_dialog(ctx);
 
         let session_config_modal = Self::build_session_config_modal(ctx);
 
@@ -2569,6 +2578,8 @@ impl Workspace {
             pending_session_config_tab_config_chip: false,
             show_session_config_tab_config_chip: false,
             new_worktree_modal,
+            create_worktree_modal,
+            delete_worktree_dialog,
             close_session_confirmation_dialog,
             resource_center_view,
             command_search_view,
@@ -2937,6 +2948,9 @@ impl Workspace {
                         self.tabs[tab_index].group_id = saved_tab
                             .group_id
                             .filter(|group_id| self.tab_groups.contains_key(group_id));
+                        self.tabs[tab_index].worktree_id = saved_tab
+                            .worktree_id
+                            .filter(|id| ProjectRegistryModel::as_ref(ctx).worktree(*id).is_some());
 
                         let pane_group = self.tabs[tab_index].pane_group.clone();
 
@@ -5433,6 +5447,30 @@ impl Workspace {
             }
         }
 
+        if self.can_create_worktree(ctx) {
+            menu_items.push(MenuItem::Separator);
+            menu_items.push(
+                MenuItemFields::new("New Worktree\u{2026}")
+                    .with_on_select_action(WorkspaceAction::ShowCreateWorktreeModal {
+                        agent_catalog_index: None,
+                    })
+                    .with_icon(icons::Icon::Dataflow02)
+                    .with_key_shortcut_label(keybinding_name_to_display_string(
+                        NEW_WORKTREE_BINDING_NAME,
+                        ctx,
+                    ))
+                    .into_item(),
+            );
+            for (worktree_id, name) in self.closed_worktrees(ctx) {
+                menu_items.push(
+                    MenuItemFields::new(name)
+                        .with_on_select_action(WorkspaceAction::OpenWorktreeTab { worktree_id })
+                        .with_indent()
+                        .into_item(),
+                );
+            }
+        }
+
         // 5. Separator + worktree config entry + new tab config
         if FeatureFlag::TabConfigs.is_enabled() {
             menu_items.push(MenuItem::Separator);
@@ -6425,7 +6463,7 @@ impl Workspace {
         let can_move_left = self.can_move_tab(tab_index, TabMovement::Left);
         let can_move_right = self.can_move_tab(tab_index, TabMovement::Right);
         let is_only_member_of_group = self.tab_is_only_member_of_its_group(tab_index);
-        let menu_items = {
+        let mut menu_items = {
             let tab = &self.tabs[tab_index];
             tab.menu_items(
                 tab_index,
@@ -6437,6 +6475,7 @@ impl Workspace {
                 ctx,
             )
         };
+        menu_items.extend(self.worktree_tab_menu_items(tab_index, ctx));
         ctx.update_view(&self.tab_right_click_menu, |context_menu, view_ctx| {
             context_menu.set_items(menu_items, view_ctx);
         });
@@ -9806,6 +9845,7 @@ impl Workspace {
                     // enabled.
                     pinned: FeatureFlag::PinnedTabs.is_enabled()
                         && self.tabs.get(tab_index).is_some_and(|tab| tab.pinned),
+                    worktree_id: self.tabs.get(tab_index).and_then(|tab| tab.worktree_id),
                 }
             })
             .filter(|tab| {
@@ -10656,6 +10696,33 @@ impl Workspace {
         ctx.notify();
     }
 
+    pub(crate) fn launch_agent_in_active_tab(
+        &mut self,
+        catalog_index: usize,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let Some(agent) = agent_catalog().get(catalog_index) else {
+            log::warn!("Agent launcher: no catalog entry at index {catalog_index}");
+            return;
+        };
+        match self
+            .active_tab_pane_group()
+            .as_ref(ctx)
+            .active_session_view(ctx)
+        {
+            Some(terminal_view) => {
+                terminal_view.update(ctx, |terminal_view, ctx| {
+                    terminal_view.execute_command_or_set_pending(agent.command, ctx);
+                });
+            }
+            None => {
+                log::warn!(
+                    "Agent launcher: could not find a terminal view in the new worktree tab"
+                );
+            }
+        }
+    }
+
     fn add_docker_sandbox_tab(&mut self, ctx: &mut ViewContext<Self>) {
         if !FeatureFlag::LocalDockerSandbox.is_enabled() {
             log::warn!("Local docker sandbox feature flag is disabled");
@@ -10758,6 +10825,37 @@ impl Workspace {
     /// - `AfterAllTabs` lands at the very end of the bar, outside any group, so
     ///   there is always a way to open a top-level tab even when every tab is
     ///   grouped.
+    fn inherited_worktree_id(&self) -> Option<WorktreeId> {
+        if !FeatureFlag::AdeWorkspaces.is_enabled() || self.project_id.is_none() {
+            return None;
+        }
+        self.tabs
+            .get(self.active_tab_index)
+            .and_then(|tab| tab.worktree_id)
+    }
+
+    pub fn bind_active_tab_to_worktree(
+        &mut self,
+        worktree_id: Option<WorktreeId>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let index = self.active_tab_index;
+        if let Some(tab) = self.tabs.get_mut(index) {
+            tab.worktree_id = worktree_id;
+        }
+        ctx.notify();
+    }
+
+    pub fn tab_index_for_worktree(&self, worktree_id: WorktreeId) -> Option<usize> {
+        self.tabs
+            .iter()
+            .position(|tab| tab.worktree_id == Some(worktree_id))
+    }
+
+    pub fn worktree_ids_with_tabs(&self) -> Vec<WorktreeId> {
+        self.tabs.iter().filter_map(|tab| tab.worktree_id).collect()
+    }
+
     fn new_tab_index_and_group(&self, ctx: &AppContext) -> (usize, Option<TabGroupId>) {
         let active_group_id = if FeatureFlag::GroupedTabs.is_enabled() {
             self.tabs
@@ -10837,7 +10935,9 @@ impl Workspace {
         } else {
             self.new_tab_index_and_group(ctx)
         };
+        let inherited_worktree_id = self.inherited_worktree_id();
         self.tabs.insert(insert_idx, TabData::new(new_pane_group));
+        self.tabs[insert_idx].worktree_id = inherited_worktree_id;
         self.tab_mru_order
             .push(self.tabs[insert_idx].pane_group.id());
         self.activate_tab_internal(insert_idx, ctx);
@@ -10906,6 +11006,7 @@ impl Workspace {
             me.handle_file_tree_event(pane_group, event, ctx)
         });
 
+        let inherited_worktree_id = self.inherited_worktree_id();
         if self.tab_count() == 0 {
             self.tabs.push(TabData::new(new_pane_group));
             self.tab_mru_order
@@ -10915,6 +11016,10 @@ impl Workspace {
             self.tabs.insert(new_idx, TabData::new(new_pane_group));
             self.tab_mru_order.push(self.tabs[new_idx].pane_group.id());
             self.activate_tab_internal(new_idx, ctx);
+        }
+        let inserted_idx = self.active_tab_index;
+        if let Some(tab) = self.tabs.get_mut(inserted_idx) {
+            tab.worktree_id = inherited_worktree_id;
         }
 
         // Join the active tab's group when one exists.
@@ -20027,6 +20132,20 @@ impl TypedActionView for Workspace {
             ShowWorkspaceSwitcherMenu => {
                 self.show_workspace_switcher_dropdown(ctx);
             }
+            ShowCreateWorktreeModal {
+                agent_catalog_index,
+            } => {
+                self.show_create_worktree_modal(*agent_catalog_index, ctx);
+            }
+            OpenWorktreeTab { worktree_id } => {
+                self.open_worktree_tab(*worktree_id, ctx);
+            }
+            DeleteWorktree { worktree_id } => {
+                self.show_delete_worktree_dialog(*worktree_id, ctx);
+            }
+            RevealWorktreeFolder { worktree_id } => {
+                self.reveal_worktree_folder(*worktree_id, ctx);
+            }
         };
         if action.should_save_app_state_on_action() {
             ctx.dispatch_global_action("workspace:save_app", ());
@@ -20922,6 +21041,14 @@ impl View for Workspace {
                     ),
                 );
             }
+        }
+
+        if self.create_worktree_modal.is_open() {
+            stack.add_child(self.create_worktree_modal.render());
+        }
+
+        if self.delete_worktree_dialog.is_open() {
+            stack.add_child(self.delete_worktree_dialog.render());
         }
 
         if self.new_worktree_modal.is_open() {

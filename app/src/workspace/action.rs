@@ -22,6 +22,7 @@ use crate::drive::CloudObjectTypeAndId;
 use crate::drive::items::WarpDriveItemId;
 use crate::palette::PaletteMode;
 use crate::pane_group::PaneGroup;
+use crate::projects::WorktreeId;
 use crate::prompt::editor_modal::OpenSource as PromptEditorOpenSource;
 use crate::search;
 use crate::server::ids::{ServerId, SyncId};
@@ -616,6 +617,18 @@ pub enum WorkspaceAction {
     /// Shows (toggles) the team-switcher dropdown menu in the title bar.
     ShowTeamSwitcherMenu,
     ShowWorkspaceSwitcherMenu,
+    ShowCreateWorktreeModal {
+        agent_catalog_index: Option<usize>,
+    },
+    OpenWorktreeTab {
+        worktree_id: WorktreeId,
+    },
+    DeleteWorktree {
+        worktree_id: WorktreeId,
+    },
+    RevealWorktreeFolder {
+        worktree_id: WorktreeId,
+    },
 }
 
 impl From<&WorkspaceAction> for LoginGatedFeature {
@@ -890,7 +903,11 @@ impl WorkspaceAction {
             | OpenNetworkLogPane
             | OpenNewWindowForTeam { .. }
             | ShowTeamSwitcherMenu
-            | ShowWorkspaceSwitcherMenu => false,
+            | ShowWorkspaceSwitcherMenu
+            | ShowCreateWorktreeModal { .. }
+            | OpenWorktreeTab { .. }
+            | DeleteWorktree { .. }
+            | RevealWorktreeFolder { .. } => false,
             #[cfg(debug_assertions)]
             InstallOpenCodeWarpPlugin | UseLocalOpenCodeWarpPlugin => false,
             #[cfg(not(target_family = "wasm"))]

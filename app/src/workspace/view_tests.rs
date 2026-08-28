@@ -32,6 +32,7 @@ use crate::notebooks::notebook::NotebookView;
 use crate::pane_group::{Direction, PaneGroupAction, PaneId};
 use crate::persisted_workspace::PersistedWorkspace;
 use crate::pricing::PricingInfoModel;
+use crate::projects::registry::ProjectRegistryModel;
 use crate::resource_center::Tip;
 use crate::server::cloud_objects::listener::Listener;
 use crate::server::cloud_objects::update_manager::UpdateManager;
@@ -117,6 +118,7 @@ pub(crate) fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| CLIAgentSessionsModel::new());
     app.add_singleton_model(SessionPermissionsManager::new);
     app.add_singleton_model(|_| SettingsPaneManager::new());
+    app.add_singleton_model(|_| ProjectRegistryModel::new(None));
     app.add_singleton_model(|_| AgentPickerPaneManager::default());
 
     app.add_singleton_model(|_| DetectedRepositories::default());

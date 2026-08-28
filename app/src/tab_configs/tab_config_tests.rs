@@ -3,6 +3,7 @@ use std::path::Path;
 
 use super::*;
 use crate::launch_configs::launch_config::{PaneTemplateType, SplitDirection};
+use crate::projects::git_ops::generated_worktree_repo_dir;
 
 const WORKTREE_TOML: &str = r#"
 name = "New Worktree"

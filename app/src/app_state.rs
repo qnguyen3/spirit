@@ -9,7 +9,7 @@ use warpui::{AppContext, SingletonEntity as _};
 
 use crate::code::editor_management::CodeSource;
 use crate::drive::OpenWarpDriveObjectSettings;
-use crate::projects::ProjectId;
+use crate::projects::{ProjectId, WorktreeId};
 use crate::root_view::quake_mode_window_id;
 use crate::server::ids::{ServerId, SyncId};
 use crate::settings_view::SettingsSection;
@@ -112,6 +112,7 @@ pub struct TabSnapshot {
     pub group_id: Option<TabGroupId>,
     /// True when this tab is pinned to the front of the tab list.
     pub pinned: bool,
+    pub worktree_id: Option<WorktreeId>,
 }
 
 impl TabSnapshot {

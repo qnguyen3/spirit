@@ -57,10 +57,10 @@ pub use toast_stack::{ToastStack, ToastStackEvent};
 use crate::workspace::view::{
     LEFT_PANEL_GLOBAL_SEARCH_BINDING_NAME, LEFT_PANEL_PROJECT_EXPLORER_BINDING_NAME,
     LEFT_PANEL_WARP_DRIVE_BINDING_NAME, NEW_AGENT_PICKER_BINDING_NAME, NEW_FILE_BINDING_NAME,
-    NEW_TAB_BINDING_NAME, NEW_TERMINAL_TAB_BINDING_NAME, OPEN_GLOBAL_SEARCH_BINDING_NAME,
-    TOGGLE_PROJECT_EXPLORER_BINDING_NAME, TOGGLE_RIGHT_PANEL_BINDING_NAME,
-    TOGGLE_TAB_CONFIGS_MENU_BINDING_NAME, TOGGLE_VERTICAL_TABS_PANEL_BINDING_NAME,
-    TOGGLE_WARP_DRIVE_BINDING_NAME,
+    NEW_TAB_BINDING_NAME, NEW_TERMINAL_TAB_BINDING_NAME, NEW_WORKTREE_BINDING_NAME,
+    OPEN_GLOBAL_SEARCH_BINDING_NAME, TOGGLE_PROJECT_EXPLORER_BINDING_NAME,
+    TOGGLE_RIGHT_PANEL_BINDING_NAME, TOGGLE_TAB_CONFIGS_MENU_BINDING_NAME,
+    TOGGLE_VERTICAL_TABS_PANEL_BINDING_NAME, TOGGLE_WARP_DRIVE_BINDING_NAME,
 };
 
 pub fn purge_screen_scoped_state(screen_id: warpui::EntityId, app: &mut AppContext) {
@@ -101,6 +101,19 @@ pub fn init(app: &mut AppContext) {
     code::init(app);
     sync_inputs::init(app);
     lsp::init(app);
+
+    app.register_editable_bindings([EditableBinding::new(
+        NEW_WORKTREE_BINDING_NAME,
+        "New Worktree\u{2026}",
+        WorkspaceAction::ShowCreateWorktreeModal {
+            agent_catalog_index: None,
+        },
+    )
+    .with_context_predicate(id!("Workspace"))
+    .with_enabled(|| FeatureFlag::AdeWorkspaces.is_enabled())
+    .with_group(bindings::BindingGroup::Workspaces.as_str())
+    .with_mac_key_binding("cmd-ctrl-n")
+    .with_linux_or_windows_key_binding("ctrl-alt-n")]);
 
     app.register_fixed_bindings([FixedBinding::empty(
         "Dump debug info",

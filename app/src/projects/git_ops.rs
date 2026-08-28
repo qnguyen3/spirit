@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepoRoot {
@@ -21,6 +21,83 @@ pub enum BranchDeleteOutcome {
     Deleted,
     KeptUnmerged,
 }
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct IncludeCopyReport {
+    pub copied: usize,
+    pub skipped_over_budget: usize,
+    pub errors: usize,
+}
+
+impl IncludeCopyReport {
+    pub fn summary(&self) -> Option<String> {
+        if self.skipped_over_budget == 0 && self.errors == 0 {
+            return None;
+        }
+        let mut parts = Vec::new();
+        if self.skipped_over_budget > 0 {
+            parts.push(format!(
+                "{} file(s) skipped (copy budget exceeded)",
+                self.skipped_over_budget
+            ));
+        }
+        if self.errors > 0 {
+            parts.push(format!("{} file(s) failed to copy", self.errors));
+        }
+        Some(format!(".worktreeinclude: {}", parts.join(", ")))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IncludePattern {
+    pub directory: String,
+    pub file_prefix: String,
+    pub has_wildcard: bool,
+}
+
+pub fn parse_worktree_include(contents: &str) -> Vec<IncludePattern> {
+    contents
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .filter_map(|line| {
+            let normalized = line.replace('\\', "/");
+            if normalized.starts_with('/')
+                || normalized.starts_with("~")
+                || normalized.split('/').any(|part| part == "..")
+            {
+                return None;
+            }
+            let (directory, file) = match normalized.rsplit_once('/') {
+                Some((directory, file)) => (directory.to_owned(), file.to_owned()),
+                None => (String::new(), normalized),
+            };
+            let has_wildcard = file.ends_with('*');
+            let file_prefix = file.trim_end_matches('*').to_owned();
+            if file_prefix.is_empty() && !has_wildcard {
+                return None;
+            }
+            Some(IncludePattern {
+                directory,
+                file_prefix,
+                has_wildcard,
+            })
+        })
+        .collect()
+}
+
+impl IncludePattern {
+    pub fn matches(&self, file_name: &str) -> bool {
+        if self.has_wildcard {
+            file_name.starts_with(&self.file_prefix)
+        } else {
+            file_name == self.file_prefix
+        }
+    }
+}
+
+pub const INCLUDE_COPY_MAX_FILES: usize = 5_000;
+pub const INCLUDE_COPY_MAX_BYTES: u64 = 512 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClonePhase {
@@ -47,6 +124,24 @@ impl ClonePhase {
             ClonePhase::CheckingOut => "Checking out files",
         }
     }
+}
+
+// Two repos with the same folder name share this directory; existing users'
+// worktrees live here, so collisions are resolved at the leaf, not by changing
+// the convention.
+pub fn generated_worktree_repo_dir(repo_path: &Path) -> PathBuf {
+    let repo_name = repo_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or("untitled");
+    warp_core::paths::data_dir()
+        .join("worktrees")
+        .join(repo_name)
+}
+
+pub fn generated_worktree_path(repo_path: &Path, worktree_name: &str) -> PathBuf {
+    generated_worktree_repo_dir(repo_path).join(worktree_name)
 }
 
 pub fn sanitize_worktree_name(raw: &str) -> String {
@@ -216,8 +311,9 @@ mod imp {
     use warp_util::git::run_git_command;
 
     use super::{
-        BranchDeleteOutcome, CloneProgress, RepoRoot, WorktreeListEntry,
-        derive_clone_directory_name, parse_clone_progress, parse_worktree_list,
+        BranchDeleteOutcome, CloneProgress, INCLUDE_COPY_MAX_BYTES, INCLUDE_COPY_MAX_FILES,
+        IncludeCopyReport, RepoRoot, WorktreeListEntry, derive_clone_directory_name,
+        parse_clone_progress, parse_worktree_include, parse_worktree_list,
     };
 
     pub async fn discover_repo_root(path: &Path) -> Result<Option<RepoRoot>> {
@@ -309,18 +405,6 @@ mod imp {
         .await
         .map(|_| ())
         .with_context(|| format!("Failed to create worktree for branch {branch}"))
-    }
-
-    pub async fn worktree_add_existing_branch(
-        root: &Path,
-        branch: &str,
-        path: &Path,
-    ) -> Result<()> {
-        let path = path.to_string_lossy().to_string();
-        run_git_command(root, &["worktree", "add", &path, branch])
-            .await
-            .map(|_| ())
-            .with_context(|| format!("Failed to create worktree for existing branch {branch}"))
     }
 
     pub async fn worktree_list(root: &Path) -> Result<Vec<WorktreeListEntry>> {
@@ -588,6 +672,69 @@ mod imp {
         Ok(dest)
     }
 
+    pub async fn copy_worktree_includes(
+        root: &Path,
+        worktree_path: &Path,
+    ) -> Result<IncludeCopyReport> {
+        let include_file = root.join(".worktreeinclude");
+        let Ok(contents) = std::fs::read_to_string(&include_file) else {
+            return Ok(IncludeCopyReport::default());
+        };
+
+        let mut report = IncludeCopyReport::default();
+        let mut copied_bytes = 0u64;
+
+        for pattern in parse_worktree_include(&contents) {
+            let source_dir = root.join(&pattern.directory);
+            if !source_dir.starts_with(root) {
+                continue;
+            }
+            let Ok(entries) = std::fs::read_dir(&source_dir) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let file_name = entry.file_name();
+                let Some(file_name) = file_name.to_str() else {
+                    continue;
+                };
+                if !pattern.matches(file_name) {
+                    continue;
+                }
+                if !entry.path().is_file() {
+                    continue;
+                }
+                let destination = worktree_path.join(&pattern.directory).join(file_name);
+                if destination.exists() {
+                    continue;
+                }
+
+                let size = entry.metadata().map(|meta| meta.len()).unwrap_or(0);
+                if report.copied >= INCLUDE_COPY_MAX_FILES
+                    || copied_bytes.saturating_add(size) > INCLUDE_COPY_MAX_BYTES
+                {
+                    report.skipped_over_budget += 1;
+                    continue;
+                }
+
+                if let Some(parent) = destination.parent()
+                    && std::fs::create_dir_all(parent).is_err()
+                {
+                    report.errors += 1;
+                    continue;
+                }
+                match std::fs::copy(entry.path(), &destination) {
+                    Ok(_) => {
+                        report.copied += 1;
+                        copied_bytes = copied_bytes.saturating_add(size);
+                    }
+                    Err(_) => report.errors += 1,
+                }
+            }
+        }
+
+        Ok(report)
+    }
+
     fn clone_url_host(url: &str) -> String {
         let without_scheme = match url.split_once("://") {
             Some((_, rest)) => rest,
@@ -612,7 +759,9 @@ mod imp {
 
     use anyhow::{Result, anyhow};
 
-    use super::{BranchDeleteOutcome, CloneProgress, RepoRoot, WorktreeListEntry};
+    use super::{
+        BranchDeleteOutcome, CloneProgress, IncludeCopyReport, RepoRoot, WorktreeListEntry,
+    };
 
     fn unsupported<T>() -> Result<T> {
         Err(anyhow!("Git operations are not supported on this platform"))
@@ -635,14 +784,6 @@ mod imp {
         _branch: &str,
         _path: &Path,
         _base: &str,
-    ) -> Result<()> {
-        unsupported()
-    }
-
-    pub async fn worktree_add_existing_branch(
-        _root: &Path,
-        _branch: &str,
-        _path: &Path,
     ) -> Result<()> {
         unsupported()
     }
@@ -692,13 +833,20 @@ mod imp {
     ) -> Result<PathBuf> {
         unsupported()
     }
+
+    pub async fn copy_worktree_includes(
+        _root: &Path,
+        _worktree_path: &Path,
+    ) -> Result<IncludeCopyReport> {
+        Ok(IncludeCopyReport::default())
+    }
 }
 
 #[allow(unused_imports)]
 pub use imp::{
-    clone, current_branch, delete_branch_safe, detect_primary_branch, discover_repo_root,
-    force_delete_branch, init_new_project, local_branches, same_path, status_is_dirty,
-    worktree_add, worktree_add_existing_branch, worktree_list, worktree_prune, worktree_remove,
+    clone, copy_worktree_includes, current_branch, delete_branch_safe, detect_primary_branch,
+    discover_repo_root, force_delete_branch, init_new_project, local_branches, same_path,
+    status_is_dirty, worktree_add, worktree_list, worktree_prune, worktree_remove,
 };
 
 #[cfg(test)]

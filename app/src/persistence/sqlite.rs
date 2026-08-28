@@ -80,7 +80,7 @@ use crate::persistence::model::{
     CODE_REVIEW_PANE_KIND, GET_STARTED_PANE_KIND, NewPersistedObjectAction, NewTeamSettings,
     UserProfile,
 };
-use crate::projects::{Project, ProjectId, Worktree};
+use crate::projects::{Project, ProjectId, Worktree, WorktreeId};
 use crate::server::experiments::ServerExperiment;
 use crate::server::ids::{ClientId, HashableId, ServerId, SyncId};
 use crate::server::telemetry::TelemetryEvent;
@@ -973,7 +973,7 @@ fn save_app_state(conn: &mut SqliteConnection, app_state: &AppState) -> Result<(
                         .and_then(|group_id| tab_group_row_ids.get(&group_id).copied()),
                     pinned: tab.pinned,
                     project_id: project_id.clone(),
-                    worktree_id: None,
+                    worktree_id: tab.worktree_id.map(|id| id.to_string()),
                 })
                 .collect();
 
@@ -2298,6 +2298,10 @@ fn read_sqlite_data(
                                     right_panel,
                                     group_id,
                                     pinned: tab.pinned,
+                                    worktree_id: tab
+                                        .worktree_id
+                                        .as_deref()
+                                        .and_then(|value| value.parse::<WorktreeId>().ok()),
                                 },
                             ))
                         })

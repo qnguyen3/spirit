@@ -37,6 +37,8 @@ pub fn init(app: &mut AppContext) {
 
     use crate::util::bindings::BindingGroup;
 
+    super::create_worktree_modal::init(app);
+    super::delete_worktree_dialog::init(app);
     super::new_workspace_modal::init(app);
     super::overview::init(app);
     super::remove_workspace_dialog::init(app);
@@ -282,7 +284,46 @@ impl ProjectHost {
             clone_cancelled: Arc::new(AtomicBool::new(false)),
         };
         host.publish_active_screen(ctx);
+        host.seed_restored_project_screens(ctx);
         host
+    }
+
+    fn seed_restored_project_screens(&self, ctx: &mut ViewContext<Self>) {
+        for screen in &self.screens {
+            let Some(project_id) = screen.project_id else {
+                continue;
+            };
+            let seed = ProjectRegistryModel::handle(ctx).read(ctx, |registry, _| {
+                registry.project(project_id).map(|project| {
+                    (
+                        project.root_path.clone(),
+                        registry.primary_worktree_id(project_id),
+                    )
+                })
+            });
+            let Some((root_path, primary_worktree_id)) = seed else {
+                continue;
+            };
+            let workspace = screen.workspace.clone();
+            workspace.update(ctx, |workspace, ctx| {
+                if workspace.tab_count() == 0 {
+                    workspace.add_tab_with_pane_layout(
+                        crate::pane_group::PanesLayout::SingleTerminal(Box::new(
+                            NewTerminalOptions {
+                                initial_directory: Some(root_path),
+                                hide_homepage: true,
+                                ..Default::default()
+                            },
+                        )),
+                        Arc::new(std::collections::HashMap::new()),
+                        None,
+                        ctx,
+                    );
+                    workspace.bind_active_tab_to_worktree(primary_worktree_id, ctx);
+                }
+                workspace.reconcile_worktrees(ctx);
+            });
+        }
     }
 
     fn build_new_workspace_modal(
@@ -450,12 +491,14 @@ impl ProjectHost {
             return;
         }
 
-        let root_path = ProjectRegistryModel::handle(ctx).read(ctx, |registry, _| {
-            registry
-                .project(project_id)
-                .map(|project| project.root_path.clone())
+        let opened = ProjectRegistryModel::handle(ctx).read(ctx, |registry, _| {
+            let project = registry.project(project_id)?;
+            Some((
+                project.root_path.clone(),
+                registry.primary_worktree_id(project_id),
+            ))
         });
-        let Some(root_path) = root_path else {
+        let Some((root_path, primary_worktree_id)) = opened else {
             log::warn!("Cannot open unknown project {project_id}");
             return;
         };
@@ -474,6 +517,10 @@ impl ProjectHost {
                 Some(project_id),
                 ctx,
             )
+        });
+        workspace.update(ctx, |workspace, ctx| {
+            workspace.bind_active_tab_to_worktree(primary_worktree_id, ctx);
+            workspace.reconcile_worktrees(ctx);
         });
 
         self.screens.push(ProjectScreen {

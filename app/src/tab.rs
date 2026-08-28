@@ -35,6 +35,7 @@ use crate::features::FeatureFlag;
 use crate::launch_configs::launch_config::LaunchConfig;
 use crate::menu::{MenuAction, MenuItem, MenuItemFields};
 use crate::pane_group::{PaneGroup, PaneId};
+use crate::projects::WorktreeId;
 use crate::shell_indicator::ShellIndicatorType;
 use crate::terminal::CLIAgent;
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
@@ -376,6 +377,7 @@ pub struct TabData {
     pub in_multi_selection: bool,
     /// True when this tab is pinned to the front of the tab list.
     pub pinned: bool,
+    pub worktree_id: Option<WorktreeId>,
 }
 
 const TAB_COLOR_ICON_PATH: &str = "bundled/svg/ellipse.svg";
@@ -396,6 +398,7 @@ impl TabData {
             group_id: None,
             in_multi_selection: false,
             pinned: false,
+            worktree_id: None,
         }
     }
 
