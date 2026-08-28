@@ -1,5 +1,6 @@
 pub mod buffer_model;
 mod classic;
+mod cli_agent;
 pub mod cli_agent_plugin_chip;
 mod common;
 pub mod decorations;
@@ -163,11 +164,12 @@ use crate::suggestions::ignored_suggestions_model::{
     IgnoredSuggestionsModel, IgnoredSuggestionsModelEvent, SuggestionType,
 };
 use crate::terminal::CLIAgent;
-use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 #[cfg(not(target_family = "wasm"))]
 use crate::terminal::cli_agent_sessions::plugin_manager::PluginModalKind;
+use crate::terminal::cli_agent_sessions::{
+    CLIAgentInputState, CLIAgentSessionsModel, CLIAgentSessionsModelEvent,
+};
 use crate::terminal::input::buffer_model::InputBufferModel;
-use crate::terminal::input::cli_agent_plugin_chip::{CliAgentPluginChip, CliAgentPluginChipEvent};
 use crate::terminal::input::inline_history::InlineHistoryMenuView;
 use crate::terminal::input::inline_menu::InlineMenuPositioner;
 use crate::terminal::input::slash_command_model::SlashCommandModel;
@@ -183,6 +185,7 @@ use crate::terminal::input::voice_input::VoiceInputButton;
 use crate::terminal::model::session::active_session::ActiveSession;
 use crate::terminal::model::session::shell_quote_arg;
 use crate::terminal::prompt_render_helper::should_render_ps1_prompt;
+use crate::terminal::view::cli_agent_footer::CliAgentFooter;
 use crate::user_config::WarpConfig;
 use crate::util::bindings::{self, CustomAction, keybinding_name_to_normalized_string};
 #[cfg(feature = "local_fs")]
@@ -234,6 +237,10 @@ impl DropTargetData for InputDropTargetData {
 }
 
 pub const DEBOUNCE_INPUT_DECORATION_PERIOD: Duration = Duration::from_millis(10);
+pub(super) const CLI_AGENT_RICH_INPUT_EDITOR_MAX_HEIGHT: f32 = 236.;
+pub(super) const CLI_AGENT_RICH_INPUT_EDITOR_TOP_PADDING: f32 = 10.;
+pub(super) const CLI_AGENT_RICH_INPUT_EDITOR_BOTTOM_PADDING: f32 = 8.;
+pub(super) const CLI_AGENT_RICH_INPUT_HINT_TEXT: &str = "Tell the agent what to build...";
 const SHORT_CIRCUIT_HIGHLIGHTING_ACTIONS: [Option<PlainTextEditorViewAction>; 7] = [
     Some(PlainTextEditorViewAction::Space),
     Some(PlainTextEditorViewAction::NonExpandingSpace),
@@ -683,6 +690,10 @@ pub enum Event {
     OpenPluginInstructionsPane(CLIAgent, PluginModalKind),
     OpenShareSessionModal,
     StartRemoteControl,
+    /// Close the CLI agent rich input composer.
+    CloseCLIAgentRichInput,
+    /// Submit the composed prompt to the active CLI agent.
+    SubmitCLIAgentRichInput(String),
 }
 
 pub enum InputState {
@@ -1122,7 +1133,7 @@ pub struct Input {
     conn: Option<Arc<Mutex<SqliteConnection>>>,
 
     terminal_input_message_bar: ViewHandle<TerminalInputMessageBar>,
-    cli_agent_plugin_chip: ViewHandle<CliAgentPluginChip>,
+    cli_agent_footer: ViewHandle<CliAgentFooter>,
     voice_input_button: ViewHandle<VoiceInputButton>,
 
     inline_slash_commands_view: ViewHandle<InlineSlashCommandView>,
@@ -1423,6 +1434,7 @@ impl Input {
         current_repo_path: Option<PathBuf>,
         model_events: ModelHandle<crate::terminal::model_events::ModelEventDispatcher>,
         active_session: ModelHandle<ActiveSession>,
+        cli_agent_footer: ViewHandle<CliAgentFooter>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         let initial_session_context = {
@@ -1596,17 +1608,35 @@ impl Input {
             TerminalInputMessageBar::new(suggestions_mode_model.clone(), inline_history_model, ctx)
         });
 
-        let cli_agent_plugin_chip = ctx.add_typed_action_view(|ctx| {
-            CliAgentPluginChip::new(terminal_view_id, model.clone(), ctx)
-        });
-        ctx.subscribe_to_view(&cli_agent_plugin_chip, |_, _, event, ctx| match event {
-            #[cfg(not(target_family = "wasm"))]
-            CliAgentPluginChipEvent::OpenInstructionsPane(agent, kind) => {
-                ctx.emit(Event::OpenPluginInstructionsPane(*agent, *kind));
-            }
-        });
-
         let voice_input_button = ctx.add_typed_action_view(VoiceInputButton::new);
+
+        ctx.subscribe_to_model(&CLIAgentSessionsModel::handle(ctx), |me, _, event, ctx| {
+            let CLIAgentSessionsModelEvent::InputSessionChanged {
+                terminal_view_id,
+                new_input_state,
+                ..
+            } = event
+            else {
+                return;
+            };
+            if *terminal_view_id != me.terminal_view_id {
+                return;
+            }
+
+            me.clear_buffer_and_reset_undo_stack(ctx);
+            if matches!(new_input_state, CLIAgentInputState::Open) {
+                let terminal_view_id = me.terminal_view_id;
+                let draft = CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions_model, _| {
+                    sessions_model.take_draft(terminal_view_id)
+                });
+                if let Some(draft) = draft {
+                    me.replace_buffer_content(&draft, ctx);
+                }
+            }
+            me.update_cli_agent_editor_text_colors(ctx);
+            me.set_zero_state_hint_text(ctx);
+            ctx.notify();
+        });
 
         current_prompt.update(ctx, |prompt_type, ctx| {
             if let PromptType::Dynamic { prompt } = prompt_type {
@@ -1784,7 +1814,7 @@ impl Input {
             completions_abort_handle: None,
             menu_positioning_provider,
             terminal_input_message_bar,
-            cli_agent_plugin_chip,
+            cli_agent_footer,
             voice_input_button,
             prompt_render_helper,
             prompt_type: current_prompt,
@@ -2012,22 +2042,30 @@ impl Input {
                 });
             }
             PromptDisplayEvent::TryExecuteCommand(command) => {
-                let Some(shell_type) = self
-                    .active_session(ctx)
-                    .map(|session| session.shell().shell_type())
-                else {
-                    log::warn!("Tried to execute prompt chip command without an active session");
-                    return;
-                };
-                let command = render_prompt_chip_shell_command(command, shell_type);
-                // Snapshot the current input so we can restore it after the command completes.
-                let current_input = self.buffer_text(ctx);
-                if self.try_execute_command_from_source(&command, CommandExecutionSource::User, ctx)
-                    && !current_input.is_empty()
-                {
-                    self.input_contents_before_prompt_chip_command = Some(current_input);
-                }
+                self.execute_prompt_chip_command(command, ctx);
             }
+        }
+    }
+
+    pub(super) fn execute_prompt_chip_command(
+        &mut self,
+        command: &PromptChipShellCommand,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let Some(shell_type) = self
+            .active_session(ctx)
+            .map(|session| session.shell().shell_type())
+        else {
+            log::warn!("Tried to execute prompt chip command without an active session");
+            return;
+        };
+        let command = render_prompt_chip_shell_command(command, shell_type);
+        // Snapshot the current input so we can restore it after the command completes.
+        let current_input = self.buffer_text(ctx);
+        if self.try_execute_command_from_source(&command, CommandExecutionSource::User, ctx)
+            && !current_input.is_empty()
+        {
+            self.input_contents_before_prompt_chip_command = Some(current_input);
         }
     }
 
@@ -2250,6 +2288,13 @@ impl Input {
                 editor.clear_placeholder_text_with_prefix(&prefix, ctx);
             }
         });
+
+        if CLIAgentSessionsModel::as_ref(ctx).is_input_open(self.terminal_view_id) {
+            self.editor.update(ctx, |editor, ctx| {
+                editor.set_placeholder_text(CLI_AGENT_RICH_INPUT_HINT_TEXT, ctx);
+            });
+            return;
+        }
 
         // If the current input suggestions mode has a custom placeholder,
         // that takes precedence over other placeholders.
@@ -3944,6 +3989,8 @@ impl Input {
             self.editor.update(ctx, |editor, editor_ctx| {
                 editor.handle_action(&EditorAction::VimEscape, editor_ctx);
             });
+        } else if CLIAgentSessionsModel::as_ref(ctx).is_input_open(self.terminal_view_id) {
+            ctx.emit(Event::CloseCLIAgentRichInput);
         } else {
             ctx.emit(Event::Escape);
         }
@@ -6210,7 +6257,9 @@ impl Input {
     pub(crate) fn input_enter(&mut self, ctx: &mut ViewContext<Self>) {
         ctx.emit(Event::Enter);
 
-        if self.should_insert_newline_on_enter(ctx) {
+        if CLIAgentSessionsModel::as_ref(ctx).is_input_open(self.terminal_view_id) {
+            self.submit_cli_agent_rich_input(ctx);
+        } else if self.should_insert_newline_on_enter(ctx) {
             self.editor.update(ctx, |editor, ctx| {
                 editor.user_initiated_insert("\n", PlainTextEditorViewAction::NewLine, ctx)
             });
@@ -6295,6 +6344,14 @@ impl Input {
 
             self.model.lock().set_is_input_dirty(false);
         }
+    }
+
+    fn submit_cli_agent_rich_input(&mut self, ctx: &mut ViewContext<Self>) {
+        let text = self.editor.as_ref(ctx).buffer_text(ctx);
+        if text.trim().is_empty() {
+            return;
+        }
+        ctx.emit(Event::SubmitCLIAgentRichInput(text));
     }
 
     /// Emits [`Event::CtrlEnter`]. Exposed `pub(crate)` for unit tests.
@@ -6859,8 +6916,12 @@ impl Input {
         self.prompt_render_helper
             .prompt_view()
             .update(ctx, |prompt, prompt_ctx| {
-                prompt.update_session_context(session_context, prompt_ctx);
+                prompt.update_session_context(session_context.clone(), prompt_ctx);
             });
+
+        self.cli_agent_footer.update(ctx, |footer, footer_ctx| {
+            footer.update_session_context(session_context, footer_ctx);
+        });
     }
 
     pub fn update_repo_path(&mut self, repo_path: Option<PathBuf>, ctx: &mut ViewContext<Self>) {
@@ -6869,6 +6930,10 @@ impl Input {
             .update(ctx, |prompt, prompt_ctx| {
                 prompt.update_repo_path(repo_path.clone(), prompt_ctx);
             });
+
+        self.cli_agent_footer.update(ctx, |footer, footer_ctx| {
+            footer.update_repo_path(repo_path.clone(), footer_ctx);
+        });
 
         self.slash_command_data_source
             .update(ctx, |data_source, ctx| {
@@ -7070,9 +7135,15 @@ impl TypedActionView for Input {
         match action {
             InputAction::FocusInputBox => self.focus_input_box(ctx),
             InputAction::VoiceHoldKeyChanged(key_state) => {
-                self.voice_input_button.update(ctx, |button, ctx| {
-                    button.handle_hold_key(*key_state, ctx);
-                });
+                if self.cli_agent_footer.as_ref(ctx).cli_agent(ctx).is_some() {
+                    self.cli_agent_footer.update(ctx, |footer, ctx| {
+                        footer.handle_voice_hold_key(*key_state, ctx);
+                    });
+                } else {
+                    self.voice_input_button.update(ctx, |button, ctx| {
+                        button.handle_hold_key(*key_state, ctx);
+                    });
+                }
             }
             InputAction::Up => self.editor_up(ctx),
             InputAction::PageUp => self.editor_page_up(ctx),
@@ -7164,6 +7235,10 @@ impl View for Input {
             ctx.set.insert(flags::EMPTY_INPUT_BUFFER);
         }
 
+        if CLIAgentSessionsModel::as_ref(app).is_input_open(self.terminal_view_id) {
+            ctx.set.insert(flags::CLI_AGENT_RICH_INPUT_OPEN);
+        }
+
         if *InputSettings::as_ref(app)
             .enable_slash_commands_in_terminal
             .value()
@@ -7215,7 +7290,9 @@ impl View for Input {
     }
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
-        if !should_render_ps1_prompt(&self.model.lock(), app) {
+        if CLIAgentSessionsModel::as_ref(app).is_input_open(self.terminal_view_id) {
+            self.render_cli_agent_input(app)
+        } else if !should_render_ps1_prompt(&self.model.lock(), app) {
             self.render_terminal_input(app)
         } else {
             self.render_classic_input(app)

@@ -1,9 +1,9 @@
 use pathfinder_geometry::vector::vec2f;
 use settings::Setting;
 use warpui::elements::{
-    Border, ChildAnchor, ChildView, Clipped, Container, CrossAxisAlignment, DispatchEventResult,
-    DropTarget, Element, Empty, EventHandler, Flex, Hoverable, OffsetPositioning, ParentAnchor,
-    ParentElement, ParentOffsetBounds, SavePosition, Stack,
+    Border, ChildAnchor, ChildView, Clipped, Container, DispatchEventResult, DropTarget, Element,
+    Empty, EventHandler, Flex, Hoverable, OffsetPositioning, ParentAnchor, ParentElement,
+    ParentOffsetBounds, SavePosition, Stack,
 };
 use warpui::event::KeyState;
 use warpui::{AppContext, SingletonEntity};
@@ -103,17 +103,7 @@ impl Input {
 
         column.add_child(self.render_input_box(show_vim_status, appearance, app));
 
-        if FeatureFlag::VoiceInput.is_enabled() {
-            column.add_child(
-                Flex::row()
-                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                    .with_child(ChildView::new(&self.voice_input_button).finish())
-                    .with_child(ChildView::new(&self.cli_agent_plugin_chip).finish())
-                    .finish(),
-            );
-        } else {
-            column.add_child(ChildView::new(&self.cli_agent_plugin_chip).finish());
-        }
+        column.add_child(self.render_input_toolbar(app));
 
         if should_show_terminal_input_message_bar(app) {
             column.add_child(

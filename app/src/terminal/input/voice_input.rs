@@ -8,6 +8,7 @@ use warpui::presenter::ChildView;
 use warpui::{AppContext, Entity, TypedActionView, View, ViewContext, ViewHandle};
 
 use crate::appearance::Appearance;
+use crate::terminal::view::cli_agent_footer::ActiveMicButtonTheme;
 use crate::ui_components::icons::Icon;
 use crate::view_components::action_button::{
     ActionButton, ActionButtonTheme, ButtonSize, NakedTheme, TooltipAlignment,
@@ -51,24 +52,54 @@ pub enum VoiceInputButtonAction {
     Toggle,
 }
 
+/// Which surface the button is rendered on, which decides its chrome.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum VoiceInputButtonStyle {
+    /// Borderless icon sitting under the terminal input.
+    Naked,
+    /// Bordered chip matching the rest of the CLI agent footer.
+    AgentFooter,
+}
+
 pub struct VoiceInputButton {
     state: VoiceInputState,
+    style: VoiceInputButtonStyle,
     button: ViewHandle<ActionButton>,
 }
 
 impl VoiceInputButton {
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
+        Self::with_style(VoiceInputButtonStyle::Naked, ButtonSize::UDIButton, ctx)
+    }
+
+    pub fn new_for_agent_footer(ctx: &mut ViewContext<Self>) -> Self {
+        Self::with_style(
+            VoiceInputButtonStyle::AgentFooter,
+            ButtonSize::AgentInputButton,
+            ctx,
+        )
+    }
+
+    fn with_style(
+        style: VoiceInputButtonStyle,
+        size: ButtonSize,
+        ctx: &mut ViewContext<Self>,
+    ) -> Self {
         let state = VoiceInputState::Idle;
-        let button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("", VoiceInputButtonTheme { listening: false })
+        let button = ctx.add_typed_action_view(move |_| {
+            ActionButton::new("", theme_for(style, false))
                 .with_icon(Icon::Microphone)
                 .with_tooltip(state.tooltip())
-                .with_size(ButtonSize::UDIButton)
+                .with_size(size)
                 .with_tooltip_alignment(TooltipAlignment::Left)
                 .on_click(|ctx| ctx.dispatch_typed_action(VoiceInputButtonAction::Toggle))
         });
 
-        Self { state, button }
+        Self {
+            state,
+            style,
+            button,
+        }
     }
 
     pub fn handle_hold_key(&mut self, key_state: KeyState, ctx: &mut ViewContext<Self>) {
@@ -96,9 +127,18 @@ impl VoiceInputButton {
 
         self.state = state;
         let listening = matches!(state, VoiceInputState::Listening);
+        let style = self.style;
         self.button.update(ctx, |button, ctx| {
-            button.set_theme(VoiceInputButtonTheme { listening }, ctx);
+            button.set_theme(theme_for(style, listening), ctx);
             button.set_active(listening, ctx);
+            button.set_icon(
+                Some(if listening {
+                    Icon::Stop
+                } else {
+                    Icon::Microphone
+                }),
+                ctx,
+            );
             button.set_tooltip(Some(state.tooltip()), ctx);
         });
         ctx.notify();
@@ -132,13 +172,23 @@ impl View for VoiceInputButton {
     }
 }
 
+fn theme_for(style: VoiceInputButtonStyle, listening: bool) -> VoiceInputButtonTheme {
+    VoiceInputButtonTheme { style, listening }
+}
+
 struct VoiceInputButtonTheme {
+    style: VoiceInputButtonStyle,
     listening: bool,
 }
 
 impl ActionButtonTheme for VoiceInputButtonTheme {
     fn background(&self, hovered: bool, appearance: &Appearance) -> Option<Fill> {
-        NakedTheme.background(hovered, appearance)
+        match self.style {
+            VoiceInputButtonStyle::Naked => NakedTheme.background(hovered, appearance),
+            VoiceInputButtonStyle::AgentFooter => {
+                ActiveMicButtonTheme.background(hovered, appearance)
+            }
+        }
     }
 
     fn text_color(
@@ -148,10 +198,25 @@ impl ActionButtonTheme for VoiceInputButtonTheme {
         appearance: &Appearance,
     ) -> ColorU {
         if self.listening {
-            appearance.theme().ansi_fg_red()
-        } else {
-            NakedTheme.text_color(hovered, background, appearance)
+            return appearance.theme().ansi_fg_red();
         }
+        match self.style {
+            VoiceInputButtonStyle::Naked => NakedTheme.text_color(hovered, background, appearance),
+            VoiceInputButtonStyle::AgentFooter => {
+                ActiveMicButtonTheme.text_color(hovered, background, appearance)
+            }
+        }
+    }
+
+    fn border(&self, appearance: &Appearance) -> Option<ColorU> {
+        match self.style {
+            VoiceInputButtonStyle::Naked => NakedTheme.border(appearance),
+            VoiceInputButtonStyle::AgentFooter => ActiveMicButtonTheme.border(appearance),
+        }
+    }
+
+    fn should_opt_out_of_contrast_adjustment(&self) -> bool {
+        matches!(self.style, VoiceInputButtonStyle::AgentFooter)
     }
 }
 

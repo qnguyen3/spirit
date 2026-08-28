@@ -23,7 +23,7 @@ use super::context_chip::{
 };
 use super::logging::{ChipCommandLogEntry, PromptChipExecutionPhase, PromptChipLogger};
 use super::prompt::Prompt;
-use super::{ChipResult, ChipValue, ContextChipKind, chips_to_string};
+use super::{ChipResult, ChipValue, ContextChipKind, chips_to_string, cli_agent_footer_chip_kinds};
 use crate::CLIAgentSessionsModel;
 use crate::code_review::git_repo_model::{GitRepoStatusEvent, GitRepoStatusModel};
 use crate::code_review::github_repo_model::{GitHubRepoEvent, GitHubRepoModel};
@@ -183,11 +183,12 @@ struct PromptContext {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct ActiveChipSurfaces {
     prompt: bool,
+    cli_agent_footer: bool,
 }
 
 impl ActiveChipSurfaces {
     fn any(self) -> bool {
-        self.prompt
+        self.prompt || self.cli_agent_footer
     }
 }
 
@@ -1098,8 +1099,16 @@ impl CurrentPrompt {
 
     fn active_surfaces(&self, ctx: &AppContext) -> ActiveChipSurfaces {
         let prompt = !*SessionSettings::as_ref(ctx).honor_ps1;
+        let cli_agent_footer = self.terminal_view_id.is_some_and(|terminal_view_id| {
+            CLIAgentSessionsModel::as_ref(ctx)
+                .session(terminal_view_id)
+                .is_some()
+        });
 
-        ActiveChipSurfaces { prompt }
+        ActiveChipSurfaces {
+            prompt,
+            cli_agent_footer,
+        }
     }
 
     fn chips_to_run_for_surfaces(
@@ -1121,7 +1130,10 @@ impl CurrentPrompt {
             }
         };
 
-        let _ = &mut extend_unique;
+        if surfaces.cli_agent_footer {
+            extend_unique(cli_agent_footer_chip_kinds());
+        }
+
         chips
     }
     /// Chips whose values we should actively maintain in state.

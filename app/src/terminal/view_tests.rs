@@ -4156,3 +4156,171 @@ fn ctrl_c_without_a_long_running_block_writes_nothing_to_the_pty() {
         assert!(pty_writes.borrow().is_empty());
     })
 }
+
+fn start_cli_agent_session(app: &mut App, terminal: &ViewHandle<TerminalView>, agent: CLIAgent) {
+    terminal.update(app, |view, ctx| {
+        CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions, ctx| {
+            sessions.set_session(
+                view.view_id,
+                CLIAgentSession {
+                    agent,
+                    status: CLIAgentSessionStatus::InProgress,
+                    session_context: CLIAgentSessionContext::default(),
+                    input_state: CLIAgentInputState::Closed,
+                    should_auto_toggle_input: false,
+                    listener: None,
+                    plugin_version: None,
+                    remote_host: None,
+                    draft_text: None,
+                    custom_command_prefix: None,
+                    received_rich_notification: false,
+                },
+                ctx,
+            );
+        });
+        view.model
+            .lock()
+            .simulate_long_running_block(agent.command_prefix(), "");
+    });
+}
+
+#[test]
+fn cli_agent_footer_replaces_the_hidden_input_while_an_agent_runs() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let terminal = add_window_with_terminal(&mut app, None);
+        start_cli_agent_session(&mut app, &terminal, CLIAgent::Claude);
+
+        terminal.read(&app, |view, ctx| {
+            let model = view.model.lock();
+            assert!(
+                !view.is_input_box_visible(&model, ctx),
+                "the input box is hidden while a CLI agent owns the terminal"
+            );
+            drop(model);
+            assert!(
+                view.should_render_cli_agent_footer(ctx),
+                "the CLI agent footer takes the hidden input box's place"
+            );
+        });
+    })
+}
+
+#[test]
+fn opening_cli_agent_rich_input_shows_the_input_box_and_hides_the_standalone_footer() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _rich_input = FeatureFlag::CLIAgentRichInput.override_enabled(true);
+        let terminal = add_window_with_terminal(&mut app, None);
+        start_cli_agent_session(&mut app, &terminal, CLIAgent::Claude);
+
+        terminal.update(&mut app, |view, ctx| {
+            view.handle_action(&TerminalAction::ToggleCLIAgentRichInput, ctx);
+        });
+
+        terminal.read(&app, |view, ctx| {
+            assert!(view.has_active_cli_agent_input_session(ctx));
+            let model = view.model.lock();
+            assert!(view.is_input_box_visible(&model, ctx));
+            drop(model);
+            assert!(
+                !view.should_render_cli_agent_footer(ctx),
+                "the input renders the footer itself while the rich input is open"
+            );
+        });
+    })
+}
+
+#[test]
+fn closing_cli_agent_rich_input_saves_a_draft_that_reopening_restores() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _rich_input = FeatureFlag::CLIAgentRichInput.override_enabled(true);
+        let terminal = add_window_with_terminal(&mut app, None);
+        start_cli_agent_session(&mut app, &terminal, CLIAgent::Claude);
+
+        terminal.update(&mut app, |view, ctx| {
+            view.handle_action(&TerminalAction::ToggleCLIAgentRichInput, ctx);
+        });
+        terminal.update(&mut app, |view, ctx| {
+            view.input.update(ctx, |input, ctx| {
+                input.replace_buffer_content("refactor the parser", ctx);
+            });
+        });
+        terminal.update(&mut app, |view, ctx| {
+            view.handle_action(&TerminalAction::ToggleCLIAgentRichInput, ctx);
+        });
+
+        terminal.read(&app, |view, ctx| {
+            assert!(!view.has_active_cli_agent_input_session(ctx));
+            assert_eq!(view.input.as_ref(ctx).buffer_text(ctx), "");
+        });
+
+        terminal.update(&mut app, |view, ctx| {
+            view.handle_action(&TerminalAction::ToggleCLIAgentRichInput, ctx);
+        });
+
+        terminal.read(&app, |view, ctx| {
+            assert_eq!(
+                view.input.as_ref(ctx).buffer_text(ctx),
+                "refactor the parser"
+            );
+        });
+    })
+}
+
+#[test]
+fn submitting_cli_agent_rich_input_writes_the_prompt_then_a_carriage_return() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _rich_input = FeatureFlag::CLIAgentRichInput.override_enabled(true);
+        let terminal = add_window_with_terminal(&mut app, None);
+        start_cli_agent_session(&mut app, &terminal, CLIAgent::Claude);
+
+        let pty_writes: Rc<RefCell<Vec<Vec<u8>>>> = Rc::new(RefCell::new(Vec::new()));
+        let writes = pty_writes.clone();
+        app.update(|ctx| {
+            ctx.subscribe_to_view(&terminal, move |_, event, _| {
+                if let Event::WriteBytesToPty { bytes } = event {
+                    writes.borrow_mut().push(bytes.to_vec());
+                }
+            });
+        });
+
+        terminal.update(&mut app, |view, ctx| {
+            view.handle_action(&TerminalAction::ToggleCLIAgentRichInput, ctx);
+            view.submit_cli_agent_rich_input("write a test".to_owned(), ctx);
+        });
+
+        // Claude Code needs the carriage return in its own write, delivered after a delay.
+        assert_eventually!(
+            *pty_writes.borrow() == vec![b"write a test".to_vec(), b"\r".to_vec()],
+            "expected the prompt then a separate carriage return; got {:?}",
+            pty_writes.borrow()
+        );
+
+        terminal.read(&app, |view, ctx| {
+            assert_eq!(view.input.as_ref(ctx).buffer_text(ctx), "");
+        });
+    })
+}
+
+#[test]
+fn cli_agent_footer_chip_kinds_keep_diff_stats_left_and_context_right() {
+    use crate::context_chips::{
+        ContextChipKind, cli_agent_footer_left_chip_kinds, cli_agent_footer_right_chip_kinds,
+    };
+
+    assert_eq!(
+        cli_agent_footer_left_chip_kinds(),
+        vec![ContextChipKind::GitDiffStats],
+        "the added/removed line counter sits on the left, next to the toolbar buttons"
+    );
+    assert_eq!(
+        cli_agent_footer_right_chip_kinds(),
+        vec![
+            ContextChipKind::WorkingDirectory,
+            ContextChipKind::ShellGitBranch,
+        ]
+    );
+}

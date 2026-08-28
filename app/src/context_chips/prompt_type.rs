@@ -3,7 +3,10 @@ use warpui::{AppContext, Entity, ModelContext, ModelHandle};
 
 use super::current_prompt::CurrentPrompt;
 use super::prompt_snapshot::PromptSnapshot;
-use super::{ChipResult, ChipValue, ContextChipKind};
+use super::{
+    ChipResult, ChipValue, ContextChipKind, cli_agent_footer_left_chip_kinds,
+    cli_agent_footer_right_chip_kinds,
+};
 use crate::menu::{MenuItem, MenuItemFields};
 use crate::settings::WarpPromptSeparator;
 use crate::terminal::model::session::Sessions;
@@ -115,6 +118,32 @@ impl PromptType {
 
     pub fn agent_view_chips(&self, ctx: &AppContext) -> Vec<ChipResult> {
         self.chips(ctx)
+    }
+
+    pub fn cli_agent_left_chips(&self, ctx: &AppContext) -> Vec<ChipResult> {
+        self.resolve_chip_kinds(cli_agent_footer_left_chip_kinds(), ctx)
+    }
+
+    pub fn cli_agent_right_chips(&self, ctx: &AppContext) -> Vec<ChipResult> {
+        self.resolve_chip_kinds(cli_agent_footer_right_chip_kinds(), ctx)
+    }
+
+    fn resolve_chip_kinds(
+        &self,
+        chip_kinds: Vec<ContextChipKind>,
+        ctx: &AppContext,
+    ) -> Vec<ChipResult> {
+        chip_kinds
+            .into_iter()
+            .filter_map(|chip_kind| match self {
+                Self::Dynamic { prompt } => prompt.as_ref(ctx).latest_chip_result(&chip_kind),
+                Self::Static { snapshot } => snapshot
+                    .chips()
+                    .iter()
+                    .find(|chip_result| chip_result.kind() == &chip_kind)
+                    .cloned(),
+            })
+            .collect()
     }
 
     /// Whether same line prompt is enabled for the Warp Prompt.

@@ -2,6 +2,7 @@ mod action;
 mod block_banner;
 pub mod block_onboarding;
 mod bookmarks;
+pub mod cli_agent_footer;
 mod context_menu;
 pub mod init;
 pub mod inline_banner;
@@ -50,6 +51,7 @@ use block_banner::{WarpifyBannerState, render_warpification_banner};
 use block_onboarding::onboarding_drive_sharing_block::OnboardingDriveSharingBlock;
 use bookmarks::render_floating_block_snapshot;
 use chrono::{DateTime, Local, NaiveDateTime};
+use cli_agent_footer::CliAgentFooter;
 use command_corrections::rules::generic::history::History as CommandCorrectionsHistoryRule;
 use command_corrections::rules::{Rule, RuleId as CommandCorrectionsRuleId};
 use command_corrections::{Command, Correction, HistoryItem, SessionMetadata, correct_command};
@@ -1802,6 +1804,7 @@ pub struct TerminalView {
 
     /// The input area at the bottom of the viewport.
     input: ViewHandle<Input>,
+    cli_agent_footer: ViewHandle<CliAgentFooter>,
 
     inline_menu_positioner: ModelHandle<InlineMenuPositioner>,
 
@@ -2408,6 +2411,20 @@ impl TerminalView {
         let terminal_content_element_position_id =
             format!("terminal_content_element_{}", ctx.view_id());
 
+        let cli_agent_footer: ViewHandle<CliAgentFooter> = ctx.add_typed_action_view(|ctx| {
+            CliAgentFooter::new(
+                terminal_view_id,
+                model.clone(),
+                current_prompt.clone(),
+                menu_positioning_provider.clone(),
+                model_events_handle.clone(),
+                ctx,
+            )
+        });
+        ctx.subscribe_to_view(&cli_agent_footer, |me, _, event, ctx| {
+            me.handle_cli_agent_footer_event(event, ctx);
+        });
+
         let input: ViewHandle<Input> = ctx.add_typed_action_view(|ctx| {
             Input::new(
                 model.clone(),
@@ -2420,6 +2437,7 @@ impl TerminalView {
                 None,
                 model_events_handle.clone(),
                 active_session.clone(),
+                cli_agent_footer.clone(),
                 ctx,
             )
         });
@@ -2767,6 +2785,7 @@ impl TerminalView {
         let mut terminal_view = Self {
             model,
             input,
+            cli_agent_footer,
             inline_menu_positioner,
             view_handle: ctx.handle(),
             size_info: size_info.into(),
@@ -3858,6 +3877,9 @@ impl TerminalView {
     pub fn is_input_box_visible(&self, model: &TerminalModel, app: &AppContext) -> bool {
         if model.is_read_only() {
             return false;
+        }
+        if self.has_active_cli_agent_input_session(app) {
+            return true;
         }
         if model.is_alt_screen_active() {
             return false;
@@ -7157,6 +7179,15 @@ impl TerminalView {
             )
         {
             self.update_git_status_subscription(ctx);
+        }
+        if event.terminal_view_id() == self.view_id
+            && matches!(
+                event,
+                CLIAgentSessionsModelEvent::InputSessionChanged { .. }
+            )
+        {
+            self.redetermine_terminal_focus(ctx);
+            ctx.notify();
         }
 
         let CLIAgentSessionsModelEvent::StatusChanged {
@@ -11897,6 +11928,10 @@ impl TerminalView {
                     ctx,
                 );
             }
+            InputEvent::CloseCLIAgentRichInput => self.close_cli_agent_rich_input(ctx),
+            InputEvent::SubmitCLIAgentRichInput(text) => {
+                self.submit_cli_agent_rich_input(text.clone(), ctx);
+            }
         }
     }
 
@@ -15368,6 +15403,7 @@ impl TypedActionView for TerminalView {
             | ImportSettings
             | DragAndDropFiles(_)
             | ToggleBlockFilterOnSelectedOrLastBlock(_)
+            | ToggleCLIAgentRichInput
             | SetMarkedText { .. }
             | ClearMarkedText => ActionAccessibilityContent::from_debug(),
             #[cfg(feature = "local_fs")]
@@ -15696,6 +15732,7 @@ impl TypedActionView for TerminalView {
             ToggleBlockFilterOnSelectedOrLastBlock(source) => {
                 self.toggle_block_filter_on_selected_or_last_block(*source, ctx);
             }
+            ToggleCLIAgentRichInput => self.toggle_cli_agent_rich_input(ctx),
             CopySharedSessionLink { source } => self.copy_shared_session_link(*source, ctx),
             ToggleSnackbarInActivePane => self.toggle_snackbar_in_active_pane(ctx),
             MakeAllParticipantsReaders { reason } => {
@@ -15899,6 +15936,10 @@ impl View for TerminalView {
                 column.add_child(Shrinkable::new(1., output_area).finish());
 
                 let input_box_visible = self.is_input_box_visible(&model, app);
+                if !input_box_visible && self.should_render_cli_agent_footer(app) {
+                    column.add_child(ChildView::new(&self.cli_agent_footer).finish());
+                }
+
                 if input_box_visible {
                     column.add_child(self.render_input());
                 } else if self.show_remote_server_loading_footer(&model, app) {
@@ -16308,6 +16349,11 @@ impl View for TerminalView {
             .is_some()
         {
             context.set.insert(init::CLI_AGENT_SESSION_ACTIVE_KEY);
+            context.set.insert(flags::CLI_AGENT_FOOTER_ENABLED);
+        }
+
+        if self.has_active_cli_agent_input_session(app) {
+            context.set.insert(flags::CLI_AGENT_RICH_INPUT_OPEN);
         }
 
         if let Some(WithinBlockBanner::WarpifyBanner(_)) =

@@ -19,6 +19,7 @@ pub const TOGGLE_BLOCK_FILTER_KEYBINDING: &str =
     "terminal:toggle_block_filter_on_selected_or_last_block";
 
 pub const CANCEL_COMMAND_KEYBINDING: &str = "terminal:cancel_command";
+pub const OPEN_CLI_AGENT_RICH_INPUT_KEYBINDING: &str = "terminal:open_cli_agent_rich_input";
 
 const SELECT_NEXT_BLOCK_ACTION_NAME: &str = "terminal:select_next_block";
 pub const SELECT_PREVIOUS_BLOCK_ACTION_NAME: &str = "terminal:select_previous_block";
@@ -201,6 +202,20 @@ pub fn init(app: &mut AppContext) {
     ]);
 
     app.register_editable_bindings([
+        EditableBinding::new(
+            OPEN_CLI_AGENT_RICH_INPUT_KEYBINDING,
+            "Toggle CLI Agent Rich Input",
+            TerminalAction::ToggleCLIAgentRichInput,
+        )
+        .with_key_binding("ctrl-g")
+        .with_context_predicate(
+            (id!("Terminal")
+                & !id!("IMEOpen")
+                & (id!("LongRunningCommand") | id!("AltScreen"))
+                & id!(flags::CLI_AGENT_FOOTER_ENABLED))
+                | (id!("EditorView") & !id!("IMEOpen") & id!(flags::CLI_AGENT_RICH_INPUT_OPEN))
+                | (id!("Terminal") & !id!("IMEOpen") & id!(flags::CLI_AGENT_RICH_INPUT_OPEN)),
+        ),
         EditableBinding::new(
             "terminal:warpify_subshell",
             "Warpify subshell",

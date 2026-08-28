@@ -71,7 +71,6 @@ pub enum CLIAgentInputState {
     /// The rich input editor is not open.
     Closed,
     /// The rich input editor is open.
-    #[allow(dead_code)]
     Open,
 }
 
@@ -121,7 +120,6 @@ pub struct CLIAgentSession {
     pub remote_host: Option<String>,
     /// Draft text saved from the rich input composer when it was closed.
     /// Restored into the editor when the composer is reopened.
-    #[allow(dead_code)]
     pub draft_text: Option<String>,
     /// When the session was detected via a custom toolbar command pattern,
     /// the first word of the command (the binary/alias the user typed).
@@ -431,6 +429,8 @@ impl CLIAgentSessionsModel {
     }
 
     pub fn remove_session(&mut self, terminal_view_id: EntityId, ctx: &mut ModelContext<Self>) {
+        // Closed before the session disappears so subscribers can restore the input.
+        self.close_input(terminal_view_id, false, ctx);
         self.abort_pending_cancel(terminal_view_id);
         self.ctrl_c_cancel_state.remove(&terminal_view_id);
         if let Some(session) = self.sessions.remove(&terminal_view_id) {
@@ -652,6 +652,56 @@ impl CLIAgentSessionsModel {
         self.ctrl_c_cancel_state
             .get(&terminal_view_id)
             .is_some_and(|state| state.pending_cancel.is_some())
+    }
+
+    pub fn open_input(
+        &mut self,
+        terminal_view_id: EntityId,
+        should_auto_toggle_input: bool,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let Some(session) = self.sessions.get_mut(&terminal_view_id) else {
+            return;
+        };
+        if session.input_state == CLIAgentInputState::Open {
+            return;
+        }
+
+        let previous_input_state = session.input_state;
+        session.input_state = CLIAgentInputState::Open;
+        session.should_auto_toggle_input = should_auto_toggle_input;
+        ctx.emit(CLIAgentSessionsModelEvent::InputSessionChanged {
+            terminal_view_id,
+            agent: session.agent,
+            previous_input_state,
+            new_input_state: CLIAgentInputState::Open,
+        });
+    }
+
+    /// Saves draft text from the rich input composer for the given terminal.
+    /// Stores `None` for empty or whitespace-only text.
+    pub fn set_draft(&mut self, terminal_view_id: EntityId, text: String) {
+        if let Some(session) = self.sessions.get_mut(&terminal_view_id) {
+            session.draft_text = if text.trim().is_empty() {
+                None
+            } else {
+                Some(text)
+            };
+        }
+    }
+
+    /// Clears any saved draft text for the given terminal.
+    pub fn clear_draft(&mut self, terminal_view_id: EntityId) {
+        if let Some(session) = self.sessions.get_mut(&terminal_view_id) {
+            session.draft_text = None;
+        }
+    }
+
+    /// Returns and clears the draft text for the given terminal, if any.
+    pub fn take_draft(&mut self, terminal_view_id: EntityId) -> Option<String> {
+        self.sessions
+            .get_mut(&terminal_view_id)
+            .and_then(|s| s.draft_text.take())
     }
 
     pub fn close_input(
