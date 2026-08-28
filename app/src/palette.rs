@@ -7,5 +7,4 @@ pub enum PaletteMode {
     LaunchConfig,
     WarpDrive,
     Files,
-    Conversations,
 }

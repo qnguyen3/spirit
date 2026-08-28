@@ -5,7 +5,7 @@ description: GUI desktop app only. Create a one-time launch modal in the Warp cl
 
 # gui-create-launch-modal
 
-**Scope — GUI desktop app only.** This skill applies to Warp's **GUI** desktop front-end (the `app/` crate on the WarpUI pixel/GPU framework). It does **not** apply to the headless **TUI** front-end (`crates/warp_tui`; cell-grid `TuiElement` library under `crates/warpui_core/src/elements/tui`), which has its own components, tests, and change-verification workflow. For TUI work, see the `tui-ui-guidelines`, `tui-testing`, and `tui-verify-change` skills instead.
+**Scope — GUI desktop app only.** This skill applies to Warp's **GUI** desktop front-end (the `app/` crate on the WarpUI pixel/GPU framework).
 
 Create a one-time launch modal — the feature-announcement design used for launches like "Orchestrate any agent, anywhere" or "Warp is now open-source."
 

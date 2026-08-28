@@ -1,7 +1,5 @@
 use std::collections::HashMap;
 
-use ai::index::full_source_code_embedding::manager::CodebaseIndexManager;
-use ai::project_context::model::ProjectContextModel;
 use pane_group::{NotebookPane, PaneState, SplitPaneState, TerminalPaneId};
 #[cfg(feature = "local_fs")]
 use repo_metadata::CanonicalizedPath;
@@ -22,26 +20,7 @@ use warpui::{AddSingletonModel, App, ViewHandle};
 use watcher::HomeDirectoryWatcher;
 
 use super::*;
-use crate::ai::AIRequestUsageModel;
-use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
-use crate::ai::agent_conversations_model::AgentConversationsModel;
-use crate::ai::agent_tips::AITipModel;
-use crate::ai::ambient_agents::github_auth_notifier::GitHubAuthNotifier;
-use crate::ai::blocklist::agent_view::orchestration_pill_bar_model::OrchestrationPillBarModel;
-use crate::ai::blocklist::{BlocklistAIHistoryModel, BlocklistAIPermissions};
-use crate::ai::cloud_environments::CloudEnvironmentCatalog;
-use crate::ai::document::ai_document_model::AIDocumentModel;
-use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
-use crate::ai::facts::manager::AIFactManager;
-use crate::ai::harness_availability::HarnessAvailabilityModel;
-use crate::ai::llms::LLMPreferences;
-use crate::ai::mcp::gallery::MCPGalleryManager;
-use crate::ai::mcp::templatable_manager::TemplatableMCPServerManager;
-use crate::ai::mcp::{FileBasedMCPManager, FileMCPWatcher};
-use crate::ai::outline::RepoOutlines;
-use crate::ai::persisted_workspace::PersistedWorkspace;
-use crate::ai::restored_conversations::RestoredAgentConversations;
-use crate::ai::skills::SkillManager;
+use crate::auth::github_auth_notifier::GitHubAuthNotifier;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::cloud_object::model::view::CloudViewModel;
 use crate::context_chips::prompt::Prompt;
@@ -51,9 +30,9 @@ use crate::network::NetworkStatus;
 use crate::notebooks::editor::keys::NotebookKeybindings;
 use crate::notebooks::notebook::NotebookView;
 use crate::pane_group::{Direction, PaneGroupAction, PaneId};
+use crate::persisted_workspace::PersistedWorkspace;
 use crate::pricing::PricingInfoModel;
-#[cfg(not(target_family = "wasm"))]
-use crate::remote_server::codebase_index_model::RemoteCodebaseIndexModel;
+use crate::projects::registry::ProjectRegistryModel;
 use crate::resource_center::Tip;
 use crate::server::cloud_objects::listener::Listener;
 use crate::server::cloud_objects::update_manager::UpdateManager;
@@ -70,7 +49,6 @@ use crate::system::SystemStats;
 use crate::tab_configs::tab_config::{TabConfigPaneNode, TabConfigPaneType};
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::history::History;
-use crate::terminal::keys::TerminalKeybindings;
 use crate::terminal::local_tty::spawner::PtySpawner;
 use crate::terminal::shared_session::{
     SharedSessionScrollbackType, SharedSessionSource, SharedSessionStatus,
@@ -87,9 +65,7 @@ use crate::workspaces::team_tester::TeamTesterStatus;
 use crate::workspaces::update_manager::TeamUpdateManager;
 use crate::workspaces::user_profiles::UserProfiles;
 use crate::workspaces::user_workspaces::UserWorkspaces;
-use crate::{
-    AgentNotificationsModel, GlobalResourceHandlesProvider, ObjectActions, experiments, workspace,
-};
+use crate::{GlobalResourceHandlesProvider, ObjectActions, experiments, workspace};
 pub(crate) fn initialize_app(app: &mut App) {
     initialize_settings_for_tests(app);
 
@@ -106,13 +82,11 @@ pub(crate) fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| crate::tab::TabShortcutModifierState::new());
     app.add_singleton_model(SyncQueue::mock);
     app.add_singleton_model(CloudModel::mock);
-    app.add_singleton_model(CloudEnvironmentCatalog::new);
     app.add_singleton_model(UserWorkspaces::default_mock);
     app.add_singleton_model(|_ctx| UserProfiles::new(Vec::new()));
     app.add_singleton_model(TeamTesterStatus::mock);
     app.add_singleton_model(TeamUpdateManager::mock);
     app.add_singleton_model(UpdateManager::mock);
-    app.add_singleton_model(MCPGalleryManager::new);
     app.add_singleton_model(CloudViewModel::mock);
     app.add_singleton_model(Listener::mock);
     app.add_singleton_model(|_| Appearance::mock());
@@ -132,7 +106,6 @@ pub(crate) fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| WorkspaceToastStack);
     app.add_singleton_model(|_| ObjectActions::new(Vec::new()));
     app.add_singleton_model(NotebookKeybindings::new);
-    app.add_singleton_model(TerminalKeybindings::new);
     app.add_singleton_model(NotebookManager::mock);
     app.add_singleton_model(|ctx| {
         CloudPreferencesSyncer::new(
@@ -142,49 +115,19 @@ pub(crate) fn initialize_app(app: &mut App) {
             ctx,
         )
     });
-    app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
-    // QueuedQueryModel subscribes to history events; register after the
-    // history model is in place.
-    app.add_singleton_model(crate::ai::blocklist::QueuedQueryModel::new);
-    app.add_singleton_model(|ctx| OrchestrationPillBarModel::new(Default::default(), ctx));
     app.add_singleton_model(|_| CLIAgentSessionsModel::new());
-    // The blocklist controller created during terminal bootstrap subscribes to
-    // OrchestrationEventService and OrchestrationEventStreamer unconditionally,
-    // so both singletons must be registered before bootstrap.
-    app.add_singleton_model(
-        crate::ai::blocklist::orchestration_events::OrchestrationEventService::new,
-    );
-    app.add_singleton_model(
-        crate::ai::blocklist::orchestration_event_streamer::OrchestrationEventStreamer::new,
-    );
-    app.add_singleton_model(|_| ActiveAgentViewsModel::new());
-    app.add_singleton_model(AgentNotificationsModel::new);
-    app.add_singleton_model(AgentConversationsModel::new);
     app.add_singleton_model(SessionPermissionsManager::new);
-    app.add_singleton_model(LLMPreferences::new);
-    app.add_singleton_model(HarnessAvailabilityModel::new);
-    app.add_singleton_model(|ctx| AITipModel::new_for_agent_tips(ctx));
     app.add_singleton_model(|_| SettingsPaneManager::new());
-    app.add_singleton_model(|_| AIFactManager::new());
+    app.add_singleton_model(|_| ProjectRegistryModel::new(None));
+    app.add_singleton_model(|_| AgentPickerPaneManager::default());
 
-    // Initialize file-based MCP dependencies.
     app.add_singleton_model(|_| DetectedRepositories::default());
     app.add_singleton_model(HomeDirectoryWatcher::new_for_test);
     app.add_singleton_model(DirectoryWatcher::new);
     app.add_singleton_model(WarpManagedPathsWatcher::new_for_testing);
-    app.add_singleton_model(FileMCPWatcher::new);
-    app.add_singleton_model(|_| FileBasedMCPManager::default());
 
-    app.add_singleton_model(|_| TemplatableMCPServerManager::default());
     #[cfg(feature = "local_fs")]
     app.add_singleton_model(FileModel::new);
-    app.add_singleton_model(|ctx| {
-        AIExecutionProfilesModel::new(&crate::LaunchMode::new_for_unit_test(), ctx)
-    });
-    app.add_singleton_model(RepoOutlines::new_for_test);
-    #[cfg(feature = "voice_input")]
-    app.add_singleton_model(voice_input::VoiceInput::new);
-    app.add_singleton_model(BlocklistAIPermissions::new);
     app.add_singleton_model(|_| GPUState::new());
     // Register IapManager in a disabled state (no IapState). The settings
     // page's `IapManager::as_ref(ctx).is_enabled()` check panics if the
@@ -197,11 +140,6 @@ pub(crate) fn initialize_app(app: &mut App) {
             ctx,
         )
     });
-    app.add_singleton_model(|_| RestoredAgentConversations::new_seeded(vec![]));
-    app.add_singleton_model(|ctx| {
-        AIRequestUsageModel::new_for_test(ServerApiProvider::as_ref(ctx).get_ai_client(), ctx)
-    });
-    app.add_singleton_model(OneTimeModalModel::new);
     // Register GlobalResourceHandlesProvider before ServerExperiments which depends on it
     let global_resource_handles = GlobalResourceHandles::mock(app);
     app.add_singleton_model(|_| GlobalResourceHandlesProvider::new(global_resource_handles));
@@ -210,8 +148,6 @@ pub(crate) fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| IgnoredSuggestionsModel::new(vec![]));
     app.add_singleton_model(|_| crate::code_review::git_repo_model::GitRepoModels::new());
     app.add_singleton_model(remote_server::manager::RemoteServerManager::new);
-    #[cfg(not(target_family = "wasm"))]
-    app.add_singleton_model(RemoteCodebaseIndexModel::new);
 
     #[cfg(feature = "local_fs")]
     app.add_singleton_model(RepoMetadataModel::new);
@@ -231,23 +167,9 @@ pub(crate) fn initialize_app(app: &mut App) {
 
     app.update(experiments::init);
 
-    app.add_singleton_model(
-        crate::workspace::bonus_grant_notification_model::BonusGrantNotificationModel::new,
-    );
-    app.add_singleton_model(|ctx| {
-        CodebaseIndexManager::new_for_test(ServerApiProvider::as_ref(ctx).get(), ctx)
-    });
     app.add_singleton_model(|ctx| PersistedWorkspace::new(vec![], HashMap::new(), None, ctx));
-    app.add_singleton_model(|_| ProjectContextModel::default());
     app.add_singleton_model(|_| PricingInfoModel::new());
-    app.add_singleton_model(crate::ai::pricing_promotion::PricingPromotionState::new);
-    app.add_singleton_model(AIDocumentModel::new);
     app.add_singleton_model(|_| History::new(vec![]));
-
-    // SkillManager is registered after `HomeDirectoryWatcher`, `DirectoryWatcher`,
-    // `WarpManagedPathsWatcher`, `DetectedRepositories`, and `RepoMetadataModel`
-    // because `SkillWatcher::new` subscribes to all of them.
-    app.add_singleton_model(SkillManager::new);
 
     // Make sure to initialize the keybindings so that they are available for subviews
     app.update(workspace::init);
@@ -264,6 +186,7 @@ pub(crate) fn mock_workspace(app: &mut App) -> ViewHandle<Workspace> {
                 previous_active_window: active_window_id,
                 shell: None,
             },
+            None,
             ctx,
         )
     });
@@ -334,8 +257,10 @@ fn restored_workspace(
             None,
             NewWorkspaceSource::Restored {
                 window_snapshot,
+                screen_index: 0,
                 block_lists: Arc::new(HashMap::new()),
             },
+            None,
             ctx,
         )
     });
@@ -361,6 +286,7 @@ fn transferred_tab_workspace(
                 is_right_panel_maximized: false,
                 is_tab_drag_preview: false,
             },
+            None,
             ctx,
         )
     });
@@ -415,38 +341,25 @@ fn test_theme_chooser_does_not_suppress_tab_bar_traffic_light_padding() {
     });
 }
 
-/// Regression for account-first onboarding users who select Warp Drive and
-/// conversation history, skip signup, and create an account later. The stored
-/// preferences should remain true while unavailable, then take effect
-/// automatically as account and AI availability change—without an off/on
-/// toggle.
+/// Regression for account-first onboarding users who select Warp Drive, skip
+/// signup, and create an account later. The stored preference should remain
+/// true while unavailable, then take effect automatically once the account
+/// exists—without an off/on toggle.
 #[test]
-fn test_tools_panel_preferences_activate_after_signup_and_ai_enablement() {
+fn test_tools_panel_preferences_activate_after_signup() {
     let _skip_anon_guard = FeatureFlag::SkipFirebaseAnonymousUser.override_enabled(true);
-    let _conversation_list_guard =
-        FeatureFlag::AgentViewConversationListView.override_enabled(true);
 
     App::test((), |mut app| async move {
         initialize_app(&mut app);
 
-        // Preserve the user's onboarding intent while starting logged out with
-        // AI disabled (the account-skipped account-first completion state).
+        // Preserve the user's onboarding intent while starting logged out (the
+        // account-skipped account-first completion state).
         app.update(|ctx| {
             WarpDriveSettings::handle(ctx).update(ctx, |settings, ctx| {
                 settings
                     .enable_warp_drive
                     .set_value(true, ctx)
                     .expect("remember Warp Drive preference");
-            });
-            AISettings::handle(ctx).update(ctx, |settings, ctx| {
-                settings
-                    .show_conversation_history
-                    .set_value(true, ctx)
-                    .expect("remember conversation-history preference");
-                settings
-                    .is_any_ai_enabled
-                    .set_value(false, ctx)
-                    .expect("AI remains disabled after skipped signup");
             });
             let auth_state = AuthStateProvider::as_ref(ctx).get();
             auth_state.set_user(None);
@@ -461,25 +374,8 @@ fn test_tools_panel_preferences_activate_after_signup_and_ai_enablement() {
                     .contains(&ToolPanelView::WarpDrive),
                 "the stored preference should keep the locked Warp Drive entry visible"
             );
-            assert!(
-                workspace
-                    .left_panel_views
-                    .contains(&ToolPanelView::ConversationListView),
-                "the stored preference should keep the locked conversations entry visible"
-            );
             workspace.left_panel_view.update(ctx, |left_panel, ctx| {
                 left_panel.handle_action_with_force_open(&LeftPanelAction::WarpDrive, false, ctx);
-                assert_eq!(
-                    left_panel.active_view_availability(ctx),
-                    left_panel::ToolPanelAvailability::RequiresAccount
-                );
-                drop(left_panel.render(ctx));
-
-                left_panel.handle_action_with_force_open(
-                    &LeftPanelAction::ConversationListView,
-                    false,
-                    ctx,
-                );
                 assert_eq!(
                     left_panel.active_view_availability(ctx),
                     left_panel::ToolPanelAvailability::RequiresAccount
@@ -500,13 +396,10 @@ fn test_tools_panel_preferences_activate_after_signup_and_ai_enablement() {
                 .is_require_login_modal_open = false;
         });
         app.read(|ctx| {
-            // Availability must not erase the raw onboarding preferences.
+            // Availability must not erase the raw onboarding preference.
             assert!(*WarpDriveSettings::as_ref(ctx).enable_warp_drive);
-            assert!(*AISettings::as_ref(ctx).show_conversation_history);
             assert!(!WarpDriveSettings::is_warp_drive_available(ctx));
             assert!(!WarpDriveSettings::is_warp_drive_enabled(ctx));
-            assert!(!AISettings::as_ref(ctx).is_conversation_history_available(ctx));
-            assert!(!AISettings::as_ref(ctx).is_conversation_history_enabled(ctx));
         });
 
         // Signing up makes account-backed features available. AuthComplete
@@ -532,82 +425,16 @@ fn test_tools_panel_preferences_activate_after_signup_and_ai_enablement() {
                     .contains(&ToolPanelView::WarpDrive),
                 "Drive entry remains visible and unlocks after signup"
             );
-            assert!(
-                workspace
-                    .left_panel_views
-                    .contains(&ToolPanelView::ConversationListView),
-                "conversation entry remains visible while waiting for AI"
-            );
             assert!(!workspace.auth_state.is_anonymous_or_logged_out());
             assert!(WarpDriveSettings::is_warp_drive_enabled(ctx));
-            assert!(!AISettings::as_ref(ctx).is_conversation_history_enabled(ctx));
             workspace.left_panel_view.update(ctx, |left_panel, ctx| {
                 left_panel.handle_action_with_force_open(&LeftPanelAction::WarpDrive, false, ctx);
                 assert_eq!(
                     left_panel.active_view_availability(ctx),
                     left_panel::ToolPanelAvailability::Available
                 );
-
-                left_panel.handle_action_with_force_open(
-                    &LeftPanelAction::ConversationListView,
-                    false,
-                    ctx,
-                );
-                assert_eq!(
-                    left_panel.active_view_availability(ctx),
-                    left_panel::ToolPanelAvailability::RequiresAi
-                );
                 drop(left_panel.render(ctx));
             });
-        });
-
-        // Enabling AI later should make the preserved conversation-history
-        // preference effective through the existing AI-settings subscription.
-        app.update(|ctx| {
-            AISettings::handle(ctx).update(ctx, |settings, ctx| {
-                settings
-                    .is_any_ai_enabled
-                    .set_value(true, ctx)
-                    .expect("enable AI");
-            });
-        });
-        workspace.update(&mut app, |workspace, ctx| {
-            assert!(
-                workspace
-                    .left_panel_views
-                    .contains(&ToolPanelView::ConversationListView)
-            );
-            workspace.left_panel_view.update(ctx, |left_panel, ctx| {
-                left_panel.handle_action_with_force_open(
-                    &LeftPanelAction::ConversationListView,
-                    false,
-                    ctx,
-                );
-                assert_eq!(
-                    left_panel.active_view_availability(ctx),
-                    left_panel::ToolPanelAvailability::Available
-                );
-            });
-        });
-        app.read(|ctx| {
-            assert!(AISettings::as_ref(ctx).is_conversation_history_enabled(ctx));
-        });
-
-        // The raw setting still controls whether the toolbelt entry exists.
-        app.update(|ctx| {
-            AISettings::handle(ctx).update(ctx, |settings, ctx| {
-                settings
-                    .show_conversation_history
-                    .set_value(false, ctx)
-                    .expect("hide conversation history");
-            });
-        });
-        workspace.read(&app, |workspace, _| {
-            assert!(
-                !workspace
-                    .left_panel_views
-                    .contains(&ToolPanelView::ConversationListView)
-            );
         });
     });
 }
@@ -649,114 +476,23 @@ fn test_tools_panel_does_not_suppress_vertical_tab_bar_traffic_light_padding() {
     let _vertical_tabs_guard = FeatureFlag::VerticalTabs.override_enabled(true);
     for config in [
         HeaderToolbarChipSelection::Custom {
-            left: vec![HeaderToolbarItemKind::AgentManagement],
+            left: vec![],
             right: vec![
                 HeaderToolbarItemKind::TabsPanel,
                 HeaderToolbarItemKind::ToolsPanel,
                 HeaderToolbarItemKind::CodeReview,
-                HeaderToolbarItemKind::NotificationsMailbox,
             ],
         },
         HeaderToolbarChipSelection::Custom {
             left: vec![
                 HeaderToolbarItemKind::TabsPanel,
                 HeaderToolbarItemKind::ToolsPanel,
-                HeaderToolbarItemKind::AgentManagement,
             ],
-            right: vec![
-                HeaderToolbarItemKind::CodeReview,
-                HeaderToolbarItemKind::NotificationsMailbox,
-            ],
+            right: vec![HeaderToolbarItemKind::CodeReview],
         },
     ] {
         assert_vertical_tabs_tools_panel_preserves_padding(config);
     }
-}
-/// Regression test for the handoff model carry-over: the copy must preserve
-/// the source pane's explicit selection M even when M equals the destination
-/// pane's current profile default — the case where re-normalizing the resolved
-/// id against the destination's default (instead of copying the raw override)
-/// would drop the override and let the source profile's default D win.
-#[test]
-fn copy_model_and_profile_preserves_explicit_model_over_source_profile_default() {
-    use warpui::EntityId;
-
-    use crate::ai::llms::{AvailableLLMs, LLMId, LLMInfo, ModelsByFeature};
-
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        let m = LLMId::from("auto-genius");
-        let d = LLMId::from("auto");
-
-        let source_id = EntityId::new();
-        let new_id = EntityId::new();
-
-        app.update(|ctx| {
-            // Catalog containing both slugs so profile/override ids resolve.
-            LLMPreferences::handle(ctx).update(ctx, |prefs, ctx| {
-                let models = ModelsByFeature {
-                    agent_mode: AvailableLLMs::new(
-                        "auto".into(),
-                        vec![
-                            LLMInfo::new_for_test("auto"),
-                            LLMInfo::new_for_test("auto-genius"),
-                        ],
-                        None,
-                    )
-                    .expect("valid available llms"),
-                    ..Default::default()
-                };
-                prefs.update_feature_model_choices(Ok(models), ctx);
-            });
-
-            // Default profile default = M (the destination pane's current profile).
-            // Source uses a second profile whose default = D.
-            let profiles = AIExecutionProfilesModel::handle(ctx);
-            let default_profile_id = profiles.read(ctx, |p, _| p.default_profile_id());
-            profiles.update(ctx, |p, ctx| {
-                p.set_base_model(&default_profile_id, Some(m.clone()), ctx);
-                let source_profile_id = p.create_profile(ctx).expect("create source profile");
-                p.set_base_model(&source_profile_id, Some(d.clone()), ctx);
-                p.set_active_profile(source_id, source_profile_id, ctx);
-            });
-
-            // Source's explicit selection = M (differs from its profile default D).
-            LLMPreferences::handle(ctx).update(ctx, |prefs, ctx| {
-                prefs.update_preferred_agent_mode_llm(&m, source_id, ctx);
-            });
-        });
-
-        // Preconditions: source resolves to M; destination's current default is M.
-        app.update(|ctx| {
-            let prefs = LLMPreferences::as_ref(ctx);
-            assert_eq!(
-                prefs.get_active_base_model(ctx, Some(source_id)).id,
-                m,
-                "source pane should resolve to its explicit selection"
-            );
-            assert_eq!(
-                prefs.get_active_base_model(ctx, Some(new_id)).id,
-                m,
-                "destination pane's current profile default should be M"
-            );
-        });
-
-        // Carry source -> new via the production helper.
-        app.update(|ctx| {
-            Workspace::copy_model_and_profile_to_terminal_view(source_id, new_id, ctx);
-        });
-
-        app.update(|ctx| {
-            assert_eq!(
-                LLMPreferences::as_ref(ctx)
-                    .get_active_base_model(ctx, Some(new_id))
-                    .id,
-                m,
-                "destination pane must retain the source's explicit selection, not the source profile default"
-            );
-        });
-    });
 }
 
 #[cfg(feature = "local_fs")]
@@ -1204,6 +940,7 @@ fn mock_workspace_with_shared_session(app: &mut App) -> ViewHandle<Workspace> {
                 previous_active_window: None,
                 shell: None,
             },
+            None,
             ctx,
         )
     });
@@ -1224,7 +961,6 @@ fn mock_workspace_with_shared_session(app: &mut App) -> ViewHandle<Workspace> {
             SharedSessionScrollbackType::All,
             None,
             SharedSessionSource::user(None),
-            false,
             ctx,
         );
     });
@@ -1252,6 +988,7 @@ fn mock_workspace_viewing_shared_session(app: &mut App) -> ViewHandle<Workspace>
             global_resource_handles,
             None,
             NewWorkspaceSource::SharedSessionAsViewer { session_id },
+            None,
             ctx,
         )
     });
@@ -1322,44 +1059,6 @@ fn active_session_state(
     }
 }
 
-#[test]
-fn restore_conversation_in_active_pane_enters_existing_live_conversation_without_loading() {
-    let _agent_view = FeatureFlag::AgentView.override_enabled(true);
-
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        let workspace = mock_workspace(&mut app);
-        let terminal_view = workspace.read(&app, |workspace, ctx| {
-            workspace
-                .active_tab_pane_group()
-                .as_ref(ctx)
-                .focused_session_view(ctx)
-                .expect("workspace should start with a terminal view")
-        });
-        let terminal_view_id = terminal_view.read(&app, |view, _| view.view_id());
-        let conversation_id =
-            BlocklistAIHistoryModel::handle(&app).update(&mut app, |history, ctx| {
-                history.start_new_conversation(terminal_view_id, false, false, false, ctx)
-            });
-
-        workspace.update(&mut app, |workspace, ctx| {
-            assert_eq!(workspace.tab_count(), 1);
-
-            workspace.restore_conversation_in_active_pane(conversation_id, ctx);
-
-            assert_eq!(workspace.tab_count(), 1);
-        });
-
-        terminal_view.read(&app, |view, ctx| {
-            assert_eq!(view.active_conversation_id(ctx), Some(conversation_id));
-            assert_eq!(
-                view.model.lock().conversation_transcript_viewer_status(),
-                None
-            );
-        });
-    });
-}
 fn new_session_menu_label(item: &MenuItem<WorkspaceAction>) -> String {
     match item {
         MenuItem::Item(fields) => fields.label().to_string(),
@@ -1912,7 +1611,6 @@ fn setup_session_sharing_test(workspace: &ViewHandle<Workspace>, app: &mut App) 
                         SharedSessionScrollbackType::None,
                         None,
                         SharedSessionSource::user(None),
-                        false,
                         ctx,
                     );
                 });
@@ -2657,7 +2355,6 @@ fn test_stop_sharing_all_sessions_in_tab() {
                                 SharedSessionScrollbackType::None,
                                 None,
                                 SharedSessionSource::user(None),
-                                false,
                                 ctx,
                             );
                         });
@@ -2675,7 +2372,6 @@ fn test_stop_sharing_all_sessions_in_tab() {
                                 SharedSessionScrollbackType::None,
                                 None,
                                 SharedSessionSource::user(None),
-                                false,
                                 ctx,
                             );
                         });
@@ -2812,7 +2508,7 @@ fn test_view_only_session() {
 
 #[test]
 // This tests the end-to-end behavior to correctly switch focus among panels.
-// (The only panels that can be focused currently are WD, workspace, & the agent panel.)
+// (The only panels that can be focused currently are WD & workspace.)
 fn test_switch_focus_panels() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
@@ -2840,19 +2536,7 @@ fn test_switch_focus_panels() {
             );
         });
 
-        // Shift focus from WD to left panel when AI panel is open
-        workspace.update(&mut app, |view, ctx| {
-            view.current_workspace_state.is_ai_assistant_panel_open = true;
-            view.focus_left_panel(ctx);
-        });
-        workspace.update(&mut app, |view, ctx| {
-            assert!(
-                view.ai_assistant_panel.is_self_or_child_focused(ctx),
-                "Expected AI panel to be focused"
-            );
-        });
-
-        // Shift focus from AI panel to left panel (terminal)
+        // Shift focus from WD back to the terminal
         workspace.update(&mut app, |view, ctx| {
             view.focus_left_panel(ctx);
         });
@@ -2863,15 +2547,14 @@ fn test_switch_focus_panels() {
             );
         });
 
-        // Shift focus from workspace to right panel when the agent panel is open
+        // Shift focus from workspace to right panel when WD is open
         workspace.update(&mut app, |view, ctx| {
-            view.current_workspace_state.is_ai_assistant_panel_open = true;
             view.focus_right_panel(ctx);
         });
         workspace.update(&mut app, |view, ctx| {
             assert!(
-                view.ai_assistant_panel.is_self_or_child_focused(ctx),
-                "Expected AI panel to be focused"
+                view.left_panel_view.is_self_or_child_focused(ctx),
+                "Expected Warp Drive panel to be focused"
             );
         });
 
@@ -3103,7 +2786,7 @@ fn add_get_started_tab(workspace: &mut Workspace, ctx: &mut ViewContext<Workspac
             custom_vertical_tabs_title: None,
             contents: LeafContents::GetStarted,
         }))),
-        Arc::new(HashMap::<PaneUuid, Vec<SerializedBlockListItem>>::new()),
+        Arc::new(HashMap::<PaneUuid, Vec<SerializedBlock>>::new()),
         None,
         ctx,
     );
@@ -4063,7 +3746,6 @@ fn test_vertical_tabs_context_menu_does_not_show_hover_only_tab_bar() {
                 );
                 report_if_error!(settings.use_vertical_tabs.set_value(true, ctx));
             });
-            workspace.should_show_ai_assistant_warm_welcome = false;
             workspace.vertical_tabs_panel_open = true;
 
             workspace.show_tab_right_click_menu =
@@ -4091,57 +3773,11 @@ fn test_standard_tab_context_menu_shows_hover_only_tab_bar() {
                         .set_value(WorkspaceDecorationVisibility::OnHover, ctx)
                 );
             });
-            workspace.should_show_ai_assistant_warm_welcome = false;
 
             workspace.show_tab_right_click_menu =
                 Some((0, TabContextMenuAnchor::Pointer(Vector2F::zero())));
 
             assert_eq!(workspace.tab_bar_mode(ctx), ShowTabBar::Stacked);
-        });
-    });
-}
-
-#[test]
-fn test_open_cloud_agent_setup_guide_action_opens_management_view_and_is_idempotent() {
-    let _agent_management_guard = FeatureFlag::AgentManagementView.override_enabled(true);
-
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        let workspace = mock_workspace(&mut app);
-
-        workspace.update(&mut app, |workspace, ctx| {
-            assert!(
-                !workspace
-                    .current_workspace_state
-                    .is_agent_management_view_open
-            );
-
-            workspace.handle_action(&WorkspaceAction::OpenCloudAgentSetupGuide, ctx);
-            assert!(
-                workspace
-                    .current_workspace_state
-                    .is_agent_management_view_open
-            );
-            assert!(
-                workspace
-                    .agent_management_view
-                    .as_ref(ctx)
-                    .is_showing_setup_guide()
-            );
-
-            workspace.handle_action(&WorkspaceAction::OpenCloudAgentSetupGuide, ctx);
-            assert!(
-                workspace
-                    .current_workspace_state
-                    .is_agent_management_view_open
-            );
-            assert!(
-                workspace
-                    .agent_management_view
-                    .as_ref(ctx)
-                    .is_showing_setup_guide()
-            );
         });
     });
 }
@@ -5020,4 +4656,164 @@ fn test_tools_panel_warp_drive_toggle_updates_available_views() {
             );
         });
     });
+}
+
+#[test]
+fn add_agent_picker_tab_opens_a_single_picker_tab_per_window() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let workspace = mock_workspace(&mut app);
+
+        let initial_tab_count = workspace.update(&mut app, |workspace, ctx| {
+            let initial_tab_count = workspace.tabs.len();
+            workspace.add_agent_picker_tab(ctx);
+            initial_tab_count
+        });
+
+        workspace.update(&mut app, |workspace, ctx| {
+            assert_eq!(workspace.tabs.len(), initial_tab_count + 1);
+            assert!(
+                AgentPickerPaneManager::handle(ctx)
+                    .as_ref(ctx)
+                    .find_pane(ctx.view_id())
+                    .is_some(),
+                "the picker pane should be registered for the window"
+            );
+            workspace.add_terminal_tab(false, ctx);
+        });
+
+        workspace.update(&mut app, |workspace, ctx| {
+            workspace.add_agent_picker_tab(ctx);
+        });
+
+        workspace.update(&mut app, |workspace, ctx| {
+            assert_eq!(
+                workspace.tabs.len(),
+                initial_tab_count + 2,
+                "re-opening the picker should focus the existing tab, not add one"
+            );
+            let locator = AgentPickerPaneManager::handle(ctx)
+                .as_ref(ctx)
+                .find_pane(ctx.view_id())
+                .expect("the picker pane should still be registered");
+            assert_eq!(
+                workspace.tabs[workspace.active_tab_index].pane_group.id(),
+                locator.pane_group_id,
+                "the existing picker tab should be focused"
+            );
+        });
+    });
+}
+
+#[test]
+fn launch_agent_from_picker_stages_the_agent_command_and_closes_the_picker() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let workspace = mock_workspace(&mut app);
+
+        workspace.update(&mut app, |workspace, ctx| {
+            workspace.add_agent_picker_tab(ctx);
+        });
+
+        workspace.update(&mut app, |workspace, ctx| {
+            workspace.launch_agent_from_picker(0, ctx);
+        });
+
+        let expected_command = agent_catalog()[0].command;
+        workspace.update(&mut app, |workspace, ctx| {
+            let terminal_view = workspace
+                .active_tab_pane_group()
+                .as_ref(ctx)
+                .active_session_view(ctx)
+                .expect("expected a terminal view for the launched agent");
+            let input = terminal_view.as_ref(ctx).input().clone();
+            input.read(ctx, |input, ctx| {
+                assert!(
+                    input.has_pending_command(),
+                    "the launch command should be staged as the pending command"
+                );
+                assert_eq!(input.buffer_text(ctx), expected_command);
+            });
+            assert!(
+                AgentPickerPaneManager::handle(ctx)
+                    .as_ref(ctx)
+                    .find_pane(ctx.view_id())
+                    .is_none(),
+                "the picker tab should be closed after launching an agent"
+            );
+        });
+    });
+}
+
+#[test]
+fn a_tab_bound_to_an_unknown_worktree_restores_as_a_plain_tab() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        let workspace = mock_workspace(&mut app);
+        let mut snapshot = workspace.update(&mut app, |workspace, ctx| {
+            workspace.snapshot(ctx.window_id(), false, ctx)
+        });
+        let forgotten = crate::projects::WorktreeId::new();
+        for tab in &mut snapshot.screens[0].tabs {
+            tab.worktree_id = Some(forgotten);
+        }
+        assert!(!snapshot.screens[0].tabs.is_empty());
+
+        let restored = restored_workspace(&mut app, snapshot);
+        restored.read(&app, |workspace, _| {
+            assert!(
+                workspace.tabs.iter().all(|tab| tab.worktree_id.is_none()),
+                "a worktree the registry does not know must not survive restore"
+            );
+        });
+    })
+}
+
+#[test]
+fn a_tab_bound_to_a_registered_worktree_keeps_its_binding() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        let root = std::env::temp_dir().join(format!(
+            "spirit-restore-binding-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+
+        let worktree_id = app.update(|ctx| {
+            ProjectRegistryModel::handle(ctx).update(ctx, |registry, ctx| {
+                let project_id = registry.register_project(
+                    root.clone(),
+                    "repo".to_owned(),
+                    crate::projects::ProjectKind::Git,
+                    Some("main".to_owned()),
+                    ctx,
+                );
+                registry
+                    .primary_worktree_id(project_id)
+                    .expect("registering a project creates its Primary worktree")
+            })
+        });
+
+        let workspace = mock_workspace(&mut app);
+        let mut snapshot = workspace.update(&mut app, |workspace, ctx| {
+            workspace.snapshot(ctx.window_id(), false, ctx)
+        });
+        for tab in &mut snapshot.screens[0].tabs {
+            tab.worktree_id = Some(worktree_id);
+        }
+
+        let restored = restored_workspace(&mut app, snapshot);
+        restored.read(&app, |workspace, _| {
+            assert!(
+                workspace
+                    .tabs
+                    .iter()
+                    .all(|tab| tab.worktree_id == Some(worktree_id))
+            );
+        });
+
+        std::fs::remove_dir_all(&root).ok();
+    })
 }

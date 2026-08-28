@@ -7,10 +7,9 @@ use super::event::{
     CLIAgentEvent, CLIAgentEventPayload, CLIAgentEventSource, CLIAgentEventType, parse_event,
 };
 use super::{
-    CLIAgentInputEntrypoint, CLIAgentInputState, CLIAgentSession, CLIAgentSessionContext,
-    CLIAgentSessionStatus, CLIAgentSessionsModel,
+    CLIAgentInputState, CLIAgentSession, CLIAgentSessionContext, CLIAgentSessionStatus,
+    CLIAgentSessionsModel,
 };
-use crate::ai::blocklist::{InputConfig, InputType};
 use crate::terminal::CLIAgent;
 
 #[test]
@@ -259,14 +258,7 @@ fn parse_droid_stop_notification() {
 
 #[test]
 fn apply_event_preserves_input_session() {
-    let input_state = CLIAgentInputState::Open {
-        entrypoint: CLIAgentInputEntrypoint::CtrlG,
-        previous_input_config: InputConfig {
-            input_type: InputType::Shell,
-            is_locked: false,
-        },
-        previous_was_lock_set_with_empty_buffer: true,
-    };
+    let input_state = CLIAgentInputState::Open;
     let mut session = CLIAgentSession {
         agent: CLIAgent::Claude,
         status: CLIAgentSessionStatus::InProgress,

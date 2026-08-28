@@ -122,12 +122,6 @@ use warp_graphql::queries::get_updated_cloud_objects::{
 use warp_graphql::subscriptions::get_warp_drive_updates::GetWarpDriveUpdates;
 use warp_graphql::subscriptions::start_graphql_streaming_operation;
 
-use crate::ai::ambient_agents::scheduled::ScheduledAmbientAgent;
-use crate::ai::cloud_environments::AmbientAgentEnvironment;
-use crate::ai::document::ai_document_model::AIDocumentId;
-use crate::ai::execution_profiles::AIExecutionProfile;
-use crate::ai::facts::AIFact;
-use crate::ai::mcp::{MCPServer, TemplatableMCPServer};
 use crate::channel::ChannelState;
 use crate::cloud_object::model::generic_string_model::{
     GenericStringModel, GenericStringObjectId, Serializer, StringModel,
@@ -407,10 +401,6 @@ impl ObjectClient for ServerApi {
         let notebook: SerializedNotebook = serde_json::from_str(serialized.model_as_str())
             .context("Failed to deserialize notebook model")?;
 
-        let ai_document_id = notebook
-            .ai_document_id
-            .and_then(|id| AIDocumentId::try_from(id).ok());
-
         let variables = CreateNotebookVariables {
             input: CreateNotebookInput {
                 data: Some(notebook.data),
@@ -418,7 +408,7 @@ impl ObjectClient for ServerApi {
                 initial_folder_id: request.initial_folder_id.map(|folder_id| folder_id.into()),
                 owner: request.owner.into(),
                 title: request.title,
-                ai_document_id: ai_document_id.map(|id| id.to_string()),
+                ai_document_id: None,
                 conversation_id: notebook.conversation_id,
             },
             request_context: get_request_context(),
@@ -790,47 +780,13 @@ impl ObjectClient for ServerApi {
                                     gso,
                                 );
                             }
-                            warp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIFact => {
-                                parse_server_gso::<AIFact, JsonSerializer>(
-                                    &mut updated_generic_string_objects,
-                                    GenericStringObjectFormat::Json(JsonObjectType::AIFact),
-                                    gso,
-                                );
-                            }
-                            warp_graphql::generic_string_object::GenericStringObjectFormat::JsonMCPServer => {
-                                parse_server_gso::<MCPServer, JsonSerializer>(
-                                    &mut updated_generic_string_objects,
-                                    GenericStringObjectFormat::Json(JsonObjectType::MCPServer),
-                                    gso,
-                                );
-                            }
-                            warp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIExecutionProfile => {
-                                parse_server_gso::<AIExecutionProfile, JsonSerializer>(
-                                    &mut updated_generic_string_objects,
-                                    GenericStringObjectFormat::Json(JsonObjectType::AIExecutionProfile),
-                                    gso,
-                                );
-                            }
-                            warp_graphql::generic_string_object::GenericStringObjectFormat::JsonTemplatableMCPServer => {
-                                parse_server_gso::<TemplatableMCPServer, JsonSerializer>(
-                                    &mut updated_generic_string_objects,
-                                    GenericStringObjectFormat::Json(JsonObjectType::TemplatableMCPServer),
-                                    gso,
-                                );
-                            }
-                            warp_graphql::generic_string_object::GenericStringObjectFormat::JsonCloudEnvironment => {
-                                parse_server_gso::<AmbientAgentEnvironment, JsonSerializer>(
-                                    &mut updated_generic_string_objects,
-                                    GenericStringObjectFormat::Json(JsonObjectType::CloudEnvironment),
-                                    gso,
-                                );
-                            }
-                            warp_graphql::generic_string_object::GenericStringObjectFormat::JsonScheduledAmbientAgent => {
-                                parse_server_gso::<ScheduledAmbientAgent, JsonSerializer>(
-                                    &mut updated_generic_string_objects,
-                                    GenericStringObjectFormat::Json(JsonObjectType::ScheduledAmbientAgent),
-                                    gso,
-                                );
+                            warp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIFact
+                            | warp_graphql::generic_string_object::GenericStringObjectFormat::JsonMCPServer
+                            | warp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIExecutionProfile
+                            | warp_graphql::generic_string_object::GenericStringObjectFormat::JsonTemplatableMCPServer
+                            | warp_graphql::generic_string_object::GenericStringObjectFormat::JsonCloudEnvironment
+                            | warp_graphql::generic_string_object::GenericStringObjectFormat::JsonScheduledAmbientAgent => {
+                                log::debug!("Skipping unsupported generic string object format {:?}", gso.format);
                             }
                             // GSO formats unknown to this client build (e.g. the
                             // server-only `JsonRunner`) are skipped so syncing of

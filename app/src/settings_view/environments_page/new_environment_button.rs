@@ -49,9 +49,7 @@ impl TypedActionView for NewEnvironmentButtonView {
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
         match action {
             NewEnvironmentButtonAction::OpenSelector => {
-                ctx.dispatch_typed_action(
-                    &EnvironmentsPageAction::OpenEnvironmentSetupModeSelector,
-                );
+                ctx.dispatch_typed_action(&EnvironmentsPageAction::OpenCreatePage);
             }
             NewEnvironmentButtonAction::FocusSearch => {
                 ctx.focus(&self.search_editor);

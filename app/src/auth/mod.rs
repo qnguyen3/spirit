@@ -4,6 +4,7 @@ pub mod auth_override_warning_modal;
 mod auth_view_body;
 pub mod auth_view_modal;
 mod auth_view_shared_helpers;
+pub mod github_auth_notifier;
 mod login_error_modal;
 mod login_failure_notification;
 pub mod login_slide;
@@ -15,13 +16,10 @@ pub use warp_server_auth::{auth_state, credentials, user, user_uid};
 pub mod web_handoff;
 
 use ::settings::{Setting, SettingsManager, ToggleableSetting};
-use ai::index::full_source_code_embedding::manager::CodebaseIndexManager;
 pub use auth_manager::AuthManager;
 pub use auth_state::AuthStateProvider;
 use itertools::Itertools;
 pub use login_failure_notification::LoginFailureReason;
-#[cfg(feature = "tui")]
-use url::Url;
 pub use user_uid::UserUid;
 use warp_core::channel::ChannelState;
 use warp_core::user_preferences::GetUserPreferences as _;
@@ -29,14 +27,6 @@ use warp_errors::{report_error, report_if_error};
 use warpui::modals::{AlertDialogWithCallbacks, ModalButton};
 use warpui::{AppContext, SingletonEntity};
 
-use crate::ai::agent_conversations_model::AgentConversationsModel;
-use crate::ai::blocklist::BlocklistAIHistoryModel;
-use crate::ai::blocklist::agent_view::orchestration_pill_bar_model::OrchestrationPillBarModel;
-use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
-#[cfg(not(target_family = "wasm"))]
-use crate::ai::mcp::TemplatableMCPServerManager;
-use crate::ai::request_usage_model::AIRequestUsageModel;
-use crate::ai_assistant::requests::REQUEST_LIMIT_INFO_CACHE_KEY;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::code::editor_management::{CodeEditorStatus, CodeEditorSummary};
 use crate::env_vars::manager::EnvVarCollectionManager;
@@ -48,7 +38,7 @@ use crate::server::sync_queue::SyncQueue;
 use crate::server::telemetry::{PaletteSource, TelemetryEvent};
 use crate::session_management::{RunningSessionSummary, SessionNavigationData};
 use crate::settings::{
-    AISettings, CRASH_REPORTING_ENABLED_DEFAULTS_KEY, CloudPreferencesSettings, PrivacySettings,
+    CRASH_REPORTING_ENABLED_DEFAULTS_KEY, CloudPreferencesSettings, PrivacySettings,
     TELEMETRY_ENABLED_DEFAULTS_KEY,
 };
 use crate::terminal::general_settings::GeneralSettings;
@@ -78,37 +68,6 @@ pub fn web_logout_url() -> String {
         "{}/logout",
         ChannelState::server_root_url().trim_end_matches('/')
     )
-}
-
-/// Returns the configured Warp web logout URL with a validated browser continuation.
-///
-/// TUI logout only continues to the same Warp web origin's device page. This
-/// keeps the logout endpoint from becoming an open redirect if an unexpected
-/// device-authorization response reaches the client.
-#[cfg(feature = "tui")]
-pub fn web_logout_url_with_continue(continue_url: &str) -> Option<String> {
-    let mut logout_url =
-        Url::parse(&web_logout_url()).expect("configured Warp web logout URL must be valid");
-    let continue_url = Url::parse(continue_url).ok()?;
-    let has_required_query = continue_url
-        .query_pairs()
-        .any(|(key, value)| key == "user_code" && !value.is_empty())
-        && continue_url
-            .query_pairs()
-            .any(|(key, value)| key == "source" && value == "warp-agent-cli");
-    if continue_url.origin() != logout_url.origin()
-        || continue_url.path() != "/device"
-        || !continue_url.username().is_empty()
-        || continue_url.password().is_some()
-        || continue_url.fragment().is_some()
-        || !has_required_query
-    {
-        return None;
-    }
-    logout_url
-        .query_pairs_mut()
-        .append_pair("continue", continue_url.as_str());
-    Some(logout_url.into())
 }
 
 /// If the app has running processes or dirty objects, we'll show a confirmation modal before logging out.
@@ -270,10 +229,6 @@ pub fn log_out_and_open_web(app: &mut AppContext) {
 pub fn log_out(app: &mut AppContext) {
     send_telemetry_sync_from_app_ctx!(TelemetryEvent::LogOut, app);
 
-    CodebaseIndexManager::handle(app).update(app, |index_manager, ctx| {
-        index_manager.reset_codebase_indexing(ctx);
-    });
-
     let global_resource_handles = GlobalResourceHandlesProvider::as_ref(app).get();
 
     // As part of Logout v0, we remove sqlite3 so sessions and cloud objects don't persist between accounts.
@@ -282,24 +237,6 @@ pub fn log_out(app: &mut AppContext) {
 
     AuthManager::handle(app).update(app, |auth_manager, ctx| {
         auth_manager.log_out(ctx);
-    });
-    // Detach built-in Warp-hosted MCP servers; they authenticate with the
-    // credentials that were just cleared.
-    #[cfg(not(target_family = "wasm"))]
-    TemplatableMCPServerManager::handle(app).update(app, |manager, ctx| {
-        manager.sync_builtin_servers(false, ctx);
-    });
-    AIRequestUsageModel::handle(app).update(app, |usage_model, ctx| {
-        usage_model.reset_server_availability(ctx);
-    });
-    BlocklistAIHistoryModel::handle(app).update(app, |history_model, _| {
-        history_model.reset();
-    });
-    OrchestrationPillBarModel::handle(app).update(app, |pill_bar_model, _| {
-        pill_bar_model.reset();
-    });
-    AgentConversationsModel::handle(app).update(app, |agent_conversations_model, _| {
-        agent_conversations_model.reset();
     });
     CloudModel::handle(app).update(app, |cloud_model, _| {
         cloud_model.reset();
@@ -317,13 +254,6 @@ pub fn log_out(app: &mut AppContext) {
         manager.stop_polling_for_workspace_metadata_updates();
     });
     remove_cloud_persisted_settings(app);
-
-    let settings_profiles_are_explicit = AISettings::as_ref(app)
-        .execution_profiles
-        .is_value_explicitly_set();
-    AIExecutionProfilesModel::handle(app).update(app, |profiles, _| {
-        profiles.reset(settings_profiles_are_explicit);
-    });
 
     NotebookManager::handle(app).update(app, |manager, _| manager.reset());
     EnvVarCollectionManager::handle(app).update(app, |manager, _| manager.reset());
@@ -392,16 +322,6 @@ fn remove_cloud_persisted_settings(app: &mut AppContext) {
             anyhow::Error::new(e).context(
                 "Failed to remove Crash Reporting Enabled Defaults Key from user defaults"
             )
-        );
-    }
-
-    if let Err(e) = app
-        .private_user_preferences()
-        .remove_value(REQUEST_LIMIT_INFO_CACHE_KEY)
-    {
-        report_error!(
-            anyhow::Error::new(e)
-                .context("Failed to remove Request Limit Defaults Key from user defaults")
         );
     }
 

@@ -1,5 +1,4 @@
 use std::cmp::Ordering;
-use std::path::PathBuf;
 
 use chrono::Utc;
 use regex::Regex;
@@ -10,15 +9,9 @@ pub use warp_graphql::billing::{
     AiCreditsUsageSource,
 };
 
-use super::gql_convert::{ToAgentModeCommandExecutionPredicates, ToPathBufs};
 use super::team::{MembershipRole, Team};
-use crate::ai::execution_profiles::{
-    ActionPermission, ComputerUsePermission, WriteToPtyPermission,
-};
-use crate::ai::llms::{LLMModelHost, LLMProvider};
 use crate::auth::UserUid;
 use crate::server::ids::ServerId;
-use crate::settings::AgentModeCommandExecutionPredicate;
 
 #[derive(Clone, Copy, Hash, Debug, PartialEq, Eq)]
 pub struct WorkspaceUid(ServerId);
@@ -127,10 +120,6 @@ impl Workspace {
                 .members
                 .first()
                 .is_some_and(|m| m.email == current_user_email)
-    }
-
-    pub fn is_custom_llm_enabled(&self) -> bool {
-        self.settings.llm_settings.enabled
     }
 
     pub fn are_overages_toggleable(&self) -> bool {
@@ -499,13 +488,6 @@ pub struct UsageVisibility {
     pub max_prior_cycles: MaxPriorCycles,
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub enum HostEnablementSetting {
-    Enforce,
-    #[default]
-    RespectUserSetting,
-}
-
 /// This struct is the rust representation of `Tier` from the GraphQL Schema.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -852,30 +834,6 @@ impl BillingMetadata {
 mod tests;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct LlmHostSettings {
-    pub enabled: bool,
-    pub enablement_setting: HostEnablementSetting,
-    /// Full resource name of the GCP workload identity provider that Gemini Enterprise
-    /// (GEAP) credential minting exchanges Warp OIDC JWTs against. Only populated on the
-    /// `GeminiEnterprise` host entry; `None` for other hosts and for workspace caches
-    /// written before this field existed.
-    #[serde(default)]
-    pub gcp_audience: Option<String>,
-    /// Email of the GCP service account that Gemini Enterprise credential minting
-    /// impersonates after the STS exchange. `None` (or empty) means the federated token
-    /// is used directly.
-    #[serde(default)]
-    pub gcp_sa_email: Option<String>,
-}
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct LlmSettings {
-    pub enabled: bool,
-    #[serde(default)]
-    pub host_configs: std::collections::HashMap<LLMModelHost, LlmHostSettings>,
-}
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct TelemetrySettings {
     pub force_enabled: bool,
 }
@@ -913,72 +871,6 @@ pub struct AiPermissionsSettings {
     pub remote_session_regex_list: Vec<Regex>,
 }
 
-/// The AI autonomy policy an admin has imposed, in the shape the enforcement paths
-/// consume: `None` on a field means no admin override, so the user's execution profile
-/// decides.
-///
-/// Both admin layers lower into this one type. The workspace layer stores it directly on
-/// [`WorkspaceSettings`]; a team's effective policy arrives as [`TeamAiAutonomySettings`]
-/// and converts via its `From` impl. The team shape's extra structure —
-/// [`EnforceableSetting`]'s `is_enforced_by_workspace` and [`SplitListSetting`]'s
-/// per-layer entries — records which admin layer contributed a value, which is an admin-UI
-/// concern rather than part of the policy, so it does not survive the conversion.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct AiAutonomySettings {
-    pub apply_code_diffs_setting: Option<ActionPermission>,
-    pub read_files_setting: Option<ActionPermission>,
-    pub read_files_allowlist: Option<Vec<PathBuf>>,
-    pub execute_commands_setting: Option<ActionPermission>,
-    pub execute_commands_allowlist: Option<Vec<AgentModeCommandExecutionPredicate>>,
-    pub execute_commands_denylist: Option<Vec<AgentModeCommandExecutionPredicate>>,
-    pub write_to_pty_setting: Option<WriteToPtyPermission>,
-    pub computer_use_setting: Option<ComputerUsePermission>,
-}
-
-impl AiAutonomySettings {
-    pub fn has_any_overrides(&self) -> bool {
-        self.apply_code_diffs_setting.is_some()
-            || self.read_files_setting.is_some()
-            || self.read_files_allowlist.is_some()
-            || self.execute_commands_setting.is_some()
-            || self.execute_commands_allowlist.is_some()
-            || self.execute_commands_denylist.is_some()
-            || self.write_to_pty_setting.is_some()
-            || self.computer_use_setting.is_some()
-    }
-
-    pub fn has_override_for_code_diffs(&self) -> bool {
-        self.apply_code_diffs_setting.is_some()
-    }
-
-    pub fn has_override_for_read_files(&self) -> bool {
-        self.read_files_setting.is_some()
-    }
-
-    pub fn has_override_for_read_files_allowlist(&self) -> bool {
-        self.read_files_allowlist.is_some()
-    }
-
-    pub fn has_override_for_execute_commands(&self) -> bool {
-        self.execute_commands_setting.is_some()
-    }
-
-    pub fn has_override_for_execute_commands_allowlist(&self) -> bool {
-        self.execute_commands_allowlist.is_some()
-    }
-
-    pub fn has_override_for_execute_commands_denylist(&self) -> bool {
-        self.execute_commands_denylist.is_some()
-    }
-
-    pub fn has_override_for_write_to_pty(&self) -> bool {
-        self.write_to_pty_setting.is_some()
-    }
-
-    pub fn has_override_for_computer_use(&self) -> bool {
-        self.computer_use_setting.is_some()
-    }
-}
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct LinkSharingSettings {
     pub anyone_with_link_sharing_enabled: bool,
@@ -1017,13 +909,7 @@ pub struct CodebaseContextSettings {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct SandboxedAgentSettings {
-    pub execute_commands_denylist: Option<Vec<AgentModeCommandExecutionPredicate>>,
-}
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct WorkspaceSettings {
-    pub llm_settings: LlmSettings,
     pub team_byo: Option<TeamByoSettings>,
     pub telemetry_settings: TelemetrySettings,
     pub ugc_collection_settings: UgcCollectionSettings,
@@ -1031,13 +917,11 @@ pub struct WorkspaceSettings {
     pub link_sharing_settings: LinkSharingSettings,
     pub secret_redaction_settings: SecretRedactionSettings,
     pub ai_permissions_settings: AiPermissionsSettings,
-    pub ai_autonomy_settings: AiAutonomySettings,
     pub is_invite_link_enabled: bool,
     pub is_discoverable: bool,
     pub usage_based_pricing_settings: UsageBasedPricingSettings,
     pub addon_credits_settings: AddonCreditsSettings,
     pub codebase_context_settings: CodebaseContextSettings,
-    pub sandboxed_agent_settings: Option<SandboxedAgentSettings>,
     /// The team-level agent attribution setting. When `Enable` or `Disable`, the
     /// user toggle is locked. When `RespectUserSetting` (or absent), the user can choose.
     #[serde(default)]
@@ -1105,71 +989,9 @@ pub struct TeamSecretRedactionSettings {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct TeamAiAutonomySettings {
-    pub apply_code_diffs: EnforceableSetting<Option<ActionPermission>>,
-    pub read_files: EnforceableSetting<Option<ActionPermission>>,
-    pub create_plans: EnforceableSetting<Option<ActionPermission>>,
-    pub execute_commands: EnforceableSetting<Option<ActionPermission>>,
-    pub write_to_pty: EnforceableSetting<Option<WriteToPtyPermission>>,
-    pub computer_use: EnforceableSetting<Option<ComputerUsePermission>>,
-    pub read_files_allowlist: SplitListSetting<String>,
-    pub execute_commands_allowlist: SplitListSetting<String>,
-    pub execute_commands_denylist: SplitListSetting<String>,
-}
-
-impl From<&TeamAiAutonomySettings> for AiAutonomySettings {
-    /// Lowers a team's effective autonomy policy into the shape enforcement reads.
-    ///
-    /// A list counts as an override when any admin layer configured it, which is not the
-    /// same question as whether the merged result is empty — see
-    /// [`SplitListSetting::is_configured`].
-    ///
-    /// `create_plans` is dropped. It exists only on the team side; `AIExecutionProfile`
-    /// carries no create-plans permission for it to override, so there is nothing to
-    /// lower it into.
-    fn from(team: &TeamAiAutonomySettings) -> Self {
-        fn override_list<T>(
-            list: &SplitListSetting<String>,
-            convert: impl FnOnce(Vec<String>) -> Vec<T>,
-        ) -> Option<Vec<T>> {
-            if list.is_configured() {
-                Some(convert(list.values.clone()))
-            } else {
-                None
-            }
-        }
-
-        Self {
-            apply_code_diffs_setting: team.apply_code_diffs.value,
-            read_files_setting: team.read_files.value,
-            read_files_allowlist: override_list(
-                &team.read_files_allowlist,
-                ToPathBufs::to_path_bufs,
-            ),
-            execute_commands_setting: team.execute_commands.value,
-            execute_commands_allowlist: override_list(
-                &team.execute_commands_allowlist,
-                ToAgentModeCommandExecutionPredicates::to_predicates,
-            ),
-            execute_commands_denylist: override_list(
-                &team.execute_commands_denylist,
-                ToAgentModeCommandExecutionPredicates::to_predicates,
-            ),
-            write_to_pty_setting: team.write_to_pty.value,
-            computer_use_setting: team.computer_use.value,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct TeamLinkSharingSettings {
     pub anyone_with_link_sharing_enabled: EnforceableSetting<bool>,
     pub direct_link_sharing_enabled: EnforceableSetting<bool>,
-}
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct TeamSandboxedAgentSettings {
-    pub execute_commands_denylist: SplitListSetting<String>,
 }
 
 /// The effective settings that apply to a team, combining the workspace layer
@@ -1190,10 +1012,7 @@ pub struct TeamSettings {
     pub codebase_context: EnforceableSetting<AdminEnablementSetting>,
     pub ai_permissions: TeamAiPermissionsSettings,
     pub secret_redaction: TeamSecretRedactionSettings,
-    pub ai_autonomy: TeamAiAutonomySettings,
     pub link_sharing: TeamLinkSharingSettings,
-    pub sandboxed_agent: TeamSandboxedAgentSettings,
-    pub llm_settings: LlmSettings,
     pub telemetry_settings: TelemetrySettings,
     pub usage_based_pricing_settings: UsageBasedPricingSettings,
     pub addon_credits_settings: AddonCreditsSettings,
@@ -1218,7 +1037,6 @@ pub struct TeamByoSettings {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ByoFirstPartyKey {
-    pub provider: LLMProvider,
     pub credential_uid: String,
 }
 

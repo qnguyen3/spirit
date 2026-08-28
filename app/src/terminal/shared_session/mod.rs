@@ -13,14 +13,12 @@ use crate::channel::{Channel, ChannelState};
 use crate::editor::{InteractionState, ReplicaId};
 use crate::features::FeatureFlag;
 
-pub mod ai_agent;
 pub mod manager;
 pub mod network;
 pub mod participant_avatar_view;
 pub mod permissions_manager;
 pub mod presence_manager;
 pub mod render_util;
-pub mod replay_agent_conversations;
 pub mod role_change_modal;
 mod selections;
 pub mod settings;
@@ -239,9 +237,7 @@ impl SharedSessionScrollbackType {
             .blocks()
             .iter()
             .skip(first_block_index.into())
-            .filter(|block| {
-                block.is_scrollback_block_for_shared_session(model.block_list().transcript_scope())
-            })
+            .filter(|block| block.is_scrollback_block_for_shared_session())
             .filter_map(|block| {
                 let serialized_block: SerializedBlock = block.into();
                 let bytes = serde_json::to_vec(&serialized_block);
@@ -266,11 +262,7 @@ impl SharedSessionScrollbackType {
                 .blocks()
                 .iter()
                 .skip(block_index.into())
-                .find(|block| {
-                    block.is_scrollback_block_for_shared_session(
-                        model.block_list().transcript_scope(),
-                    )
-                })
+                .find(|block| block.is_scrollback_block_for_shared_session())
                 .map_or(model.block_list().active_block_index(), |block| {
                     block.index()
                 }),

@@ -1,16 +1,18 @@
 use pathfinder_geometry::vector::vec2f;
 use settings::Setting;
 use warpui::elements::{
-    Border, ChildAnchor, ChildView, Clipped, Container, DropTarget, Element, Empty, Flex,
-    Hoverable, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, SavePosition,
-    Stack,
+    Border, ChildAnchor, ChildView, Clipped, Container, DispatchEventResult, DropTarget, Element,
+    Empty, EventHandler, Flex, Hoverable, OffsetPositioning, ParentAnchor, ParentElement,
+    ParentOffsetBounds, SavePosition, Stack,
 };
+use warpui::event::KeyState;
 use warpui::{AppContext, SingletonEntity};
 
-use super::{Input, SubshellRenderState, should_render_prompt_using_editor_decorator_elements};
-use crate::ai::blocklist::InputType;
+use super::{
+    Input, InputAction, SubshellRenderState, should_render_prompt_using_editor_decorator_elements,
+    voice_input,
+};
 use crate::appearance::Appearance;
-use crate::context_chips::spacing;
 use crate::features::FeatureFlag;
 use crate::settings::{AppEditorSettings, InputModeSettings};
 use crate::terminal::block_list_settings::BlockListSettings;
@@ -36,12 +38,7 @@ impl Input {
 
         let model = self.model.lock();
         let should_render_prompt_using_editor_decorator_elements =
-            should_render_prompt_using_editor_decorator_elements(
-                false,
-                &self.ai_input_model,
-                &model,
-                app,
-            );
+            should_render_prompt_using_editor_decorator_elements(&model, app);
 
         // We should likely rework this stack to not need to use `with_constrain_absolute_children`,
         // by reworking the positioning of the children to not depend on this.
@@ -102,32 +99,13 @@ impl Input {
         );
         let mut column = Flex::column();
 
-        if matches!(input_mode, InputMode::PinnedToBottom | InputMode::Waterfall)
-            && let Some(banner) =
-                self.render_input_banner(appearance, app, input_mode, is_compact_mode)
-        {
-            column.add_child(banner);
-        }
-
         column.add_children([prompt_top_padding_row.finish(), prompt_row.finish()]);
-
-        let ai_input_model = self.ai_input_model.as_ref(app);
-
-        if FeatureFlag::ImageAsContext.is_enabled()
-            && matches!(ai_input_model.input_type(), InputType::AI)
-            && !FeatureFlag::AgentView.is_enabled()
-            && let Some(images) = self.render_attachment_chips(appearance)
-        {
-            column.add_child(
-                Container::new(images)
-                    .with_padding_bottom(spacing::CLASSIC_PROMPT_ATTACH_IMAGES_BOTTOM_PADDING)
-                    .finish(),
-            );
-        }
 
         column.add_child(self.render_input_box(show_vim_status, appearance, app));
 
-        if should_show_terminal_input_message_bar(&model, app) {
+        column.add_child(self.render_input_toolbar(app));
+
+        if should_show_terminal_input_message_bar(app) {
             column.add_child(
                 Clipped::new(ChildView::new(&self.terminal_input_message_bar).finish()).finish(),
             );
@@ -142,13 +120,6 @@ impl Input {
                     .with_margin_bottom(4.)
                     .finish(),
             );
-        }
-
-        if matches!(input_mode, InputMode::PinnedToTop)
-            && let Some(banner) =
-                self.render_input_banner(appearance, app, input_mode, is_compact_mode)
-        {
-            column.add_child(banner);
         }
 
         let subshell_flag = self.get_subshell_flag_render_state(&model, is_compact_mode, app);
@@ -275,46 +246,23 @@ impl Input {
 
         let mut column = Flex::column();
         let is_slash_commands = self.suggestions_mode_model.as_ref(app).is_slash_commands();
-        let is_conversation_menu = self
-            .suggestions_mode_model
-            .as_ref(app)
-            .is_conversation_menu();
-        let is_model_selector = self
-            .suggestions_mode_model
-            .as_ref(app)
-            .is_inline_model_selector();
-        let is_prompts_menu = self.suggestions_mode_model.as_ref(app).is_prompts_menu();
-        let is_skill_menu = self.suggestions_mode_model.as_ref(app).is_skill_menu();
         let is_inline_history_menu = FeatureFlag::InlineHistoryMenu.is_enabled()
             && self
                 .suggestions_mode_model
                 .as_ref(app)
                 .is_inline_history_menu();
-        let is_repos_menu = FeatureFlag::InlineRepoMenu.is_enabled()
-            && self.suggestions_mode_model.as_ref(app).is_repos_menu();
 
         match input_mode {
             InputMode::PinnedToBottom => {
                 column.add_children(
                     [
-                        if is_model_selector {
-                            Some(ChildView::new(&self.inline_model_selector_view).finish())
-                        } else if is_slash_commands {
+                        if is_slash_commands {
                             Some(ChildView::new(&self.inline_slash_commands_view).finish())
-                        } else if is_prompts_menu {
-                            Some(ChildView::new(&self.inline_prompts_menu_view).finish())
-                        } else if is_conversation_menu {
-                            Some(ChildView::new(&self.inline_conversation_menu_view).finish())
-                        } else if FeatureFlag::ListSkills.is_enabled() && is_skill_menu {
-                            Some(ChildView::new(&self.inline_skill_selector_view).finish())
                         } else if is_inline_history_menu {
                             Some(ChildView::new(&self.inline_history_menu_view).finish())
-                        } else if is_repos_menu {
-                            Some(ChildView::new(&self.inline_repos_menu_view).finish())
                         } else {
                             None
                         },
-                        Some(ChildView::new(&self.agent_status_view).finish()),
                         Some(input),
                     ]
                     .into_iter()
@@ -325,21 +273,10 @@ impl Input {
                 column.add_children(
                     [
                         Some(input),
-                        Some(ChildView::new(&self.agent_status_view).finish()),
-                        if is_model_selector {
-                            Some(ChildView::new(&self.inline_model_selector_view).finish())
-                        } else if is_slash_commands {
+                        if is_slash_commands {
                             Some(ChildView::new(&self.inline_slash_commands_view).finish())
-                        } else if is_prompts_menu {
-                            Some(ChildView::new(&self.inline_prompts_menu_view).finish())
-                        } else if is_conversation_menu {
-                            Some(ChildView::new(&self.inline_conversation_menu_view).finish())
-                        } else if FeatureFlag::ListSkills.is_enabled() && is_skill_menu {
-                            Some(ChildView::new(&self.inline_skill_selector_view).finish())
                         } else if is_inline_history_menu {
                             Some(ChildView::new(&self.inline_history_menu_view).finish())
-                        } else if is_repos_menu {
-                            Some(ChildView::new(&self.inline_repos_menu_view).finish())
                         } else {
                             None
                         },
@@ -356,44 +293,35 @@ impl Input {
 
                 if is_slash_commands && !should_render_below {
                     column.add_child(ChildView::new(&self.inline_slash_commands_view).finish());
-                } else if is_prompts_menu && !should_render_below {
-                    column.add_child(ChildView::new(&self.inline_prompts_menu_view).finish());
-                } else if is_conversation_menu && !should_render_below {
-                    column.add_child(ChildView::new(&self.inline_conversation_menu_view).finish());
-                } else if FeatureFlag::ListSkills.is_enabled()
-                    && is_skill_menu
-                    && !should_render_below
-                {
-                    column.add_child(ChildView::new(&self.inline_skill_selector_view).finish());
                 } else if is_inline_history_menu && !should_render_below {
                     column.add_child(ChildView::new(&self.inline_history_menu_view).finish());
-                } else if is_repos_menu && !should_render_below {
-                    column.add_child(ChildView::new(&self.inline_repos_menu_view).finish());
                 }
 
-                column.add_children([ChildView::new(&self.agent_status_view).finish(), input]);
+                column.add_child(input);
 
-                if is_model_selector && should_render_below {
-                    column.add_child(ChildView::new(&self.inline_model_selector_view).finish());
-                } else if is_slash_commands && should_render_below {
+                if is_slash_commands && should_render_below {
                     column.add_child(ChildView::new(&self.inline_slash_commands_view).finish());
-                } else if is_prompts_menu && should_render_below {
-                    column.add_child(ChildView::new(&self.inline_prompts_menu_view).finish());
-                } else if is_conversation_menu && should_render_below {
-                    column.add_child(ChildView::new(&self.inline_conversation_menu_view).finish());
-                } else if FeatureFlag::ListSkills.is_enabled()
-                    && is_skill_menu
-                    && should_render_below
-                {
-                    column.add_child(ChildView::new(&self.inline_skill_selector_view).finish());
                 } else if is_inline_history_menu && should_render_below {
                     column.add_child(ChildView::new(&self.inline_history_menu_view).finish());
-                } else if is_repos_menu && should_render_below {
-                    column.add_child(ChildView::new(&self.inline_repos_menu_view).finish());
                 }
             }
         }
 
-        SavePosition::new(column.finish(), &self.save_position_id()).finish()
+        let input = SavePosition::new(column.finish(), &self.save_position_id()).finish();
+        if !FeatureFlag::VoiceInput.is_enabled() {
+            return input;
+        }
+
+        let hold_key = voice_input::hold_key();
+        let is_focused = self.is_pane_focused(app);
+        EventHandler::new(input)
+            .on_modifier_state_changed(move |ctx, _, key_code, key_state| {
+                let released = matches!(key_state, KeyState::Released);
+                if *key_code == hold_key && (is_focused || released) {
+                    ctx.dispatch_typed_action(InputAction::VoiceHoldKeyChanged(*key_state));
+                }
+                DispatchEventResult::PropagateToParent
+            })
+            .finish()
     }
 }

@@ -113,7 +113,7 @@ fn shared_session_viewer_recovers_from_raw_precmd_with_completion_metadata_witho
 
 #[test]
 fn test_get_no_scrollback() {
-    let restored_blocks = &[SerializedBlock::new_for_test("a".into(), "b".into()).into()];
+    let restored_blocks = &[SerializedBlock::new_for_test("a".into(), "b".into())];
     let channel_event_proxy = ChannelEventListener::new_for_test();
     let mut model = TerminalModel::mock(Some(restored_blocks), Some(channel_event_proxy));
 
@@ -127,7 +127,7 @@ fn test_get_no_scrollback() {
 
 #[test]
 fn test_get_scrollback_starting_at_block() {
-    let restored_blocks = &[SerializedBlock::new_for_test("a".into(), "b".into()).into()];
+    let restored_blocks = &[SerializedBlock::new_for_test("a".into(), "b".into())];
     let channel_event_proxy = ChannelEventListener::new_for_test();
     let mut model = TerminalModel::mock(Some(restored_blocks), Some(channel_event_proxy));
 
@@ -149,7 +149,7 @@ fn test_get_scrollback_starting_at_block() {
 
 #[test]
 fn test_get_all_scrollback() {
-    let restored_blocks = &[SerializedBlock::new_for_test("a".into(), "b".into()).into()];
+    let restored_blocks = &[SerializedBlock::new_for_test("a".into(), "b".into())];
     let channel_event_proxy = ChannelEventListener::new_for_test();
     let mut model = TerminalModel::mock(Some(restored_blocks), Some(channel_event_proxy));
 
@@ -323,13 +323,7 @@ fn test_loading_scrollback() {
 
     // The last scrollback block is the active block and contains the prompt.
     assert_eq!(model.block_list().active_block_index(), 3.into());
-    assert_eq!(
-        model
-            .block_list()
-            .active_block()
-            .height(&crate::terminal::model::block::TranscriptScope::Terminal),
-        Lines::zero()
-    );
+    assert_eq!(model.block_list().active_block().height(), Lines::zero());
     assert!(!model.block_list().active_block().started());
     assert_eq!(
         model.block_list().active_block().session_id(),
@@ -369,13 +363,7 @@ fn test_loading_scrollback_with_completed_last_block_creates_active_block() {
     );
 
     assert_eq!(model.block_list().active_block_index(), 3.into());
-    assert_eq!(
-        model
-            .block_list()
-            .active_block()
-            .height(&crate::terminal::model::block::TranscriptScope::Terminal),
-        Lines::zero()
-    );
+    assert_eq!(model.block_list().active_block().height(), Lines::zero());
     assert!(!model.block_list().active_block().started());
 }
 
@@ -413,14 +401,7 @@ fn test_loading_scrollback_in_alt_screen() {
     );
 
     // The last scrollback block is the active block and contains the prompt.
-    assert_lines_approx_eq!(
-        model
-            .block_list()
-            .block_at(2.into())
-            .unwrap()
-            .height(&crate::terminal::model::block::TranscriptScope::Terminal),
-        0.
-    );
+    assert_lines_approx_eq!(model.block_list().block_at(2.into()).unwrap().height(), 0.);
     assert!(!model.block_list().block_at(2.into()).unwrap().started());
 
     // Make sure we're in the alt screen.

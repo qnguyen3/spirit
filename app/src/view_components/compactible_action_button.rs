@@ -7,18 +7,15 @@ use warpui::elements::{
 };
 use warpui::{Action, AppContext, Element, TypedActionView, View, ViewContext, ViewHandle};
 
-use crate::ai::blocklist::inline_action::inline_action_icons::icon_size;
 use crate::ui_components::icons::Icon;
+use crate::ui_components::inline_action_icons::icon_size;
 use crate::view_components::action_button::{
-    ActionButton, ActionButtonTheme, AdjoinedSide, ButtonSize, KeystrokeSource,
+    ActionButton, ActionButtonTheme, ButtonSize, KeystrokeSource,
 };
 const BUTTON_MARGIN: f32 = 8.;
 
 // Size switch thresholds for responsive button behavior
 pub const SMALL_SIZE_SWITCH_THRESHOLD: f32 = 400.0;
-pub const MEDIUM_SIZE_SWITCH_THRESHOLD: f32 = 500.0;
-pub const LARGE_SIZE_SWITCH_THRESHOLD: f32 = 600.0;
-pub const XLARGE_SIZE_SWITCH_THRESHOLD: f32 = 650.0;
 
 /// Stores normal and compact (i.e. without a keybinding display) versions of action buttons
 /// for use in views that need to display buttons in different modes.
@@ -82,70 +79,6 @@ impl CompactibleActionButton {
             compact_button,
             expanded_button,
         }
-    }
-
-    pub fn set_label<T: View>(&mut self, label: String, ctx: &mut ViewContext<T>) {
-        self.expanded_button.update(ctx, |button, ctx| {
-            button.set_label(label.clone(), ctx);
-        });
-        self.compact_button.update(ctx, |button, ctx| {
-            button.set_tooltip(Some(label), ctx);
-        });
-    }
-
-    pub fn set_keybinding<T: View>(
-        &mut self,
-        keybinding: Option<KeystrokeSource>,
-        ctx: &mut ViewContext<T>,
-    ) {
-        self.expanded_button.update(ctx, |button, ctx| {
-            button.set_keybinding(keybinding.clone(), ctx);
-        });
-
-        self.compact_button.update(ctx, |button, ctx| {
-            if let Some(keybinding) = keybinding {
-                button.set_tooltip_sublabel(keybinding.displayed(ctx), ctx);
-            } else {
-                button.set_tooltip_sublabel(None::<String>, ctx);
-            }
-        });
-    }
-
-    pub fn set_adjoined_side<T: View>(
-        &mut self,
-        adjoined_side: AdjoinedSide,
-        ctx: &mut ViewContext<T>,
-    ) {
-        self.compact_button.update(ctx, |button, ctx| {
-            button.set_adjoined_side(adjoined_side, ctx);
-        });
-        self.expanded_button.update(ctx, |button, ctx| {
-            button.set_adjoined_side(adjoined_side, ctx);
-        });
-    }
-
-    /// Sets the disabled state on both the compact and expanded buttons.
-    pub fn set_disabled<T: View>(&mut self, disabled: bool, ctx: &mut ViewContext<T>) {
-        self.compact_button.update(ctx, |button, ctx| {
-            button.set_disabled(disabled, ctx);
-        });
-        self.expanded_button.update(ctx, |button, ctx| {
-            button.set_disabled(disabled, ctx);
-        });
-    }
-
-    /// Sets the tooltip on both buttons. Passing `None` clears the compact
-    /// button's hover affordance; use [`set_label`](Self::set_label) to
-    /// preserve the label tooltip.
-    pub fn set_tooltip<T: View>(&mut self, tooltip: Option<String>, ctx: &mut ViewContext<T>) {
-        let compact_tooltip = tooltip.clone();
-        let expanded_tooltip = tooltip;
-        self.compact_button.update(ctx, |button, ctx| {
-            button.set_tooltip(compact_tooltip, ctx);
-        });
-        self.expanded_button.update(ctx, |button, ctx| {
-            button.set_tooltip(expanded_tooltip, ctx);
-        });
     }
 
     pub fn compact_button(&self) -> &ViewHandle<ActionButton> {

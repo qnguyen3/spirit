@@ -63,7 +63,7 @@ impl PaneContent for NetworkLogPane {
         let network_log_view = self.network_log_view(ctx);
         let pane_id = self.id();
         let pane_group_id = ctx.view_id();
-        let window_id = ctx.window_id();
+        let screen_id = crate::workspace::owning_screen_id(pane_group_id, ctx.window_id(), ctx);
 
         ctx.subscribe_to_view(&network_log_view, move |pane_group, _, event, ctx| {
             let NetworkLogViewEvent::Pane(pane_event) = event;
@@ -73,15 +73,17 @@ impl PaneContent for NetworkLogPane {
             group.handle_pane_view_event(pane_id, event, ctx);
         });
 
-        NetworkLogPaneManager::handle(ctx).update(ctx, |manager, _ctx| {
-            manager.register_pane(
-                window_id,
-                PaneViewLocator {
-                    pane_group_id,
-                    pane_id,
-                },
-            );
-        });
+        if let Some(screen_id) = screen_id {
+            NetworkLogPaneManager::handle(ctx).update(ctx, |manager, _ctx| {
+                manager.register_pane(
+                    screen_id,
+                    PaneViewLocator {
+                        pane_group_id,
+                        pane_id,
+                    },
+                );
+            });
+        }
     }
 
     fn detach(
@@ -96,10 +98,13 @@ impl PaneContent for NetworkLogPane {
         ctx.unsubscribe_to_view(&self.view);
 
         // Always deregister from the manager.
-        let window_id = ctx.window_id();
-        NetworkLogPaneManager::handle(ctx).update(ctx, |manager, _| {
-            manager.deregister_pane(&window_id);
-        });
+        if let Some(screen_id) =
+            crate::workspace::owning_screen_id(ctx.view_id(), ctx.window_id(), ctx)
+        {
+            NetworkLogPaneManager::handle(ctx).update(ctx, |manager, _| {
+                manager.deregister_pane(&screen_id);
+            });
+        }
     }
 
     fn snapshot(&self, _app: &AppContext) -> LeafContents {

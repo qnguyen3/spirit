@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
-use ai::agent::action::InsertReviewComment;
 use chrono::{DateTime, Local};
 
 use super::comment::ImportedCommentDetails;
+use super::imported::InsertReviewComment;
 use super::{PendingImportedReviewComment, PendingImportedReviewCommentTarget};
 use crate::code_review::comments::diff_hunk_parser::parse_diff_hunk;
 
@@ -31,24 +31,6 @@ impl std::fmt::Display for ConversionError {
 }
 
 impl std::error::Error for ConversionError {}
-
-pub(crate) fn convert_insert_review_comments(
-    comments: &[InsertReviewComment],
-) -> Vec<PendingImportedReviewComment> {
-    comments
-        .iter()
-        .cloned()
-        .filter_map(
-            |comment| match PendingImportedReviewComment::try_from(comment) {
-                Ok(comment) => Some(comment),
-                Err(e) => {
-                    log::warn!("Failed to convert InsertReviewComment: {e}");
-                    None
-                }
-            },
-        )
-        .collect()
-}
 
 impl TryFrom<InsertReviewComment> for PendingImportedReviewComment {
     type Error = ConversionError;

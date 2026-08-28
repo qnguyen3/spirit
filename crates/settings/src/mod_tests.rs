@@ -638,4 +638,52 @@ mod write_to_preferences_tests {
             "second write of same value should not report a change on TOML backend"
         );
     }
+
+    /// Settings removed from the product (for example the Oz/AI keys) can still be present in a
+    /// user's `settings.toml`. Reading must ignore them and keep loading the keys that remain,
+    /// without surfacing a parse failure.
+    #[test]
+    fn test_unknown_keys_in_settings_file_are_ignored() {
+        use warpui_extras::user_preferences::toml_backed::TomlBackedUserPreferences;
+
+        define_settings_group!(SurvivingGroup, settings: [
+            surviving_setting: SurvivingSetting {
+                type: String,
+                default: "default".to_string(),
+                supported_platforms: SupportedPlatforms::ALL,
+                sync_to_cloud: SyncToCloud::Never,
+                surface: crate::SettingSurfaces::GUI,
+                private: false,
+                toml_path: "test.surviving_setting",
+            },
+        ]);
+
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("settings.toml");
+        std::fs::write(
+            &file_path,
+            concat!(
+                "[test]\n",
+                "surviving_setting = \"kept\"\n",
+                "removed_ai_setting = \"agent\"\n",
+                "\n",
+                "[ai]\n",
+                "model = \"claude-4\"\n",
+                "enabled = true\n",
+            ),
+        )
+        .unwrap();
+
+        let (prefs, load_error) = TomlBackedUserPreferences::new(file_path.clone());
+        assert!(
+            load_error.is_none(),
+            "a file containing removed keys must not fail to parse: {load_error:?}"
+        );
+
+        assert_eq!(
+            SurvivingSetting::read_from_preferences(&prefs),
+            Some("kept".to_string()),
+            "a surviving setting must still load when unknown keys sit beside it"
+        );
+    }
 }

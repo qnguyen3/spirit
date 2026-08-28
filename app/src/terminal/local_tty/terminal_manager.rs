@@ -8,7 +8,6 @@ use std::sync::Arc;
 use std::sync::mpsc::{SendError, SyncSender};
 use std::thread::JoinHandle;
 
-use ai::api_keys::ApiKeyManager;
 use anyhow::Context as _;
 use async_broadcast::InactiveReceiver;
 #[cfg(unix)]
@@ -27,8 +26,6 @@ use super::spawner::{PtySpawnHooks, PtySpawnMode};
 #[cfg(unix)]
 use super::terminal_attributes::TerminalAttributesPoller;
 use super::{mio_channel, recorder};
-use crate::ai::aws_credentials::AwsCredentialRefresher as _;
-use crate::ai::blocklist::SerializedBlockListItem;
 use crate::auth::AuthStateProvider;
 use crate::auth::auth_state::AuthState;
 use crate::banner::BannerState;
@@ -45,6 +42,7 @@ use crate::terminal::event_listener::ChannelEventListener;
 #[cfg(unix)]
 use crate::terminal::local_tty::terminal_attributes::Event as TerminalAttributesPollerEvent;
 use crate::terminal::local_tty::{Pty, PtyOptions};
+use crate::terminal::model::block::SerializedBlock;
 use crate::terminal::model::session::Sessions;
 #[cfg(unix)]
 use crate::terminal::model::terminal_model::BlockIndex;
@@ -52,7 +50,7 @@ use crate::terminal::model::terminal_model::ExitReason;
 #[cfg(unix)]
 use crate::terminal::model_events::ModelEvent as TerminalModelEvent;
 use crate::terminal::model_events::{ModelEventDispatcher, SshRemoteServerSupport};
-use crate::terminal::session_settings::{SessionSettings, ToolbarChipSelection};
+use crate::terminal::session_settings::SessionSettings;
 use crate::terminal::shared_session::sharer::network::Network;
 use crate::terminal::shared_session::{IsSharedSessionCreator, SharedSessionStatus};
 use crate::terminal::shell::ShellName;
@@ -152,7 +150,7 @@ pub struct TerminalSurfaceInit {
     pub inactive_pty_reads_rx: InactiveReceiver<Arc<Vec<u8>>>,
 }
 
-#[cfg(any(test, all(feature = "tui", feature = "test-util")))]
+#[cfg(test)]
 impl TerminalSurfaceInit {
     /// Creates mock terminal surface inputs without spawning a PTY.
     pub fn new_for_test(ctx: &mut AppContext) -> Self {
@@ -227,7 +225,7 @@ impl<S> TerminalManager<S> {
         startup_directory: Option<PathBuf>,
         env_vars: HashMap<OsString, OsString>,
         is_shared_session_creator: IsSharedSessionCreator,
-        all_restored_blocks: Option<&Vec<SerializedBlockListItem>>,
+        all_restored_blocks: Option<&Vec<SerializedBlock>>,
         user_default_shell_unsupported_banner_model_handle: ModelHandle<BannerState>,
         initial_size: Vector2F,
         model_event_sender: Option<SyncSender<ModelEvent>>,
@@ -268,7 +266,7 @@ impl<S> TerminalManager<S> {
         startup_directory: Option<PathBuf>,
         env_vars: HashMap<OsString, OsString>,
         is_shared_session_creator: IsSharedSessionCreator,
-        all_restored_blocks: Option<&Vec<SerializedBlockListItem>>,
+        all_restored_blocks: Option<&Vec<SerializedBlock>>,
         user_default_shell_unsupported_banner_model_handle: ModelHandle<BannerState>,
         initial_size: Vector2F,
         model_event_sender: Option<SyncSender<ModelEvent>>,
@@ -308,7 +306,7 @@ impl<S> TerminalManager<S> {
         startup_directory: Option<PathBuf>,
         env_vars: HashMap<OsString, OsString>,
         is_shared_session_creator: IsSharedSessionCreator,
-        all_restored_blocks: Option<&Vec<SerializedBlockListItem>>,
+        all_restored_blocks: Option<&Vec<SerializedBlock>>,
         user_default_shell_unsupported_banner_model_handle: ModelHandle<BannerState>,
         initial_size: Vector2F,
         model_event_sender: Option<SyncSender<ModelEvent>>,
@@ -384,13 +382,6 @@ impl<S> TerminalManager<S> {
         );
         let colors = model.colors();
         let model = Arc::new(FairMutex::new(model));
-
-        // Have ApiKeyManager subscribe to block completion events for AWS credential refresh.
-        // This must happen after `model` is created, since the subscription needs it to resolve
-        // lazily-computed `UserBlockCompleted` fields.
-        ApiKeyManager::handle(ctx).update(ctx, |manager, ctx| {
-            manager.register_model_event_dispatcher(&model_events, model.clone(), ctx);
-        });
 
         // This is purely for measuring throughput on WarpDev.
         if FeatureFlag::RecordPtyThroughput.is_enabled() {
@@ -813,27 +804,13 @@ impl<S> TerminalManager<S> {
         let is_honor_ps1_enabled = *SessionSettings::as_ref(ctx).honor_ps1;
         let is_crash_reporting_enabled = PrivacySettings::as_ref(ctx).is_crash_reporting_enabled;
 
-        // Determine whether the Node.js Version chip is enabled anywhere it could be
-        // shown (the Warp prompt, the agent footer, or the CLI agent footer). When it
+        // Determine whether the Node.js Version chip is enabled in the Warp prompt. When it
         // is not, the shell bootstrap skips the expensive per-prompt `node --version`
-        // detection. The chip value is fed by the same precmd payload regardless of
-        // where it is displayed, so we must check all three locations.
-        let node_version_chip_enabled = {
-            let in_prompt = !is_honor_ps1_enabled
-                && Prompt::as_ref(ctx)
-                    .chip_kinds()
-                    .contains(&ContextChipKind::NodeVersion);
-            let settings = SessionSettings::as_ref(ctx);
-            in_prompt
-                || settings
-                    .agent_footer_chip_selection
-                    .all_chips()
-                    .contains(&ContextChipKind::NodeVersion)
-                || settings
-                    .cli_agent_footer_chip_selection
-                    .all_chips()
-                    .contains(&ContextChipKind::NodeVersion)
-        };
+        // detection.
+        let node_version_chip_enabled = !is_honor_ps1_enabled
+            && Prompt::as_ref(ctx)
+                .chip_kinds()
+                .contains(&ContextChipKind::NodeVersion);
 
         // `enable_ssh_warpification` is the single source of truth for whether the SSH
         // wrapper is active. The bootstrap scripts check `WARP_USE_SSH_WRAPPER` (derived

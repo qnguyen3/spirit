@@ -48,7 +48,6 @@ use crate::server::server_api::team::MockTeamClient;
 use crate::server::server_api::workspace::MockWorkspaceClient;
 use crate::settings::FontSettings;
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
-use crate::terminal::keys::TerminalKeybindings;
 use crate::test_util::settings::initialize_settings_for_tests;
 use crate::workflows::workflow::Workflow;
 use crate::workflows::{CloudWorkflow, CloudWorkflowModel, WorkflowId};
@@ -94,7 +93,6 @@ fn model_from_markdown(
     app.add_singleton_model(repo_metadata::RepoMetadataModel::new);
     app.add_singleton_model(FileSearchModel::new);
     app.add_singleton_model(NotebookKeybindings::new);
-    app.add_singleton_model(TerminalKeybindings::new);
 
     // In some tests, we need to initialize CloudModel first to mock some server data. In those cases, avoid mocking it a second time.
     if should_initialize_cloud_model {
@@ -141,8 +139,6 @@ fn initialize_deps(app: &mut App) {
         )
     });
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    #[cfg(feature = "voice_input")]
-    app.add_singleton_model(voice_input::VoiceInput::new);
     initialize_settings_for_tests(app);
 }
 

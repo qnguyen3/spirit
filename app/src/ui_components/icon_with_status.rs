@@ -8,9 +8,9 @@ use warpui::elements::{
     ParentElement, ParentOffsetBounds, Radius, Stack,
 };
 
-use crate::ai::agent::conversation::{ConversationStatus, StatusColorStyle};
 use crate::terminal::CLIAgent;
 use crate::themes::theme::Fill as ThemeFill;
+use crate::ui_components::status_icons::{ConversationStatus, StatusColorStyle};
 
 /// Background color used for the Oz agent's circle when it is running in an ambient (cloud)
 /// run. Matches the Oz brand purple used in the cloud-mode design spec.
@@ -24,8 +24,8 @@ const OZ_AMBIENT_BACKGROUND_COLOR: ColorU = ColorU {
 // Sub-component size ratios, expressed as fractions of `total_size`. The brand circle is
 // ~76% wide and the status badge is ~57% wide, with the badge's bottom-right anchored at
 // the box's bottom-right corner. With these ratios the badge center sits *inside* the
-// brand circle (not on its edge). `CIRCLE_RATIO` is `pub(crate)` so callers that
-// pre-render their own avatar can size it consistently with the other variants.
+// brand circle (not on its edge). `CIRCLE_RATIO` is `pub(crate)` so callers can size
+// their own artwork consistently with the other variants.
 pub(crate) const CIRCLE_RATIO: f32 = 0.76;
 const ICON_RATIO: f32 = 0.43;
 const DEFAULT_BADGE_RATIO: f32 = 0.57;
@@ -46,7 +46,6 @@ pub(crate) struct StatusBadgeStyle {
 #[derive(Clone, Copy)]
 pub(crate) enum BadgeInnerShape {
     Circle,
-    RoundedSquare { radius_px: f32 },
 }
 
 impl StatusBadgeStyle {
@@ -140,17 +139,6 @@ pub(crate) enum IconWithStatusVariant {
     /// A CLI agent icon on the agent's brand color background.
     CLIAgent {
         agent: CLIAgent,
-        status: Option<ConversationStatus>,
-        is_ambient: bool,
-    },
-    /// A pre-rendered avatar with an optional status overlay (cloud lobe when
-    /// ambient). The overlay is anchored to the `total_size` box's bottom-right
-    /// corner however big `avatar` is, so pass either an avatar sized to
-    /// `circle_size(total_size)` (to match the overhang of the other variants)
-    /// or an element that already fills the `total_size` box and places its own
-    /// artwork inside it.
-    CustomAvatar {
-        avatar: Box<dyn Element>,
         status: Option<ConversationStatus>,
         is_ambient: bool,
     },
@@ -253,20 +241,6 @@ pub(crate) fn render_icon_with_status_with_badge_style(
                 status_container_background,
             )
         }
-        IconWithStatusVariant::CustomAvatar {
-            avatar,
-            status,
-            is_ambient,
-        } => attach_status_overlay(
-            avatar,
-            status.as_ref(),
-            is_ambient,
-            total_size,
-            overlay_extra_overhang_ratio,
-            badge_style,
-            theme,
-            status_container_background,
-        ),
     }
 }
 
@@ -463,7 +437,6 @@ fn render_with_optional_status_badge(
         .finish();
     let inner_radius = match badge_style.inner_shape {
         BadgeInnerShape::Circle => Radius::Percentage(50.),
-        BadgeInnerShape::RoundedSquare { radius_px } => Radius::Pixels(radius_px),
     };
     let badge = Container::new(badge_icon)
         .with_uniform_padding(pad)

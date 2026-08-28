@@ -5,6 +5,8 @@ use std::path::PathBuf;
 use warpui::{AppContext, SingletonEntity, ViewContext, WindowId};
 
 use super::Workspace;
+use crate::features::FeatureFlag;
+use crate::projects::registry::ProjectRegistryModel;
 use crate::terminal::ShellLaunchData;
 use crate::terminal::available_shells::AvailableShell;
 #[cfg(feature = "local_tty")]
@@ -12,6 +14,14 @@ use crate::terminal::available_shells::AvailableShells;
 use crate::terminal::session_settings::{NewSessionSource, SessionSettings};
 
 impl Workspace {
+    pub(crate) fn active_worktree_directory(&self, ctx: &AppContext) -> Option<PathBuf> {
+        if !FeatureFlag::AdeWorkspaces.is_enabled() || self.project_id().is_none() {
+            return None;
+        }
+        let worktree_id = self.tabs.get(self.active_tab_index())?.worktree_id?;
+        ProjectRegistryModel::as_ref(ctx).worktree_directory(worktree_id)
+    }
+
     /// Helper function to compute the initial directory for a new session
     /// that is inheriting its initial directory from the active session in
     /// the given workspace.
@@ -52,6 +62,10 @@ impl Workspace {
         chosen_shell: Option<&AvailableShell>,
         ctx: &mut ViewContext<Self>,
     ) -> Option<PathBuf> {
+        if let Some(directory) = self.active_worktree_directory(ctx) {
+            return Some(directory);
+        }
+
         // Get the Workspace from the window that hosted the previously-active
         // session.
         let active_session_info = match previous_session_window_id {
@@ -63,9 +77,8 @@ impl Workspace {
             )),
             // Otherwise, lookup the Workspace in that window and query it.
             Some(window_id) => {
-                let workspace_handle = ctx
-                    .views_of_type::<Workspace>(window_id)
-                    .and_then(|views| views.first().cloned());
+                let workspace_handle =
+                    crate::workspace::WorkspaceRegistry::as_ref(ctx).get(window_id, ctx);
                 workspace_handle.map(|workspace| {
                     workspace.read(ctx, |workspace, ctx| {
                         (

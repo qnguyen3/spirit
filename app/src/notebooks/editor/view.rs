@@ -2241,12 +2241,11 @@ impl RichTextEditorView {
                 // Adjust link_range which is relative to context_range to absolute buffer offsets
                 let absolute_range = search_start + CharOffset::from(link_range.start)
                     ..search_start + CharOffset::from(link_range.end);
-                if absolute_range.contains(&char_offset)
-                    && let DetectedLinkType::FilePath {
+                if absolute_range.contains(&char_offset) {
+                    let DetectedLinkType::FilePath {
                         absolute_path,
                         line_and_column_num,
-                    } = link_type
-                {
+                    } = link_type;
                     self.hovered_file_path = Some(SelectedFilePath {
                         range: absolute_range,
                         path: absolute_path,

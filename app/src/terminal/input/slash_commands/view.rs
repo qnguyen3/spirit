@@ -1,10 +1,7 @@
-use ai::skills::SkillReference;
 use warpui::elements::ChildView;
 use warpui::{AppContext, Element, Entity, ModelHandle, View, ViewContext, ViewHandle};
 
-use crate::ai::blocklist::agent_view::AgentViewController;
 use crate::search::slash_command_menu::SlashCommandId;
-use crate::server::ids::SyncId;
 use crate::terminal::input::buffer_model::InputBufferModel;
 use crate::terminal::input::inline_menu::{InlineMenuEvent, InlineMenuPositioner, InlineMenuView};
 use crate::terminal::input::slash_command_model::{SlashCommandEntryState, SlashCommandModel};
@@ -36,19 +33,10 @@ impl CloseReason {
 #[derive(Debug, Clone)]
 pub enum SlashCommandsEvent {
     Close(CloseReason),
-    SelectedSavedPrompt {
-        id: SyncId,
-    },
     /// `cmd_or_ctrl_enter` is true if accepted via Cmd/Ctrl+Enter (vs Enter/click).
     SelectedStaticCommand {
         id: SlashCommandId,
         cmd_or_ctrl_enter: bool,
-    },
-    /// A skill was selected from the menu. Contains the skill name (for buffer insertion)
-    /// and path/bundled_skill_id (for execution context).
-    SelectedSkill {
-        reference: SkillReference,
-        name: String,
     },
 }
 
@@ -73,7 +61,6 @@ impl InlineSlashCommandView {
         positioner: &ModelHandle<InlineMenuPositioner>,
         slash_commands_source: ModelHandle<GuiSlashCommandDataSource>,
         suggestions_mode_model: ModelHandle<InputSuggestionsModeModel>,
-        agent_view_controller: ModelHandle<AgentViewController>,
         input_buffer_model: ModelHandle<InputBufferModel>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
@@ -98,7 +85,6 @@ impl InlineSlashCommandView {
                 mixer.clone(),
                 positioner.clone(),
                 &suggestions_mode_model,
-                agent_view_controller,
                 ctx,
             )
         });
@@ -136,7 +122,6 @@ impl InlineSlashCommandView {
                 | SlashCommandEntryState::SlashCommand(_) => {
                     me.run_query_for_current_slash_filter(ctx);
                 }
-                _ => (),
             }
         });
 
@@ -194,15 +179,6 @@ impl InlineSlashCommandView {
                 ctx.emit(SlashCommandsEvent::SelectedStaticCommand {
                     id: *id,
                     cmd_or_ctrl_enter,
-                });
-            }
-            AcceptSlashCommandOrSavedPrompt::SavedPrompt { id } => {
-                ctx.emit(SlashCommandsEvent::SelectedSavedPrompt { id: *id });
-            }
-            AcceptSlashCommandOrSavedPrompt::Skill { name, reference } => {
-                ctx.emit(SlashCommandsEvent::SelectedSkill {
-                    reference: reference.clone(),
-                    name: name.clone(),
                 });
             }
         }

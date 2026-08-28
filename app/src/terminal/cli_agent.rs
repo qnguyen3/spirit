@@ -6,7 +6,6 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use ai::skills::SkillProvider;
 use enum_iterator::Sequence;
 use markdown_parser::parse_markdown;
 use pathfinder_color::ColorU;
@@ -19,12 +18,13 @@ use warp_editor::content::markdown::MarkdownStyle;
 use warp_util::path::EscapeChar;
 use warpui::{AppContext, SingletonEntity};
 
-use crate::ai::agent::{AgentReviewCommentBatch, DiffSetHunk};
-use crate::ai::blocklist::CLAUDE_ORANGE;
 use crate::code::editor::line::EditorLineLocation;
+use crate::code_review::agent_handoff::{AgentReviewCommentBatch, DiffSetHunk};
 use crate::code_review::comments::AttachedReviewCommentTarget;
 use crate::server::telemetry::CLIAgentType;
+use crate::skills::SkillProvider;
 use crate::ui_components::icons::Icon;
+use crate::util::color::CLAUDE_ORANGE;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 
 /// UID for the Uber team.
@@ -153,8 +153,6 @@ pub enum CLIAgent {
     Hermes,
     Vibe,
     Antigravity,
-    /// Warp's own headless TUI.
-    WarpTui,
     /// Represents an unknown/custom CLI agent matched by user-configured regex patterns.
     Unknown,
 }
@@ -178,14 +176,6 @@ impl CLIAgent {
             CLIAgent::Hermes => &["hermes"],
             CLIAgent::Vibe => &["vibe", "vibe-acp"],
             CLIAgent::Antigravity => &["agy"],
-            CLIAgent::WarpTui => &[
-                "warp",
-                "warp-preview",
-                "warp-dev",
-                "warp-tui",
-                "warp-tui-oss",
-                "run-tui",
-            ],
             CLIAgent::Unknown => &[],
         }
     }
@@ -241,7 +231,6 @@ impl CLIAgent {
             CLIAgent::Hermes => "Hermes",
             CLIAgent::Vibe => "Mistral Vibe",
             CLIAgent::Antigravity => "Antigravity",
-            CLIAgent::WarpTui => "Warp TUI",
             CLIAgent::Unknown => "CLI Agent",
         }
     }
@@ -267,7 +256,6 @@ impl CLIAgent {
             // up in a follow-up once an officially licensed SVG is available.
             CLIAgent::Vibe => None,
             CLIAgent::Antigravity => Some(Icon::AntigravityLogo),
-            CLIAgent::WarpTui => Some(Icon::Warp),
             CLIAgent::Unknown => None,
         }
     }
@@ -300,7 +288,6 @@ impl CLIAgent {
             CLIAgent::Hermes => &[SkillProvider::Agents],
             CLIAgent::Vibe => &[SkillProvider::Agents],
             CLIAgent::Antigravity => &[],
-            CLIAgent::WarpTui => &[],
             CLIAgent::Unknown => &[],
         }
     }
@@ -327,11 +314,6 @@ impl CLIAgent {
         )
     }
 
-    /// Whether Warp should show its CLI-agent footer for this agent.
-    pub(crate) fn supports_cli_agent_footer(&self) -> bool {
-        !matches!(self, CLIAgent::WarpTui)
-    }
-
     /// Returns the brand color for this CLI agent, or `None` for unknown/custom agents.
     pub fn brand_color(&self) -> Option<ColorU> {
         match self {
@@ -350,7 +332,6 @@ impl CLIAgent {
             CLIAgent::Hermes => Some(HERMES_PURPLE),
             CLIAgent::Vibe => Some(MISTRAL_ORANGE),
             CLIAgent::Antigravity => Some(ANTIGRAVITY_COLOR),
-            CLIAgent::WarpTui => Some(ColorU::black()),
             CLIAgent::Unknown => None,
         }
     }
@@ -626,7 +607,6 @@ impl From<CLIAgent> for CLIAgentType {
             CLIAgent::Hermes => CLIAgentType::Hermes,
             CLIAgent::Vibe => CLIAgentType::Vibe,
             CLIAgent::Antigravity => CLIAgentType::Antigravity,
-            CLIAgent::WarpTui => CLIAgentType::WarpTui,
             CLIAgent::Unknown => CLIAgentType::Unknown,
         }
     }

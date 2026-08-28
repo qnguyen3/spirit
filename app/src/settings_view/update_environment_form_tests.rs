@@ -1,3 +1,4 @@
+use cloud_object_models::{BaseImage, GithubRepo};
 use url::Url;
 use warp_core::ui::appearance::Appearance;
 use warpui::elements::{Empty, MouseStateHandle};
@@ -9,12 +10,10 @@ use warpui::{
 
 use super::{
     EnvironmentFormCopy, EnvironmentFormInitArgs, EnvironmentFormValues, SuggestImageState,
-    UpdateEnvironmentForm, UpdateEnvironmentFormAction,
+    UpdateEnvironmentForm, UpdateEnvironmentFormAction, settings_environments_auth_url_with_next,
 };
-use crate::ai::ambient_agents::github_auth_notifier::GitHubAuthNotifier;
-use crate::ai::ambient_agents::github_auth_url::{self, AuthSource, GithubAuthRedirectTarget};
-use crate::ai::cloud_environments::{BaseImage, GithubRepo};
 use crate::auth::AuthStateProvider;
+use crate::auth::github_auth_notifier::GitHubAuthNotifier;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::network::NetworkStatus;
 use crate::server::cloud_objects::update_manager::UpdateManager;
@@ -69,13 +68,8 @@ fn test_parse_repo_inputs_invalid_returns_empty() {
 
 #[test]
 fn test_build_auth_url_with_next_overrides_existing() {
-    let base_url =
-        "https://example.com/oauth/connect/github?foo=bar&next=old://settings/environments";
-    let result = UpdateEnvironmentForm::build_auth_url_with_next(
-        base_url,
-        GithubAuthRedirectTarget::SettingsEnvironments,
-        "warpdev",
-    );
+    let base_url = "https://example.com/oauth/connect/github?foo=bar&scheme=warpdev&next=old://settings/environments";
+    let result = settings_environments_auth_url_with_next(base_url);
     let parsed = Url::parse(&result).expect("result should be valid url");
     let mut next_values = parsed
         .query_pairs()
@@ -95,60 +89,15 @@ fn test_build_auth_url_with_next_overrides_existing() {
 }
 
 #[test]
-fn test_build_auth_url_with_next_focus_cloud_mode() {
-    let base_url = "https://example.com/oauth/connect/github";
-    let result = UpdateEnvironmentForm::build_auth_url_with_next(
-        base_url,
-        GithubAuthRedirectTarget::FocusCloudMode,
-        "warplocal",
-    );
-    let parsed = Url::parse(&result).expect("result should be valid url");
-    let next_value = parsed
-        .query_pairs()
-        .find(|(key, _)| key == "next")
-        .map(|(_, value)| value.into_owned());
-    assert_eq!(
-        next_value,
-        Some("warplocal://action/focus_cloud_mode".to_string())
-    );
-}
-
-#[test]
-fn test_build_auth_url_with_next_cloud_setup_source() {
-    let base_url = "https://example.com/oauth/connect/github";
-    let result = github_auth_url::build_auth_url_with_next(
-        base_url,
-        GithubAuthRedirectTarget::FocusCloudMode,
-        "warpdev",
-        AuthSource::CloudSetup,
-    );
-    let parsed = Url::parse(&result).expect("result should be valid url");
-    let next_value = parsed
-        .query_pairs()
-        .find(|(key, _)| key == "next")
-        .map(|(_, value)| value.into_owned());
-    assert_eq!(
-        next_value,
-        Some("warpdev://action/focus_cloud_mode?source=cloud_setup".to_string())
-    );
-}
-#[test]
 fn test_build_auth_url_with_next_uses_scheme_param() {
     let base_url = "https://example.com/oauth/connect/github?scheme=warp";
-    let result = UpdateEnvironmentForm::build_auth_url_with_next(
-        base_url,
-        GithubAuthRedirectTarget::FocusCloudMode,
-        "warplocal",
-    );
+    let result = settings_environments_auth_url_with_next(base_url);
     let parsed = Url::parse(&result).expect("result should be valid url");
     let next_value = parsed
         .query_pairs()
         .find(|(key, _)| key == "next")
         .map(|(_, value)| value.into_owned());
-    assert_eq!(
-        next_value,
-        Some("warp://action/focus_cloud_mode".to_string())
-    );
+    assert_eq!(next_value, Some("warp://settings/environments".to_string()));
 }
 
 #[derive(Default)]
@@ -702,37 +651,6 @@ fn test_authed_repo_input_allows_arbitrary_repo() {
 }
 
 #[test]
-fn test_selected_repos_as_remote_repo_args_formats_owner_repo_strings() {
-    App::test((), |mut app| async move {
-        init_update_environment_form_test_models(&mut app);
-        let window_id = create_test_window(&mut app);
-
-        app.update(|ctx| {
-            let view_handle = ctx.add_typed_action_view(window_id, |ctx| {
-                UpdateEnvironmentForm::new_for_test(EnvironmentFormInitArgs::Create, ctx)
-            });
-            view_handle.update(ctx, |form, _| {
-                form.form_state.selected_repos = vec![
-                    GithubRepo::new("warpdotdev".to_string(), "warp-internal".to_string()),
-                    GithubRepo::new("facebook".to_string(), "react".to_string()),
-                ];
-            });
-
-            let form = view_handle.as_ref(ctx);
-            let args = form.selected_repos_as_remote_repo_args();
-
-            assert_eq!(
-                args,
-                vec![
-                    "warpdotdev/warp-internal".to_string(),
-                    "facebook/react".to_string(),
-                ]
-            );
-        });
-    })
-}
-
-#[test]
 fn test_can_suggest_image_for_edit_requires_repos_modified() {
     App::test((), |mut app| async move {
         init_update_environment_form_test_models(&mut app);
@@ -949,10 +867,6 @@ fn test_render_docker_image_field_shows_custom_image_warning() {
             assert!(
                 text_content.contains("No matching base image"),
                 "Expected reason text in rendered content: {text_content}"
-            );
-            assert!(
-                text_content.contains("Launch agent"),
-                "Expected 'Launch agent' action in rendered content: {text_content}"
             );
         });
     })

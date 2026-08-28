@@ -27,9 +27,6 @@ use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 use warpui::ui_components::text_input::TextInput;
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity, ViewHandle};
 
-use crate::BlocklistAIHistoryModel;
-use crate::ai::agent::conversation::ConversationStatus;
-use crate::ai::conversation_status_ui::{STATUS_ELEMENT_PADDING, render_status_element};
 use crate::appearance::Appearance;
 /// Tab module contains structures related to Tabs (such as TabData or TabComponent) that simplify
 /// the rendering and management of tabs in general.
@@ -38,7 +35,10 @@ use crate::features::FeatureFlag;
 use crate::launch_configs::launch_config::LaunchConfig;
 use crate::menu::{MenuAction, MenuItem, MenuItemFields};
 use crate::pane_group::{PaneGroup, PaneId};
+use crate::projects::WorktreeId;
 use crate::shell_indicator::ShellIndicatorType;
+use crate::terminal::CLIAgent;
+use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::shared_session::SharedSessionStatus;
 use crate::terminal::shared_session::manager::Manager;
 use crate::terminal::shared_session::render_util::shared_session_indicator_color;
@@ -47,9 +47,11 @@ use crate::themes::theme::{AnsiColorIdentifier, Fill as ThemeFill, VerticalGradi
 use crate::ui_components::buttons::icon_button;
 use crate::ui_components::color_dot::{TAB_COLOR_OPTIONS, render_color_dot};
 use crate::ui_components::icons::{ICON_DIMENSIONS, Icon};
+use crate::ui_components::status_icons::{
+    ConversationStatus, STATUS_ELEMENT_PADDING, render_status_element,
+};
 use crate::util::bindings::{keybinding_name_to_display_string, keybinding_name_to_keystroke};
 use crate::util::color::{Opacity, coloru_with_opacity};
-use crate::util::truncation::truncate_from_end;
 use crate::window_settings::WindowSettings;
 use crate::workspace::sync_inputs::SyncedInputState;
 use crate::workspace::tab_group::{TabGroup, TabGroupId};
@@ -249,18 +251,23 @@ fn tab_group_menu_entry_flags(
     (show_new_group, has_other_groups, in_group)
 }
 
-/// True when the user has opted into vertical tabs and the feature flag is on.
-/// Exposed so binding-description overrides in `workspace/mod.rs` and context-
-/// menu builders here can share a single predicate.
+/// True when the user has opted into vertical tabs and the feature flag is on,
+/// or when ADE Workspaces forces them. Exposed so binding-description overrides
+/// in `workspace/mod.rs` and context-menu builders here can share a single
+/// predicate.
 pub fn uses_vertical_tabs(ctx: &AppContext) -> bool {
-    FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(ctx).use_vertical_tabs
+    vertical_tabs_forced()
+        || (FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(ctx).use_vertical_tabs)
+}
+
+pub fn vertical_tabs_forced() -> bool {
+    FeatureFlag::AdeWorkspaces.is_enabled()
 }
 
 const WARP_2_TAB_COLOR_OPACITY: Opacity = 25;
 const WARP_2_HOVERED_TAB_COLOR_OPACITY: Opacity = 50;
 const TAB_CLOSE_BUTTON_OPACITY: Opacity = 60;
 const TAB_CLOSE_BUTTON_WIDTH: f32 = 20.0;
-const MAX_TOOLTIP_LENGTH: usize = 80;
 pub(crate) const TAB_PIN_INDICATOR_ICON_SIZE: f32 = 16.0;
 
 /// Color of the synchronized-inputs indicator, shared by the horizontal tab bar
@@ -370,6 +377,7 @@ pub struct TabData {
     pub in_multi_selection: bool,
     /// True when this tab is pinned to the front of the tab list.
     pub pinned: bool,
+    pub worktree_id: Option<WorktreeId>,
 }
 
 const TAB_COLOR_ICON_PATH: &str = "bundled/svg/ellipse.svg";
@@ -390,6 +398,7 @@ impl TabData {
             group_id: None,
             in_multi_selection: false,
             pinned: false,
+            worktree_id: None,
         }
     }
 
@@ -1044,7 +1053,6 @@ enum Indicator {
     Agent {
         conversation_status: Option<ConversationStatus>,
     },
-    AmbientAgent,
 }
 
 impl From<TerminalViewState> for Indicator {
@@ -1166,12 +1174,6 @@ impl<'a> TabComponent<'a> {
         let appearance = Appearance::as_ref(ctx);
         let title = tab.pane_group.as_ref(ctx).display_title(ctx);
 
-        let active_pane_is_ambient_agent_session = tab
-            .pane_group
-            .as_ref(ctx)
-            .active_session_view(ctx)
-            .map(|view| view.as_ref(ctx).is_cloud_agent_session(ctx))
-            .unwrap_or(false);
         // Auto-save persists edits automatically, so the tab-level unsaved
         // indicator is suppressed for changes it can persist (avoiding flicker
         // as the user types); unsaveable changes (untitled buffers,
@@ -1191,8 +1193,15 @@ impl<'a> TabComponent<'a> {
         } else {
             None
         };
-        let are_inputs_synced = SyncedInputState::as_ref(ctx)
-            .should_sync_this_pane_group(tab.pane_group.id(), tab.pane_group.window_id(ctx));
+        let are_inputs_synced = crate::workspace::owning_screen_id(
+            tab.pane_group.id(),
+            tab.pane_group.window_id(ctx),
+            ctx,
+        )
+        .is_some_and(|screen_id| {
+            SyncedInputState::as_ref(ctx)
+                .should_sync_this_pane_group(tab.pane_group.id(), screen_id)
+        });
 
         let pane_state_indicator: Indicator = tab
             .pane_group
@@ -1208,9 +1217,7 @@ impl<'a> TabComponent<'a> {
         // But if it's on, we want to show the synced indicator if this tab is being synced.
         // If we aren't showing the synced indicator (and we know the setting is on),
         // we will show long-running, error indicators, etc. as applicable.
-        let indicator = if active_pane_is_ambient_agent_session {
-            Indicator::AmbientAgent
-        } else if active_pane_has_unsaved_code_changes {
+        let indicator = if active_pane_has_unsaved_code_changes {
             Indicator::UnsavedChanges
         } else if FeatureFlag::CreatingSharedSessions.is_enabled() && is_being_shared {
             Indicator::Shared
@@ -1302,30 +1309,14 @@ impl<'a> TabComponent<'a> {
         self
     }
 
-    /// Returns the agent indicator for the focused session's active conversation,
-    /// or `None` if there is no non-empty, non-passive conversation to display.
-    /// When a shell command is long-running the status is overridden to
-    /// `InProgress`, matching vertical-tab behavior.
     fn agent_indicator(tab: &TabData, app: &AppContext) -> Option<Indicator> {
         let terminal_view = tab.pane_group.as_ref(app).focused_session_view(app)?;
-        let terminal_view_ref = terminal_view.as_ref(app);
-        let is_long_running = terminal_view_ref.is_long_running();
-        let conversation =
-            BlocklistAIHistoryModel::as_ref(app).active_conversation(terminal_view_ref.id())?;
-
-        // Show in-progress indicator when a shell command is running in the AgentView.
-        // This matches vertical-tab behavior.
-        if is_long_running {
-            return Some(Indicator::Agent {
-                conversation_status: Some(ConversationStatus::InProgress),
-            });
-        }
-
-        if conversation.is_empty() || conversation.is_entirely_passive() {
+        let session = CLIAgentSessionsModel::as_ref(app).session(terminal_view.id())?;
+        if matches!(session.agent, CLIAgent::Unknown) {
             return None;
         }
-
-        let conversation_status = Some(conversation.status().clone());
+        let conversation_status = (session.listener.is_some() && session.supports_rich_status())
+            .then(|| session.status.to_conversation_status());
         Some(Indicator::Agent {
             conversation_status,
         })
@@ -1363,11 +1354,9 @@ impl<'a> TabComponent<'a> {
         ctx: &AppContext,
     ) -> Option<String> {
         if Self::is_agent_task_indicator(indicator) {
-            return Self::get_agent_task_tooltip_message(tab, ctx);
+            return None;
         }
 
-        // If we're not showing the conversation title in the tooltip,
-        // use the original title from the terminal model.
         let original_title = tab
             .pane_group
             .as_ref(ctx)
@@ -1382,34 +1371,9 @@ impl<'a> TabComponent<'a> {
         None
     }
 
-    /// Get the task description for the tooltip if this is an agent task
-    /// and the tooltip content would be different from what's displayed in the tab
-    fn get_agent_task_tooltip_message(tab: &TabData, ctx: &AppContext) -> Option<String> {
-        let terminal_view_id = tab
-            .pane_group
-            .as_ref(ctx)
-            .focused_session_view(ctx)
-            .map(|view| view.id())?;
-        let ai_history_model = BlocklistAIHistoryModel::as_ref(ctx);
-        let conversation = ai_history_model.active_conversation(terminal_view_id)?;
-
-        // Don't show tooltip for passive conversations
-        if conversation.is_entirely_passive() {
-            return None;
-        }
-
-        let conversation_title = conversation.title()?;
-        let trimmed_title = conversation_title.trim().to_owned();
-
-        // Truncate tooltip to prevent rendering issues
-        let truncated_name = truncate_from_end(&trimmed_title, MAX_TOOLTIP_LENGTH);
-
-        Some(truncated_name)
-    }
-
     /// Check if the given indicator is an agent task indicator
     fn is_agent_task_indicator(indicator: &Indicator) -> bool {
-        matches!(indicator, Indicator::Agent { .. } | Indicator::AmbientAgent)
+        matches!(indicator, Indicator::Agent { .. })
     }
 
     /// Get the current working directory for the tooltip if this is an agent task
@@ -1702,42 +1666,6 @@ impl<'a> TabComponent<'a> {
                     let icon_color = self.appearance.theme().nonactive_ui_text_color();
                     Some(Icon::Agent.to_warpui_icon(icon_color).finish())
                 }
-            }
-            Indicator::AmbientAgent => {
-                // Always use the active tab font color for the ambient agent cloud icon, with a safe fallback.
-                let active_styles = self.styles.default.merge(self.styles.active);
-                let icon_color = active_styles
-                    .font_color
-                    .unwrap_or_else(|| self.appearance.theme().active_ui_text_color().into());
-
-                let ui_builder = self.ui_builder.clone();
-                let mouse_state = self.tab.indicator_hover_state.clone();
-                Some(
-                    Hoverable::new(mouse_state, move |state| {
-                        let mut stack = Stack::new().with_child(
-                            Icon::CloudFilled.to_warpui_icon(icon_color.into()).finish(),
-                        );
-
-                        if state.is_hovered() {
-                            let tooltip = ui_builder
-                                .tool_tip("Cloud agent run".to_string())
-                                .build()
-                                .finish();
-                            stack.add_positioned_overlay_child(
-                                tooltip,
-                                OffsetPositioning::offset_from_parent(
-                                    vec2f(0., 3.),
-                                    ParentOffsetBounds::WindowByPosition,
-                                    ParentAnchor::BottomMiddle,
-                                    ChildAnchor::TopMiddle,
-                                ),
-                            );
-                        }
-
-                        stack.finish()
-                    })
-                    .finish(),
-                )
             }
         };
 

@@ -553,6 +553,27 @@ impl ContextChipKind {
     }
 }
 
+/// Chips shown on the left of the CLI agent footer, in render order.
+pub fn cli_agent_footer_left_chip_kinds() -> Vec<ContextChipKind> {
+    vec![ContextChipKind::GitDiffStats]
+}
+
+/// Chips shown on the right of the CLI agent footer, in render order.
+pub fn cli_agent_footer_right_chip_kinds() -> Vec<ContextChipKind> {
+    vec![
+        ContextChipKind::WorkingDirectory,
+        ContextChipKind::ShellGitBranch,
+    ]
+}
+
+/// Every chip the CLI agent footer renders, so their values are kept up to date while a
+/// CLI agent session is active even when the Warp prompt doesn't configure them.
+pub fn cli_agent_footer_chip_kinds() -> Vec<ContextChipKind> {
+    let mut chips = cli_agent_footer_left_chip_kinds();
+    chips.extend(cli_agent_footer_right_chip_kinds());
+    chips
+}
+
 /// Returns the set of chips that are available for use in the agent footer.
 pub fn agent_footer_available_chips() -> Vec<ContextChipKind> {
     let mut chips = available_chips();

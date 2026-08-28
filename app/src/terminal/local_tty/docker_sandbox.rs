@@ -30,3 +30,8 @@ pub fn resolve_sbx_path_from_user_shell(
     }
     .boxed()
 }
+
+/// Default base Docker image used for newly created sandbox shells.
+///
+/// `None` means "let sbx pick its own default template".
+pub(crate) const DEFAULT_DOCKER_SANDBOX_BASE_IMAGE: Option<&str> = None;

@@ -1,9 +1,7 @@
-use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use ai::workspace::WorkspaceMetadata;
-use chrono::{Local, Utc};
+use chrono::Utc;
 use cloud_object_persistence::to_cloud_object_permissions;
 use diesel::connection::SimpleConnection;
 use pathfinder_geometry::rect::RectF;
@@ -14,29 +12,30 @@ use warp_graphql::scalars::time::ServerTimestamp;
 use super::{
     app_database_file_path, database_file_path_for_current_scope, database_file_path_for_scope,
     decode_path, deduplicate_events, encode_path, get_all_codebase_index_metadata,
-    read_sqlite_data, save_app_state, save_codebase_index_metadata, setup_database, start_writer,
+    read_sqlite_data, save_app_state, save_codebase_index_metadata, save_project, setup_database,
+    start_writer,
 };
 use crate::app_state::{
     AppState, CodePaneSnapShot, CodePaneTabSnapshot, LeafContents, LeafSnapshot, PaneNodeSnapshot,
-    TabGroupSnapshot, TabSnapshot, TerminalPaneSnapshot, WindowSnapshot,
+    ProjectScreenSnapshot, TabGroupSnapshot, TabSnapshot, TerminalPaneSnapshot, WindowSnapshot,
 };
 use crate::auth::UserUid;
 use crate::cloud_object::{CloudObjectPermissions, Owner};
 use crate::code::editor_management::CodeSource;
 use crate::notebooks::{CloudNotebook, CloudNotebookModel};
-use crate::persistence::model::ObjectPermissions;
-use crate::persistence::{
-    BlockCompleted, ModelEvent, PersistedDataScope, PersistenceScope, StartedCommandMetadata,
+use crate::persistence::model::{
+    ObjectPermissions, Project as ProjectRow, ProjectWorktree as WorktreeRow,
 };
+use crate::persistence::{BlockCompleted, ModelEvent, PersistedDataScope, PersistenceScope};
+use crate::projects::{Project, ProjectId, ProjectKind, Worktree, WorktreeId, WorktreeKind};
 use crate::server::ids::{ClientId, ServerId};
 use crate::tab::SelectedTabColor;
 use crate::terminal::ShellLaunchData;
 use crate::terminal::model::block::SerializedBlock;
-use crate::terminal::model::session::SessionId;
 use crate::themes::theme::AnsiColorIdentifier;
 use crate::workspace::tab_group::TabGroupId;
+use crate::workspace_metadata::WorkspaceMetadata;
 use crate::workspaces::team::{MembershipRole, Team, TeamMember};
-use crate::workspaces::user_profiles::UserProfileWithUID;
 use crate::workspaces::workspace::Workspace;
 
 #[test]
@@ -45,27 +44,6 @@ fn app_scope_database_path_matches_app_database_path() {
         database_file_path_for_scope(&PersistenceScope::App),
         app_database_file_path()
     );
-}
-
-#[test]
-fn tui_scope_database_path_is_tui_subdirectory_of_app_database_dir() {
-    let tui_path = database_file_path_for_scope(&PersistenceScope::Tui);
-    let app_path = database_file_path_for_scope(&PersistenceScope::App);
-
-    assert_ne!(tui_path, app_path);
-    assert_eq!(
-        tui_path,
-        warp_core::paths::tui_state_dir().join("warp.sqlite")
-    );
-
-    // The TUI database lives in a `tui` subdirectory of the same base
-    // directory that holds the GUI database, so the two front-ends never
-    // share (or migrate) each other's database.
-    let tui_dir = tui_path
-        .parent()
-        .expect("TUI database path should have a parent");
-    assert_eq!(tui_dir.file_name(), Some(OsStr::new("tui")));
-    assert_eq!(tui_dir.parent(), app_path.parent());
 }
 
 #[test]
@@ -151,7 +129,6 @@ fn sqlite_read_restores_app_state_and_codebase_metadata() {
         windows: vec![test_terminal_window_snapshot(false)],
         active_window_index: Some(0),
         block_lists: Default::default(),
-        running_mcp_servers: Default::default(),
     };
     save_app_state(&mut conn, &app_state).expect("app state should save");
 
@@ -164,79 +141,6 @@ fn sqlite_read_restores_app_state_and_codebase_metadata() {
         .app_state
         .expect("app state should be present for the full scope");
     assert_eq!(restored_app_state.windows.len(), 1);
-    assert_eq!(restored.codebase_indices.len(), 1);
-    assert_eq!(restored.codebase_indices[0].path, metadata.path);
-}
-
-/// Mirrors `init_db(&PersistenceScope::Tui)` in an isolated tempdir: the TUI
-/// database lives in a `tui/` subdirectory, runs the same migrations, and
-/// round-trips a write+read using the TUI's `PersistedDataScope`.
-#[test]
-fn tui_database_in_tui_subdirectory_round_trips_data() {
-    let tempdir = tempfile::tempdir().expect("tempdir should be created");
-    let database_path = tempdir.path().join("tui").join("warp.sqlite");
-    std::fs::create_dir_all(
-        database_path
-            .parent()
-            .expect("database path should have a parent"),
-    )
-    .expect("tui subdirectory should be created");
-    let mut conn = setup_database(&database_path).expect("database should initialize");
-
-    let metadata = test_codebase_metadata("/tmp/tui-repo");
-    save_codebase_index_metadata(&mut conn, metadata.clone())
-        .expect("codebase index metadata should save");
-    let writer = start_writer(conn, database_path.clone()).expect("writer should start");
-    writer
-        .sender
-        .send(ModelEvent::InsertCommand {
-            metadata: StartedCommandMetadata {
-                command: "ls".to_owned(),
-                start_ts: Some(Local::now()),
-                pwd: Some("/tmp/tui-repo".to_owned()),
-                shell: Some("zsh".to_owned()),
-                username: Some("test-user".to_owned()),
-                hostname: Some("test-host".to_owned()),
-                session_id: Some(SessionId::from(1)),
-                git_branch: None,
-                cloud_workflow_id: None,
-                workflow_command: None,
-                is_agent_executed: false,
-            },
-        })
-        .expect("insert command event should send");
-    writer
-        .sender
-        .send(ModelEvent::UpsertUserProfiles {
-            profiles: vec![UserProfileWithUID {
-                firebase_uid: UserUid::new("creator-uid"),
-                display_name: Some("MCP Creator".to_owned()),
-                email: "creator@example.com".to_owned(),
-                photo_url: String::new(),
-            }],
-        })
-        .expect("user profile event should send");
-    writer
-        .sender
-        .send(ModelEvent::Terminate)
-        .expect("terminate event should send");
-    writer.handle.join().expect("writer should terminate");
-
-    let mut conn = setup_database(&database_path).expect("database should reopen");
-
-    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::TuiFrontend)
-        .expect("persisted data should load");
-    // The TUI data scope skips GUI session restoration...
-    assert!(restored.app_state.is_none());
-    // ...but restores command history and shared data like creator profiles and
-    // codebase index metadata.
-    assert_eq!(restored.command_history.len(), 1);
-    assert_eq!(restored.command_history[0].command, "ls");
-    assert_eq!(restored.user_profiles.len(), 1);
-    assert_eq!(
-        restored.user_profiles[0].display_name.as_deref(),
-        Some("MCP Creator")
-    );
     assert_eq!(restored.codebase_indices.len(), 1);
     assert_eq!(restored.codebase_indices[0].path, metadata.path);
 }
@@ -310,19 +214,16 @@ fn test_deduplicate_snapshots() {
         active_window_index: Some(1),
         block_lists: Default::default(),
         windows: Default::default(),
-        running_mcp_servers: Default::default(),
     };
     let snapshot_2 = AppState {
         active_window_index: Some(2),
         block_lists: Default::default(),
         windows: Default::default(),
-        running_mcp_servers: Default::default(),
     };
     let snapshot_3 = AppState {
         active_window_index: Some(3),
         block_lists: Default::default(),
         windows: Default::default(),
-        running_mcp_servers: Default::default(),
     };
 
     let original_events = vec![
@@ -373,51 +274,113 @@ fn test_deduplicate_no_snapshots() {
     assert!(matches!(&filtered_events[0], &ModelEvent::SaveBlock(_)));
 }
 
+/// Decision D4: window snapshots written by older builds can contain panes for AI features that
+/// no longer exist. Restoring one must not abort, and must not drop the surrounding tab -- each
+/// removed pane kind decodes into a fresh empty terminal pane so the tab layout survives the
+/// downgrade. Simulates the legacy rows by rewriting a saved terminal pane's kind, since the
+/// current writer can no longer produce them.
+#[test]
+fn legacy_ai_panes_restore_as_terminal_panes() {
+    for legacy_kind in [
+        "ai_memory",
+        "mcp_server",
+        "ai_document",
+        "ambient_agent",
+        "execution_profile_editor",
+    ] {
+        let tempdir = tempfile::tempdir().expect("tempdir should be created");
+        let database_path = tempdir.path().join("warp.sqlite");
+        let mut conn = setup_database(&database_path).expect("database should initialize");
+
+        let app_state = AppState {
+            windows: vec![test_terminal_window_snapshot(false)],
+            active_window_index: Some(0),
+            block_lists: Default::default(),
+        };
+        save_app_state(&mut conn, &app_state).expect("app state should save");
+
+        // `terminal_panes` is keyed on (id, kind) and CHECKs kind = 'terminal', so the child
+        // row goes before the leaf can take a legacy kind.
+        conn.batch_execute(&format!(
+            "DELETE FROM terminal_panes; \
+             UPDATE pane_leaves SET kind = '{legacy_kind}' WHERE kind = 'terminal';"
+        ))
+        .expect("legacy pane kind should be written");
+
+        let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
+            .unwrap_or_else(|err| panic!("restore must not fail for {legacy_kind}: {err}"));
+        let restored_app_state = restored
+            .app_state
+            .unwrap_or_else(|| panic!("app state should be present for {legacy_kind}"));
+
+        assert_eq!(
+            restored_app_state.windows.len(),
+            1,
+            "the window must survive a {legacy_kind} pane"
+        );
+        let tabs = &restored_app_state.windows[0].tabs();
+        assert_eq!(tabs.len(), 1, "the tab must survive a {legacy_kind} pane");
+
+        let PaneNodeSnapshot::Leaf(leaf) = &tabs[0].root else {
+            panic!("restored root should be a leaf for {legacy_kind}");
+        };
+        let LeafContents::Terminal(terminal) = &leaf.contents else {
+            panic!("a {legacy_kind} pane should restore as a terminal pane");
+        };
+        assert!(
+            terminal.cwd.is_none() && terminal.shell_launch_data.is_none(),
+            "a {legacy_kind} pane should restore as an empty terminal, not inherit stale state"
+        );
+        assert!(
+            !terminal.uuid.is_empty(),
+            "the replacement terminal pane needs its own uuid for {legacy_kind}"
+        );
+    }
+}
+
 fn test_terminal_window_snapshot(vertical_tabs_panel_open: bool) -> WindowSnapshot {
     WindowSnapshot {
-        tabs: vec![TabSnapshot {
-            custom_title: None,
-            root: PaneNodeSnapshot::Leaf(LeafSnapshot {
-                is_focused: true,
-                custom_vertical_tabs_title: None,
-                contents: LeafContents::Terminal(TerminalPaneSnapshot {
-                    uuid: vec![u8::from(vertical_tabs_panel_open) + 1],
-                    cwd: Some("/tmp".to_string()),
-                    shell_launch_data: Some(ShellLaunchData::Executable {
-                        executable_path: PathBuf::from("/bin/zsh"),
-                        shell_type: crate::terminal::shell::ShellType::Zsh,
+        screens: vec![ProjectScreenSnapshot {
+            project_id: None,
+            active_tab_index: 0,
+            tab_groups: vec![],
+            tabs: vec![TabSnapshot {
+                custom_title: None,
+                root: PaneNodeSnapshot::Leaf(LeafSnapshot {
+                    is_focused: true,
+                    custom_vertical_tabs_title: None,
+                    contents: LeafContents::Terminal(TerminalPaneSnapshot {
+                        uuid: vec![u8::from(vertical_tabs_panel_open) + 1],
+                        cwd: Some("/tmp".to_string()),
+                        shell_launch_data: Some(ShellLaunchData::Executable {
+                            executable_path: PathBuf::from("/bin/zsh"),
+                            shell_type: crate::terminal::shell::ShellType::Zsh,
+                        }),
+                        is_active: true,
+                        is_read_only: false,
                     }),
-                    is_active: true,
-                    is_read_only: false,
-                    input_config: None,
-                    llm_model_override: None,
-                    active_profile_id: None,
-                    conversation_ids_to_restore: vec![],
-                    active_conversation_id: None,
                 }),
-            }),
-            default_directory_color: None,
-            selected_color: SelectedTabColor::default(),
-            left_panel: None,
-            right_panel: None,
-            group_id: None,
-            pinned: false,
+                default_directory_color: None,
+                selected_color: SelectedTabColor::default(),
+                left_panel: None,
+                right_panel: None,
+                group_id: None,
+                pinned: false,
+                worktree_id: None,
+            }],
         }],
-        active_tab_index: 0,
+        active_screen_index: 0,
         team_uid: None,
         bounds: None,
         fullscreen_state: Default::default(),
         quake_mode: false,
         universal_search_width: None,
-        warp_ai_width: None,
         voltron_width: None,
         warp_drive_index_width: None,
         left_panel_open: false,
         vertical_tabs_panel_open,
         left_panel_width: None,
         right_panel_width: None,
-        agent_management_filters: None,
-        tab_groups: vec![],
     }
 }
 
@@ -434,7 +397,6 @@ fn test_sqlite_round_trips_vertical_tabs_panel_open() {
         ],
         active_window_index: Some(1),
         block_lists: Default::default(),
-        running_mcp_servers: Default::default(),
     };
 
     save_app_state(&mut conn, &app_state).expect("app state should save");
@@ -468,7 +430,6 @@ fn test_sqlite_round_trips_window_team_uid() {
         windows: vec![assigned_window, test_terminal_window_snapshot(true)],
         active_window_index: Some(0),
         block_lists: Default::default(),
-        running_mcp_servers: Default::default(),
     };
 
     save_app_state(&mut conn, &app_state).expect("app state should save");
@@ -490,53 +451,50 @@ fn test_sqlite_round_trips_custom_vertical_tabs_title() {
 
     let app_state = AppState {
         windows: vec![WindowSnapshot {
-            tabs: vec![TabSnapshot {
-                custom_title: None,
-                root: PaneNodeSnapshot::Leaf(LeafSnapshot {
-                    is_focused: true,
-                    custom_vertical_tabs_title: Some("Production API".to_string()),
-                    contents: LeafContents::Terminal(TerminalPaneSnapshot {
-                        uuid: vec![42],
-                        cwd: Some("/tmp".to_string()),
-                        shell_launch_data: Some(ShellLaunchData::Executable {
-                            executable_path: PathBuf::from("/bin/zsh"),
-                            shell_type: crate::terminal::shell::ShellType::Zsh,
+            screens: vec![ProjectScreenSnapshot {
+                project_id: None,
+                tabs: vec![TabSnapshot {
+                    custom_title: None,
+                    root: PaneNodeSnapshot::Leaf(LeafSnapshot {
+                        is_focused: true,
+                        custom_vertical_tabs_title: Some("Production API".to_string()),
+                        contents: LeafContents::Terminal(TerminalPaneSnapshot {
+                            uuid: vec![42],
+                            cwd: Some("/tmp".to_string()),
+                            shell_launch_data: Some(ShellLaunchData::Executable {
+                                executable_path: PathBuf::from("/bin/zsh"),
+                                shell_type: crate::terminal::shell::ShellType::Zsh,
+                            }),
+                            is_active: true,
+                            is_read_only: false,
                         }),
-                        is_active: true,
-                        is_read_only: false,
-                        input_config: None,
-                        llm_model_override: None,
-                        active_profile_id: None,
-                        conversation_ids_to_restore: vec![],
-                        active_conversation_id: None,
                     }),
-                }),
-                default_directory_color: None,
-                selected_color: SelectedTabColor::default(),
-                left_panel: None,
-                right_panel: None,
-                group_id: None,
-                pinned: false,
+                    default_directory_color: None,
+                    selected_color: SelectedTabColor::default(),
+                    left_panel: None,
+                    right_panel: None,
+                    group_id: None,
+                    pinned: false,
+                    worktree_id: None,
+                }],
+                active_tab_index: 0,
+                tab_groups: vec![],
             }],
-            active_tab_index: 0,
+            active_screen_index: 0,
             team_uid: None,
             bounds: None,
             fullscreen_state: Default::default(),
             quake_mode: false,
             universal_search_width: None,
-            warp_ai_width: None,
             voltron_width: None,
             warp_drive_index_width: None,
             left_panel_open: false,
             vertical_tabs_panel_open: false,
             left_panel_width: None,
             right_panel_width: None,
-            agent_management_filters: None,
-            tab_groups: vec![],
         }],
         active_window_index: Some(0),
         block_lists: Default::default(),
-        running_mcp_servers: Default::default(),
     };
 
     save_app_state(&mut conn, &app_state).expect("app state should save");
@@ -549,7 +507,7 @@ fn test_sqlite_round_trips_custom_vertical_tabs_title() {
     let PaneNodeSnapshot::Leaf(LeafSnapshot {
         custom_vertical_tabs_title,
         ..
-    }) = &restored.windows[0].tabs[0].root
+    }) = &restored.windows[0].tabs()[0].root
     else {
         panic!("Expected terminal pane leaf");
     };
@@ -567,55 +525,57 @@ fn test_sqlite_round_trips_code_pane_with_multiple_tabs() {
 
     let app_state = AppState {
         windows: vec![WindowSnapshot {
-            tabs: vec![TabSnapshot {
-                custom_title: None,
-                root: PaneNodeSnapshot::Leaf(LeafSnapshot {
-                    is_focused: true,
-                    custom_vertical_tabs_title: None,
-                    contents: LeafContents::Code(CodePaneSnapShot::Local {
-                        tabs: vec![
-                            CodePaneTabSnapshot {
-                                path: Some(PathBuf::from("/tmp/main.rs")),
-                            },
-                            CodePaneTabSnapshot {
-                                path: Some(PathBuf::from("/tmp/lib.rs")),
-                            },
-                            CodePaneTabSnapshot { path: None },
-                        ],
-                        active_tab_index: 1,
-                        source: Some(CodeSource::FileTree {
-                            location: crate::code::buffer_location::LocalOrRemotePath::Local(
-                                PathBuf::from("/tmp/main.rs"),
-                            ),
+            screens: vec![ProjectScreenSnapshot {
+                project_id: None,
+                tabs: vec![TabSnapshot {
+                    custom_title: None,
+                    root: PaneNodeSnapshot::Leaf(LeafSnapshot {
+                        is_focused: true,
+                        custom_vertical_tabs_title: None,
+                        contents: LeafContents::Code(CodePaneSnapShot::Local {
+                            tabs: vec![
+                                CodePaneTabSnapshot {
+                                    path: Some(PathBuf::from("/tmp/main.rs")),
+                                },
+                                CodePaneTabSnapshot {
+                                    path: Some(PathBuf::from("/tmp/lib.rs")),
+                                },
+                                CodePaneTabSnapshot { path: None },
+                            ],
+                            active_tab_index: 1,
+                            source: Some(CodeSource::FileTree {
+                                location: crate::code::buffer_location::LocalOrRemotePath::Local(
+                                    PathBuf::from("/tmp/main.rs"),
+                                ),
+                            }),
                         }),
                     }),
-                }),
-                default_directory_color: None,
-                selected_color: SelectedTabColor::default(),
-                left_panel: None,
-                right_panel: None,
-                group_id: None,
-                pinned: false,
+                    default_directory_color: None,
+                    selected_color: SelectedTabColor::default(),
+                    left_panel: None,
+                    right_panel: None,
+                    group_id: None,
+                    pinned: false,
+                    worktree_id: None,
+                }],
+                active_tab_index: 0,
+                tab_groups: vec![],
             }],
-            active_tab_index: 0,
+            active_screen_index: 0,
             team_uid: None,
             bounds: None,
             fullscreen_state: Default::default(),
             quake_mode: false,
             universal_search_width: None,
-            warp_ai_width: None,
             voltron_width: None,
             warp_drive_index_width: None,
             left_panel_open: false,
             vertical_tabs_panel_open: false,
             left_panel_width: None,
             right_panel_width: None,
-            agent_management_filters: None,
-            tab_groups: vec![],
         }],
         active_window_index: Some(0),
         block_lists: Default::default(),
-        running_mcp_servers: Default::default(),
     };
 
     save_app_state(&mut conn, &app_state).expect("app state should save");
@@ -626,7 +586,7 @@ fn test_sqlite_round_trips_code_pane_with_multiple_tabs() {
         .expect("app state should be present for the full scope");
 
     assert_eq!(restored.windows.len(), 1);
-    let restored_tab = &restored.windows[0].tabs[0];
+    let restored_tab = &restored.windows[0].tabs()[0];
     let PaneNodeSnapshot::Leaf(LeafSnapshot {
         contents:
             LeafContents::Code(CodePaneSnapShot::Local {
@@ -670,11 +630,6 @@ fn test_sqlite_round_trips_tab_groups() {
                 }),
                 is_active: true,
                 is_read_only: false,
-                input_config: None,
-                llm_model_override: None,
-                active_profile_id: None,
-                conversation_ids_to_restore: vec![],
-                active_conversation_id: None,
             }),
         }),
         default_directory_color: None,
@@ -683,6 +638,7 @@ fn test_sqlite_round_trips_tab_groups() {
         right_panel: None,
         group_id: Some(group_id),
         pinned: false,
+        worktree_id: None,
     };
     let tab_outside_group = TabSnapshot {
         custom_title: None,
@@ -698,11 +654,6 @@ fn test_sqlite_round_trips_tab_groups() {
                 }),
                 is_active: false,
                 is_read_only: false,
-                input_config: None,
-                llm_model_override: None,
-                active_profile_id: None,
-                conversation_ids_to_restore: vec![],
-                active_conversation_id: None,
             }),
         }),
         default_directory_color: None,
@@ -711,36 +662,38 @@ fn test_sqlite_round_trips_tab_groups() {
         right_panel: None,
         group_id: None,
         pinned: false,
+        worktree_id: None,
     };
 
     let app_state = AppState {
         windows: vec![WindowSnapshot {
-            tabs: vec![tab_in_group, tab_outside_group],
-            active_tab_index: 0,
+            screens: vec![ProjectScreenSnapshot {
+                project_id: None,
+                tabs: vec![tab_in_group, tab_outside_group],
+                active_tab_index: 0,
+                tab_groups: vec![TabGroupSnapshot {
+                    id: group_id,
+                    name: Some("Backend".to_string()),
+                    color: SelectedTabColor::Color(AnsiColorIdentifier::Blue),
+                    collapsed: true,
+                    pinned: false,
+                }],
+            }],
+            active_screen_index: 0,
             team_uid: None,
             bounds: None,
             fullscreen_state: Default::default(),
             quake_mode: false,
             universal_search_width: None,
-            warp_ai_width: None,
             voltron_width: None,
             warp_drive_index_width: None,
             left_panel_open: false,
             vertical_tabs_panel_open: false,
             left_panel_width: None,
             right_panel_width: None,
-            agent_management_filters: None,
-            tab_groups: vec![TabGroupSnapshot {
-                id: group_id,
-                name: Some("Backend".to_string()),
-                color: SelectedTabColor::Color(AnsiColorIdentifier::Blue),
-                collapsed: true,
-                pinned: false,
-            }],
         }],
         active_window_index: Some(0),
         block_lists: Default::default(),
-        running_mcp_servers: Default::default(),
     };
 
     save_app_state(&mut conn, &app_state).expect("app state should save");
@@ -752,8 +705,8 @@ fn test_sqlite_round_trips_tab_groups() {
 
     assert_eq!(restored.windows.len(), 1);
     let restored_window = &restored.windows[0];
-    assert_eq!(restored_window.tab_groups.len(), 1);
-    let restored_group = &restored_window.tab_groups[0];
+    assert_eq!(restored_window.tab_groups().len(), 1);
+    let restored_group = &restored_window.tab_groups()[0];
     assert_eq!(restored_group.name.as_deref(), Some("Backend"));
     assert_eq!(
         restored_group.color,
@@ -764,9 +717,9 @@ fn test_sqlite_round_trips_tab_groups() {
     // The in-memory `TabGroupId` is minted fresh on restore, so we check that
     // the grouped tab points at the restored group, and the ungrouped tab
     // remains ungrouped.
-    assert_eq!(restored_window.tabs.len(), 2);
-    assert_eq!(restored_window.tabs[0].group_id, Some(restored_group.id));
-    assert_eq!(restored_window.tabs[1].group_id, None);
+    assert_eq!(restored_window.tabs().len(), 2);
+    assert_eq!(restored_window.tabs()[0].group_id, Some(restored_group.id));
+    assert_eq!(restored_window.tabs()[1].group_id, None);
 }
 
 /// Verifies that the `pinned` flag on tabs and tab groups round-trips through
@@ -794,11 +747,6 @@ fn test_sqlite_round_trips_pinned_state() {
                 }),
                 is_active: true,
                 is_read_only: false,
-                input_config: None,
-                llm_model_override: None,
-                active_profile_id: None,
-                conversation_ids_to_restore: vec![],
-                active_conversation_id: None,
             }),
         }),
         default_directory_color: None,
@@ -807,6 +755,7 @@ fn test_sqlite_round_trips_pinned_state() {
         right_panel: None,
         group_id: None,
         pinned: true,
+        worktree_id: None,
     };
     let unpinned_tab = TabSnapshot {
         custom_title: None,
@@ -822,11 +771,6 @@ fn test_sqlite_round_trips_pinned_state() {
                 }),
                 is_active: false,
                 is_read_only: false,
-                input_config: None,
-                llm_model_override: None,
-                active_profile_id: None,
-                conversation_ids_to_restore: vec![],
-                active_conversation_id: None,
             }),
         }),
         default_directory_color: None,
@@ -835,6 +779,7 @@ fn test_sqlite_round_trips_pinned_state() {
         right_panel: None,
         group_id: Some(unpinned_group_id),
         pinned: false,
+        worktree_id: None,
     };
     let tab_in_pinned_group = TabSnapshot {
         custom_title: None,
@@ -850,11 +795,6 @@ fn test_sqlite_round_trips_pinned_state() {
                 }),
                 is_active: false,
                 is_read_only: false,
-                input_config: None,
-                llm_model_override: None,
-                active_profile_id: None,
-                conversation_ids_to_restore: vec![],
-                active_conversation_id: None,
             }),
         }),
         default_directory_color: None,
@@ -863,45 +803,47 @@ fn test_sqlite_round_trips_pinned_state() {
         right_panel: None,
         group_id: Some(pinned_group_id),
         pinned: false,
+        worktree_id: None,
     };
 
     let app_state = AppState {
         windows: vec![WindowSnapshot {
-            tabs: vec![pinned_tab, tab_in_pinned_group, unpinned_tab],
-            active_tab_index: 0,
+            screens: vec![ProjectScreenSnapshot {
+                project_id: None,
+                tabs: vec![pinned_tab, tab_in_pinned_group, unpinned_tab],
+                active_tab_index: 0,
+                tab_groups: vec![
+                    TabGroupSnapshot {
+                        id: pinned_group_id,
+                        name: Some("Pinned".to_string()),
+                        color: SelectedTabColor::default(),
+                        collapsed: false,
+                        pinned: true,
+                    },
+                    TabGroupSnapshot {
+                        id: unpinned_group_id,
+                        name: Some("Loose".to_string()),
+                        color: SelectedTabColor::default(),
+                        collapsed: false,
+                        pinned: false,
+                    },
+                ],
+            }],
+            active_screen_index: 0,
             team_uid: None,
             bounds: None,
             fullscreen_state: Default::default(),
             quake_mode: false,
             universal_search_width: None,
-            warp_ai_width: None,
             voltron_width: None,
             warp_drive_index_width: None,
             left_panel_open: false,
             vertical_tabs_panel_open: false,
             left_panel_width: None,
             right_panel_width: None,
-            agent_management_filters: None,
-            tab_groups: vec![
-                TabGroupSnapshot {
-                    id: pinned_group_id,
-                    name: Some("Pinned".to_string()),
-                    color: SelectedTabColor::default(),
-                    collapsed: false,
-                    pinned: true,
-                },
-                TabGroupSnapshot {
-                    id: unpinned_group_id,
-                    name: Some("Loose".to_string()),
-                    color: SelectedTabColor::default(),
-                    collapsed: false,
-                    pinned: false,
-                },
-            ],
         }],
         active_window_index: Some(0),
         block_lists: Default::default(),
-        running_mcp_servers: Default::default(),
     };
 
     save_app_state(&mut conn, &app_state).expect("app state should save");
@@ -915,21 +857,21 @@ fn test_sqlite_round_trips_pinned_state() {
     let restored_window = &restored.windows[0];
 
     // Tabs come back in insertion order; pinned flag should match what we saved.
-    assert_eq!(restored_window.tabs.len(), 3);
-    assert!(restored_window.tabs[0].pinned);
-    assert!(!restored_window.tabs[1].pinned);
-    assert!(!restored_window.tabs[2].pinned);
+    assert_eq!(restored_window.tabs().len(), 3);
+    assert!(restored_window.tabs()[0].pinned);
+    assert!(!restored_window.tabs()[1].pinned);
+    assert!(!restored_window.tabs()[2].pinned);
 
     // Both groups round-trip with their pinned state preserved. Group ids are
     // minted fresh on restore, so we look them up by name.
-    assert_eq!(restored_window.tab_groups.len(), 2);
+    assert_eq!(restored_window.tab_groups().len(), 2);
     let restored_pinned_group = restored_window
-        .tab_groups
+        .tab_groups()
         .iter()
         .find(|group| group.name.as_deref() == Some("Pinned"))
         .expect("pinned group should restore");
     let restored_loose_group = restored_window
-        .tab_groups
+        .tab_groups()
         .iter()
         .find(|group| group.name.as_deref() == Some("Loose"))
         .expect("unpinned group should restore");
@@ -1034,7 +976,6 @@ fn test_sqlite_drops_too_small_bounds_on_save() {
         windows: vec![snapshot],
         active_window_index: Some(0),
         block_lists: Default::default(),
-        running_mcp_servers: Default::default(),
     };
 
     save_app_state(&mut conn, &app_state).expect("app state should save");
@@ -1073,7 +1014,6 @@ fn test_sqlite_drops_too_small_bounds_on_read() {
         windows: vec![test_terminal_window_snapshot(false)],
         active_window_index: Some(0),
         block_lists: Default::default(),
-        running_mcp_servers: Default::default(),
     };
     save_app_state(&mut conn, &app_state).expect("app state should save");
 
@@ -1156,4 +1096,307 @@ fn team_member_is_disabled_round_trips_through_sqlite_cache() {
         .expect("disabled member should be present");
     assert!(!active_member.is_disabled);
     assert!(disabled_member.is_disabled);
+}
+
+#[test]
+fn projects_and_worktrees_round_trip_through_sqlite() {
+    let tempdir = tempfile::tempdir().expect("tempdir should be created");
+    let database_path = tempdir.path().join("warp.sqlite");
+    let conn = setup_database(&database_path).expect("database should initialize");
+
+    let project = Project {
+        id: ProjectId::new(),
+        root_path: PathBuf::from("/tmp/spirit-round-trip"),
+        display_name: "spirit".to_owned(),
+        kind: ProjectKind::Git,
+        primary_branch: Some("main".to_owned()),
+        created_ts: 100,
+        last_opened_ts: 200,
+    };
+    let primary = Worktree {
+        id: WorktreeId::new(),
+        project_id: project.id,
+        name: "spirit".to_owned(),
+        kind: WorktreeKind::Primary,
+        created_ts: 100,
+    };
+    let linked = Worktree {
+        id: WorktreeId::new(),
+        project_id: project.id,
+        name: "auth".to_owned(),
+        kind: WorktreeKind::Linked {
+            path: PathBuf::from("/tmp/spirit-round-trip-wt/auth"),
+            branch: "auth".to_owned(),
+            base_branch: "main".to_owned(),
+        },
+        created_ts: 300,
+    };
+
+    let writer = start_writer(conn, database_path.clone()).expect("writer should start");
+    for event in [
+        ModelEvent::UpsertProject {
+            project: ProjectRow::from(&project),
+        },
+        ModelEvent::UpsertWorktree {
+            worktree: WorktreeRow::from(&primary),
+        },
+        ModelEvent::UpsertWorktree {
+            worktree: WorktreeRow::from(&linked),
+        },
+        ModelEvent::Terminate,
+    ] {
+        writer.sender.send(event).expect("event should send");
+    }
+    writer.handle.join().expect("writer should terminate");
+
+    let mut conn = setup_database(&database_path).expect("database should reopen");
+    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
+        .expect("persisted data should load");
+
+    assert_eq!(restored.projects.len(), 1);
+    assert_eq!(restored.projects[0].id, project.id);
+    assert_eq!(restored.projects[0].root_path, project.root_path);
+    assert_eq!(restored.projects[0].kind, ProjectKind::Git);
+    assert_eq!(restored.projects[0].primary_branch.as_deref(), Some("main"));
+    assert_eq!(restored.worktrees.len(), 2);
+    assert!(
+        restored
+            .worktrees
+            .iter()
+            .any(|worktree| worktree.is_primary() && worktree.id == primary.id)
+    );
+    let restored_linked = restored
+        .worktrees
+        .iter()
+        .find(|worktree| worktree.id == linked.id)
+        .expect("linked worktree should restore");
+    assert_eq!(restored_linked.branch(), Some("auth"));
+    assert_eq!(
+        restored_linked.directory(&restored.projects[0]),
+        std::path::Path::new("/tmp/spirit-round-trip-wt/auth")
+    );
+}
+
+#[test]
+fn removing_a_project_cascades_its_worktree_rows() {
+    let tempdir = tempfile::tempdir().expect("tempdir should be created");
+    let database_path = tempdir.path().join("warp.sqlite");
+    let conn = setup_database(&database_path).expect("database should initialize");
+
+    let project = Project {
+        id: ProjectId::new(),
+        root_path: PathBuf::from("/tmp/spirit-cascade"),
+        display_name: "spirit".to_owned(),
+        kind: ProjectKind::Folder,
+        primary_branch: None,
+        created_ts: 1,
+        last_opened_ts: 1,
+    };
+    let primary = Worktree {
+        id: WorktreeId::new(),
+        project_id: project.id,
+        name: "spirit".to_owned(),
+        kind: WorktreeKind::Primary,
+        created_ts: 1,
+    };
+
+    let writer = start_writer(conn, database_path.clone()).expect("writer should start");
+    for event in [
+        ModelEvent::UpsertProject {
+            project: ProjectRow::from(&project),
+        },
+        ModelEvent::UpsertWorktree {
+            worktree: WorktreeRow::from(&primary),
+        },
+        ModelEvent::RemoveProject {
+            project_id: project.id.to_string(),
+        },
+        ModelEvent::Terminate,
+    ] {
+        writer.sender.send(event).expect("event should send");
+    }
+    writer.handle.join().expect("writer should terminate");
+
+    let mut conn = setup_database(&database_path).expect("database should reopen");
+    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
+        .expect("persisted data should load");
+
+    assert!(restored.projects.is_empty());
+    assert!(restored.worktrees.is_empty());
+}
+
+fn test_screen_snapshot(
+    project_id: Option<ProjectId>,
+    uuid_seed: u8,
+    active_tab_index: usize,
+) -> ProjectScreenSnapshot {
+    ProjectScreenSnapshot {
+        project_id,
+        tabs: vec![TabSnapshot {
+            custom_title: None,
+            root: PaneNodeSnapshot::Leaf(LeafSnapshot {
+                is_focused: true,
+                custom_vertical_tabs_title: None,
+                contents: LeafContents::Terminal(TerminalPaneSnapshot {
+                    uuid: vec![uuid_seed],
+                    cwd: Some("/tmp".to_string()),
+                    shell_launch_data: None,
+                    is_active: true,
+                    is_read_only: false,
+                }),
+            }),
+            default_directory_color: None,
+            selected_color: SelectedTabColor::default(),
+            left_panel: None,
+            right_panel: None,
+            group_id: None,
+            pinned: false,
+            worktree_id: None,
+        }],
+        active_tab_index,
+        tab_groups: vec![],
+    }
+}
+
+fn test_multi_screen_window(screens: Vec<ProjectScreenSnapshot>, active: usize) -> WindowSnapshot {
+    WindowSnapshot {
+        screens,
+        active_screen_index: active,
+        team_uid: None,
+        bounds: None,
+        fullscreen_state: Default::default(),
+        quake_mode: false,
+        universal_search_width: None,
+        voltron_width: None,
+        warp_drive_index_width: None,
+        left_panel_open: false,
+        vertical_tabs_panel_open: false,
+        left_panel_width: None,
+        right_panel_width: None,
+    }
+}
+
+fn persist_test_project(
+    conn: &mut diesel::SqliteConnection,
+    root: &str,
+    last_opened_ts: i64,
+) -> ProjectId {
+    let project = Project {
+        id: ProjectId::new(),
+        root_path: PathBuf::from(root),
+        display_name: root.to_owned(),
+        kind: ProjectKind::Git,
+        primary_branch: Some("main".to_owned()),
+        created_ts: 1,
+        last_opened_ts,
+    };
+    save_project(conn, ProjectRow::from(&project)).expect("project should save");
+    project.id
+}
+
+#[test]
+fn screens_round_trip_grouped_by_project() {
+    let tempdir = tempfile::tempdir().expect("tempdir should be created");
+    let database_path = tempdir.path().join("warp.sqlite");
+    let mut conn = setup_database(&database_path).expect("database should initialize");
+
+    let older = persist_test_project(&mut conn, "/tmp/spirit-older", 10);
+    let newer = persist_test_project(&mut conn, "/tmp/spirit-newer", 20);
+
+    let app_state = AppState {
+        windows: vec![test_multi_screen_window(
+            vec![
+                test_screen_snapshot(None, 1, 0),
+                test_screen_snapshot(Some(older), 2, 0),
+                test_screen_snapshot(Some(newer), 3, 0),
+            ],
+            2,
+        )],
+        active_window_index: Some(0),
+        block_lists: Default::default(),
+    };
+    save_app_state(&mut conn, &app_state).expect("app state should save");
+
+    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
+        .expect("persisted data should load")
+        .app_state
+        .expect("app state should be present");
+
+    let window = &restored.windows[0];
+    assert_eq!(window.screens.len(), 3);
+    assert_eq!(window.screens[0].project_id, None, "Home restores first");
+    assert_eq!(
+        window.screens[1].project_id,
+        Some(newer),
+        "project screens restore MRU-first"
+    );
+    assert_eq!(window.screens[2].project_id, Some(older));
+    assert_eq!(
+        window.active_screen_index, 1,
+        "the active screen follows windows.active_project_id"
+    );
+    for screen in &window.screens {
+        assert_eq!(screen.tabs.len(), 1);
+    }
+}
+
+#[test]
+fn tabs_of_an_unknown_project_fold_into_home() {
+    let tempdir = tempfile::tempdir().expect("tempdir should be created");
+    let database_path = tempdir.path().join("warp.sqlite");
+    let mut conn = setup_database(&database_path).expect("database should initialize");
+
+    let forgotten = ProjectId::new();
+    let app_state = AppState {
+        windows: vec![test_multi_screen_window(
+            vec![
+                test_screen_snapshot(None, 1, 0),
+                test_screen_snapshot(Some(forgotten), 2, 0),
+            ],
+            1,
+        )],
+        active_window_index: Some(0),
+        block_lists: Default::default(),
+    };
+    save_app_state(&mut conn, &app_state).expect("app state should save");
+
+    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
+        .expect("persisted data should load")
+        .app_state
+        .expect("app state should be present");
+
+    let window = &restored.windows[0];
+    assert_eq!(window.screens.len(), 1, "no screen for a forgotten project");
+    assert_eq!(window.screens[0].project_id, None);
+    assert_eq!(
+        window.screens[0].tabs.len(),
+        2,
+        "both tabs survive, folded into Home"
+    );
+    assert_eq!(window.active_screen_index, 0);
+}
+
+#[test]
+fn a_legacy_window_restores_into_a_single_home_screen() {
+    let tempdir = tempfile::tempdir().expect("tempdir should be created");
+    let database_path = tempdir.path().join("warp.sqlite");
+    let mut conn = setup_database(&database_path).expect("database should initialize");
+
+    let app_state = AppState {
+        windows: vec![test_terminal_window_snapshot(false)],
+        active_window_index: Some(0),
+        block_lists: Default::default(),
+    };
+    save_app_state(&mut conn, &app_state).expect("app state should save");
+
+    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
+        .expect("persisted data should load")
+        .app_state
+        .expect("app state should be present");
+
+    let window = &restored.windows[0];
+    assert_eq!(window.screens.len(), 1);
+    assert_eq!(window.screens[0].project_id, None);
+    assert_eq!(window.active_screen_index, 0);
+    assert_eq!(window.tabs().len(), 1);
 }

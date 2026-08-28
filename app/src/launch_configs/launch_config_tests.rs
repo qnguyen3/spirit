@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use super::{CommandTemplate, LaunchConfig, PaneMode, PaneTemplateType};
 use crate::app_state::{
     AppState, BranchSnapshot, LeafContents, LeafSnapshot, NotebookPaneSnapshot, PaneFlex,
-    PaneNodeSnapshot, SplitDirection, TabSnapshot, TerminalPaneSnapshot, WindowSnapshot,
+    PaneNodeSnapshot, ProjectScreenSnapshot, SplitDirection, TabSnapshot, TerminalPaneSnapshot,
+    WindowSnapshot,
 };
 use crate::drive::OpenWarpDriveObjectSettings;
 use crate::tab::SelectedTabColor;
@@ -11,22 +12,27 @@ use crate::tab::SelectedTabColor;
 fn single_tab_snapshot(root: PaneNodeSnapshot) -> AppState {
     AppState {
         windows: vec![WindowSnapshot {
-            tabs: vec![TabSnapshot {
-                custom_title: None,
-                default_directory_color: None,
-                selected_color: SelectedTabColor::default(),
-                root,
-                left_panel: None,
-                right_panel: None,
-                group_id: None,
-                pinned: false,
+            screens: vec![ProjectScreenSnapshot {
+                project_id: None,
+                tabs: vec![TabSnapshot {
+                    custom_title: None,
+                    default_directory_color: None,
+                    selected_color: SelectedTabColor::default(),
+                    root,
+                    left_panel: None,
+                    right_panel: None,
+                    group_id: None,
+                    pinned: false,
+                    worktree_id: None,
+                }],
+                active_tab_index: 0,
+                tab_groups: vec![],
             }],
-            active_tab_index: 0,
+            active_screen_index: 0,
             team_uid: None,
             bounds: None,
             quake_mode: false,
             universal_search_width: None,
-            warp_ai_width: None,
             voltron_width: None,
             warp_drive_index_width: None,
             left_panel_open: false,
@@ -34,25 +40,26 @@ fn single_tab_snapshot(root: PaneNodeSnapshot) -> AppState {
             fullscreen_state: Default::default(),
             left_panel_width: None,
             right_panel_width: None,
-            agent_management_filters: None,
-            tab_groups: vec![],
         }],
         active_window_index: Some(0),
         block_lists: Default::default(),
-        running_mcp_servers: Default::default(),
     }
 }
 
 fn multi_tab_snapshot(active_tab_index: usize, tabs: Vec<TabSnapshot>) -> AppState {
     AppState {
         windows: vec![WindowSnapshot {
-            tabs,
-            active_tab_index,
+            screens: vec![ProjectScreenSnapshot {
+                project_id: None,
+                tabs,
+                active_tab_index,
+                tab_groups: vec![],
+            }],
+            active_screen_index: 0,
             team_uid: None,
             bounds: None,
             quake_mode: false,
             universal_search_width: None,
-            warp_ai_width: None,
             voltron_width: None,
             warp_drive_index_width: None,
             left_panel_open: false,
@@ -60,12 +67,9 @@ fn multi_tab_snapshot(active_tab_index: usize, tabs: Vec<TabSnapshot>) -> AppSta
             fullscreen_state: Default::default(),
             left_panel_width: None,
             right_panel_width: None,
-            agent_management_filters: None,
-            tab_groups: vec![],
         }],
         active_window_index: Some(0),
         block_lists: Default::default(),
-        running_mcp_servers: Default::default(),
     }
 }
 
@@ -99,11 +103,6 @@ fn test_config_from_snapshot_flattens_single_pane() {
                         is_active: true,
                         is_read_only: false,
                         shell_launch_data: None,
-                        input_config: None,
-                        llm_model_override: None,
-                        active_profile_id: None,
-                        conversation_ids_to_restore: vec![],
-                        active_conversation_id: None,
                     }),
                 }),
             ),
@@ -139,11 +138,6 @@ fn test_config_from_snapshot_filters_panes() {
                         is_active: true,
                         is_read_only: false,
                         shell_launch_data: None,
-                        input_config: None,
-                        llm_model_override: None,
-                        active_profile_id: None,
-                        conversation_ids_to_restore: vec![],
-                        active_conversation_id: None,
                     }),
                 }),
             ),
@@ -169,11 +163,6 @@ fn test_config_from_snapshot_filters_panes() {
                         is_active: true,
                         is_read_only: false,
                         shell_launch_data: None,
-                        input_config: None,
-                        llm_model_override: None,
-                        active_profile_id: None,
-                        conversation_ids_to_restore: vec![],
-                        active_conversation_id: None,
                     }),
                 }),
             ),
@@ -375,11 +364,6 @@ fn test_config_with_active_tab_index() {
                                 is_active: true,
                                 is_read_only: false,
                                 shell_launch_data: None,
-                                input_config: None,
-                                llm_model_override: None,
-                                active_profile_id: None,
-                                conversation_ids_to_restore: vec![],
-                                active_conversation_id: None,
                             }),
                         }),
                     )],
@@ -388,6 +372,7 @@ fn test_config_with_active_tab_index() {
                 right_panel: None,
                 group_id: None,
                 pinned: false,
+                worktree_id: None,
             };
             3
         ],
@@ -424,6 +409,7 @@ fn test_config_with_active_tab_index_and_filtered_tabs() {
                 right_panel: None,
                 group_id: None,
                 pinned: false,
+                worktree_id: None,
             },
             TabSnapshot {
                 custom_title: None,
@@ -442,11 +428,6 @@ fn test_config_with_active_tab_index_and_filtered_tabs() {
                                 is_active: true,
                                 is_read_only: false,
                                 shell_launch_data: None,
-                                input_config: None,
-                                llm_model_override: None,
-                                active_profile_id: None,
-                                conversation_ids_to_restore: vec![],
-                                active_conversation_id: None,
                             }),
                         }),
                     )],
@@ -455,6 +436,7 @@ fn test_config_with_active_tab_index_and_filtered_tabs() {
                 right_panel: None,
                 group_id: None,
                 pinned: false,
+                worktree_id: None,
             },
         ],
     );
@@ -485,11 +467,6 @@ fn test_config_with_active_tab_being_filtered() {
                                 is_active: true,
                                 is_read_only: false,
                                 shell_launch_data: None,
-                                input_config: None,
-                                llm_model_override: None,
-                                active_profile_id: None,
-                                conversation_ids_to_restore: vec![],
-                                active_conversation_id: None,
                             }),
                         }),
                     )],
@@ -498,6 +475,7 @@ fn test_config_with_active_tab_being_filtered() {
                 right_panel: None,
                 group_id: None,
                 pinned: false,
+                worktree_id: None,
             },
             TabSnapshot {
                 custom_title: None,
@@ -521,6 +499,7 @@ fn test_config_with_active_tab_being_filtered() {
                 right_panel: None,
                 group_id: None,
                 pinned: false,
+                worktree_id: None,
             },
         ],
     );

@@ -13,7 +13,7 @@ use warpui::{AppContext, ModelHandle};
 use super::block_list_element::{
     GridType, SnackbarHeader, SnackbarHeaderState, SnackbarPoint, VisibleItem,
 };
-use super::model::block::{Block, BlockSection, TranscriptScope};
+use super::model::block::{Block, BlockSection};
 use super::model::blocks::{
     BlockHeight, BlockHeightItem, BlockHeightSummary, BlockList, BlockListPoint, SelectionRange,
     TotalIndex,
@@ -26,7 +26,6 @@ use super::{
     heights_approx_gte, heights_approx_lt, heights_approx_lte,
 };
 use crate::terminal::input::inline_menu::InlineMenuPositioner;
-use crate::terminal::model::blocks::RichContentItem;
 use crate::terminal::model::index::Point as IndexPoint;
 
 /// Wraps a scroll position for the purposes of centralizing update logic.
@@ -104,12 +103,7 @@ impl ScrollLines {
                 //
                 // Otherwise we want to use scroll bottom so that the block that is growing
                 // above you doesn't make you lose your position when you are scrolled down.
-                if is_long_running
-                    && scroll_top
-                        < active_block
-                            .height(block_list.transcript_scope())
-                            .into_lines()
-                {
+                if is_long_running && scroll_top < active_block.height().into_lines() {
                     ScrollLines::ScrollTop(scroll_top)
                 } else {
                     ScrollLines::ScrollBottom(
@@ -343,7 +337,6 @@ pub struct ViewportIter<'a> {
 
     /// The current input mode.
     input_mode: InputMode,
-    transcript_scope: &'a TranscriptScope,
 
     /// The y-offset of the current block in lines from the viewport origin.
     top_of_current_block: Lines,
@@ -509,7 +502,6 @@ impl<'a> ViewportState<'a> {
                 ViewportIter {
                     block_heights_iter: Box::new(cursor),
                     input_mode: self.input_mode,
-                    transcript_scope: self.block_list.transcript_scope(),
                     top_of_current_block: top_of_block,
                     bottom_offset,
                     start_block_index: block_index,
@@ -529,7 +521,6 @@ impl<'a> ViewportState<'a> {
                 ViewportIter {
                     block_heights_iter: Box::new(cursor.rev()),
                     input_mode: self.input_mode,
-                    transcript_scope: self.block_list.transcript_scope(),
                     top_of_current_block: top_of_block,
                     bottom_offset,
                     start_block_index: block_index,
@@ -692,11 +683,9 @@ impl<'a> ViewportState<'a> {
                 {
                     Some(height) => Some(height.into_lines()),
                     None => index.and_then(|last_index| {
-                        self.block_list.block_at(last_index).map(|block| {
-                            block
-                                .height(self.block_list.transcript_scope())
-                                .into_lines()
-                        })
+                        self.block_list
+                            .block_at(last_index)
+                            .map(|block| block.height().into_lines())
                     }),
                 };
 
@@ -1548,9 +1537,7 @@ impl<'a> ViewportState<'a> {
         let block_height = self
             .block_list
             .block_at(block_index)
-            .map_or(Lines::zero(), |b| {
-                b.height(self.block_list.transcript_scope())
-            });
+            .map_or(Lines::zero(), |b| b.height());
         top_of_block + block_height
     }
 
@@ -2013,28 +2000,7 @@ impl Iterator for ViewportIter<'_> {
             }
 
             match item {
-                BlockHeightItem::RichContent(RichContentItem {
-                    agent_view_conversation_id: fullscreen_agent_view_conversation_id,
-                    ..
-                }) => match self.transcript_scope {
-                    TranscriptScope::Unfiltered => return next,
-                    TranscriptScope::Conversation(conversation_id) => {
-                        // If currently in a fullscreen agent view, only return this item if its
-                        // conversation id matches that of the active agent view.
-                        if fullscreen_agent_view_conversation_id
-                            .is_some_and(|id| id == *conversation_id)
-                        {
-                            return next;
-                        }
-                    }
-                    TranscriptScope::Terminal => {
-                        // If not in a fullscreen agent view, return the item only if it 'belongs'
-                        // to the terminal mode (represented as no `ai_conversation_id`).
-                        if fullscreen_agent_view_conversation_id.is_none() {
-                            return next;
-                        }
-                    }
-                },
+                BlockHeightItem::RichContent(_) => return next,
                 _ => {
                     if !FeatureFlag::AgentView.is_enabled() || block_height.as_f64() > 0. {
                         return next;

@@ -117,18 +117,10 @@ pub enum CustomAction {
     WindowsPaste,
     #[cfg(windows)]
     WindowsCopy,
-    /// Also applies to legacy Warp AI (toggles the panel)
-    NewAgentModePane,
-    /// Also applies to legacy Warp AI (attaches the selection to the panel editor)
-    AttachSelectionAsAgentModeContext,
-    OpenAIFactCollection,
-    OpenMCPServerCollection,
     ToggleProjectExplorer,
-    NewPersonalAIPrompt,
-    NewTeamAIPrompt,
     OpenRepository,
     NewTerminalTab,
-    NewAgentTab,
+    NewAgentPicker,
     GoToLine,
     ToggleGlobalSearch,
     ToggleConversationListView,
@@ -402,9 +394,14 @@ pub fn custom_tag_to_keystroke(custom: CustomTag) -> Option<Keystroke> {
         CustomAction::CloseWindow => mac_only_keystroke("cmd-shift-W"),
         CustomAction::CloseCurrentSession => Keystroke::parse(cmd_or_ctrl_shift("w")).ok(),
         CustomAction::ViewChangelog => Keystroke::parse(cmd_or_ctrl_shift("alt-o")).ok(),
-        CustomAction::NewAgentModePane => Keystroke::parse("ctrl-space").ok(),
-        CustomAction::AttachSelectionAsAgentModeContext => {
-            Keystroke::parse("ctrl-shift-space").ok()
+        CustomAction::NewAgentPicker => {
+            if OperatingSystem::get().is_mac() {
+                Keystroke::parse("cmd-shift-N").ok()
+            } else {
+                // ctrl-shift-N already creates a new window here, and ctrl-space is the IBus
+                // input-method toggle, so the app never receives it.
+                Keystroke::parse("ctrl-shift-space").ok()
+            }
         }
         CustomAction::ToggleProjectExplorer => {
             if OperatingSystem::get().is_mac() {
@@ -464,12 +461,7 @@ pub fn custom_tag_to_keystroke(custom: CustomTag) -> Option<Keystroke> {
         | CustomAction::SearchDrive
         | CustomAction::OpenTeamSettings
         | CustomAction::ShareCurrentSession
-        | CustomAction::SharePaneContents
-        | CustomAction::OpenAIFactCollection
-        | CustomAction::OpenMCPServerCollection
-        | CustomAction::NewPersonalAIPrompt
-        | CustomAction::NewTeamAIPrompt
-        | CustomAction::NewAgentTab => None,
+        | CustomAction::SharePaneContents => None,
     }
 }
 
@@ -801,7 +793,6 @@ pub enum BindingGroup {
     Settings,
     Close,
     Navigation,
-    WarpAi,
     Workflow,
     Notebooks,
     Folders,
@@ -810,6 +801,7 @@ pub enum BindingGroup {
     Notifications,
     EnvVarCollection,
     Terminal,
+    Workspaces,
 }
 
 impl BindingGroup {
@@ -817,7 +809,6 @@ impl BindingGroup {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Settings => "settings",
-            Self::WarpAi => "warp_ai",
             Self::Navigation => "navigation",
             Self::Workflow => "workflows",
             Self::Notebooks => "notebooks",
@@ -828,6 +819,7 @@ impl BindingGroup {
             Self::Notifications => "notifications",
             Self::EnvVarCollection => "env_var_collections",
             Self::Terminal => "terminal",
+            Self::Workspaces => "workspaces",
         }
     }
 

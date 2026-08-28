@@ -18,7 +18,6 @@ use crate::{LogConfig, LogDestination, LogFrontend};
 const MAX_FILES_IN_GUI_ROTATION: usize = 5;
 const MAX_FILES_IN_CLI_ROTATION: usize = 10;
 const CLI_LOG_SUBDIRECTORY: &str = "oz";
-const TUI_LOG_SUBDIRECTORY: &str = "warp-cli";
 const TEMP_LOG_FILE_SUFFIX: &str = "old.temp";
 
 /// Runtime logging state, computed from `LogConfig` during initialization.
@@ -41,7 +40,6 @@ impl LogFrontend {
     fn log_directory(self, base_directory: PathBuf) -> PathBuf {
         match self {
             LogFrontend::Gui => base_directory,
-            LogFrontend::Tui => base_directory.join(TUI_LOG_SUBDIRECTORY),
             LogFrontend::Cli => base_directory.join(CLI_LOG_SUBDIRECTORY),
         }
     }
@@ -49,7 +47,7 @@ impl LogFrontend {
     fn max_rotation(self) -> usize {
         match self {
             LogFrontend::Gui => MAX_FILES_IN_GUI_ROTATION,
-            LogFrontend::Tui | LogFrontend::Cli => MAX_FILES_IN_CLI_ROTATION,
+            LogFrontend::Cli => MAX_FILES_IN_CLI_ROTATION,
         }
     }
 }
@@ -658,12 +656,7 @@ fn init_internal(
         base_logger.target(env_logger::Target::Pipe(target));
         base_logger.format(format_for_file_output);
     } else {
-        // Agent mode eval outputs are written to stdout but redirected to a file, so we don't want terminal styling.
-        if cfg!(feature = "agent_mode_evals") {
-            base_logger.write_style(env_logger::WriteStyle::Never);
-        } else {
-            base_logger.write_style(env_logger::WriteStyle::Always);
-        }
+        base_logger.write_style(env_logger::WriteStyle::Always);
         base_logger.format(format_for_terminal_output);
     }
 

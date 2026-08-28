@@ -21,7 +21,6 @@ use crate::search::mixer::DataSourceRunErrorWrapper;
 use crate::search::notebooks::fuzzy_match::FuzzyMatchNotebookResult;
 use crate::search::workflows::fuzzy_match::FuzzyMatchWorkflowResult;
 use crate::server::ids::{ObjectUid, ServerId, SyncId};
-use crate::settings::AISettings;
 use crate::workflows::CloudWorkflow;
 use crate::workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent};
 
@@ -236,7 +235,6 @@ impl DataSource {
     pub fn search_workflows(
         &self,
         query: &Query,
-        should_include_agent_mode_prompts: bool,
         should_include_command_workflows: bool,
         app: &AppContext,
     ) -> anyhow::Result<Vec<WorkflowSearchItem>> {
@@ -245,7 +243,7 @@ impl DataSource {
             .search_workflow(
                 &query.text.to_lowercase(),
                 app,
-                should_include_agent_mode_prompts,
+                false,
                 should_include_command_workflows,
             )?
             .into_iter()
@@ -294,27 +292,18 @@ impl crate::search::mixer::SyncDataSource for DataSource {
             );
         }
 
-        let should_include_agent_mode_prompts =
-            (query.filters.contains(&QueryFilter::AgentModeWorkflows)
-                || should_include_all_drive_objects)
-                && AISettings::as_ref(app).is_any_ai_enabled(app);
         let should_include_command_workflows =
             query.filters.contains(&QueryFilter::Workflows) || should_include_all_drive_objects;
 
-        if should_include_agent_mode_prompts || should_include_command_workflows {
+        if should_include_command_workflows {
             filtered_cloud_objects.extend(
-                self.search_workflows(
-                    query,
-                    should_include_agent_mode_prompts,
-                    should_include_command_workflows,
-                    app,
-                )
-                .map_err(|err| {
-                    Box::new(DataSourceSearchError::new(err.to_string()))
-                        as DataSourceRunErrorWrapper
-                })?
-                .into_iter()
-                .map(QueryResult::from),
+                self.search_workflows(query, should_include_command_workflows, app)
+                    .map_err(|err| {
+                        Box::new(DataSourceSearchError::new(err.to_string()))
+                            as DataSourceRunErrorWrapper
+                    })?
+                    .into_iter()
+                    .map(QueryResult::from),
             );
         }
 

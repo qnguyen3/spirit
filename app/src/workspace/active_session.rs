@@ -10,7 +10,8 @@ use warpui::{Entity, EntityId, ModelContext, SingletonEntity, WindowId};
 use crate::terminal::model::session::Session;
 
 /// The active terminal session in each window. The active session of a window is the current
-/// session of the most-recently-focused terminal pane of the active tab of the window's workspace.
+/// session of the most-recently-focused terminal pane of the active tab of the window's active
+/// Workspace screen.
 ///
 /// #### When to use `ActiveSession`
 /// Generally, if a more specific session is available, it should be preferred. For example, when

@@ -1,7 +1,6 @@
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
 use super::{CloudNotebookModel, NotebookId};
-use crate::ai::document::ai_document_model::AIDocumentId;
 use crate::cloud_object::breadcrumbs::ContainingObject;
 use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
 use crate::cloud_object::model::view::{CloudViewModel, Editor, EditorState};
@@ -239,13 +238,13 @@ impl ActiveNotebookData {
         }
     }
 
-    pub fn ai_document_id(&self, ctx: &AppContext) -> Option<AIDocumentId> {
+    pub fn is_plan(&self, ctx: &AppContext) -> bool {
         match &self.active_notebook {
-            ActiveNotebook::None => None,
+            ActiveNotebook::None => false,
             ActiveNotebook::CommittedNotebook(id) => CloudModel::as_ref(ctx)
                 .get_notebook(id)
-                .and_then(|n| n.model().ai_document_id),
-            ActiveNotebook::NewNotebook(notebook) => notebook.model().ai_document_id,
+                .is_some_and(|n| n.model().ai_document_id.is_some()),
+            ActiveNotebook::NewNotebook(notebook) => notebook.model().ai_document_id.is_some(),
         }
     }
 

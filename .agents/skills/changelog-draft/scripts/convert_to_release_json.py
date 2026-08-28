@@ -13,9 +13,7 @@ The output schema:
       "newFeatures": ["..."],
       "improvements": ["..."],
       "bugFixes": ["..."],
-      "images": ["..."],
-      "oz_updates": ["..."],
-      "tui_updates": ["..."]
+      "images": ["..."]
     }
 """
 
@@ -28,8 +26,6 @@ CATEGORY_MAP = {
     "NEW-FEATURE": "newFeatures",
     "IMPROVEMENT": "improvements",
     "BUG-FIX": "bugFixes",
-    "OZ": "oz_updates",
-    "TUI": "tui_updates",
     "IMAGE": "images",
 }
 
@@ -65,8 +61,6 @@ def convert(draft: dict) -> dict:
         "improvements": [],
         "bugFixes": [],
         "images": [],
-        "oz_updates": [],
-        "tui_updates": [],
     }
 
     for entry in draft.get("entries", []):

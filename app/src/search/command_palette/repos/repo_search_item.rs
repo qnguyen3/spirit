@@ -1,6 +1,5 @@
 use std::path::Path;
 
-use ai::workspace::WorkspaceMetadata;
 use fuzzy_match::FuzzyMatchResult;
 use ordered_float::OrderedFloat;
 use warp_core::ui::theme::Fill;
@@ -15,6 +14,7 @@ use crate::search::command_palette::render_util;
 use crate::search::item::SearchItem;
 use crate::search::result_renderer::ItemHighlightState;
 use crate::ui_components::icons::Icon as UiIcon;
+use crate::workspace_metadata::WorkspaceMetadata;
 
 #[derive(Debug)]
 pub struct RepoSearchItem {

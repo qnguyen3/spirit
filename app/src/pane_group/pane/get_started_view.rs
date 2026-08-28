@@ -16,7 +16,6 @@ use warpui::{
 };
 
 use crate::coding_entrypoints::clone_repo_view::{CloneRepoEvent, CloneRepoView};
-use crate::coding_entrypoints::create_project_view::{CreateProjectEvent, CreateProjectView};
 use crate::coding_entrypoints::project_buttons::{ProjectButtons, ProjectButtonsEvent};
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::pane_group::pane::view;
@@ -44,7 +43,6 @@ pub fn init(app: &mut AppContext) {
 enum ActivePage {
     #[default]
     Main,
-    CreateProject,
     CloneRepo,
 }
 
@@ -52,7 +50,6 @@ pub struct GetStartedView {
     pane_configuration: ModelHandle<PaneConfiguration>,
     focus_handle: Option<PaneFocusHandle>,
     project_buttons: ViewHandle<ProjectButtons>,
-    create_project_view: ViewHandle<CreateProjectView>,
     clone_repo_view: ViewHandle<CloneRepoView>,
     active_page: ActivePage,
     terminal_session_button: MouseStateHandle,
@@ -64,10 +61,6 @@ impl GetStartedView {
         let project_buttons = ctx.add_typed_action_view(ProjectButtons::new);
         ctx.subscribe_to_view(&project_buttons, Self::handle_project_buttons_event);
 
-        let create_project_view =
-            ctx.add_typed_action_view(|ctx| CreateProjectView::new(true, ctx));
-        ctx.subscribe_to_view(&create_project_view, Self::handle_create_project_event);
-
         let clone_repo_view = ctx.add_typed_action_view(|ctx| CloneRepoView::new(true, ctx));
         ctx.subscribe_to_view(&clone_repo_view, Self::handle_clone_repo_event);
 
@@ -75,7 +68,6 @@ impl GetStartedView {
             pane_configuration,
             focus_handle: None,
             project_buttons,
-            create_project_view,
             clone_repo_view,
             active_page: Default::default(),
             terminal_session_button: Default::default(),
@@ -111,11 +103,6 @@ impl GetStartedView {
                     });
                 }
             },
-            ProjectButtonsEvent::CreateProject => {
-                self.active_page = ActivePage::CreateProject;
-                ctx.focus(&self.create_project_view);
-                ctx.notify();
-            }
             ProjectButtonsEvent::CloneRepository => {
                 self.active_page = ActivePage::CloneRepo;
                 ctx.focus(&self.clone_repo_view);
@@ -126,23 +113,6 @@ impl GetStartedView {
 
     pub fn pane_configuration(&self) -> ModelHandle<PaneConfiguration> {
         self.pane_configuration.clone()
-    }
-
-    fn handle_create_project_event(
-        &mut self,
-        _: ViewHandle<CreateProjectView>,
-        event: &CreateProjectEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            CreateProjectEvent::SubmitPrompt(prompt) => {
-                self.start_create_new_project(prompt.clone(), ctx);
-            }
-            CreateProjectEvent::Cancel => {
-                self.active_page = Default::default();
-                ctx.notify();
-            }
-        }
     }
 
     fn handle_clone_repo_event(
@@ -162,23 +132,12 @@ impl GetStartedView {
         }
     }
 
-    fn start_create_new_project(&mut self, prompt: String, ctx: &mut ViewContext<Self>) {
-        ctx.dispatch_typed_action(&WorkspaceAction::AddTerminalTab {
-            hide_homepage: true,
-        });
-        update_active_terminal(ctx, |terminal, ctx| {
-            terminal.create_new_project(prompt, ctx);
-        });
-
-        self.close(ctx);
-    }
-
     fn start_clone_repo(&mut self, url: String, ctx: &mut ViewContext<Self>) {
         ctx.dispatch_typed_action(&WorkspaceAction::AddTerminalTab {
             hide_homepage: true,
         });
         update_active_terminal(ctx, |terminal, ctx| {
-            terminal.agent_clone_repository(url, ctx);
+            terminal.set_pending_command(&format!("git clone {url}"), ctx);
         });
 
         self.close(ctx);
@@ -190,14 +149,6 @@ impl GetStartedView {
 
         match self.active_page {
             ActivePage::Main => {}
-            ActivePage::CreateProject => {
-                return Align::new(
-                    ConstrainedBox::new(ChildView::new(&self.create_project_view).finish())
-                        .with_max_width(480.)
-                        .finish(),
-                )
-                .finish();
-            }
             ActivePage::CloneRepo => {
                 return Align::new(
                     ConstrainedBox::new(ChildView::new(&self.clone_repo_view).finish())
@@ -350,7 +301,6 @@ impl BackingView for GetStartedView {
 
     fn focus_contents(&mut self, ctx: &mut ViewContext<Self>) {
         match self.active_page {
-            ActivePage::CreateProject => ctx.focus(&self.create_project_view),
             ActivePage::CloneRepo => ctx.focus(&self.clone_repo_view),
             ActivePage::Main => ctx.focus(&self.project_buttons),
         }

@@ -20,8 +20,7 @@ use warpui_core::{
 };
 
 use super::OnboardingSlide;
-use crate::OnboardingIntention;
-use crate::model::{OnboardingStateEvent, OnboardingStateModel};
+use crate::model::OnboardingStateModel;
 use crate::slides::{bottom_nav, layout, slide_content};
 use crate::telemetry::OnboardingEvent;
 
@@ -82,12 +81,6 @@ impl ThemePickerSlide {
         let theme_options = themes.map(|theme| ThemeOption {
             theme,
             mouse_state: MouseStateHandle::default(),
-        });
-
-        ctx.subscribe_to_model(&onboarding_state, |_me, _model, event, ctx| {
-            if matches!(event, OnboardingStateEvent::IntentionChanged) {
-                ctx.notify();
-            }
         });
 
         let appearance = Appearance::as_ref(ctx);
@@ -169,15 +162,14 @@ impl ThemePickerSlide {
         ];
 
         // Add the Privacy Settings / Terms of Service disclaimer block below the
-        // theme options when the user has selected the terminal intention and
-        // won't hit the login slide afterwards. The terminal-intent flow skips
-        // the login slide (which surfaces the same links) unless Warp Drive is
-        // enabled — in that case the login slide will still run after the theme
-        // step and show the disclaimer, so duplicating it here is unnecessary.
+        // theme options when the user won't hit the login slide afterwards. The
+        // flow skips the login slide (which surfaces the same links) unless Warp
+        // Drive is enabled — in that case the login slide will still run after
+        // the theme step and show the disclaimer, so duplicating it here is
+        // unnecessary.
         let state = self.onboarding_state.as_ref(app);
-        let is_terminal = matches!(state.intention(), OnboardingIntention::Terminal);
         let warp_drive_enabled = state.ui_customization().show_warp_drive;
-        if !FeatureFlag::AccountFirstOnboarding.is_enabled() && is_terminal && !warp_drive_enabled {
+        if !FeatureFlag::AccountFirstOnboarding.is_enabled() && !warp_drive_enabled {
             content.push(self.render_disclaimer_section(appearance));
         }
 
@@ -292,11 +284,7 @@ impl ThemePickerSlide {
         let (step_index, step_count) = if account_first {
             self.onboarding_state.as_ref(app).progress()
         } else {
-            let is_terminal = matches!(
-                self.onboarding_state.as_ref(app).intention(),
-                OnboardingIntention::Terminal
-            );
-            if is_terminal { (3, 4) } else { (4, 5) }
+            (3, 4)
         };
 
         bottom_nav::onboarding_bottom_nav(
@@ -452,10 +440,7 @@ impl ThemePickerSlide {
     fn theme_visual_path(&self, app: &AppContext) -> &'static str {
         let state = self.onboarding_state.as_ref(app);
         let vertical = state.ui_customization().use_vertical_tabs;
-        let intention_dir = match state.intention() {
-            OnboardingIntention::AgentDrivenDevelopment => "agent_intention",
-            OnboardingIntention::Terminal => "terminal_intention",
-        };
+        let intention_dir = "terminal_intention";
         let theme_name = self.theme_display_name(self.selected_theme_index);
         let name_key = match theme_name.as_str() {
             "Phenomenon" => "phenomenon",

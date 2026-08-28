@@ -6,7 +6,7 @@
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::{Fill, WarpTheme};
 use warpui::color::ColorU;
-use warpui::{AppContext, SingletonEntity};
+use warpui::{AppContext, Element, SingletonEntity};
 
 use crate::search::result_renderer::ItemHighlightState;
 
@@ -59,4 +59,47 @@ pub fn disabled_text_color(theme: &WarpTheme, background: Fill) -> Fill {
 pub fn icon_color(appearance: &Appearance) -> Fill {
     let theme = appearance.theme();
     theme.sub_text_color(theme.background()).with_opacity(80)
+}
+
+pub fn keystroke_size(appearance: &Appearance) -> f32 {
+    font_size(appearance) + 2.
+}
+
+pub fn render_keystroke_with_color_overrides(
+    keystroke: &warpui::keymap::Keystroke,
+    color: Option<ColorU>,
+    background_color: Option<ColorU>,
+    app: &AppContext,
+) -> Box<dyn Element> {
+    use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
+
+    use crate::ui_components::blended_colors;
+
+    let appearance = Appearance::as_ref(app);
+    let theme = appearance.theme();
+    let font_size = font_size(appearance);
+    appearance
+        .ui_builder()
+        .keyboard_shortcut(keystroke)
+        .lowercase_modifier()
+        .with_space_between_keys(2.)
+        .with_style(UiComponentStyles {
+            margin: Some(Coords::default()),
+            padding: Some(Coords::default()),
+            border_width: Some(1.),
+            background: Some(
+                background_color
+                    .unwrap_or_else(|| blended_colors::neutral_3(theme))
+                    .into(),
+            ),
+            font_color: Some(color.unwrap_or_else(|| theme.foreground().into_solid())),
+            font_family_id: Some(appearance.ui_font_family()),
+            font_size: Some(font_size),
+            width: Some(keystroke_size(appearance)),
+            height: Some(keystroke_size(appearance)),
+            ..Default::default()
+        })
+        .with_line_height_ratio(1.0)
+        .build()
+        .finish()
 }

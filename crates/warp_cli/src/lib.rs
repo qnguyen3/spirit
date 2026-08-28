@@ -550,7 +550,7 @@ pub enum WorkerCommand {
 #[derive(Debug, Clone, Subcommand)]
 pub enum CliCommand {
     /// Interact with Oz.
-    #[command(subcommand)]
+    #[command(subcommand, hide = true)]
     Agent(crate::agent::AgentCommand),
 
     /// Manage cloud environments.
@@ -558,11 +558,11 @@ pub enum CliCommand {
     Environment(crate::environment::EnvironmentCommand),
 
     /// Manage MCP servers.
-    #[command(subcommand)]
+    #[command(subcommand, hide = true)]
     MCP(crate::mcp::MCPCommand),
 
     /// Manage runs.
-    #[command(subcommand, alias = "task")]
+    #[command(subcommand, alias = "task", hide = true)]
     Run(crate::task::TaskCommand),
 
     /// Manage available models.
@@ -593,6 +593,7 @@ pub enum CliCommand {
     /// Create and manage scheduled Oz agents. Scheduled agents run a user-defined task periodically, according to a cron schedule.
     ///
     /// As a shorthand, the `schedule` command behaves identically to `schedule create`.
+    #[command(hide = true)]
     Schedule(crate::schedule::ScheduleCommand),
 
     /// Manage secrets.
@@ -616,7 +617,7 @@ pub enum CliCommand {
     ApiKey(crate::api_key::ApiKeyCommand),
 
     /// Manage cloud agent runners.
-    #[command(subcommand)]
+    #[command(subcommand, hide = true)]
     Runner(crate::runner::RunnerCommand),
 }
 

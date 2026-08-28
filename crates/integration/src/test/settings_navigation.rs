@@ -37,19 +37,25 @@ pub fn test_settings_mouse_navigation_through_umbrella() -> Builder {
         .with_step(assert_umbrella_expanded(AGENTS_UMBRELLA, true))
         .with_step(assert_settings_section(SettingsSection::Account))
         .with_step(assert_settings_nav_subpage_visible(
-            SettingsSection::Knowledge,
+            SettingsSection::ThirdPartyCLIAgents,
             true,
         ))
         // Clicking a subpage selects it.
-        .with_step(click_settings_nav_subpage(SettingsSection::Knowledge))
-        .with_step(assert_settings_section(SettingsSection::Knowledge))
+        .with_step(click_settings_nav_subpage(
+            SettingsSection::ThirdPartyCLIAgents,
+        ))
+        .with_step(assert_settings_section(
+            SettingsSection::ThirdPartyCLIAgents,
+        ))
         // Collapsing while still on a subpage hides the row but keeps the
         // selection, so the content pane does not change out from under us.
         .with_step(click_settings_umbrella(AGENTS_UMBRELLA))
         .with_step(assert_umbrella_expanded(AGENTS_UMBRELLA, false))
-        .with_step(assert_settings_section(SettingsSection::Knowledge))
+        .with_step(assert_settings_section(
+            SettingsSection::ThirdPartyCLIAgents,
+        ))
         .with_step(assert_settings_nav_subpage_visible(
-            SettingsSection::Knowledge,
+            SettingsSection::ThirdPartyCLIAgents,
             false,
         ))
 }
@@ -66,7 +72,9 @@ pub fn test_settings_keyboard_navigation_down_into_collapsed_umbrella() -> Build
         .with_step(open_settings_page(SettingsSection::Account))
         .with_step(assert_umbrella_expanded(AGENTS_UMBRELLA, false))
         .with_step(press_settings_nav_down())
-        .with_step(assert_settings_section(SettingsSection::WarpAgent))
+        .with_step(assert_settings_section(
+            SettingsSection::ThirdPartyCLIAgents,
+        ))
         .with_step(assert_umbrella_expanded(AGENTS_UMBRELLA, true))
 }
 
@@ -91,12 +99,14 @@ pub fn test_settings_keyboard_navigation_up_into_collapsed_umbrella() -> Builder
 pub fn test_settings_keyboard_navigation_after_manual_collapse() -> Builder {
     new_builder()
         .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
-        .with_step(open_settings_page(SettingsSection::Knowledge))
+        .with_step(open_settings_page(SettingsSection::ThirdPartyCLIAgents))
         .with_step(assert_umbrella_expanded(AGENTS_UMBRELLA, true))
         // Collapse the umbrella while still viewing one of its subpages.
         .with_step(click_settings_umbrella(AGENTS_UMBRELLA))
         .with_step(assert_umbrella_expanded(AGENTS_UMBRELLA, false))
-        .with_step(assert_settings_section(SettingsSection::Knowledge))
+        .with_step(assert_settings_section(
+            SettingsSection::ThirdPartyCLIAgents,
+        ))
         // Down should continue past the umbrella, not restart from the top.
         .with_step(press_settings_nav_down())
         .with_step(assert_settings_section(SettingsSection::BillingAndUsage))
@@ -137,10 +147,6 @@ pub fn test_settings_search_filters_subpages() -> Builder {
         .with_step(assert_settings_nav_subpage_visible(
             SettingsSection::ThirdPartyCLIAgents,
             true,
-        ))
-        .with_step(assert_settings_nav_subpage_visible(
-            SettingsSection::Knowledge,
-            false,
         ))
         .with_step(assert_settings_section(
             SettingsSection::ThirdPartyCLIAgents,
@@ -198,34 +204,15 @@ pub fn test_settings_search_preserved_on_sidebar_click() -> Builder {
         .with_step(open_settings_page(SettingsSection::Account))
         .with_step(type_settings_search("agent"))
         .with_step(assert_umbrella_expanded(AGENTS_UMBRELLA, true))
-        .with_step(click_settings_nav_subpage(SettingsSection::WarpAgent))
-        .with_step(assert_settings_section(SettingsSection::WarpAgent))
+        .with_step(click_settings_nav_subpage(
+            SettingsSection::ThirdPartyCLIAgents,
+        ))
+        .with_step(assert_settings_section(
+            SettingsSection::ThirdPartyCLIAgents,
+        ))
         // The query survives the click, and so does the filtered sidebar.
         .with_step(assert_settings_nav_page_visible(
             SettingsSection::About,
             false,
-        ))
-}
-
-// ---------------------------------------------------------------------------
-// MCP servers
-// ---------------------------------------------------------------------------
-
-/// MCP servers lives under the Agents umbrella but renders the standalone MCP
-/// page, so it has to highlight its row and expand its umbrella like any other
-/// subpage.
-///
-/// This previously failed because the command palette dispatched the backing
-/// page key rather than the nav target, so the content rendered with no row
-/// highlighted and the umbrella collapsed.
-pub fn test_settings_agent_mcp_servers_renders_standalone_page() -> Builder {
-    new_builder()
-        .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
-        .with_step(open_settings_page(SettingsSection::AgentMCPServers))
-        .with_step(assert_settings_section(SettingsSection::AgentMCPServers))
-        .with_step(assert_umbrella_expanded(AGENTS_UMBRELLA, true))
-        .with_step(assert_settings_nav_subpage_visible(
-            SettingsSection::AgentMCPServers,
-            true,
         ))
 }

@@ -1,15 +1,45 @@
 #[cfg(not(target_family = "wasm"))]
 pub mod persistence;
 
-use ai::document::AIDocumentId;
+use anyhow::Result;
 use cloud_objects::cloud_object::{
     GenericCloudObject, GenericServerObject, ObjectType, ServerObjectModel,
 };
 use cloud_objects::ids::{ServerId, SyncId};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+/// Opaque identifier of the server-side document a notebook was generated from.
+///
+/// The wire format is a UUID string; it is parsed and re-rendered verbatim so
+/// existing rows and server payloads keep round-tripping unchanged.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct NotebookDocumentId(Uuid);
+
+impl std::fmt::Display for NotebookDocumentId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl TryFrom<&str> for NotebookDocumentId {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &str) -> Result<Self> {
+        Ok(Self(Uuid::try_parse(value)?))
+    }
+}
+
+impl TryFrom<String> for NotebookDocumentId {
+    type Error = anyhow::Error;
+
+    fn try_from(value: String) -> Result<Self> {
+        Self::try_from(value.as_str())
+    }
+}
 
 /// Serialized representation of a notebook for sync queue
-/// The AIDocumentID and ConversationID are stored here to avoid polluting the
+/// The document id and conversation id are stored here to avoid polluting the
 /// generic CreateObjectRequest type.
 #[derive(Serialize, Deserialize)]
 pub struct SerializedNotebook {
@@ -22,8 +52,8 @@ pub struct SerializedNotebook {
 pub struct CloudNotebookModel {
     pub title: String,
     pub data: String,
-    pub ai_document_id: Option<AIDocumentId>,
-    /// This is the server-generated conversation token, not the client-side AIConversationId.
+    pub ai_document_id: Option<NotebookDocumentId>,
+    /// This is the server-generated conversation token, not a client-side conversation id.
     pub conversation_id: Option<String>,
 }
 

@@ -10,7 +10,7 @@ cfg_if::cfg_if! {
         use warpui::{ViewContext};
 
         use crate::{
-            ai::blocklist::SerializedBlockListItem, pane_group::TerminalViewResources,
+            pane_group::TerminalViewResources, terminal::model::block::SerializedBlock,
             resource_center::TipsCompleted,
         };
         use crate::terminal::model::session::Sessions;
@@ -29,17 +29,7 @@ impl TerminalView {
     #[cfg(test)]
     pub fn new_for_test(
         tips_model: ModelHandle<TipsCompleted>,
-        restored_blocks: Option<&[SerializedBlockListItem]>,
-        ctx: &mut ViewContext<Self>,
-    ) -> Self {
-        Self::new_for_test_with_cloud_mode(tips_model, restored_blocks, false, ctx)
-    }
-
-    #[cfg(test)]
-    pub fn new_for_test_with_cloud_mode(
-        tips_model: ModelHandle<TipsCompleted>,
-        restored_blocks: Option<&[SerializedBlockListItem]>,
-        is_cloud_mode: bool,
+        restored_blocks: Option<&[SerializedBlock]>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         use pathfinder_geometry::vector::vec2f;
@@ -115,10 +105,7 @@ impl TerminalView {
             colors,
             None,
             prompt_type,
-            None,
-            None, // conversation_restoration - not used for test
             None, // inactive_pty_reads_rx - not used for test
-            is_cloud_mode,
             ctx,
         )
     }

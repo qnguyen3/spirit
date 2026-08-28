@@ -14,12 +14,6 @@ use warpui::{
 use super::display_chip::{DisplayChip, DisplayChipConfig, PromptDisplayChipEvent};
 use super::prompt_type::PromptType;
 use super::{ChipResult, ContextChipKind, git_line_changes_from_chips};
-use crate::ai::blocklist::agent_view::AgentViewController;
-use crate::ai::blocklist::{
-    BlocklistAIContextModel, BlocklistAIHistoryEvent, BlocklistAIHistoryModel,
-    BlocklistAIInputEvent, BlocklistAIInputModel,
-};
-use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentVersion};
 use crate::completer::SessionContext;
 use crate::context_chips::display_chip::{DisplayChipAction, PromptChipShellCommand};
 use crate::settings::InputSettings;
@@ -53,8 +47,6 @@ impl RowBuilder {
 pub struct PromptDisplay {
     prompt: ModelHandle<PromptType>,
     display_chips: Vec<ViewHandle<DisplayChip>>,
-    ai_input_model: ModelHandle<BlocklistAIInputModel>,
-    ai_context_model: ModelHandle<BlocklistAIContextModel>,
     terminal_view_id: EntityId,
     menu_positioning_provider: Arc<dyn MenuPositioningProvider>,
     session_context: Option<SessionContext>,
@@ -66,8 +58,6 @@ pub struct PromptDisplay {
 
     /// Whether this terminal is viewing a shared session.
     is_shared_session_viewer: bool,
-
-    agent_view_controller: ModelHandle<AgentViewController>,
 }
 
 const PROMPT_CHIP_DISPLAY_ID: &str = "PromptChipDisplay";
@@ -80,79 +70,34 @@ pub enum PromptDisplayAction {
 pub enum PromptDisplayEvent {
     OpenFile(String),
     OpenTextFileInCodeEditor(String),
-    ToggleMenu {
-        open: bool,
-    },
+    ToggleMenu { open: bool },
     OpenCodeReview,
-    OpenConversationHistory,
     OpenCommandPaletteFiles,
-    RunAgentQuery(String),
     TryExecuteCommand(PromptChipShellCommand),
-    OpenAIDocument {
-        document_id: AIDocumentId,
-        document_version: AIDocumentVersion,
-    },
 }
 
 impl PromptDisplay {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         prompt: ModelHandle<PromptType>,
-        ai_input_model: ModelHandle<BlocklistAIInputModel>,
-        ai_context_model: ModelHandle<BlocklistAIContextModel>,
         terminal_view_id: EntityId,
         menu_positioning_provider: Arc<dyn MenuPositioningProvider>,
         session_context: Option<SessionContext>,
         current_repo_path: Option<PathBuf>,
         model_events: ModelHandle<ModelEventDispatcher>,
-        agent_view_controller: ModelHandle<AgentViewController>,
         is_shared_session_viewer: bool,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         ctx.observe(&prompt, |me, _, ctx| me.handle_prompt_change(ctx));
 
-        // Subscribe to AI input model changes to trigger re-render when input mode changes
-        ctx.subscribe_to_model(&ai_input_model, |_me, _model, event, ctx| {
-            match event {
-                BlocklistAIInputEvent::InputTypeChanged { .. }
-                | BlocklistAIInputEvent::LockChanged { .. } => {
-                    // Trigger re-render to update chip visibility based on new input mode
-                    ctx.notify();
-                }
-            }
-        });
-
-        // Subscribe todo list updates to refresh the todo list chip visibility
-        ctx.subscribe_to_model(
-            &BlocklistAIHistoryModel::handle(ctx),
-            |me, _, event, ctx| {
-                if let BlocklistAIHistoryEvent::UpdatedTodoList {
-                    terminal_surface_id,
-                } = event
-                {
-                    if *terminal_surface_id != me.terminal_view_id {
-                        return;
-                    }
-                    ctx.notify();
-                }
-            },
-        );
-
-        ctx.subscribe_to_model(&agent_view_controller, |_, _, _, ctx| {
-            ctx.notify();
-        });
-
         Self {
             prompt,
             display_chips: vec![],
-            ai_input_model,
-            ai_context_model,
             terminal_view_id,
             menu_positioning_provider,
             session_context,
             current_repo_path,
             model_events,
-            agent_view_controller,
             pane_is_focused: true,
             is_shared_session_viewer,
         }
@@ -219,16 +164,12 @@ impl PromptDisplay {
                     chip_result.clone(),
                     next_chip_kind,
                     DisplayChipConfig {
-                        ai_input_model: self.ai_input_model.clone(),
-                        ai_context_model: self.ai_context_model.clone(),
                         terminal_view_id: self.terminal_view_id,
                         menu_positioning_provider: self.menu_positioning_provider.clone(),
                         session_context: self.session_context.clone(),
                         current_repo_path: self.current_repo_path.clone(),
                         model_events: self.model_events.clone(),
                         is_shared_session_viewer,
-                        agent_view_controller: self.agent_view_controller.clone(),
-                        ambient_agent_view_model: None,
                     },
                 );
                 chip.maybe_set_git_line_changes_info(git_line_changes_info.clone());
@@ -252,30 +193,12 @@ impl PromptDisplay {
                     ctx.emit(PromptDisplayEvent::OpenCodeReview);
                     ctx.notify();
                 }
-                PromptDisplayChipEvent::OpenConversationHistory => {
-                    ctx.emit(PromptDisplayEvent::OpenConversationHistory);
-                    ctx.notify();
-                }
                 PromptDisplayChipEvent::OpenCommandPaletteFiles => {
                     ctx.emit(PromptDisplayEvent::OpenCommandPaletteFiles);
                     ctx.notify();
                 }
-                PromptDisplayChipEvent::RunAgentQuery(query) => {
-                    ctx.emit(PromptDisplayEvent::RunAgentQuery(query.clone()));
-                    ctx.notify();
-                }
                 PromptDisplayChipEvent::TryExecuteCommand(cmd) => {
                     ctx.emit(PromptDisplayEvent::TryExecuteCommand(cmd.clone()));
-                    ctx.notify();
-                }
-                PromptDisplayChipEvent::OpenAIDocument {
-                    document_id,
-                    document_version,
-                } => {
-                    ctx.emit(PromptDisplayEvent::OpenAIDocument {
-                        document_id: *document_id,
-                        document_version: *document_version,
-                    });
                     ctx.notify();
                 }
             });

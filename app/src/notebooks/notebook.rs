@@ -43,8 +43,6 @@ use super::link::{NotebookLinks, SessionSource};
 use super::manager::NotebookManager;
 use super::telemetry::NotebookTelemetryAction;
 use super::{CloudNotebookModel, NotebookId, NotebookLocation, styles};
-use crate::ai::blocklist::secret_redaction::find_secrets_in_text;
-use crate::ai::document::ai_document_model::AIDocumentId;
 use crate::appearance::Appearance;
 use crate::cloud_object::grab_edit_access_modal::{GrabEditAccessModal, GrabEditAccessModalEvent};
 use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent, UpdateSource};
@@ -81,6 +79,7 @@ use crate::settings::{
     FontSettings, FontSettingsChangedEvent, NotebookFontSize, decrease_notebook_font_size,
     increase_notebook_font_size,
 };
+use crate::terminal::model::secrets::find_secrets_in_text;
 use crate::terminal::safe_mode_settings::get_secret_obfuscation_mode;
 use crate::throttle::throttle;
 use crate::ui_components::icons::{self, Icon};
@@ -259,7 +258,6 @@ pub enum NotebookEvent {
         invitee_email: Option<String>,
         source: SharingDialogSource,
     },
-    AttachPlanAsContext(AIDocumentId),
 }
 
 impl From<PaneEvent> for NotebookEvent {
@@ -292,7 +290,6 @@ pub enum NotebookAction {
     CopyLink(String),
     OpenLinkOnDesktop(Url),
     Export,
-    AttachPlanAsContext(AIDocumentId),
 }
 
 impl From<ContextMenuAction> for NotebookAction {
@@ -1018,10 +1015,7 @@ impl NotebookView {
     }
 
     pub fn is_plan(&self, ctx: &AppContext) -> bool {
-        self.active_notebook_data
-            .as_ref(ctx)
-            .ai_document_id(ctx)
-            .is_some()
+        self.active_notebook_data.as_ref(ctx).is_plan(ctx)
     }
 
     fn mode<C: ModelAsRef>(&self, ctx: &C) -> Mode {
@@ -1404,15 +1398,6 @@ impl NotebookView {
                     Space::Team { .. } => {} // TODO: When we do team -> personal sharing
                 }
             }
-        }
-
-        if let Some(ai_document_id) = self.active_notebook_data.as_ref(ctx).ai_document_id(ctx) {
-            menu_items.push(
-                MenuItemFields::new("Attach to active session")
-                    .with_on_select_action(NotebookAction::AttachPlanAsContext(ai_document_id))
-                    .with_icon(icons::Icon::Paperclip)
-                    .into_item(),
-            );
         }
 
         // Add "Copy Link" to menu
@@ -2340,9 +2325,6 @@ impl TypedActionView for NotebookView {
                 // No-op when not on wasm
             }
             NotebookAction::Export => self.export(ctx),
-            NotebookAction::AttachPlanAsContext(id) => {
-                ctx.emit(NotebookEvent::AttachPlanAsContext(*id))
-            }
         };
     }
 }

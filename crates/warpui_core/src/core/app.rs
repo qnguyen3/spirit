@@ -33,7 +33,7 @@ use crate::assets::AssetProvider;
 use crate::assets::asset_cache::{AssetCache, AssetHandle, AssetSource, AssetState};
 use crate::r#async::executor::{self, Background, Foreground, ForegroundTask};
 use crate::r#async::{FutureId, SpawnableOutput, Timer, block_on};
-use crate::core::{ActionType, StoredView, Window};
+use crate::core::{ActionType, AnyView, Window};
 use crate::event::KeyState;
 use crate::fonts::{self, ExternalFontFamily, FallbackFontModel, RequestedFallbackFontSource};
 use crate::image_cache::{self, ImageCache};
@@ -64,9 +64,6 @@ use crate::{
     ViewAsRef, ViewContext, ViewHandle, WindowId, WindowInvalidation, ZoomFactor, assets,
     rendering,
 };
-
-#[cfg(feature = "tui")]
-mod tui;
 
 lazy_static! {
     static ref LAST_USER_ACTION_UNIX_TIMESTAMP: AtomicI64 = AtomicI64::new(0);
@@ -3006,9 +3003,7 @@ impl AppContext {
         let mut ctx = ViewContext::new(self, window_id, view_id);
         let handle = if let Some(view) = build_view(&mut ctx) {
             if let Some(window) = self.windows.get_mut(&window_id) {
-                window
-                    .views
-                    .insert(view_id, StoredView::Gui(Box::new(view)));
+                window.views.insert(view_id, Box::new(view));
             } else {
                 panic!("Window does not exist");
             }
@@ -3085,9 +3080,7 @@ impl AppContext {
             .windows
             .get_mut(&window_id)
             .expect("Window does not exist");
-        window
-            .views
-            .insert(view_id, StoredView::Gui(Box::new(view)));
+        window.views.insert(view_id, Box::new(view));
 
         self.register_typed_action_view_internal::<V>(window_id, view_id, parent_view_id)
     }
@@ -4621,7 +4614,7 @@ impl AppContext {
     ///
     /// This bookkeeping is not generic, so it is compiled once instead of being duplicated into
     /// every instantiation of [`UpdateView::update_view`].
-    fn take_view_for_update(&mut self, window_id: WindowId, view_id: EntityId) -> StoredView {
+    fn take_view_for_update(&mut self, window_id: WindowId, view_id: EntityId) -> Box<dyn AnyView> {
         self.pending_flushes += 1;
         let Some(window) = self.windows.get_mut(&window_id) else {
             panic!("Window does not exist");
@@ -4633,7 +4626,12 @@ impl AppContext {
     }
 
     /// Restores a view removed by [`Self::take_view_for_update`] and flushes pending effects.
-    fn finish_view_update(&mut self, window_id: WindowId, view_id: EntityId, view: StoredView) {
+    fn finish_view_update(
+        &mut self,
+        window_id: WindowId,
+        view_id: EntityId,
+        view: Box<dyn AnyView>,
+    ) {
         if let Some(window) = self.windows.get_mut(&window_id) {
             window.views.insert(view_id, view);
         }
@@ -4656,7 +4654,7 @@ fn downcast_model_mut<T: Entity>(model: &mut Box<dyn AnyModel>) -> &mut T {
 ///
 /// This is generic over the entity type only, so the downcast and panic machinery is shared by
 /// all [`UpdateView::update_view`] call sites for a given view type.
-fn downcast_view_mut<T: Entity>(view: &mut StoredView) -> &mut T {
+fn downcast_view_mut<T: Entity>(view: &mut Box<dyn AnyView>) -> &mut T {
     view.as_any_mut()
         .downcast_mut()
         .expect("Downcast is type safe")
@@ -4820,34 +4818,20 @@ impl AppContext {
             .get(&window_id)
             .ok_or_else(|| anyhow!("window not found"))?;
         match window.views.get(&view_id) {
-            Some(StoredView::Gui(view)) => {
-                Ok(autotracking::render_view(window_id, view_id, || {
-                    view.render(self)
-                }))
-            }
-            #[cfg(feature = "tui")]
-            Some(StoredView::Tui(_)) => Err(anyhow!("view is not a GUI view")),
+            Some(view) => Ok(autotracking::render_view(window_id, view_id, || {
+                view.render(self)
+            })),
             None => Err(anyhow!("view not found")),
         }
     }
 
-    // This feeds the GUI presenter, so TUI views in the shared registry are
-    // skipped: they are rendered by the TUI presenter via `render_tui_view`
-    // instead. Revisit if a window ever mixes rendered worlds. The clippy
-    // allow is needed because the filter half of `filter_map` is only
-    // exercised when the additive `tui` feature adds the non-GUI variant.
-    #[allow(clippy::unnecessary_filter_map)]
     pub fn render_views(&self, window_id: WindowId) -> Result<EntityIdMap<Box<dyn Element>>> {
         self.windows
             .get(&window_id)
             .map(|w| {
                 w.views
                     .iter()
-                    .filter_map(|(id, view)| match view {
-                        StoredView::Gui(view) => Some((*id, view.render(self))),
-                        #[cfg(feature = "tui")]
-                        StoredView::Tui(_) => None,
-                    })
+                    .map(|(id, view)| (*id, view.render(self)))
                     .collect::<EntityIdMap<_>>()
             })
             .ok_or_else(|| anyhow!("window not found"))

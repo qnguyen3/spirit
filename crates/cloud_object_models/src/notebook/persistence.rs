@@ -1,4 +1,3 @@
-use ai::document::AIDocumentId;
 use cloud_object_persistence::{
     CloudObjectReadContext, id_from_metadata, to_cloud_object_metadata, upsert_cloud_object,
 };
@@ -8,7 +7,7 @@ use diesel::{Connection, ExpressionMethods, QueryDsl, RunQueryDsl, SqliteConnect
 use persistence::model::{NewNotebook, Notebook};
 use persistence::schema;
 
-use super::{CloudNotebook, CloudNotebookModel, NotebookId};
+use super::{CloudNotebook, CloudNotebookModel, NotebookDocumentId, NotebookId};
 
 pub fn upsert_notebooks(
     conn: &mut SqliteConnection,
@@ -81,7 +80,7 @@ pub fn read_notebooks(
             let ai_document_id = notebook
                 .ai_document_id
                 .as_ref()
-                .and_then(|doc_id_str| AIDocumentId::try_from(doc_id_str.as_str()).ok());
+                .and_then(|doc_id_str| NotebookDocumentId::try_from(doc_id_str.as_str()).ok());
             Some(CloudNotebook::new(
                 notebook_id,
                 CloudNotebookModel {

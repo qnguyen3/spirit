@@ -1,0 +1,124 @@
+//! Skill provider definitions and utilities.
+//!
+//! This module defines the supported skill providers (i.e. Agents, Claude, Codex, Warp) and their
+//! associated skills directory paths. It provides utilities for looking up providers
+//! from paths and vice versa.
+use std::path::PathBuf;
+use std::sync::LazyLock;
+
+use serde::{Deserialize, Serialize};
+use strum_macros::{Display, EnumString, VariantNames};
+use warp_core::ui::color::CLAUDE_ORANGE;
+use warp_core::ui::icons::Icon;
+use warp_core::ui::theme::Fill;
+
+/// Represents a skill provider/origin (Agents, Claude, Codex, or Warp).
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    Display,
+    EnumString,
+    VariantNames,
+)]
+pub enum SkillProvider {
+    Warp,
+    Agents,
+    Claude,
+    Codex,
+    Cursor,
+    Gemini,
+    Copilot,
+    Droid,
+    Github,
+    OpenCode,
+    Kiro,
+}
+
+/// Definition of a skill provider including its directory path.
+pub struct SkillProviderDefinition {
+    /// Relative path from root (repo or home), constructed with platform-aware joining.
+    pub skills_path: PathBuf,
+}
+
+impl SkillProvider {
+    /// Returns the default icon for this provider.
+    pub fn icon(&self) -> Icon {
+        match self {
+            SkillProvider::Claude => Icon::ClaudeLogo,
+            SkillProvider::Codex => Icon::OpenAILogo,
+            SkillProvider::Gemini => Icon::GeminiLogo,
+            SkillProvider::Droid => Icon::DroidLogo,
+            SkillProvider::OpenCode => Icon::OpenCodeLogo,
+            SkillProvider::Warp
+            | SkillProvider::Agents
+            | SkillProvider::Cursor
+            | SkillProvider::Copilot
+            | SkillProvider::Github
+            | SkillProvider::Kiro => Icon::WarpLogoLight,
+        }
+    }
+
+    /// Returns the icon fill for this provider, using `fallback` for providers that
+    /// don't require a specific color. Claude uses its branded salmon color instead.
+    pub fn icon_fill(&self, fallback: Fill) -> Fill {
+        match self {
+            SkillProvider::Claude => Fill::Solid(CLAUDE_ORANGE),
+            SkillProvider::Warp
+            | SkillProvider::Agents
+            | SkillProvider::Codex
+            | SkillProvider::Cursor
+            | SkillProvider::Gemini
+            | SkillProvider::Copilot
+            | SkillProvider::Droid
+            | SkillProvider::Github
+            | SkillProvider::OpenCode
+            | SkillProvider::Kiro => fallback,
+        }
+    }
+}
+
+/// All provider definitions. Order determines precedence (first = highest priority).
+pub static SKILL_PROVIDER_DEFINITIONS: LazyLock<Vec<SkillProviderDefinition>> =
+    LazyLock::new(|| {
+        vec![
+            SkillProviderDefinition {
+                skills_path: PathBuf::from(".agents").join("skills"),
+            },
+            SkillProviderDefinition {
+                skills_path: PathBuf::from(".warp").join("skills"),
+            },
+            SkillProviderDefinition {
+                skills_path: PathBuf::from(".claude").join("skills"),
+            },
+            SkillProviderDefinition {
+                skills_path: PathBuf::from(".codex").join("skills"),
+            },
+            SkillProviderDefinition {
+                skills_path: PathBuf::from(".cursor").join("skills"),
+            },
+            SkillProviderDefinition {
+                skills_path: PathBuf::from(".gemini").join("skills"),
+            },
+            SkillProviderDefinition {
+                skills_path: PathBuf::from(".copilot").join("skills"),
+            },
+            SkillProviderDefinition {
+                skills_path: PathBuf::from(".factory").join("skills"),
+            },
+            SkillProviderDefinition {
+                skills_path: PathBuf::from(".github").join("skills"),
+            },
+            SkillProviderDefinition {
+                skills_path: PathBuf::from(".opencode").join("skills"),
+            },
+            SkillProviderDefinition {
+                skills_path: PathBuf::from(".kiro").join("skills"),
+            },
+        ]
+    });

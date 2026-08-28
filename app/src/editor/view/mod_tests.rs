@@ -49,8 +49,6 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_ctx| VimRegisters::new());
     app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    #[cfg(feature = "voice_input")]
-    app.add_singleton_model(voice_input::VoiceInput::new);
 
     let team_client_mock = Arc::new(MockTeamClient::new());
     let workspace_client_mock = Arc::new(MockWorkspaceClient::new());
@@ -4316,16 +4314,7 @@ fn test_paste_clipboard_with_text_only_should_paste_text_normally() {
         initialize_app(&mut app);
 
         let (_, editor) = app.add_window(WindowStyle::NotStealFocus, |ctx| {
-            let mut editor = EditorView::new(Default::default(), ctx);
-            // Enable image context options to allow image attachment functionality
-            // This simulates the state when Agent Mode is active and image attachments are supported
-            editor.image_context_options = ImageContextOptions::Enabled {
-                unsupported_model: false,
-                is_processing_attached_images: false,
-                num_images_attached: 0,
-                num_images_in_conversation: 0,
-            };
-            editor
+            EditorView::new(Default::default(), ctx)
         });
 
         // Text-only clipboard - should paste text normally
@@ -4366,23 +4355,14 @@ fn test_paste_clipboard_with_text_only_should_paste_text_normally() {
 }
 
 #[test]
-fn test_paste_clipboard_with_image_only_should_switch_to_agent_mode() {
+fn test_paste_clipboard_with_image_only_should_paste_no_text() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
 
         let (_, editor) = app.add_window(WindowStyle::NotStealFocus, |ctx| {
-            let mut editor = EditorView::new(Default::default(), ctx);
-            // Enable image context options for testing
-            editor.image_context_options = ImageContextOptions::Enabled {
-                unsupported_model: false,
-                is_processing_attached_images: false,
-                num_images_attached: 0,
-                num_images_in_conversation: 0,
-            };
-            editor
+            EditorView::new(Default::default(), ctx)
         });
 
-        // Image-only clipboard - should switch to Agent Mode and attach image
         app.update(|ctx| {
             let png_image = warpui::clipboard::ImageData {
                 data: vec![137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13], // PNG header + minimal data
@@ -4401,31 +4381,21 @@ fn test_paste_clipboard_with_image_only_should_switch_to_agent_mode() {
         editor.update(&mut app, |editor, ctx| {
             editor.paste(ctx);
             // Image-only clipboard should not paste any text to the buffer
-            // The image data should be processed separately via Agent Mode switching
             assert_eq!(editor.buffer_text(ctx), "");
-            // TODO: Add assertions for Agent Mode switch and image attachment
         });
     })
 }
 
 #[test]
-fn test_paste_clipboard_with_supported_image_and_text_should_handle_both() {
+fn test_paste_clipboard_with_supported_image_and_text_should_paste_text() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
 
         let (_, editor) = app.add_window(WindowStyle::NotStealFocus, |ctx| {
-            let mut editor = EditorView::new(Default::default(), ctx);
-            // Enable image context options for testing
-            editor.image_context_options = ImageContextOptions::Enabled {
-                unsupported_model: false,
-                is_processing_attached_images: false,
-                num_images_attached: 0,
-                num_images_in_conversation: 0,
-            };
-            editor
+            EditorView::new(Default::default(), ctx)
         });
 
-        // PNG (supported) image and text clipboard - should switch to Agent Mode, attach image, and paste text
+        // PNG (supported) image and text clipboard - should paste the text
         app.update(|ctx| {
             let png_image = warpui::clipboard::ImageData {
                 data: vec![137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13], // PNG header + minimal data
@@ -4443,33 +4413,23 @@ fn test_paste_clipboard_with_supported_image_and_text_should_handle_both() {
 
         editor.update(&mut app, |editor, ctx| {
             editor.paste(ctx);
-            // When clipboard contains both supported image and text, both should be handled:
-            // - Text content gets pasted to the buffer
-            // - Image triggers Agent Mode switch and attachment process
+            // When clipboard contains both an image and text, the text content gets pasted to the
+            // buffer.
             assert_eq!(editor.buffer_text(ctx), "some descriptive text");
-            // TODO: Add assertions for Agent Mode switch and image attachment
         });
     })
 }
 
 #[test]
-fn test_paste_clipboard_with_unsupported_image_and_text_should_show_error() {
+fn test_paste_clipboard_with_unsupported_image_and_text_should_paste_text_only() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
 
         let (_, editor) = app.add_window(WindowStyle::NotStealFocus, |ctx| {
-            let mut editor = EditorView::new(Default::default(), ctx);
-            // Enable image context options for testing
-            editor.image_context_options = ImageContextOptions::Enabled {
-                unsupported_model: false,
-                is_processing_attached_images: false,
-                num_images_attached: 0,
-                num_images_in_conversation: 0,
-            };
-            editor
+            EditorView::new(Default::default(), ctx)
         });
 
-        // BMP (unsupported) image and text clipboard - should show error and paste text only
+        // BMP (unsupported) image and text clipboard - should paste text only
         app.update(|ctx| {
             let bmp_image = warpui::clipboard::ImageData {
                 data: vec![66, 77, 54, 0, 0, 0, 0, 0, 0, 0, 54, 0, 0, 0], // BMP header + minimal data
@@ -4487,11 +4447,9 @@ fn test_paste_clipboard_with_unsupported_image_and_text_should_show_error() {
 
         editor.update(&mut app, |editor, ctx| {
             editor.paste(ctx);
-            // When clipboard contains unsupported image format:
-            // - Text content should still be pasted normally
-            // - Unsupported image should be ignored with appropriate error feedback
+            // When clipboard contains an unsupported image format, text content should still be
+            // pasted normally.
             assert_eq!(editor.buffer_text(ctx), "text with unsupported image");
-            // TODO: Add assertions for error toast being shown
         });
     })
 }

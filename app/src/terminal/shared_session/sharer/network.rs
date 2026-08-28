@@ -18,8 +18,8 @@ use futures_util::{SinkExt, StreamExt};
 use instant::Instant;
 use parking_lot::FairMutex;
 use session_sharing_protocol::common::{
-    ActivePrompt, ActivePromptUpdate, AgentPromptFailureReason, AgentPromptRequest,
-    AgentPromptRequestId, CommandExecutionFailureReason, CommandExecutionRequestId, ControlAction,
+    ActivePrompt, ActivePromptUpdate, AgentPromptFailureReason, AgentPromptRequestId,
+    CommandExecutionFailureReason, CommandExecutionRequestId, ControlAction,
     ControlActionFailureReason, ControlActionRequestId, FeatureSupport, InputOperationId,
     InputOperationSeqNo, InputUpdate, OrderedTerminalEvent, OrderedTerminalEventType,
     ParticipantId, ParticipantList, ParticipantPresenceUpdate, Role, RoleRequestId,
@@ -383,7 +383,6 @@ impl Network {
         active_prompt: ActivePrompt,
         selection: Selection,
         input_replica_id: ReplicaId,
-        terminal_view_id: warpui::EntityId,
         universal_developer_input_context: UniversalDeveloperInputContext,
         lifetime: Lifetime,
         source: SharedSessionSource,
@@ -403,11 +402,7 @@ impl Network {
                 num_cols: size_info.columns(),
             }
         };
-        let selected_model_id: String = crate::ai::llms::LLMPreferences::as_ref(ctx)
-            .get_active_base_model(ctx, Some(terminal_view_id))
-            .id
-            .clone()
-            .into();
+        let selected_model_id = String::new();
         let startup_retry = StartupRetryState::new(startup_max_attempts(&source));
         let startup_config = StartupConfig {
             scrollback: scrollback.clone(),
@@ -1478,15 +1473,9 @@ impl Network {
                 ctx.emit(NetworkEvent::WriteToPtyRequested { id, bytes })
             }
             DownstreamMessage::AgentPromptRequested {
-                id,
-                participant_id,
-                request,
+                id, participant_id, ..
             } => {
-                ctx.emit(NetworkEvent::AgentPromptRequested {
-                    id,
-                    participant_id,
-                    request,
-                });
+                ctx.emit(NetworkEvent::AgentPromptRequested { id, participant_id });
             }
             DownstreamMessage::LinkAccessLevelUpdateResponse(response) => {
                 ctx.emit(NetworkEvent::LinkAccessLevelUpdateResponse { response })
@@ -1860,7 +1849,6 @@ pub enum NetworkEvent {
     AgentPromptRequested {
         id: AgentPromptRequestId,
         participant_id: ParticipantId,
-        request: AgentPromptRequest,
     },
     LinkAccessLevelUpdateResponse {
         response: LinkAccessLevelUpdateResponse,

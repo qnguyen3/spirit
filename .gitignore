@@ -13,6 +13,7 @@ crates/command-signatures-v2/js/build
 crates/command-signatures-v2/js/node_modules
 docs
 .claude
+spirit_specs
 
 # For testing changes to the channel versions file
 channel_versions_test.json

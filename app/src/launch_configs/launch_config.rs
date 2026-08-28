@@ -46,14 +46,21 @@ impl From<WindowSnapshot> for WindowTemplate {
         let mut active_tab_index = None;
         let mut num_valid_tabs = 0;
 
-        let tabs = snapshot
+        let screen = snapshot
+            .screens
+            .into_iter()
+            .nth(snapshot.active_screen_index)
+            .unwrap_or_default();
+        let screen_active_tab_index = screen.active_tab_index;
+
+        let tabs = screen
             .tabs
             .into_iter()
             .enumerate()
             .filter_map(|(i, tab)| {
                 let tab = tab.try_into().ok()?;
 
-                if i == snapshot.active_tab_index {
+                if i == screen_active_tab_index {
                     active_tab_index = Some(num_valid_tabs);
                 }
 
@@ -84,9 +91,11 @@ pub enum PaneMode {
     /// A standard terminal shell session.
     #[default]
     Terminal,
-    /// A terminal that immediately enters Agent Mode.
+    /// Legacy value from removed agent mode. Retained so existing launch configs still
+    /// parse; opens a terminal.
     Agent,
-    /// A cloud-mode (ambient agent) pane with no local shell.
+    /// Legacy value from removed cloud (ambient agent) mode. Retained so existing launch
+    /// configs still parse; opens a terminal.
     Cloud,
 }
 
@@ -151,18 +160,11 @@ impl TryFrom<PaneNodeSnapshot> for PaneTemplateType {
                 | LeafContents::Code(_)
                 | LeafContents::Workflow(_)
                 | LeafContents::Settings(_)
-                | LeafContents::AIFact(_)
                 | LeafContents::CodeReview(_)
-                | LeafContents::CustomRouterEditor
-                | LeafContents::ExecutionProfileEditor
                 | LeafContents::GetStarted
+                | LeafContents::AgentPicker
                 | LeafContents::NetworkLog
-                | LeafContents::AIDocument(_)
-                | LeafContents::EnvironmentManagement(_)
-                | LeafContents::AmbientAgent(_) => {
-                    // TODO: Handle AIDocument in launch config
-                    Err(())
-                }
+                | LeafContents::EnvironmentManagement(_) => Err(()),
             },
         }
     }

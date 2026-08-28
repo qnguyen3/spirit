@@ -13,7 +13,7 @@ use super::{
     VerticalTabsSummaryPrimaryLabel, branch_label_display, coalesce_summary_branch_entries,
     code_detail_kind_label, compact_branch_subtitle_display, detail_sidecar_width_and_bounds,
     detail_target_for_hovered_row, non_terminal_search_text_fragments,
-    pane_ids_for_display_granularity, pane_search_text_fragments, preferred_agent_tab_titles,
+    pane_ids_for_display_granularity, pane_search_text_fragments, preferred_cli_agent_tab_title,
     push_normalized_unique_summary_label, search_fragments_contain_query,
     select_summary_pane_kind_icons, should_keep_detail_sidecar_visible_for_mouse_position,
     should_show_tab_group_header, shows_synced_inputs_indicator,
@@ -23,13 +23,13 @@ use super::{
     terminal_title_fallback_font, uses_outer_group_container, visible_pane_ids_for_detail_target,
     vtab_diff_stats_text,
 };
-use crate::ai::agent::conversation::ConversationStatus;
 use crate::context_chips::display_chip::GitLineChanges;
 use crate::pane_group::pane::IPaneType;
 use crate::pane_group::{PaneId, TerminalPaneId};
 use crate::safe_triangle::SafeTriangle;
 use crate::tab::{ShortcutModifierKind, reveals_shortcut_hints};
 use crate::terminal::CLIAgent;
+use crate::ui_components::status_icons::ConversationStatus;
 use crate::workspace::tab_settings::VerticalTabsDisplayGranularity;
 
 fn label(text: &str) -> VerticalTabsSummaryPrimaryLabel {
@@ -154,58 +154,45 @@ fn summary_pane_kind_icons_distinguish_ambient_claude_from_local_claude() {
 }
 
 #[test]
-fn preferred_agent_tab_titles_default_to_title_like_text() {
+fn preferred_cli_agent_tab_title_defaults_to_title_like_text() {
     let agent_text = TerminalAgentText {
-        conversation_display_title: Some("Generated Warp Agent title".to_string()),
-        conversation_latest_user_prompt: Some("Latest Warp Agent prompt".to_string()),
         cli_agent_title: Some("CLI summary".to_string()),
         cli_agent_latest_user_prompt: Some("Latest CLI prompt".to_string()),
-        is_oz_agent: true,
         cli_agent: Some(CLIAgent::Claude),
     };
 
     assert_eq!(
-        preferred_agent_tab_titles(&agent_text, AgentTabTextPreference::ConversationTitle),
-        (
-            Some("Generated Warp Agent title".to_string()),
-            Some("CLI summary".to_string())
-        )
+        preferred_cli_agent_tab_title(&agent_text, AgentTabTextPreference::ConversationTitle),
+        Some("CLI summary".to_string())
     );
 }
 
 #[test]
-fn preferred_agent_tab_titles_do_not_use_cli_prompt_when_disabled() {
+fn preferred_cli_agent_tab_title_does_not_use_cli_prompt_when_disabled() {
     let agent_text = TerminalAgentText {
-        conversation_display_title: None,
-        conversation_latest_user_prompt: None,
         cli_agent_title: None,
         cli_agent_latest_user_prompt: Some("Latest CLI prompt".to_string()),
-        is_oz_agent: false,
         cli_agent: Some(CLIAgent::Claude),
     };
 
     assert_eq!(
-        preferred_agent_tab_titles(&agent_text, AgentTabTextPreference::ConversationTitle),
-        (None, None)
+        preferred_cli_agent_tab_title(&agent_text, AgentTabTextPreference::ConversationTitle),
+        None
     );
 }
 
 #[test]
 fn terminal_primary_line_uses_terminal_title_when_disabled_cli_has_only_prompt() {
     let agent_text = TerminalAgentText {
-        conversation_display_title: None,
-        conversation_latest_user_prompt: None,
         cli_agent_title: None,
         cli_agent_latest_user_prompt: Some("Latest CLI prompt".to_string()),
-        is_oz_agent: false,
         cli_agent: Some(CLIAgent::Claude),
     };
-    let (conversation_title, cli_title) =
-        preferred_agent_tab_titles(&agent_text, AgentTabTextPreference::ConversationTitle);
+    let cli_title =
+        preferred_cli_agent_tab_title(&agent_text, AgentTabTextPreference::ConversationTitle);
 
     let line = terminal_primary_line_data(
         false,
-        conversation_title,
         cli_title,
         "Generated Claude Code title",
         "~/warp",
@@ -224,41 +211,31 @@ fn terminal_primary_line_uses_terminal_title_when_disabled_cli_has_only_prompt()
 }
 
 #[test]
-fn preferred_agent_tab_titles_use_latest_prompt_when_enabled() {
+fn preferred_cli_agent_tab_title_uses_latest_prompt_when_enabled() {
     let agent_text = TerminalAgentText {
-        conversation_display_title: Some("Generated Warp Agent title".to_string()),
-        conversation_latest_user_prompt: Some("Latest Warp Agent prompt".to_string()),
         cli_agent_title: Some("CLI summary".to_string()),
         cli_agent_latest_user_prompt: Some("Latest CLI prompt".to_string()),
-        is_oz_agent: true,
         cli_agent: Some(CLIAgent::Claude),
     };
 
     assert_eq!(
-        preferred_agent_tab_titles(&agent_text, AgentTabTextPreference::LatestUserPrompt),
-        (
-            Some("Latest Warp Agent prompt".to_string()),
-            Some("Latest CLI prompt".to_string())
-        )
+        preferred_cli_agent_tab_title(&agent_text, AgentTabTextPreference::LatestUserPrompt),
+        Some("Latest CLI prompt".to_string())
     );
 }
 
 #[test]
 fn terminal_primary_line_uses_cli_prompt_when_enabled_cli_has_prompt() {
     let agent_text = TerminalAgentText {
-        conversation_display_title: None,
-        conversation_latest_user_prompt: None,
         cli_agent_title: None,
         cli_agent_latest_user_prompt: Some("Latest CLI prompt".to_string()),
-        is_oz_agent: false,
         cli_agent: Some(CLIAgent::Claude),
     };
-    let (conversation_title, cli_title) =
-        preferred_agent_tab_titles(&agent_text, AgentTabTextPreference::LatestUserPrompt);
+    let cli_title =
+        preferred_cli_agent_tab_title(&agent_text, AgentTabTextPreference::LatestUserPrompt);
 
     let line = terminal_primary_line_data(
         false,
-        conversation_title,
         cli_title,
         "Generated Claude Code title",
         "~/warp",
@@ -272,19 +249,15 @@ fn terminal_primary_line_uses_cli_prompt_when_enabled_cli_has_prompt() {
 #[test]
 fn terminal_primary_line_uses_cli_prompt_when_enabled_cli_is_long_running() {
     let agent_text = TerminalAgentText {
-        conversation_display_title: None,
-        conversation_latest_user_prompt: None,
         cli_agent_title: None,
         cli_agent_latest_user_prompt: Some("Latest CLI prompt".to_string()),
-        is_oz_agent: false,
         cli_agent: Some(CLIAgent::Claude),
     };
-    let (conversation_title, cli_title) =
-        preferred_agent_tab_titles(&agent_text, AgentTabTextPreference::LatestUserPrompt);
+    let cli_title =
+        preferred_cli_agent_tab_title(&agent_text, AgentTabTextPreference::LatestUserPrompt);
 
     let line = terminal_primary_line_data(
         true,
-        conversation_title,
         cli_title,
         "Generated Claude Code title",
         "~/warp",
@@ -296,22 +269,16 @@ fn terminal_primary_line_uses_cli_prompt_when_enabled_cli_is_long_running() {
 }
 
 #[test]
-fn preferred_agent_tab_titles_fall_back_when_preferred_text_is_missing() {
+fn preferred_cli_agent_tab_title_falls_back_when_preferred_text_is_missing() {
     let agent_text = TerminalAgentText {
-        conversation_display_title: Some("Generated Warp Agent title".to_string()),
-        conversation_latest_user_prompt: None,
-        cli_agent_title: None,
-        cli_agent_latest_user_prompt: Some("Latest CLI prompt".to_string()),
-        is_oz_agent: true,
+        cli_agent_title: Some("CLI summary".to_string()),
+        cli_agent_latest_user_prompt: None,
         cli_agent: Some(CLIAgent::Claude),
     };
 
     assert_eq!(
-        preferred_agent_tab_titles(&agent_text, AgentTabTextPreference::LatestUserPrompt),
-        (
-            Some("Generated Warp Agent title".to_string()),
-            Some("Latest CLI prompt".to_string())
-        )
+        preferred_cli_agent_tab_title(&agent_text, AgentTabTextPreference::LatestUserPrompt),
+        Some("CLI summary".to_string())
     );
 }
 
@@ -323,8 +290,6 @@ fn pane_type_supports_vertical_tabs_detail_sidecar(pane_type: IPaneType) -> bool
             | IPaneType::Notebook
             | IPaneType::Workflow
             | IPaneType::EnvVarCollection
-            | IPaneType::AIFact
-            | IPaneType::AIDocument
     )
 }
 
@@ -365,12 +330,6 @@ fn detail_sidecar_supports_terminal_code_and_warp_drive_object_panes() {
     ));
     assert!(pane_type_supports_vertical_tabs_detail_sidecar(
         IPaneType::EnvVarCollection
-    ));
-    assert!(pane_type_supports_vertical_tabs_detail_sidecar(
-        IPaneType::AIFact
-    ));
-    assert!(pane_type_supports_vertical_tabs_detail_sidecar(
-        IPaneType::AIDocument
     ));
     assert!(!pane_type_supports_vertical_tabs_detail_sidecar(
         IPaneType::Settings
@@ -699,7 +658,6 @@ fn tab_group_header_distinguishes_two_auto_named_multi_pane_tabs() {
 fn terminal_primary_line_prefers_cli_agent_display_title() {
     let line = terminal_primary_line_data(
         false,
-        None,
         Some("Review the failing tests".to_string()),
         "~/warp",
         "~/warp",
@@ -711,25 +669,9 @@ fn terminal_primary_line_prefers_cli_agent_display_title() {
 }
 
 #[test]
-fn terminal_primary_line_prefers_cli_agent_display_title_over_conversation_title() {
-    let line = terminal_primary_line_data(
-        false,
-        Some("Review the failing tests".to_string()),
-        Some("Summarize the failures".to_string()),
-        "~/warp",
-        "~/warp",
-        TerminalPrimaryLineFont::Monospace,
-        Some("cargo nextest run".to_string()),
-    );
-
-    assert_eq!(line.text(), "Summarize the failures");
-}
-
-#[test]
 fn terminal_primary_line_falls_through_to_terminal_title_when_cli_agent_has_no_plugin_data() {
     let line = terminal_primary_line_data(
         false,
-        None,
         None,
         "codex - ~/warp",
         "~/warp",
@@ -745,7 +687,6 @@ fn terminal_primary_line_uses_terminal_title_as_fallback() {
     let line = terminal_primary_line_data(
         false,
         None,
-        None,
         "nvim src/workspace/view/vertical_tabs.rs",
         "~/warp",
         TerminalPrimaryLineFont::Monospace,
@@ -760,7 +701,6 @@ fn terminal_primary_line_uses_last_completed_command_when_shell_title_matches_wo
     let line = terminal_primary_line_data(
         false,
         None,
-        None,
         "~/warp",
         "~/warp",
         TerminalPrimaryLineFont::Monospace,
@@ -774,7 +714,6 @@ fn terminal_primary_line_uses_last_completed_command_when_shell_title_matches_wo
 fn terminal_primary_line_falls_back_to_new_session() {
     let line = terminal_primary_line_data(
         false,
-        None,
         None,
         "~/warp",
         "~/warp",
@@ -797,7 +736,6 @@ fn terminal_primary_line_uses_monospace_for_last_completed_command() {
     let line = terminal_primary_line_data(
         false,
         None,
-        None,
         "~/warp",
         "~/warp",
         TerminalPrimaryLineFont::Monospace,
@@ -819,7 +757,7 @@ fn terminal_search_fragments_include_rendered_terminal_badges() {
         "Review the failing tests".to_string(),
         "~/warp".to_string(),
         Some("main".to_string()),
-        terminal_kind_badge_label(false, Some(CLIAgent::Claude)),
+        terminal_kind_badge_label(Some(CLIAgent::Claude)),
         Some(terminal_pull_request_badge_label(
             "https://github.com/warpdotdev/warp-internal/pull/12345",
         )),
@@ -1229,7 +1167,6 @@ fn summary_search_fragments_include_hidden_overflow_values() {
                 pull_request_url: Some("https://github.com/acme/repo-d/pull/789".to_string()),
             },
         ],
-        has_unread_activity: false,
     };
 
     let fragments = summary_search_text_fragments(&summary, Some("Custom tab"));

@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use serde_json::json;
-use settings::SettingsMode;
+use settings::SettingSurfaces;
 use settings::schema::SettingSchemaEntry;
 
 use super::{
@@ -87,20 +87,20 @@ fn surface_annotation_matches_setting_schema_entry_metadata() {
 
         assert_eq!(
             annotation_names.contains("gui"),
-            surfaces.includes(SettingsMode::Gui),
+            surfaces.includes(SettingSurfaces::GUI),
             "GUI surface mismatch for {}",
             entry.storage_key
         );
         assert_eq!(
             annotation_names.contains("tui"),
-            surfaces.includes(SettingsMode::Tui),
+            surfaces.includes(SettingSurfaces::TUI),
             "TUI surface mismatch for {}",
             entry.storage_key
         );
         assert_eq!(
             annotation_names.len(),
-            usize::from(surfaces.includes(SettingsMode::Gui))
-                + usize::from(surfaces.includes(SettingsMode::Tui)),
+            usize::from(surfaces.includes(SettingSurfaces::GUI))
+                + usize::from(surfaces.includes(SettingSurfaces::TUI)),
             "unexpected surface annotation for {}",
             entry.storage_key
         );

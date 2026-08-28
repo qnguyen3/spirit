@@ -13,7 +13,6 @@ use warp_completer::completer::{
     MatchType, PathSeparators, PreparedSuggestion, Suggestion, SuggestionResults, SuggestionType,
 };
 use warp_core::features::FeatureFlag;
-use warp_core::ui::theme::AnsiColorIdentifier;
 use warpui::accessibility::{AccessibilityContent, WarpA11yRole};
 use warpui::elements::{
     Align, AnchorPair, Border, ChildAnchor, ConstrainedBox, Container, CornerRadius,
@@ -24,19 +23,17 @@ use warpui::elements::{
     ScrollbarWidth, Shrinkable, SizeConstraintCondition, SizeConstraintSwitch, Stack, Text,
     UniformList, UniformListState, XAxisAnchor, YAxisAnchor,
 };
-use warpui::fonts::{Cache, Properties, Weight};
+use warpui::fonts::{Properties, Weight};
 use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 use warpui::{
     AppContext, Entity, SingletonEntity, TypedActionView, View, ViewContext, WeakViewHandle,
 };
 
-use crate::ai::blocklist::{AIQueryHistory, AIQueryHistoryOutputStatus, render_ai_agent_mode_icon};
 use crate::appearance::Appearance;
 use crate::terminal::HistoryEntry;
 use crate::terminal::history::LinkedWorkflowData;
 use crate::terminal::model::session::SessionId;
-use crate::terminal::rich_history::{render_ai_query_rich_history, render_rich_history};
-use crate::ui_components::icons::Icon as UIComponentsIcon;
+use crate::terminal::rich_history::render_rich_history;
 use crate::util::time_format::format_approx_duration_from_now;
 
 /// This enum allows the parent view to indicate which type of details panel is shown.
@@ -47,7 +44,6 @@ pub enum DetailContent {
     RichHistory(Box<HistoryEntry>),
     /// A details panel for a simple string.
     Description(String),
-    AIQueryHistory(Box<AIQueryHistoryEntryDetails>),
 }
 
 impl From<HistoryEntry> for DetailContent {
@@ -134,7 +130,6 @@ pub enum ItemIconType {
     File,
     Folder,
     GitBranch,
-    AIQuery,
 }
 
 impl ItemIconType {
@@ -146,7 +141,6 @@ impl ItemIconType {
             ItemIconType::File => FILE_ICON_PATH,
             ItemIconType::Folder => FOLDER_ICON_PATH,
             ItemIconType::GitBranch => GIT_BRANCH_ICON_PATH,
-            ItemIconType::AIQuery => UIComponentsIcon::AgentMode.into(),
         }
     }
 
@@ -568,10 +562,6 @@ impl InputSuggestions {
                     .start_ts
                     .map(|ts| format!("Last ran {}", format_approx_duration_from_now(ts))),
                 DetailContent::Description(desc) => Some(desc.clone()),
-                DetailContent::AIQueryHistory(entry) => Some(format!(
-                    "Last ran {}",
-                    format_approx_duration_from_now(entry.start_time)
-                )),
             })
     }
 
@@ -679,13 +669,6 @@ impl InputSuggestions {
         });
     }
 
-    pub fn em_width(&self, font_cache: &Cache, appearance: &Appearance) -> f32 {
-        font_cache.em_width(
-            appearance.monospace_font_family(),
-            appearance.monospace_font_size(),
-        )
-    }
-
     /// Renders the details of the item at index, if it is visible and has details.
     fn render_visible_item_details(
         &self,
@@ -706,11 +689,6 @@ impl InputSuggestions {
             }
             DetailContent::Description(description) => {
                 self.render_descriptions_box(item.text.clone(), description.clone(), appearance)
-            }
-            DetailContent::AIQueryHistory(entry) => {
-                ConstrainedBox::new(render_ai_query_rich_history(entry, ctx))
-                    .with_max_width(HISTORY_DETAILS_PANEL_WIDTH)
-                    .finish()
             }
         };
 
@@ -749,7 +727,6 @@ impl InputSuggestions {
             .finish();
         }
         let handle = self.handle.clone();
-        let em_width = self.em_width(ctx.font_cache(), appearance);
 
         let list = UniformList::new(
             self.list_state.clone(),
@@ -789,39 +766,23 @@ impl InputSuggestions {
                                 Flex::row().with_cross_axis_alignment(CrossAxisAlignment::End);
 
                             if let Some(icon_type) = item.icon_type.as_ref() {
-                                let icon_container = if let ItemIconType::AIQuery = icon_type {
-                                    Container::new(render_ai_agent_mode_icon(
-                                        app,
-                                        if is_selected {
-                                            theme.background()
-                                        } else {
-                                            AnsiColorIdentifier::Yellow
-                                                .to_ansi_color(&theme.terminal_colors().normal)
-                                                .into()
-                                        },
-                                    ))
-                                    .with_padding_right(6. * (em_width / 6.))
-                                    .with_padding_left(icon_type.left_padding())
-                                    .finish()
-                                } else {
-                                    let icon_width = font_size
-                                        * icon_type.width_font_size_multiplication_factor();
-                                    Container::new(
-                                        ConstrainedBox::new(
-                                            Icon::new(
-                                                icon_type.icon_path(),
-                                                theme.main_text_color(background_color),
-                                            )
-                                            .finish(),
+                                let icon_width =
+                                    font_size * icon_type.width_font_size_multiplication_factor();
+                                let icon_container = Container::new(
+                                    ConstrainedBox::new(
+                                        Icon::new(
+                                            icon_type.icon_path(),
+                                            theme.main_text_color(background_color),
                                         )
-                                        .with_width(icon_width)
-                                        .with_height(icon_width)
                                         .finish(),
                                     )
-                                    .with_padding_left(icon_type.left_padding())
-                                    .with_padding_right(icon_type.right_padding())
-                                    .finish()
-                                };
+                                    .with_width(icon_width)
+                                    .with_height(icon_width)
+                                    .finish(),
+                                )
+                                .with_padding_left(icon_type.left_padding())
+                                .with_padding_right(icon_type.right_padding())
+                                .finish();
 
                                 row.add_child(icon_container);
                             }
@@ -1154,7 +1115,6 @@ impl PartialOrd for HistoryOrder {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum HistoryInputSuggestion<'a> {
     Command { entry: &'a HistoryEntry },
-    AIQuery { entry: AIQueryHistory },
 }
 
 impl HistoryInputSuggestion<'_> {
@@ -1164,7 +1124,6 @@ impl HistoryInputSuggestion<'_> {
             HistoryInputSuggestion::Command { entry } => {
                 entry.start_ts.unwrap_or(DateTime::default())
             }
-            HistoryInputSuggestion::AIQuery { entry } => entry.start_time,
         }
     }
 
@@ -1172,7 +1131,6 @@ impl HistoryInputSuggestion<'_> {
     pub fn text(&self) -> &str {
         match self {
             HistoryInputSuggestion::Command { entry } => entry.command.as_str(),
-            HistoryInputSuggestion::AIQuery { entry } => &entry.query_text,
         }
     }
 
@@ -1186,9 +1144,6 @@ impl HistoryInputSuggestion<'_> {
             HistoryInputSuggestion::Command { entry } => {
                 entry.has_metadata().then(|| ((*entry).clone()).into())
             }
-            HistoryInputSuggestion::AIQuery { entry } => Some(DetailContent::AIQueryHistory(
-                Box::new(AIQueryHistoryEntryDetails::from(entry)),
-            )),
         }
     }
 
@@ -1196,16 +1151,12 @@ impl HistoryInputSuggestion<'_> {
     fn icon_type(&self) -> Option<ItemIconType> {
         match self {
             HistoryInputSuggestion::Command { .. } => None,
-            HistoryInputSuggestion::AIQuery { .. } => Some(ItemIconType::AIQuery),
         }
     }
 
     /// True if this history item is for an AI query.
     pub(crate) fn is_ai_query(&self) -> bool {
-        match self {
-            HistoryInputSuggestion::Command { .. } => false,
-            HistoryInputSuggestion::AIQuery { .. } => true,
-        }
+        false
     }
 
     pub fn cmp(
@@ -1245,29 +1196,6 @@ impl HistoryInputSuggestion<'_> {
                 // Other live session, or past session
                 HistoryOrder::DifferentSession
             }
-            HistoryInputSuggestion::AIQuery { entry } => entry.history_order,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct AIQueryHistoryEntryDetails {
-    /// The time the input was sent.
-    pub(crate) start_time: DateTime<Local>,
-
-    /// The status of the output streaming from the AI API.
-    pub(crate) output_status: AIQueryHistoryOutputStatus,
-
-    /// The working directory when the AI query was submitted.
-    pub(crate) working_directory: Option<String>,
-}
-
-impl From<&AIQueryHistory> for AIQueryHistoryEntryDetails {
-    fn from(value: &AIQueryHistory) -> Self {
-        Self {
-            start_time: value.start_time,
-            output_status: value.output_status.clone(),
-            working_directory: value.working_directory.clone(),
         }
     }
 }

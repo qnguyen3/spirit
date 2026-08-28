@@ -13,15 +13,14 @@ use futures_util::{SinkExt, StreamExt};
 use instant::Instant;
 use parking_lot::FairMutex;
 use session_sharing_protocol::common::{
-    ActivePrompt, ActivePromptUpdate, AddGuestsResponse, AgentAttachment, AgentPromptFailureReason,
-    AgentPromptRequest, AgentPromptRequestId, CommandExecutionFailureReason, ControlAction,
-    ControlActionFailureReason, FeatureSupport, InputOperationId, InputOperationSeqNo, InputUpdate,
-    LinkAccessLevelUpdateResponse, ParticipantId, ParticipantList, ParticipantPresenceUpdate,
-    RemoveGuestResponse, Role, RoleRequestId, RoleRequestResponse, Selection, SelectionUpdate,
-    ServerConversationToken, SessionId, TeamAccessLevelUpdateResponse, TeamAclData,
-    TelemetryContext, UniversalDeveloperInputContext, UniversalDeveloperInputContextUpdate,
-    UpdatePendingUserRoleResponse, UserID, WindowSize, WriteToPtyFailureReason,
-    WriteToPtyRequestId, WriteToPtySeqNo,
+    ActivePrompt, ActivePromptUpdate, AddGuestsResponse, AgentPromptFailureReason,
+    CommandExecutionFailureReason, ControlActionFailureReason, FeatureSupport, InputOperationId,
+    InputOperationSeqNo, InputUpdate, LinkAccessLevelUpdateResponse, ParticipantId,
+    ParticipantList, ParticipantPresenceUpdate, RemoveGuestResponse, Role, RoleRequestId,
+    RoleRequestResponse, Selection, SelectionUpdate, SessionId, TeamAccessLevelUpdateResponse,
+    TeamAclData, TelemetryContext, UniversalDeveloperInputContext,
+    UniversalDeveloperInputContextUpdate, UpdatePendingUserRoleResponse, UserID, WindowSize,
+    WriteToPtyFailureReason, WriteToPtyRequestId, WriteToPtySeqNo,
 };
 use session_sharing_protocol::viewer::{
     DownstreamMessage, InitPayload, RoleUpdatedReason, SessionEndedReason, UpstreamMessage,
@@ -731,9 +730,7 @@ impl Network {
             DownstreamMessage::CommandExecutionRequestFailed { reason, .. } => {
                 ctx.emit(NetworkEvent::CommandExecutionRequestFailed { reason });
             }
-            DownstreamMessage::AgentPromptRequestInFlight(id) => {
-                ctx.emit(NetworkEvent::AgentPromptRequestInFlight(id));
-            }
+            DownstreamMessage::AgentPromptRequestInFlight(_) => {}
             DownstreamMessage::AgentPromptRequestFailed { reason } => {
                 ctx.emit(NetworkEvent::AgentPromptRequestFailed { reason });
             }
@@ -940,31 +937,6 @@ impl Network {
     pub fn send_command_execution_request(&mut self, block_id: &BlockId, command: String) {
         let buffer_id = block_id.to_owned().into();
         self.send_message_to_server(UpstreamMessage::ExecuteCommand { buffer_id, command });
-    }
-
-    pub fn send_agent_prompt_request(
-        &mut self,
-        server_conversation_token: Option<ServerConversationToken>,
-        prompt: String,
-        attachments: Vec<AgentAttachment>,
-    ) {
-        let request = AgentPromptRequest {
-            id: AgentPromptRequestId::new(),
-            server_conversation_token,
-            prompt,
-            attachments,
-        };
-        self.send_message_to_server(UpstreamMessage::SendAgentPrompt(request));
-    }
-
-    pub fn send_cancel_control_action(
-        &mut self,
-        server_conversation_token: ServerConversationToken,
-    ) {
-        let action = ControlAction::CancelConversation {
-            server_conversation_token,
-        };
-        self.send_message_to_server(UpstreamMessage::SendControlAction(action));
     }
 
     pub fn send_link_permission_update(&mut self, role: Option<Role>) {
@@ -1218,7 +1190,6 @@ pub enum NetworkEvent {
     CommandExecutionRequestFailed {
         reason: CommandExecutionFailureReason,
     },
-    AgentPromptRequestInFlight(AgentPromptRequestId),
     AgentPromptRequestFailed {
         reason: AgentPromptFailureReason,
     },

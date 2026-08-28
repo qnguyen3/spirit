@@ -8,8 +8,6 @@ use parking_lot::{Mutex, RwLock};
 use warp_graphql::client::RequestOptions;
 use warp_server_auth::auth_state::AuthState;
 use warp_server_auth::credentials::AuthToken;
-#[cfg(feature = "agent_mode_evals")]
-use warp_server_auth::credentials::Credentials;
 
 use crate::auth::{AuthEvent, AuthSession, UserUid};
 
@@ -21,14 +19,6 @@ pub const CLOUD_AGENT_ID_HEADER: &str = "X-Warp-Cloud-Agent-ID";
 
 /// Header used to communicate the source of an agent run.
 pub const AGENT_SOURCE_HEADER: &str = "X-Oz-Api-Source";
-
-/// IDs in the staging database that were created specifically for evals.
-///
-/// Keep this list in sync with `script/populate_agent_mode_eval_user.sql` in warp-server.
-#[cfg(feature = "agent_mode_evals")]
-const EVAL_USER_IDS: [i32; 11] = [
-    2162, 2164, 2165, 2166, 2167, 2168, 2169, 2172, 2173, 2174, 2175,
-];
 
 /// Duration for which an ambient agent workload token is valid.
 const AMBIENT_WORKLOAD_TOKEN_DURATION: Duration = Duration::from_secs(3 * 60 * 60);
@@ -136,26 +126,6 @@ impl BaseClient {
                 true
             }
         });
-        // We generate one random user ID per client so evals can run in parallel.
-        #[cfg(feature = "agent_mode_evals")]
-        let eval_user_id = {
-            use rand::Rng as _;
-
-            Some(EVAL_USER_IDS[rand::thread_rng().gen_range(0..EVAL_USER_IDS.len())])
-        };
-        #[cfg(feature = "agent_mode_evals")]
-        if let Some(eval_user_id) = eval_user_id {
-            // Set a deterministic per-user API key so all requests — including
-            // REST endpoints like the SSE event stream — carry a real
-            // Authorization header. The key format mirrors what SeedEvalAPIKeys()
-            // inserts in warp-server at eval startup:
-            // wk-1.<user_id as 64-char zero-padded lowercase hex>.
-            let eval_key = format!("wk-1.{eval_user_id:0>64x}");
-            auth_state.set_credentials(Some(Credentials::ApiKey {
-                key: eval_key,
-                owner_type: None,
-            }));
-        }
         let auth_session = Arc::new(AuthSession::new(
             client.clone(),
             auth_state.clone(),

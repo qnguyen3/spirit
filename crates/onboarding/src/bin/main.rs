@@ -2,9 +2,7 @@
 
 use std::borrow::Cow;
 
-use ai::LLMId;
 use anyhow::Result;
-use onboarding::slides::OnboardingModelInfo;
 use onboarding::{
     AgentOnboardingEvent, AgentOnboardingView, MockTelemetryContextProvider, OfferVariant,
     SelectedSettings,
@@ -12,7 +10,6 @@ use onboarding::{
 use pathfinder_color::ColorU;
 use rust_embed::RustEmbed;
 use warp_core::ui::appearance::Appearance;
-use warp_core::ui::icons::Icon;
 use warp_core::ui::theme::{
     AnsiColor, AnsiColors, Details, Fill, Image, TerminalColors, WarpTheme,
 };
@@ -111,34 +108,10 @@ struct OnboardingMainView {
 impl OnboardingMainView {
     fn new(ctx: &mut ViewContext<Self>) -> Self {
         let themes = [phenomenon(), dark_theme(), light_theme(), adeberry()];
-        let default_model_id = LLMId::from("auto");
-        let models = vec![
-            OnboardingModelInfo {
-                id: LLMId::from("auto"),
-                title: "Auto".to_string(),
-                icon: Icon::Agent,
-                is_default: true,
-            },
-            OnboardingModelInfo {
-                id: LLMId::from("claude-sonnet"),
-                title: "Claude Sonnet".to_string(),
-                icon: Icon::ClaudeLogo,
-                is_default: false,
-            },
-            OnboardingModelInfo {
-                id: LLMId::from("gpt-4o"),
-                title: "GPT-4o".to_string(),
-                icon: Icon::OpenAILogo,
-                is_default: false,
-            },
-        ];
         let onboarding_view = ctx.add_typed_action_view(move |ctx| {
             AgentOnboardingView::new(
                 themes.clone(),
                 true,
-                models.clone(),
-                default_model_id.clone(),
-                false,
                 onboarding::OnboardingAuthState::LoggedOut,
                 ctx,
             )
@@ -490,7 +463,6 @@ fn build_appearance(theme: WarpTheme, ctx: &mut AppContext) -> Appearance {
         Weight::Normal,
         ui_font_family,
         1.2,
-        ui_font_family,
         ui_font_family,
     )
 }

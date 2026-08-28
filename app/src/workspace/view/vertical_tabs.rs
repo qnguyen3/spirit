@@ -36,13 +36,7 @@ use warpui::ui_components::text_input::TextInput;
 use warpui::{AppContext, EntityId, SingletonEntity, ViewHandle, WindowId};
 
 use super::{render_group_member_icon_collage, select_unique_pane_kinds};
-use crate::ai::agent::conversation::{ConversationStatus, StatusColorStyle};
-use crate::ai::agent_management::AgentNotificationsModel;
-use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
-use crate::ai::conversation_status_ui::render_status_element;
 use crate::appearance::Appearance;
-use crate::cloud_object::CloudObjectLookup as _;
-use crate::cloud_object::model::generic_string_model::StringModel;
 use crate::code::editor::{add_color, remove_color};
 use crate::code::icon_from_file_path;
 use crate::context_chips::display_chip::GitLineChanges;
@@ -68,11 +62,13 @@ use crate::ui_components::agent_icon::terminal_view_agent_icon_variant;
 use crate::ui_components::buttons::combo_inner_button;
 use crate::ui_components::icon_with_status::{IconWithStatusVariant, render_icon_with_status};
 use crate::ui_components::icons::Icon as UiIcon;
+use crate::ui_components::status_icons::{
+    ConversationStatus, StatusColorStyle, render_status_element,
+};
 use crate::util::bindings::keybinding_name_to_display_string;
 use crate::util::color::Opacity;
 use crate::workspace::action::{NewSessionMenuAnchor, WorkspaceAction};
 use crate::workspace::cross_window_tab_drag::CrossWindowTabDrag;
-use crate::workspace::hoa_onboarding::HoaOnboardingStep;
 use crate::workspace::sync_inputs::SyncedInputState;
 use crate::workspace::tab_group::{TabGroup, TabGroupId};
 use crate::workspace::tab_settings::{
@@ -905,16 +901,12 @@ pub(super) enum SummaryPaneKind {
     OzAgent { is_ambient: bool },
     CLIAgent { agent: CLIAgent, is_ambient: bool },
     Code { title: String },
-    CodeDiff,
     File,
     Notebook { is_plan: bool },
     Workflow { is_ai_prompt: bool },
     Settings,
     EnvVarCollection,
     EnvironmentManagement,
-    AIFact,
-    AIDocument,
-    ExecutionProfileEditor,
     Other,
 }
 
@@ -951,7 +943,6 @@ struct VerticalTabsSummaryData {
     primary_labels: Vec<VerticalTabsSummaryPrimaryLabel>,
     working_directories: Vec<String>,
     branch_entries: Vec<VerticalTabsSummaryBranchEntry>,
-    has_unread_activity: bool,
 }
 
 impl TabGroupColorMode {
@@ -1063,20 +1054,10 @@ fn summary_conversation_status_for_terminal(
     app: &AppContext,
 ) -> Option<ConversationStatus> {
     let cli_agent_session = CLIAgentSessionsModel::as_ref(app).session(terminal_view.id());
-    if let Some(session) = cli_agent_session
+    cli_agent_session
         .filter(|s| s.supports_rich_status())
         .filter(|s| !matches!(s.agent, CLIAgent::Unknown))
-    {
-        return Some(session.status.to_conversation_status());
-    }
-
-    let is_ambient = terminal_view.is_ambient_agent_session(app);
-    let has_conversation = terminal_view
-        .selected_conversation_display_title(app)
-        .is_some();
-    (has_conversation || is_ambient)
-        .then(|| terminal_view.selected_conversation_status_for_display(app))
-        .flatten()
+        .map(|session| session.status.to_conversation_status())
 }
 
 fn coalesce_summary_branch_entries(
@@ -1461,28 +1442,7 @@ fn render_detail_kind_badge_icon(
                 return icon.to_warpui_icon(color).finish();
             }
 
-            let icon = if terminal_view.is_ambient_agent_session(app) {
-                WarpIcon::CloudFilled
-            } else if terminal_view
-                .selected_conversation_display_title(app)
-                .is_some()
-            {
-                // Local agent conversation: use the Warp agent logo glyph to
-                // match the icon-with-status rendering for the tab row.
-                WarpIcon::Agent
-            } else {
-                WarpIcon::Terminal
-            };
-            let color = match icon {
-                WarpIcon::CloudFilled => theme.main_text_color(theme.background()),
-                // Theme-adaptive fill: no black chip behind this glyph in the
-                // sidecar context, so use the main text color to stay visible
-                // on both dark and light themes.
-                WarpIcon::Agent => theme.main_text_color(theme.background()),
-                WarpIcon::Terminal => disabled_text,
-                _ => sub_text,
-            };
-            icon.to_warpui_icon(color).finish()
+            WarpIcon::Terminal.to_warpui_icon(disabled_text).finish()
         }
         TypedPane::Code(_) => icon_from_file_path(&props.title, appearance)
             .unwrap_or_else(|| WarpIcon::Code2.to_warpui_icon(sub_text).finish()),
@@ -1582,10 +1542,7 @@ fn render_new_tab_button(
     let is_active = matches!(
         workspace.show_new_session_dropdown_menu,
         Some(NewSessionMenuAnchor::AddTabButton(_))
-    ) || workspace
-        .hoa_onboarding_flow
-        .as_ref()
-        .is_some_and(|flow| flow.as_ref(app).step() == HoaOnboardingStep::TabConfig);
+    );
 
     Hoverable::new(state.new_tab_hover_state.clone(), move |hover_state| {
         let plus_button = combo_inner_button(
@@ -2128,10 +2085,7 @@ fn render_tab_group_internal(
             (*pane_id, ms)
         })
         .collect();
-    let is_active = tab_index == workspace.active_tab_index
-        && !workspace
-            .current_workspace_state
-            .is_agent_management_view_open;
+    let is_active = tab_index == workspace.active_tab_index;
     let has_top_border = tab_index > 0;
     let is_first_tab = tab_index == 0;
     let is_last_tab = tab_index + 1 == workspace.tabs.len();
@@ -3364,30 +3318,12 @@ fn resolve_icon_with_status_variant(
             icon: typed.icon(),
             icon_color: drive_color(DriveObjectType::EnvVarCollection),
         },
-        TypedPane::AIFact => IconWithStatusVariant::Neutral {
-            icon: typed.icon(),
-            icon_color: drive_color(DriveObjectType::AIFact),
-        },
         // Other pane types use sub-text color
         other => IconWithStatusVariant::Neutral {
             icon: other.icon(),
             icon_color: sub_text,
         },
     }
-}
-
-fn has_unread_activity(typed: &TypedPane<'_>, app: &AppContext) -> bool {
-    let TypedPane::Terminal(terminal_pane) = typed else {
-        return false;
-    };
-    let terminal_view = terminal_pane.terminal_view(app);
-    has_unread_activity_for_terminal_view(terminal_view.as_ref(app).id(), app)
-}
-
-fn has_unread_activity_for_terminal_view(terminal_view_id: EntityId, app: &AppContext) -> bool {
-    AgentNotificationsModel::as_ref(app)
-        .notifications()
-        .has_unread_for_terminal_view(terminal_view_id)
 }
 
 const INDICATOR_DOT_SIZE: f32 = 8.;
@@ -3418,8 +3354,11 @@ fn shows_synced_inputs_indicator(
 fn row_shows_synced_inputs_indicator(props: &PaneProps<'_>, app: &AppContext) -> bool {
     shows_synced_inputs_indicator(
         matches!(props.typed, TypedPane::Terminal(_)),
-        SyncedInputState::as_ref(app)
-            .should_sync_this_pane_group(props.pane_group_id, props.window_id()),
+        crate::workspace::owning_screen_id(props.pane_group_id, props.window_id(), app)
+            .is_some_and(|screen_id| {
+                SyncedInputState::as_ref(app)
+                    .should_sync_this_pane_group(props.pane_group_id, screen_id)
+            }),
         *TabSettings::as_ref(app).show_indicators.value(),
     )
 }
@@ -3461,11 +3400,11 @@ fn render_shortcut_hint(label: &str, appearance: &Appearance) -> Box<dyn Element
 fn render_row_title_line(
     title: Box<dyn Element>,
     shows_synced_inputs: bool,
-    shows_activity_indicator: bool,
+    shows_badge_indicator: bool,
     shortcut_hint: Option<Box<dyn Element>>,
     theme: &WarpTheme,
 ) -> Box<dyn Element> {
-    if !shows_synced_inputs && !shows_activity_indicator && shortcut_hint.is_none() {
+    if !shows_synced_inputs && !shows_badge_indicator && shortcut_hint.is_none() {
         return title;
     }
 
@@ -3476,7 +3415,7 @@ fn render_row_title_line(
     if shows_synced_inputs {
         indicators.add_child(render_synced_inputs_indicator());
     }
-    if shows_activity_indicator {
+    if shows_badge_indicator {
         indicators.add_child(render_title_indicator(theme));
     }
     if let Some(hint) = shortcut_hint {
@@ -3524,8 +3463,7 @@ fn render_pane_row(props: PaneProps<'_>, app: &AppContext) -> Box<dyn Element> {
             app,
         )
     } else {
-        let has_indicator =
-            props.typed.badge(app).is_some() || has_unread_activity(&props.typed, app);
+        let has_indicator = props.typed.badge(app).is_some();
         let mut title_row = Flex::row()
             .with_main_axis_size(MainAxisSize::Max)
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
@@ -3602,16 +3540,12 @@ fn render_pane_row(props: PaneProps<'_>, app: &AppContext) -> Box<dyn Element> {
 enum TypedPane<'a> {
     Terminal(&'a TerminalPane),
     Code(&'a CodePane),
-    CodeDiff,
     File,
     Notebook { is_plan: bool },
     Workflow { is_ai_prompt: bool },
     Settings,
     EnvVarCollection,
     EnvironmentManagement,
-    AIFact,
-    AIDocument,
-    ExecutionProfileEditor,
     Other,
 }
 
@@ -3636,7 +3570,6 @@ impl TypedPane<'_> {
             TypedPane::Code(_) => SummaryPaneKind::Code {
                 title: title.to_string(),
             },
-            TypedPane::CodeDiff => SummaryPaneKind::CodeDiff,
             TypedPane::File => SummaryPaneKind::File,
             TypedPane::Notebook { is_plan } => SummaryPaneKind::Notebook { is_plan: *is_plan },
             TypedPane::Workflow { is_ai_prompt } => SummaryPaneKind::Workflow {
@@ -3645,9 +3578,6 @@ impl TypedPane<'_> {
             TypedPane::Settings => SummaryPaneKind::Settings,
             TypedPane::EnvVarCollection => SummaryPaneKind::EnvVarCollection,
             TypedPane::EnvironmentManagement => SummaryPaneKind::EnvironmentManagement,
-            TypedPane::AIFact => SummaryPaneKind::AIFact,
-            TypedPane::AIDocument => SummaryPaneKind::AIDocument,
-            TypedPane::ExecutionProfileEditor => SummaryPaneKind::ExecutionProfileEditor,
             TypedPane::Other => SummaryPaneKind::Other,
         }
     }
@@ -3664,16 +3594,12 @@ impl TypedPane<'_> {
         match self {
             TypedPane::Terminal(_) => "Terminal",
             TypedPane::Code(_) => "Code",
-            TypedPane::CodeDiff => "Code Diff",
             TypedPane::File => "File",
             TypedPane::Notebook { .. } => "Notebook",
             TypedPane::Workflow { .. } => "Workflow",
             TypedPane::Settings => "Settings",
             TypedPane::EnvVarCollection => "Environment Variables",
             TypedPane::EnvironmentManagement => "Environments",
-            TypedPane::AIFact => "Rules",
-            TypedPane::AIDocument => "Plan",
-            TypedPane::ExecutionProfileEditor => "Execution Profile",
             TypedPane::Other => "Other",
         }
     }
@@ -3686,16 +3612,12 @@ impl TypedPane<'_> {
                 .contains_unsaved_changes(app)
                 .then(|| "Unsaved".to_string()),
             TypedPane::Terminal(_)
-            | TypedPane::CodeDiff
             | TypedPane::File
             | TypedPane::Notebook { .. }
             | TypedPane::Workflow { .. }
             | TypedPane::Settings
             | TypedPane::EnvVarCollection
             | TypedPane::EnvironmentManagement
-            | TypedPane::AIFact
-            | TypedPane::AIDocument
-            | TypedPane::ExecutionProfileEditor
             | TypedPane::Other => None,
         }
     }
@@ -3704,7 +3626,6 @@ impl TypedPane<'_> {
         match self {
             TypedPane::Terminal(_) => WarpIcon::Terminal,
             TypedPane::Code(_) => WarpIcon::Code2,
-            TypedPane::CodeDiff => WarpIcon::Diff,
             TypedPane::File => WarpIcon::File,
             TypedPane::Notebook { is_plan: true } => WarpIcon::Compass,
             TypedPane::Notebook { is_plan: false } => WarpIcon::Notebook,
@@ -3714,9 +3635,6 @@ impl TypedPane<'_> {
             } => WarpIcon::Workflow,
             TypedPane::Settings | TypedPane::EnvironmentManagement => WarpIcon::Gear,
             TypedPane::EnvVarCollection => WarpIcon::EnvVarCollection,
-            TypedPane::AIFact => WarpIcon::BookOpen,
-            TypedPane::AIDocument => WarpIcon::Compass,
-            TypedPane::ExecutionProfileEditor => WarpIcon::Lightning,
             TypedPane::Other => WarpIcon::File,
         }
     }
@@ -3763,7 +3681,6 @@ fn build_vertical_tabs_summary_data(
     let mut working_directories = Vec::new();
     let mut working_directory_seen = HashMap::new();
     let mut branch_entries = Vec::new();
-    let mut has_unread_activity = false;
 
     for pane_id in visible_pane_ids {
         let Some(pane) = pane_group.pane_by_id(*pane_id) else {
@@ -3782,8 +3699,6 @@ fn build_vertical_tabs_summary_data(
             TypedPane::Terminal(terminal_pane) => {
                 let terminal_view = terminal_pane.terminal_view(app);
                 let terminal_view = terminal_view.as_ref(app);
-                has_unread_activity |=
-                    has_unread_activity_for_terminal_view(terminal_view.id(), app);
                 let title_text = terminal_view.terminal_title_from_shell();
                 let working_directory = resolved_terminal_working_directory(terminal_view, app);
                 let working_directory_text = working_directory
@@ -3791,12 +3706,11 @@ fn build_vertical_tabs_summary_data(
                     .filter(|wd| !wd.trim().is_empty())
                     .unwrap_or_else(|| title_text.clone());
                 let agent_text = terminal_agent_text(terminal_view, app);
-                let (conversation_display_title, cli_agent_title) =
-                    preferred_agent_tab_titles(&agent_text, agent_tab_text_preference(app));
+                let cli_agent_title =
+                    preferred_cli_agent_tab_title(&agent_text, agent_tab_text_preference(app));
 
                 let primary_label = terminal_primary_line_data(
                     terminal_view.is_long_running_and_user_controlled(),
-                    conversation_display_title,
                     cli_agent_title,
                     title_text.as_str(),
                     working_directory_text.as_str(),
@@ -3853,16 +3767,12 @@ fn build_vertical_tabs_summary_data(
                     &pane_subtitle,
                 );
             }
-            TypedPane::CodeDiff
-            | TypedPane::File
+            TypedPane::File
             | TypedPane::Notebook { .. }
             | TypedPane::Workflow { .. }
             | TypedPane::Settings
             | TypedPane::EnvVarCollection
             | TypedPane::EnvironmentManagement
-            | TypedPane::AIFact
-            | TypedPane::AIDocument
-            | TypedPane::ExecutionProfileEditor
             | TypedPane::Other => {
                 push_normalized_unique_summary_label(
                     &mut primary_labels,
@@ -3880,7 +3790,6 @@ fn build_vertical_tabs_summary_data(
         primary_labels,
         working_directories,
         branch_entries: coalesce_summary_branch_entries(branch_entries),
-        has_unread_activity,
     }
 }
 
@@ -3997,16 +3906,12 @@ impl<'a> PaneProps<'a> {
                 app,
             ),
             TypedPane::Code(_)
-            | TypedPane::CodeDiff
             | TypedPane::File
             | TypedPane::Notebook { .. }
             | TypedPane::Workflow { .. }
             | TypedPane::Settings
             | TypedPane::EnvVarCollection
             | TypedPane::EnvironmentManagement
-            | TypedPane::AIFact
-            | TypedPane::AIDocument
-            | TypedPane::ExecutionProfileEditor
             | TypedPane::Other => {
                 non_terminal_search_text_fragments(self.generated_or_tab_title(), &self.subtitle)
             }
@@ -4091,15 +3996,14 @@ fn terminal_pane_search_text_fragments(
     let working_directory = resolved_terminal_working_directory(terminal_view, app)
         .unwrap_or_else(|| title_text.clone());
     let agent_text = terminal_agent_text(terminal_view, app);
-    let (conversation_display_title, cli_agent_title) =
-        preferred_agent_tab_titles(&agent_text, agent_tab_text_preference(app));
+    let cli_agent_title =
+        preferred_cli_agent_tab_title(&agent_text, agent_tab_text_preference(app));
 
     let primary_text = display_title_override
         .map(str::to_owned)
         .unwrap_or_else(|| {
             terminal_primary_line_data(
                 terminal_view.is_long_running_and_user_controlled(),
-                conversation_display_title,
                 cli_agent_title,
                 title_text.as_str(),
                 working_directory.as_str(),
@@ -4118,7 +4022,7 @@ fn terminal_pane_search_text_fragments(
         primary_text,
         working_directory,
         terminal_view.current_git_branch(app),
-        terminal_kind_badge_label(agent_text.is_oz_agent, agent_text.cli_agent),
+        terminal_kind_badge_label(agent_text.cli_agent),
         pull_request_label,
         terminal_view.current_diff_line_changes(app),
     )
@@ -4147,7 +4051,6 @@ fn terminal_search_text_fragments(
 
 fn terminal_primary_line_data(
     is_long_running: bool,
-    conversation_display_title: Option<String>,
     cli_agent_title: Option<String>,
     terminal_title: &str,
     working_directory: &str,
@@ -4169,11 +4072,6 @@ fn terminal_primary_line_data(
         };
     }
 
-    if let Some(conversation_title) = conversation_display_title {
-        return TerminalPrimaryLineData::StatusText {
-            text: conversation_title,
-        };
-    }
     if !trimmed_title.is_empty() && trimmed_title != trimmed_working_directory {
         return TerminalPrimaryLineData::Text {
             text: trimmed_title.to_string(),
@@ -4194,13 +4092,10 @@ fn terminal_primary_line_data(
     }
 }
 
-fn terminal_kind_badge_label(is_oz_agent: bool, cli_agent: Option<CLIAgent>) -> String {
-    if let Some(cli_agent) = cli_agent {
-        cli_agent.display_name().to_string()
-    } else if is_oz_agent {
-        "Warp Agent".to_string()
-    } else {
-        "Terminal".to_string()
+fn terminal_kind_badge_label(cli_agent: Option<CLIAgent>) -> String {
+    match cli_agent {
+        Some(cli_agent) => cli_agent.display_name().to_string(),
+        None => "Terminal".to_string(),
     }
 }
 
@@ -4212,11 +4107,8 @@ enum AgentTabTextPreference {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct TerminalAgentText {
-    conversation_display_title: Option<String>,
-    conversation_latest_user_prompt: Option<String>,
     cli_agent_title: Option<String>,
     cli_agent_latest_user_prompt: Option<String>,
-    is_oz_agent: bool,
     cli_agent: Option<CLIAgent>,
 }
 
@@ -4228,38 +4120,24 @@ fn agent_tab_text_preference(app: &AppContext) -> AgentTabTextPreference {
     }
 }
 
-fn preferred_agent_tab_titles(
+fn preferred_cli_agent_tab_title(
     agent_text: &TerminalAgentText,
     preference: AgentTabTextPreference,
-) -> (Option<String>, Option<String>) {
-    let conversation_title = match preference {
-        AgentTabTextPreference::ConversationTitle => agent_text
-            .conversation_display_title
-            .clone()
-            .or_else(|| agent_text.conversation_latest_user_prompt.clone()),
-        AgentTabTextPreference::LatestUserPrompt => agent_text
-            .conversation_latest_user_prompt
-            .clone()
-            .or_else(|| agent_text.conversation_display_title.clone()),
-    };
-    let cli_agent_title = match preference {
+) -> Option<String> {
+    match preference {
         AgentTabTextPreference::ConversationTitle => agent_text.cli_agent_title.clone(),
         AgentTabTextPreference::LatestUserPrompt => agent_text
             .cli_agent_latest_user_prompt
             .clone()
             .or_else(|| agent_text.cli_agent_title.clone()),
-    };
-
-    (conversation_title, cli_agent_title)
+    }
 }
 
 fn terminal_agent_text(terminal_view: &TerminalView, app: &AppContext) -> TerminalAgentText {
     let cli_agent_session = CLIAgentSessionsModel::as_ref(app).session(terminal_view.id());
     let is_plugin_backed = cli_agent_session.is_some_and(|session| session.listener.is_some());
-    let is_ambient_agent = terminal_view.is_ambient_agent_session(app);
 
     let mut agent_text = TerminalAgentText {
-        is_oz_agent: is_ambient_agent,
         cli_agent: cli_agent_session.map(|session| session.agent),
         ..Default::default()
     };
@@ -4267,12 +4145,6 @@ fn terminal_agent_text(terminal_view: &TerminalView, app: &AppContext) -> Termin
     if cli_agent_session.is_some() && !is_plugin_backed {
         return agent_text;
     }
-
-    agent_text.conversation_display_title = terminal_view.selected_conversation_display_title(app);
-    agent_text.conversation_latest_user_prompt =
-        terminal_view.selected_conversation_latest_user_prompt_for_tab_name(app);
-    agent_text.is_oz_agent =
-        agent_text.conversation_display_title.is_some() || agent_text.is_oz_agent;
 
     if let Some(session) = cli_agent_session {
         agent_text.cli_agent_title = session.session_context.title_like_text();
@@ -4317,7 +4189,6 @@ impl PaneGroup {
                 self.downcast_pane_by_id::<CodePane>(pane_id)
                     .expect("IPaneType::Code must correspond to a CodePane"),
             ),
-            IPaneType::CodeDiff => TypedPane::CodeDiff,
             IPaneType::File => TypedPane::File,
             IPaneType::Notebook => {
                 let is_plan = self
@@ -4339,13 +4210,9 @@ impl PaneGroup {
             IPaneType::Settings => TypedPane::Settings,
             IPaneType::EnvVarCollection => TypedPane::EnvVarCollection,
             IPaneType::EnvironmentManagement => TypedPane::EnvironmentManagement,
-            IPaneType::AIFact => TypedPane::AIFact,
-            IPaneType::AIDocument => TypedPane::AIDocument,
-            IPaneType::ExecutionProfileEditor => TypedPane::ExecutionProfileEditor,
-            IPaneType::CustomRouterEditor
-            | IPaneType::GetStarted
-            | IPaneType::NetworkLog
-            | IPaneType::DeferredPlaceholder => TypedPane::Other,
+            IPaneType::GetStarted | IPaneType::AgentPicker | IPaneType::NetworkLog => {
+                TypedPane::Other
+            }
             #[cfg(test)]
             IPaneType::Dummy => TypedPane::Other,
         }
@@ -4380,39 +4247,9 @@ fn resolved_terminal_working_directory(
     terminal_view: &TerminalView,
     app: &AppContext,
 ) -> Option<String> {
-    let working_directory = terminal_view
+    terminal_view
         .display_working_directory(app)
-        .filter(|wd| !wd.trim().is_empty());
-    cloud_agent_working_directory_and_env(terminal_view, working_directory.as_deref(), app)
-        .or(working_directory)
-}
-
-/// For cloud agent panes, builds a composite string from the environment name,
-/// setup status, and/or working directory. Returns `None` for non-cloud sessions.
-fn cloud_agent_working_directory_and_env(
-    terminal_view: &TerminalView,
-    working_directory: Option<&str>,
-    app: &AppContext,
-) -> Option<String> {
-    if !terminal_view.is_ambient_agent_session(app) {
-        return None;
-    }
-    let model_ref = terminal_view.ambient_agent_view_model()?.as_ref(app);
-
-    let env_name = model_ref
-        .selected_environment_id()
-        .and_then(|id| CloudAmbientAgentEnvironment::get_by_id(id, app))
-        .map(|env| env.model().string_model.display_name());
-
-    let setup_status: Option<&str> = model_ref.agent_progress().map(|p| p.setup_status_text());
-
-    match (env_name, setup_status, working_directory) {
-        (Some(env), Some(status), _) => Some(format!("{env} · {status}")),
-        (Some(env), None, Some(wd)) => Some(format!("{env} · {wd}")),
-        (Some(env), None, None) => Some(env),
-        (None, Some(status), _) => Some(status.to_string()),
-        (None, None, _) => None,
-    }
+        .filter(|wd| !wd.trim().is_empty())
 }
 
 fn render_terminal_row_content(
@@ -4524,7 +4361,7 @@ fn render_terminal_row_content(
     let first_line_element = render_row_title_line(
         first_line,
         row_shows_synced_inputs_indicator(props, app),
-        has_unread_activity(&props.typed, app),
+        false,
         shortcut_hint_label(props, app).map(|label| render_shortcut_hint(&label, appearance)),
         theme,
     );
@@ -4815,7 +4652,7 @@ fn render_summary_tab_item(
     text_col.add_child(render_row_title_line(
         title_region.finish(),
         row_shows_synced_inputs_indicator(&props, app),
-        summary.has_unread_activity,
+        false,
         shortcut_hint_label(&props, app).map(|label| render_shortcut_hint(&label, appearance)),
         theme,
     ));
@@ -5079,16 +4916,12 @@ pub(super) fn render_summary_pane_kind_icon_circle(
             internal_colors::fg_overlay_2(theme).into(),
         ),
         SummaryPaneKind::Terminal
-        | SummaryPaneKind::CodeDiff
         | SummaryPaneKind::File
         | SummaryPaneKind::Notebook { .. }
         | SummaryPaneKind::Workflow { .. }
         | SummaryPaneKind::Settings
         | SummaryPaneKind::EnvVarCollection
         | SummaryPaneKind::EnvironmentManagement
-        | SummaryPaneKind::AIFact
-        | SummaryPaneKind::AIDocument
-        | SummaryPaneKind::ExecutionProfileEditor
         | SummaryPaneKind::Other => {
             let (icon, icon_color) = summary_pane_kind_icon(kind, appearance);
             (
@@ -5155,7 +4988,6 @@ fn summary_pane_kind_icon(
             WarpThemeFill::Solid(agent.brand_icon_color()),
         ),
         SummaryPaneKind::Code { .. } => (WarpIcon::Code2, sub_text),
-        SummaryPaneKind::CodeDiff => (WarpIcon::Diff, sub_text),
         SummaryPaneKind::File => (WarpIcon::File, sub_text),
         SummaryPaneKind::Notebook { is_plan } => (
             if is_plan {
@@ -5186,9 +5018,6 @@ fn summary_pane_kind_icon(
             WarpIcon::EnvVarCollection,
             drive_color(DriveObjectType::EnvVarCollection),
         ),
-        SummaryPaneKind::AIFact => (WarpIcon::BookOpen, drive_color(DriveObjectType::AIFact)),
-        SummaryPaneKind::AIDocument => (WarpIcon::Compass, sub_text),
-        SummaryPaneKind::ExecutionProfileEditor => (WarpIcon::Lightning, sub_text),
         SummaryPaneKind::Other => (WarpIcon::File, sub_text),
     }
 }
@@ -5274,13 +5103,12 @@ fn render_terminal_primary_line_for_view(
     let working_directory = resolved_terminal_working_directory(terminal_view, app)
         .unwrap_or_else(|| title_text.clone());
     let agent_text = terminal_agent_text(terminal_view, app);
-    let (conversation_display_title, cli_agent_title) =
-        preferred_agent_tab_titles(&agent_text, agent_tab_text_preference(app));
+    let cli_agent_title =
+        preferred_cli_agent_tab_title(&agent_text, agent_tab_text_preference(app));
 
     render_terminal_primary_line(
         terminal_primary_line_data(
             terminal_view.is_long_running_and_user_controlled(),
-            conversation_display_title,
             cli_agent_title,
             title_text.as_str(),
             working_directory.as_str(),
@@ -5295,8 +5123,7 @@ fn render_terminal_primary_line_for_view(
 
 /// Primary line for terminal pane rows. Precedence:
 /// 1. CLI agent session with plugin data (query/summary) + status
-/// 2. Warp Agent conversation title + status
-/// 3. Terminal title
+/// 2. Terminal title
 fn render_terminal_primary_line(
     primary_line: TerminalPrimaryLineData,
     terminal_view: &TerminalView,
@@ -6817,21 +6644,16 @@ fn render_terminal_detail_section(
     let git_branch = terminal_view.current_git_branch(app);
     let cli_agent_session = CLIAgentSessionsModel::as_ref(app).session(terminal_view.id());
     let agent_text = terminal_agent_text(terminal_view, app);
-    let (conversation_display_title, cli_agent_title) =
-        preferred_agent_tab_titles(&agent_text, agent_tab_text_preference(app));
-    let kind_label = terminal_kind_badge_label(agent_text.is_oz_agent, agent_text.cli_agent);
-    let status = if let Some(session) = cli_agent_session.filter(|s| s.supports_rich_status()) {
-        Some(session.status.to_conversation_status())
-    } else if agent_text.is_oz_agent {
-        terminal_view.selected_conversation_status_for_display(app)
-    } else {
-        None
-    };
+    let cli_agent_title =
+        preferred_cli_agent_tab_title(&agent_text, agent_tab_text_preference(app));
+    let kind_label = terminal_kind_badge_label(agent_text.cli_agent);
+    let status = cli_agent_session
+        .filter(|s| s.supports_rich_status())
+        .map(|session| session.status.to_conversation_status());
 
     let title_text = terminal_view.terminal_title_from_shell();
     let primary_line = terminal_primary_line_data(
         terminal_view.is_long_running_and_user_controlled(),
-        conversation_display_title,
         cli_agent_title,
         title_text.as_str(),
         working_directory.as_deref().unwrap_or(title_text.as_str()),
@@ -7036,17 +6858,11 @@ fn typed_pane_warp_drive_object_type(typed: &TypedPane<'_>) -> Option<DriveObjec
             is_ai_prompt: false,
         } => Some(DriveObjectType::Workflow),
         TypedPane::EnvVarCollection => Some(DriveObjectType::EnvVarCollection),
-        TypedPane::AIFact => Some(DriveObjectType::AIFact),
-        TypedPane::AIDocument => Some(DriveObjectType::Notebook {
-            is_ai_document: true,
-        }),
         TypedPane::Terminal(_)
         | TypedPane::Code(_)
-        | TypedPane::CodeDiff
         | TypedPane::File
         | TypedPane::Settings
         | TypedPane::EnvironmentManagement
-        | TypedPane::ExecutionProfileEditor
         | TypedPane::Other => None,
     }
 }
@@ -7064,16 +6880,12 @@ fn render_detail_section(
             app,
         ),
         TypedPane::Code(_) => render_code_detail_section(props, appearance, app),
-        TypedPane::Notebook { .. }
-        | TypedPane::Workflow { .. }
-        | TypedPane::EnvVarCollection
-        | TypedPane::AIFact
-        | TypedPane::AIDocument => render_warp_drive_object_detail_section(props, appearance, app),
-        TypedPane::CodeDiff
-        | TypedPane::File
+        TypedPane::Notebook { .. } | TypedPane::Workflow { .. } | TypedPane::EnvVarCollection => {
+            render_warp_drive_object_detail_section(props, appearance, app)
+        }
+        TypedPane::File
         | TypedPane::Settings
         | TypedPane::EnvironmentManagement
-        | TypedPane::ExecutionProfileEditor
         | TypedPane::Other => Empty::new().finish(),
     }
 }
@@ -7254,7 +7066,7 @@ fn render_compact_pane_row(props: PaneProps<'_>, app: &AppContext) -> Box<dyn El
     let main_text_color = theme.main_text_color(theme.background());
     let sub_text_color = theme.sub_text_color(theme.background());
     let font_family = appearance.ui_font_family();
-    let has_indicator = props.typed.badge(app).is_some() || has_unread_activity(&props.typed, app);
+    let has_indicator = props.typed.badge(app).is_some();
 
     let icon = render_pane_icon_with_status(
         resolve_icon_with_status_variant(&props.typed, &props.title, appearance, app),
@@ -7340,11 +7152,10 @@ fn render_compact_pane_row(props: PaneProps<'_>, app: &AppContext) -> Box<dyn El
                 }),
                 VerticalTabsCompactSubtitle::Command => {
                     let agent_text = terminal_agent_text(terminal_view, app);
-                    let (conv_title, cli_title) =
-                        preferred_agent_tab_titles(&agent_text, agent_tab_text_preference(app));
+                    let cli_title =
+                        preferred_cli_agent_tab_title(&agent_text, agent_tab_text_preference(app));
                     let line_data = terminal_primary_line_data(
                         terminal_view.is_long_running_and_user_controlled(),
-                        conv_title,
                         cli_title,
                         terminal_title.as_str(),
                         working_directory_text.as_str(),

@@ -10,9 +10,7 @@ use super::UserWorkspaces;
 use crate::auth::AuthStateProvider;
 use crate::channel::ChannelState;
 use crate::workspaces::team::Team;
-use crate::workspaces::workspace::{
-    BillingMetadata, CustomerType, PurchaseAddOnCreditsPolicy, Workspace,
-};
+use crate::workspaces::workspace::{BillingMetadata, CustomerType, PurchaseAddOnCreditsPolicy};
 
 impl UserWorkspaces {
     pub fn current_workspace_billing_metadata(&self) -> Option<&BillingMetadata> {
@@ -30,15 +28,6 @@ impl UserWorkspaces {
     ) -> Option<&'a BillingMetadata> {
         team.map(|team| &team.billing_metadata)
             .or_else(|| self.current_workspace_billing_metadata())
-    }
-
-    pub fn is_custom_llm_enabled_for_team(&self, team: Option<&Team>) -> bool {
-        team.map(Team::is_custom_llm_enabled)
-            .or_else(|| {
-                self.current_workspace()
-                    .map(Workspace::is_custom_llm_enabled)
-            })
-            .unwrap_or(false)
     }
 
     /// The add-on credits purchase policy for the current viewer context: the
@@ -118,37 +107,6 @@ impl UserWorkspaces {
                     .warp_ai_policy
                     .is_some_and(|policy| policy.is_next_command_enabled)
             })
-    }
-
-    /// Whether Git Operations AI is enabled for the current user, based on the active policies.
-    /// Note that the value may be incorrect if called before the team's billing metadata has been fetched.
-    pub fn is_git_operations_ai_enabled(&self) -> bool {
-        self.current_workspace()
-            // If the user has no team, they can toggle Git Operations AI (no restrictions).
-            .is_none_or(|workspace| {
-                workspace
-                    .billing_metadata
-                    .tier
-                    .warp_ai_policy
-                    .is_some_and(|policy| policy.is_git_operations_ai_enabled)
-            })
-    }
-
-    /// Whether voice input should be toggleable for the current user, based on the active policies.
-    /// Note that the value may be incorrect if called before the team's billing metadata has been fetched.
-    /// If voice input support is not compiled into this build, always returns `false`.
-    pub fn is_voice_enabled(&self) -> bool {
-        cfg!(feature = "voice_input")
-            && self
-                .current_workspace()
-                // If the user has no team, they can toggle Voice (no restrictions).
-                .is_none_or(|workspace| {
-                    workspace
-                        .billing_metadata
-                        .tier
-                        .warp_ai_policy
-                        .is_some_and(|policy| policy.is_voice_enabled)
-                })
     }
 
     /// Whether BYO API key is enabled for the current user, based on the active policies.

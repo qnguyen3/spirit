@@ -39,19 +39,7 @@ fn handlebars_placeholder(name: &str) -> String {
     format!("{{{{{name}}}}}")
 }
 
-pub(crate) fn generated_worktree_repo_dir(repo_path: &Path) -> PathBuf {
-    let repo_name = repo_path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .filter(|name| !name.is_empty())
-        .unwrap_or("untitled");
-    warp_core::paths::data_dir()
-        .join("worktrees")
-        .join(repo_name)
-}
-pub(crate) fn generated_worktree_path(repo_path: &Path, worktree_name: &str) -> PathBuf {
-    generated_worktree_repo_dir(repo_path).join(worktree_name)
-}
+pub(crate) use crate::projects::git_ops::generated_worktree_path;
 pub(crate) fn generated_worktree_path_string(repo_path: &Path, worktree_name: &str) -> String {
     generated_worktree_path(repo_path, worktree_name)
         .display()
@@ -99,9 +87,11 @@ pub struct TabConfigParam {
 pub enum TabConfigPaneType {
     /// A standard terminal shell session.
     Terminal,
-    /// A terminal that immediately enters Agent Mode.
+    /// Legacy value from removed agent mode. Retained so existing tab configs still parse;
+    /// opens a terminal.
     Agent,
-    /// A cloud-mode (ambient agent) pane with no local shell.
+    /// Legacy value from removed cloud (ambient agent) mode. Retained so existing tab configs
+    /// still parse; opens a terminal.
     Cloud,
 }
 
@@ -363,9 +353,9 @@ fn resolve_pane_node(
             .ok_or_else(|| format!("leaf pane '{}' is missing required 'type' field", node.id))?;
 
         let pane_mode = match pane_type {
-            TabConfigPaneType::Terminal => PaneMode::Terminal,
-            TabConfigPaneType::Agent => PaneMode::Agent,
-            TabConfigPaneType::Cloud => PaneMode::Cloud,
+            TabConfigPaneType::Terminal | TabConfigPaneType::Agent | TabConfigPaneType::Cloud => {
+                PaneMode::Terminal
+            }
         };
 
         let cwd = node

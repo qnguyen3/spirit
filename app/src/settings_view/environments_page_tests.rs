@@ -1,7 +1,6 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 
-use ai::index::full_source_code_embedding::manager::CodebaseIndexManager;
+use cloud_object_models::GithubRepo;
 use instant::Instant;
 use warp_core::ui::appearance::Appearance;
 use warpui::elements::Empty;
@@ -9,20 +8,15 @@ use warpui::platform::WindowStyle;
 use warpui::{App, AppContext, Element, Entity, TypedActionView, View, WindowId};
 
 use super::*;
-use crate::ai::ambient_agents::github_auth_notifier::GitHubAuthNotifier;
-use crate::ai::cloud_environments::{
-    AmbientAgentEnvironment, CloudAmbientAgentEnvironmentModel, GithubRepo,
-};
 use crate::auth::AuthStateProvider;
+use crate::auth::github_auth_notifier::GitHubAuthNotifier;
 use crate::network::NetworkStatus;
-use crate::root_view::CreateEnvironmentArg;
 use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::ids::{ClientId, ServerId, SyncId};
 use crate::server::server_api::ServerApiProvider;
 use crate::server::sync_queue::SyncQueue;
 use crate::settings::PrivacySettings;
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
-use crate::terminal::view::init_environment::mode_selector::EnvironmentSetupModeSelector;
 use crate::test_util::settings::initialize_settings_for_tests;
 use crate::workspaces::team_tester::TeamTesterStatus;
 use crate::workspaces::user_workspaces::UserWorkspaces;
@@ -109,16 +103,9 @@ fn init_env_page_view_test_models(app: &mut App) {
     app.add_singleton_model(UpdateManager::mock);
     app.add_singleton_model(|_| KeybindingChangedNotifier::new());
     app.add_singleton_model(|_| GitHubAuthNotifier::new());
-
-    // The agent-assisted modal reads locally indexed repos via CodebaseIndexManager.
-    // We register a test instance to avoid singleton lookup panics in unit tests.
-    app.add_singleton_model(|ctx| {
-        CodebaseIndexManager::new_for_test(ServerApiProvider::as_ref(ctx).get(), ctx)
-    });
 }
 
 type EmptyMouseStates = (
-    HashMap<SyncId, MouseStateHandle>,
     HashMap<SyncId, MouseStateHandle>,
     HashMap<SyncId, MouseStateHandle>,
     HashMap<SyncId, MouseStateHandle>,
@@ -128,7 +115,6 @@ type EmptyMouseStates = (
 
 fn empty_card_mouse_states() -> EmptyMouseStates {
     (
-        HashMap::new(),
         HashMap::new(),
         HashMap::new(),
         HashMap::new(),
@@ -151,7 +137,6 @@ fn test_render_environments_list_with_single_environment() {
                 edit_mouse_states,
                 share_mouse_states,
                 card_hover_states,
-                view_runs_link_mouse_states,
                 copy_feedback_times,
             ) = empty_card_mouse_states();
             let card_render_state = EnvironmentCardRenderState {
@@ -159,7 +144,6 @@ fn test_render_environments_list_with_single_environment() {
                 edit_button_mouse_states: &edit_mouse_states,
                 share_button_mouse_states: &share_mouse_states,
                 card_hover_mouse_states: &card_hover_states,
-                view_runs_link_mouse_states: &view_runs_link_mouse_states,
                 copy_feedback_times: &copy_feedback_times,
             };
 
@@ -183,11 +167,6 @@ fn test_render_environments_list_with_single_environment() {
                 "Expected docker image in rendered content: {}",
                 text_content
             );
-            assert!(
-                text_content.contains("View my runs"),
-                "Expected 'View my runs' link in rendered content: {}",
-                text_content
-            );
         });
     })
 }
@@ -208,7 +187,6 @@ fn test_render_environments_list_with_multiple_environments() {
                 edit_mouse_states,
                 share_mouse_states,
                 card_hover_states,
-                view_runs_link_mouse_states,
                 copy_feedback_times,
             ) = empty_card_mouse_states();
             let card_render_state = EnvironmentCardRenderState {
@@ -216,7 +194,6 @@ fn test_render_environments_list_with_multiple_environments() {
                 edit_button_mouse_states: &edit_mouse_states,
                 share_button_mouse_states: &share_mouse_states,
                 card_hover_mouse_states: &card_hover_states,
-                view_runs_link_mouse_states: &view_runs_link_mouse_states,
                 copy_feedback_times: &copy_feedback_times,
             };
 
@@ -250,11 +227,6 @@ fn test_render_environments_list_with_multiple_environments() {
                 "Expected second docker image in rendered content: {}",
                 text_content
             );
-            assert!(
-                text_content.contains("View my runs"),
-                "Expected 'View my runs' link in rendered content: {}",
-                text_content
-            );
         });
     })
 }
@@ -273,7 +245,6 @@ fn test_render_environment_card_with_minimal_config() {
                 edit_mouse_states,
                 share_mouse_states,
                 card_hover_states,
-                view_runs_link_mouse_states,
                 copy_feedback_times,
             ) = empty_card_mouse_states();
             let card_render_state = EnvironmentCardRenderState {
@@ -281,7 +252,6 @@ fn test_render_environment_card_with_minimal_config() {
                 edit_button_mouse_states: &edit_mouse_states,
                 share_button_mouse_states: &share_mouse_states,
                 card_hover_mouse_states: &card_hover_states,
-                view_runs_link_mouse_states: &view_runs_link_mouse_states,
                 copy_feedback_times: &copy_feedback_times,
             };
 
@@ -303,11 +273,6 @@ fn test_render_environment_card_with_minimal_config() {
             assert!(
                 text_content.contains("alpine:latest"),
                 "Expected docker image in rendered content: {}",
-                text_content
-            );
-            assert!(
-                text_content.contains("View my runs"),
-                "Expected 'View my runs' link in rendered content: {}",
                 text_content
             );
         });
@@ -335,7 +300,6 @@ fn test_render_environment_card_with_github_repos() {
                 edit_mouse_states,
                 share_mouse_states,
                 card_hover_states,
-                view_runs_link_mouse_states,
                 copy_feedback_times,
             ) = empty_card_mouse_states();
             let card_render_state = EnvironmentCardRenderState {
@@ -343,7 +307,6 @@ fn test_render_environment_card_with_github_repos() {
                 edit_button_mouse_states: &edit_mouse_states,
                 share_button_mouse_states: &share_mouse_states,
                 card_hover_mouse_states: &card_hover_states,
-                view_runs_link_mouse_states: &view_runs_link_mouse_states,
                 copy_feedback_times: &copy_feedback_times,
             };
 
@@ -372,11 +335,6 @@ fn test_render_environment_card_with_github_repos() {
                 "Expected second repo in rendered content: {}",
                 text_content
             );
-            assert!(
-                text_content.contains("View my runs"),
-                "Expected 'View my runs' link in rendered content: {}",
-                text_content
-            );
         });
     })
 }
@@ -399,7 +357,6 @@ fn test_render_environment_card_with_setup_commands() {
                 edit_mouse_states,
                 share_mouse_states,
                 card_hover_states,
-                view_runs_link_mouse_states,
                 copy_feedback_times,
             ) = empty_card_mouse_states();
             let card_render_state = EnvironmentCardRenderState {
@@ -407,7 +364,6 @@ fn test_render_environment_card_with_setup_commands() {
                 edit_button_mouse_states: &edit_mouse_states,
                 share_button_mouse_states: &share_mouse_states,
                 card_hover_mouse_states: &card_hover_states,
-                view_runs_link_mouse_states: &view_runs_link_mouse_states,
                 copy_feedback_times: &copy_feedback_times,
             };
 
@@ -441,11 +397,6 @@ fn test_render_environment_card_with_setup_commands() {
                 "Expected second setup command in rendered content: {}",
                 text_content
             );
-            assert!(
-                text_content.contains("View my runs"),
-                "Expected 'View my runs' link in rendered content: {}",
-                text_content
-            );
         });
     })
 }
@@ -474,7 +425,6 @@ fn test_render_environment_card_with_all_features() {
                 edit_mouse_states,
                 share_mouse_states,
                 card_hover_states,
-                view_runs_link_mouse_states,
                 copy_feedback_times,
             ) = empty_card_mouse_states();
             let card_render_state = EnvironmentCardRenderState {
@@ -482,7 +432,6 @@ fn test_render_environment_card_with_all_features() {
                 edit_button_mouse_states: &edit_mouse_states,
                 share_button_mouse_states: &share_mouse_states,
                 card_hover_mouse_states: &card_hover_states,
-                view_runs_link_mouse_states: &view_runs_link_mouse_states,
                 copy_feedback_times: &copy_feedback_times,
             };
 
@@ -526,11 +475,6 @@ fn test_render_environment_card_with_all_features() {
                 "Expected second setup command in rendered content: {}",
                 text_content
             );
-            assert!(
-                text_content.contains("View my runs"),
-                "Expected 'View my runs' link in rendered content: {}",
-                text_content
-            );
         });
     })
 }
@@ -553,7 +497,6 @@ fn test_render_environment_card_with_empty_setup_commands() {
                 edit_mouse_states,
                 share_mouse_states,
                 card_hover_states,
-                view_runs_link_mouse_states,
                 copy_feedback_times,
             ) = empty_card_mouse_states();
             let card_render_state = EnvironmentCardRenderState {
@@ -561,7 +504,6 @@ fn test_render_environment_card_with_empty_setup_commands() {
                 edit_button_mouse_states: &edit_mouse_states,
                 share_button_mouse_states: &share_mouse_states,
                 card_hover_mouse_states: &card_hover_states,
-                view_runs_link_mouse_states: &view_runs_link_mouse_states,
                 copy_feedback_times: &copy_feedback_times,
             };
 
@@ -583,11 +525,6 @@ fn test_render_environment_card_with_empty_setup_commands() {
             assert!(
                 text_content.contains("ubuntu:latest"),
                 "Expected docker image in rendered content: {}",
-                text_content
-            );
-            assert!(
-                text_content.contains("View my runs"),
-                "Expected 'View my runs' link in rendered content: {}",
                 text_content
             );
         });
@@ -809,44 +746,8 @@ fn test_render_list_page_with_only_personal_environments_shows_personal_header()
 }
 
 #[test]
-fn test_set_github_auth_redirect_target_updates_form() {
-    App::test((), |mut app| async move {
-        init_env_page_view_test_models(&mut app);
-        let window_id = create_test_window(&mut app);
-
-        let mut view_handle = None;
-        app.update(|ctx| {
-            view_handle = Some(ctx.add_typed_action_view(window_id, EnvironmentsPageView::new));
-        });
-        let view_handle = view_handle.expect("EnvironmentsPageView handle should be created");
-
-        app.update(|ctx| {
-            let view = view_handle.as_ref(ctx);
-            let target = view.environment_form.read(ctx, |form, _ctx| {
-                form.github_auth_redirect_target_for_test()
-            });
-            assert_eq!(target, GithubAuthRedirectTarget::SettingsEnvironments);
-        });
-
-        app.update(|ctx| {
-            view_handle.update(ctx, |view, ctx| {
-                view.set_github_auth_redirect_target(GithubAuthRedirectTarget::FocusCloudMode, ctx);
-            });
-        });
-
-        app.update(|ctx| {
-            let view = view_handle.as_ref(ctx);
-            let target = view.environment_form.read(ctx, |form, _ctx| {
-                form.github_auth_redirect_target_for_test()
-            });
-            assert_eq!(target, GithubAuthRedirectTarget::FocusCloudMode);
-        });
-    })
-}
-
-#[test]
-fn test_render_empty_state_shows_github_remote_and_local_rows() {
-    // Empty-state UI should include GitHub-remote (suggested) and agent-assisted local repos paths.
+fn test_render_empty_state_shows_github_remote_row() {
+    // Empty-state UI should include the GitHub-remote (suggested) setup path.
     App::test((), |mut app| async move {
         init_env_page_view_test_models(&mut app);
         let window_id = create_test_window(&mut app);
@@ -882,30 +783,9 @@ fn test_render_empty_state_shows_github_remote_and_local_rows() {
             );
 
             assert!(
-                text_content.contains("Use the agent"),
-                "Expected 'Use the agent' row title in rendered content: {}",
-                text_content
-            );
-            assert!(
-                text_content.contains("Launch agent"),
-                "Expected 'Launch agent' button text in rendered content: {}",
-                text_content
-            );
-
-            assert!(
                 !text_content.contains("Manually create an environment"),
                 "Did not expect old manual-create empty-state row title in rendered content: {}",
                 text_content
-            );
-
-            // Basic ordering: GitHub row should appear above local repos row.
-            let github_pos = text_content.find("Quick setup").unwrap_or(usize::MAX);
-            let local_pos = text_content
-                .find("Use the agent")
-                .unwrap_or(usize::MAX);
-            assert!(
-                github_pos < local_pos,
-                "Expected GitHub row to appear before local row (github_pos={github_pos}, local_pos={local_pos}): {text_content}"
             );
         });
     })
@@ -987,163 +867,6 @@ fn test_render_empty_state_github_card_unauthed_state_shows_authorize() {
                 text_content.contains("Quick setup"),
                 "Expected quick setup row in rendered content: {}",
                 text_content
-            );
-        });
-    })
-}
-
-// ============================================================================
-// Toolbar + Agent-assisted Flow Tests
-// ============================================================================
-
-#[test]
-fn test_environment_setup_mode_selector_renders_options() {
-    App::test((), |mut app| async move {
-        app.add_singleton_model(|_| Appearance::mock());
-        let window_id = create_test_window(&mut app);
-
-        app.update(|ctx| {
-            let selector = ctx.add_typed_action_view(window_id, EnvironmentSetupModeSelector::new);
-            let element = selector.as_ref(ctx).render(ctx);
-            let text_content = element.debug_text_content().unwrap_or_default();
-
-            assert!(
-                text_content.contains("Quick setup"),
-                "Expected Quick setup option in rendered content: {}",
-                text_content
-            );
-            assert!(
-                text_content.contains("Use the agent"),
-                "Expected Use the agent option in rendered content: {}",
-                text_content
-            );
-        });
-    })
-}
-
-#[test]
-fn test_agent_assisted_modal_open_and_cancel_renders_and_hides() {
-    // Verifies the Environments page wires up the modal visibility and cancel event correctly.
-    App::test((), |mut app| async move {
-        init_env_page_view_test_models(&mut app);
-        let window_id = create_test_window(&mut app);
-
-        let mut view_handle = None;
-        app.update(|ctx| {
-            view_handle = Some(ctx.add_typed_action_view(window_id, EnvironmentsPageView::new));
-        });
-        let view_handle = view_handle.expect("EnvironmentsPageView handle should be created");
-
-        // Open the modal.
-        app.update(|ctx| {
-            view_handle.update(ctx, |view, ctx| {
-                view.handle_action(&EnvironmentsPageAction::OpenAgentAssistedCreateModal, ctx);
-            });
-        });
-
-        // Verify the modal is visible.
-        // We assert against `is_visible()` rather than `debug_text_content()` of the full dialog,
-        // because dialog/icon rendering can be asset-provider-dependent in unit tests.
-        app.update(|ctx| {
-            let view = view_handle.as_ref(ctx);
-            let modal = view.agent_assisted_environment_modal.clone();
-            let is_visible = modal.read(ctx, |modal, _ctx| modal.is_visible());
-            assert!(is_visible, "Expected modal to be visible after open action");
-        });
-
-        // Cancel via modal event.
-        app.update(|ctx| {
-            view_handle.update(ctx, |view, ctx| {
-                view.agent_assisted_environment_modal
-                    .update(ctx, |_modal, ctx| {
-                        ctx.emit(AgentAssistedEnvironmentModalEvent::Cancelled);
-                    });
-            });
-        });
-
-        // Verify modal is hidden.
-        app.update(|ctx| {
-            let view = view_handle.as_ref(ctx);
-            let modal = view.agent_assisted_environment_modal.clone();
-            let is_visible = modal.read(ctx, |modal, _ctx| modal.is_visible());
-            assert!(
-                !is_visible,
-                "Expected modal to be hidden after cancel event"
-            );
-        });
-    })
-}
-
-#[test]
-fn test_agent_assisted_modal_confirm_dispatches_root_view_action_and_hides_modal() {
-    // We treat the RootView action dispatch as the contract that a terminal tab + setup flow will start.
-    // (The deeper terminal-tab assertions are better suited to integration tests.)
-    App::test((), |mut app| async move {
-        init_env_page_view_test_models(&mut app);
-
-        // Capture the CreateEnvironmentArg passed through the RootView action boundary.
-        let dispatched_repo_paths: Arc<Mutex<Vec<Vec<String>>>> = Arc::new(Mutex::new(Vec::new()));
-        let dispatched_repo_paths_clone = dispatched_repo_paths.clone();
-
-        app.update(|ctx| {
-            ctx.add_global_action(
-                "root_view:create_environment_in_existing_window_and_run",
-                move |arg: &CreateEnvironmentArg, _ctx| {
-                    dispatched_repo_paths_clone
-                        .lock()
-                        .expect("mutex should not be poisoned")
-                        .push(arg.repos.clone());
-                },
-            );
-        });
-
-        let window_id = create_test_window(&mut app);
-
-        let mut view_handle = None;
-        app.update(|ctx| {
-            view_handle = Some(ctx.add_typed_action_view(window_id, EnvironmentsPageView::new));
-        });
-        let view_handle = view_handle.expect("EnvironmentsPageView handle should be created");
-
-        // Open the modal.
-        app.update(|ctx| {
-            view_handle.update(ctx, |view, ctx| {
-                view.handle_action(&EnvironmentsPageAction::OpenAgentAssistedCreateModal, ctx);
-            });
-        });
-
-        // Confirm via modal event.
-        let repo_paths = vec!["/tmp/repo-a".to_string(), "/tmp/repo-b".to_string()];
-        app.update(|ctx| {
-            view_handle.update(ctx, |view, ctx| {
-                view.agent_assisted_environment_modal
-                    .update(ctx, |_modal, ctx| {
-                        ctx.emit(AgentAssistedEnvironmentModalEvent::Confirmed {
-                            repo_paths: repo_paths.clone(),
-                        });
-                    });
-            });
-        });
-
-        // Verify global action was dispatched with repos.
-        let dispatched = dispatched_repo_paths
-            .lock()
-            .expect("mutex should not be poisoned")
-            .clone();
-        assert_eq!(
-            dispatched,
-            vec![repo_paths],
-            "Expected root view action to be dispatched with repo paths"
-        );
-
-        // Verify modal is hidden after confirm.
-        app.update(|ctx| {
-            let view = view_handle.as_ref(ctx);
-            let modal = view.agent_assisted_environment_modal.clone();
-            let is_visible = modal.read(ctx, |modal, _ctx| modal.is_visible());
-            assert!(
-                !is_visible,
-                "Expected modal to be hidden after confirm event"
             );
         });
     })
@@ -1358,7 +1081,6 @@ fn test_render_environment_card_with_last_used_never() {
                 edit_mouse_states,
                 share_mouse_states,
                 card_hover_states,
-                view_runs_link_mouse_states,
                 copy_feedback_times,
             ) = empty_card_mouse_states();
 
@@ -1368,7 +1090,6 @@ fn test_render_environment_card_with_last_used_never() {
                 edit_button_mouse_states: &edit_mouse_states,
                 share_button_mouse_states: &share_mouse_states,
                 card_hover_mouse_states: &card_hover_states,
-                view_runs_link_mouse_states: &view_runs_link_mouse_states,
                 copy_feedback_times: &copy_feedback_times,
             };
 
@@ -1391,11 +1112,6 @@ fn test_render_environment_card_with_last_used_never() {
             assert!(
                 text_content.contains("Last edited:"),
                 "Expected 'Last edited:' in rendered text: {}",
-                text_content
-            );
-            assert!(
-                text_content.contains("View my runs"),
-                "Expected 'View my runs' link in rendered text: {}",
                 text_content
             );
         });
@@ -1430,7 +1146,6 @@ fn test_render_environment_card_with_last_used_timestamp() {
                 edit_mouse_states,
                 share_mouse_states,
                 card_hover_states,
-                view_runs_link_mouse_states,
                 copy_feedback_times,
             ) = empty_card_mouse_states();
 
@@ -1440,7 +1155,6 @@ fn test_render_environment_card_with_last_used_timestamp() {
                 edit_button_mouse_states: &edit_mouse_states,
                 share_button_mouse_states: &share_mouse_states,
                 card_hover_mouse_states: &card_hover_states,
-                view_runs_link_mouse_states: &view_runs_link_mouse_states,
                 copy_feedback_times: &copy_feedback_times,
             };
 
@@ -1468,11 +1182,6 @@ fn test_render_environment_card_with_last_used_timestamp() {
             assert!(
                 !text_content.contains("never"),
                 "Did not expect 'never' in rendered text: {}",
-                text_content
-            );
-            assert!(
-                text_content.contains("View my runs"),
-                "Expected 'View my runs' link in rendered text: {}",
                 text_content
             );
         });

@@ -1,75 +1,6 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
-    active_mcp_servers (id) {
-        id -> Integer,
-        mcp_server_uuid -> Text,
-    }
-}
-
-diesel::table! {
-    agent_conversations (id) {
-        id -> Integer,
-        conversation_id -> Text,
-        conversation_data -> Text,
-        last_modified_at -> Timestamp,
-        summary -> Nullable<Text>,
-    }
-}
-
-diesel::table! {
-    agent_tasks (id) {
-        id -> Integer,
-        conversation_id -> Text,
-        task_id -> Text,
-        task -> Binary,
-        last_modified_at -> Timestamp,
-    }
-}
-
-diesel::table! {
-    ai_document_panes (id) {
-        id -> Integer,
-        kind -> Text,
-        document_id -> Text,
-        version -> Integer,
-        content -> Nullable<Text>,
-        title -> Nullable<Text>,
-    }
-}
-
-diesel::table! {
-    ai_memory_panes (id) {
-        id -> Integer,
-        kind -> Text,
-    }
-}
-
-diesel::table! {
-    ai_queries (id) {
-        id -> Integer,
-        exchange_id -> Text,
-        conversation_id -> Text,
-        start_ts -> Timestamp,
-        input -> Text,
-        working_directory -> Nullable<Text>,
-        output_status -> Text,
-        model_id -> Text,
-        planning_model_id -> Text,
-        coding_model_id -> Text,
-    }
-}
-
-diesel::table! {
-    ambient_agent_panes (id) {
-        id -> Integer,
-        kind -> Text,
-        uuid -> Binary,
-        task_id -> Nullable<Text>,
-    }
-}
-
-diesel::table! {
     app (id) {
         id -> Nullable<Integer>,
         active_window_id -> Nullable<Integer>,
@@ -197,31 +128,6 @@ diesel::table! {
 }
 
 diesel::table! {
-    mcp_environment_variables (mcp_server_uuid) {
-        mcp_server_uuid -> Binary,
-        environment_variables -> Text,
-    }
-}
-
-diesel::table! {
-    mcp_server_installations (id) {
-        id -> Text,
-        templatable_mcp_server -> Text,
-        template_version_ts -> Timestamp,
-        variable_values -> Text,
-        restore_running -> Bool,
-        last_modified_at -> Timestamp,
-    }
-}
-
-diesel::table! {
-    mcp_server_panes (id) {
-        id -> Integer,
-        kind -> Text,
-    }
-}
-
-diesel::table! {
     notebook_panes (id) {
         id -> Integer,
         kind -> Text,
@@ -326,18 +232,27 @@ diesel::table! {
 }
 
 diesel::table! {
-    project_rules (id) {
-        id -> Integer,
-        path -> Text,
-        project_root -> Text,
+    project_worktrees (id) {
+        id -> Text,
+        project_id -> Text,
+        name -> Text,
+        kind -> Text,
+        path -> Nullable<Text>,
+        branch -> Nullable<Text>,
+        base_branch -> Nullable<Text>,
+        created_ts -> BigInt,
     }
 }
 
 diesel::table! {
-    projects (path) {
-        path -> Text,
-        added_ts -> Timestamp,
-        last_opened_ts -> Nullable<Timestamp>,
+    projects (id) {
+        id -> Text,
+        root_path -> Text,
+        display_name -> Text,
+        kind -> Text,
+        primary_branch -> Nullable<Text>,
+        created_ts -> BigInt,
+        last_opened_ts -> BigInt,
     }
 }
 
@@ -363,6 +278,7 @@ diesel::table! {
         color -> Nullable<Text>,
         collapsed -> Bool,
         pinned -> Bool,
+        project_id -> Nullable<Text>,
     }
 }
 
@@ -374,6 +290,8 @@ diesel::table! {
         color -> Nullable<Text>,
         tab_group_id -> Nullable<Integer>,
         pinned -> Bool,
+        project_id -> Nullable<Text>,
+        worktree_id -> Nullable<Text>,
     }
 }
 
@@ -455,6 +373,7 @@ diesel::table! {
         left_panel_open -> Nullable<Bool>,
         vertical_tabs_panel_open -> Nullable<Bool>,
         team_uid -> Nullable<Text>,
+        active_project_id -> Nullable<Text>,
     }
 }
 
@@ -509,7 +428,6 @@ diesel::table! {
     }
 }
 
-diesel::joinable!(ambient_agent_panes -> pane_nodes (id));
 diesel::joinable!(app -> windows (active_window_id));
 diesel::joinable!(code_pane_tabs -> code_panes (code_pane_id));
 diesel::joinable!(object_permissions -> object_metadata (object_metadata_id));
@@ -525,7 +443,6 @@ diesel::joinable!(team_settings -> teams (team_id));
 diesel::joinable!(workspace_language_server -> workspace_metadata (workspace_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
-    ambient_agent_panes,
     app,
     pane_branches,
     pane_leaves,

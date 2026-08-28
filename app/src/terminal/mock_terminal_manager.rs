@@ -3,38 +3,29 @@ use std::sync::Arc;
 
 use parking_lot::FairMutex;
 use pathfinder_geometry::vector::Vector2F;
-use warpui::{AppContext, ModelHandle, SingletonEntity, ViewHandle, WindowId};
+use warpui::{AppContext, ModelHandle, ViewHandle, WindowId};
 
 use super::event_listener::ChannelEventListener;
 use super::model::session::Sessions;
 use super::model_events::ModelEventDispatcher;
 use super::terminal_manager::BlockSpacing;
 use super::{ShellLaunchState, TerminalManager, TerminalModel, TerminalView};
-use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
-use crate::ai::blocklist::SerializedBlockListItem;
 use crate::context_chips::prompt_type::PromptType;
 use crate::pane_group::TerminalViewResources;
-use crate::terminal::view::ConversationRestorationInNewPaneType;
+use crate::terminal::model::block::SerializedBlock;
 
 pub struct MockTerminalManager {
     model: Arc<FairMutex<TerminalModel>>,
-    view: ViewHandle<TerminalView>,
 }
-pub struct MockTerminalManagerInit {
-    pub(crate) manager: ModelHandle<Box<dyn TerminalManager>>,
-    pub(crate) view: ViewHandle<TerminalView>,
-}
-
 impl MockTerminalManager {
     pub fn create_model(
         shell_state: ShellLaunchState,
         resources: TerminalViewResources,
-        restored_blocks: Option<&Vec<SerializedBlockListItem>>,
-        conversation_restoration: Option<ConversationRestorationInNewPaneType>,
+        restored_blocks: Option<&Vec<SerializedBlock>>,
         initial_size: Vector2F,
         window_id: WindowId,
         ctx: &mut AppContext,
-    ) -> MockTerminalManagerInit {
+    ) -> ViewHandle<TerminalView> {
         // Create all the necessary channels we need for communication.
         let (wakeups_tx, wakeups_rx) = async_channel::unbounded();
         let (events_tx, events_rx) = async_channel::unbounded();
@@ -75,12 +66,7 @@ impl MockTerminalManager {
                 colors,
                 None,
                 prompt_type,
-                None,
-                // We use conversation restoration to load a view-only cloud conversation
-                // into the web view.
-                conversation_restoration,
                 None, // inactive_pty_reads_rx
-                false,
                 ctx,
             )
         });
@@ -96,36 +82,18 @@ impl MockTerminalManager {
             });
         });
 
-        let terminal_view = view.clone();
-        let terminal_manager = Self { model, view };
-        let manager_model = ctx.add_model(|_ctx| {
+        let terminal_manager = Self { model };
+        ctx.add_model(|_ctx| {
             let manager: Box<dyn TerminalManager> = Box::new(terminal_manager);
             manager
         });
-        MockTerminalManagerInit {
-            manager: manager_model,
-            view: terminal_view,
-        }
+        view
     }
 }
 
 impl TerminalManager for MockTerminalManager {
     fn model(&self) -> Arc<FairMutex<TerminalModel>> {
         self.model.clone()
-    }
-
-    fn on_view_detached(
-        &self,
-        _detach_type: crate::pane_group::pane::DetachType,
-        app: &mut AppContext,
-    ) {
-        // If this is a conversation transcript viewer, unregister the ambient session.
-        if self.model.lock().is_conversation_transcript_viewer() {
-            let terminal_view_id = self.view.id();
-            ActiveAgentViewsModel::handle(app).update(app, |model, ctx| {
-                model.unregister_ambient_session(terminal_view_id, ctx);
-            });
-        }
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -172,7 +140,7 @@ mod testing {
     impl MockTerminalManager {
         pub fn create_new_terminal_view_window_for_test(
             app: &mut App,
-            restored_blocks: Option<&[SerializedBlockListItem]>,
+            restored_blocks: Option<&[SerializedBlock]>,
         ) -> ViewHandle<TerminalView> {
             let server_api = app.read(|ctx| ServerApiProvider::as_ref(ctx).get());
             let tips_model = app.add_model(|_| Default::default());
@@ -191,12 +159,11 @@ mod testing {
                     },
                     resources,
                     restored_blocks.map(|blocks| blocks.to_vec()).as_ref(),
-                    None,
                     Vector2F::new(7., 10.5),
                     ctx.window_id(),
                     ctx,
                 );
-                let terminal_view = terminal_init.view;
+                let terminal_view = terminal_init;
 
                 TerminalRootView { terminal_view }
             });

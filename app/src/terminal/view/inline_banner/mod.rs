@@ -1,30 +1,16 @@
-//! This module contains logic to render inline banners for various use cases in the Blocklist. An
-//! inline banner is distinct from a typical app banner in that inline banner are rendered within
-//! the Blocklist (between blocks) while app banners are pinned to the top of the window.
-mod agent_mode_setup;
 mod alias_expansion;
-mod aws_bedrock_login;
-mod aws_cli_not_installed;
 mod notifications_discovery;
 mod notifications_error;
 mod open_in_warp;
-mod passive_code_diff;
-pub(crate) mod prompt_suggestions;
-mod session_state;
 mod shared_sessions;
 mod shell_process_terminated;
 mod vim_mode;
 
-pub use agent_mode_setup::*;
 pub use alias_expansion::*;
-pub use aws_bedrock_login::*;
-pub use aws_cli_not_installed::*;
 pub use notifications_discovery::*;
 pub use notifications_error::*;
 pub use open_in_warp::*;
-pub use passive_code_diff::*;
 use pathfinder_color::ColorU;
-pub use session_state::*;
 pub use shared_sessions::*;
 pub use shell_process_terminated::*;
 pub use vim_mode::*;
@@ -38,7 +24,6 @@ use warpui::fonts::{FamilyId, Properties, Weight};
 use warpui::ui_components::button::ButtonVariant;
 use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 
-pub use self::prompt_suggestions::*;
 use crate::appearance::Appearance;
 use crate::terminal::view::TerminalAction;
 use crate::themes::theme::Blend;

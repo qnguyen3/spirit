@@ -1,6 +1,5 @@
-use ai::agent::action::CommentSide;
-
 use super::{DiffHunkParseError, parse_diff_hunk};
+use crate::code_review::comments::CommentSide;
 
 #[test]
 fn test_parse_preserves_whitespace() {

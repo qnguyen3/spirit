@@ -11,7 +11,6 @@ use warpui::r#async::executor::Background;
 use warpui::text::{SelectionType, str_to_byte_vec};
 
 use super::*;
-use crate::ai::agent::conversation::AIConversationId;
 use crate::terminal::color;
 use crate::terminal::event_listener::ChannelEventListener;
 use crate::terminal::model::ObfuscateSecrets;
@@ -49,9 +48,7 @@ fn create_default_serialized_block() -> SerializedBlock {
         shell_host: None,
         is_background: false,
         prompt_snapshot: None,
-        ai_metadata: None,
         is_local: None,
-        agent_view_visibility: None,
     }
 }
 
@@ -82,24 +79,6 @@ fn take_typeahead_for_input_advances_incremental_typeahead() {
 }
 
 #[test]
-fn take_typeahead_for_input_ignores_agent_requested_commands() {
-    let mut model = TerminalModel::mock(None, None);
-    model.simulate_long_running_block("sleep 5", "");
-    let action_id: crate::ai::agent::AIAgentActionId = "action".to_owned().into();
-    model
-        .block_list_mut()
-        .active_block_mut()
-        .set_agent_interaction_mode(AgentInteractionMetadata::new_hidden(
-            action_id,
-            AIConversationId::new(),
-        ));
-    model.finish_block();
-    report_shell_typeahead(&mut model, "echo hi");
-
-    assert_eq!(model.take_typeahead_for_input(), None);
-}
-
-#[test]
 fn take_typeahead_for_input_is_none_when_typeahead_is_empty() {
     let mut model = TerminalModel::mock(None, None);
     model.simulate_long_running_block("sleep 5", "");
@@ -107,54 +86,6 @@ fn take_typeahead_for_input_is_none_when_typeahead_is_empty() {
 
     assert_eq!(model.take_typeahead_for_input(), None);
 }
-#[test]
-fn cloud_mode_deferred_terminal_model_starts_view_pending() {
-    let mut model = TerminalModel::new_for_cloud_mode_shared_session_viewer(
-        block_size(),
-        color::List::from(&color::Colors::default()),
-        ChannelEventListener::new_for_test(),
-        Arc::new(Background::default()),
-        false,
-        false,
-        false,
-        ObfuscateSecrets::No,
-    );
-
-    assert!(matches!(
-        model.shared_session_status(),
-        SharedSessionStatus::ViewPending
-    ));
-    assert!(model.shared_session_status().is_viewer());
-    assert!(model.is_dummy_cloud_mode_session());
-    assert!(
-        !model
-            .block_list()
-            .is_executing_oz_environment_startup_commands()
-    );
-
-    let restored_block = SerializedBlock {
-        id: BlockId::new(),
-        stylized_command: str_to_byte_vec("setup-looking-command"),
-        stylized_output: str_to_byte_vec("output"),
-        did_execute: true,
-        start_ts: Some(Local::now()),
-        completed_ts: Some(Local::now()),
-        ..Default::default()
-    };
-    model
-        .block_list_mut()
-        .insert_restored_block(&restored_block);
-
-    let restored_command_block = model
-        .block_list()
-        .blocks()
-        .iter()
-        .find(|block| block.command_to_string() == "setup-looking-command")
-        .expect("restored command block should exist");
-    assert!(!restored_command_block.is_hidden());
-    assert!(!restored_command_block.is_oz_environment_startup_command());
-}
-
 #[test]
 fn generic_shared_session_viewer_model_starts_view_pending() {
     let model = TerminalModel::new_for_shared_session_viewer(
@@ -173,48 +104,6 @@ fn generic_shared_session_viewer_model_starts_view_pending() {
         SharedSessionStatus::ViewPending
     ));
     assert!(model.shared_session_status().is_viewer());
-}
-
-#[test]
-fn is_cloud_agent_conversation_only_true_for_genuine_ambient_sessions() {
-    use std::str::FromStr;
-
-    let make_model = || {
-        TerminalModel::new_for_shared_session_viewer(
-            block_size(),
-            color::List::from(&color::Colors::default()),
-            ChannelEventListener::new_for_test(),
-            Arc::new(Background::default()),
-            false,
-            false,
-            false,
-            ObfuscateSecrets::No,
-        )
-    };
-    let task_id = "123e4567-e89b-12d3-a456-426614174000";
-
-    // Baseline: no shared session source and not viewing a transcript.
-    let mut model = make_model();
-    assert!(!model.is_cloud_agent_conversation());
-
-    // A manually shared *local* (`User`) session carries an orchestrator task id on its
-    // `source_task_id` sidecar (QUALITY-726) but is NOT a cloud agent conversation. This is the
-    // regression: before the fix, this task id leaked into the cloud agent icon check.
-    model.set_shared_session_source(SharedSessionSource::user(Some(task_id.to_owned())));
-    assert!(!model.is_cloud_agent_conversation());
-
-    // A shared *ambient* (cloud) session is a cloud agent conversation.
-    model.set_shared_session_source(SharedSessionSource::ambient_agent(Some(task_id.to_owned())));
-    assert!(model.is_cloud_agent_conversation());
-
-    // Viewing an ambient conversation transcript is a cloud agent conversation.
-    let mut model = make_model();
-    model.set_conversation_transcript_viewer_status(Some(
-        ConversationTranscriptViewerStatus::ViewingAmbientConversation(
-            AmbientAgentTaskId::from_str(task_id).expect("valid task id"),
-        ),
-    ));
-    assert!(model.is_cloud_agent_conversation());
 }
 
 fn iterm_file_osc(name: &str, inline: bool, payload: &[u8]) -> String {
@@ -472,7 +361,7 @@ fn ssh_bootstraps_if_blocklist_empty_and_reconciles_parent_return() {
 #[test]
 // An empty block that is restored should have a nonzero height and it should not get deleted.
 pub fn test_restored_empty_command_block() {
-    let restored_blocks = [create_default_serialized_block().into()];
+    let restored_blocks = [create_default_serialized_block()];
     let model = TerminalModel::mock(Some(&restored_blocks), None);
     let restored_block = &model.block_list().blocks()[0];
     assert_eq!(
@@ -526,11 +415,8 @@ fn test_restored_blocks_on_different_host() {
             }),
             is_background: false,
             prompt_snapshot: None,
-            ai_metadata: None,
             is_local: Some(true),
-            agent_view_visibility: None,
-        }
-        .into(),
+        },
         SerializedBlock {
             id: BlockId::new(),
             stylized_command: str_to_byte_vec("pwd"),
@@ -564,11 +450,8 @@ fn test_restored_blocks_on_different_host() {
             }),
             is_background: false,
             prompt_snapshot: None,
-            ai_metadata: None,
             is_local: Some(true),
-            agent_view_visibility: None,
-        }
-        .into(),
+        },
         SerializedBlock {
             id: BlockId::new(),
             stylized_command: str_to_byte_vec("uname"),
@@ -602,11 +485,8 @@ fn test_restored_blocks_on_different_host() {
             }),
             is_background: false,
             prompt_snapshot: None,
-            ai_metadata: None,
             is_local: Some(false),
-            agent_view_visibility: None,
-        }
-        .into(),
+        },
         SerializedBlock {
             id: BlockId::new(),
             stylized_command: str_to_byte_vec("mkdir secrets"),
@@ -636,11 +516,8 @@ fn test_restored_blocks_on_different_host() {
             shell_host: None,
             is_background: false,
             prompt_snapshot: None,
-            ai_metadata: None,
             is_local: Some(true),
-            agent_view_visibility: None,
-        }
-        .into(),
+        },
     ];
     let model = TerminalModel::mock(Some(&restored_blocks), None);
     // The mocked terminal model comes with a WarpInput block and the active block.
