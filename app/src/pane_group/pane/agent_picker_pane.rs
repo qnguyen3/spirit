@@ -51,7 +51,7 @@ impl PaneContent for AgentPickerPane {
 
         let pane_id = self.id();
         let pane_group_id = ctx.view_id();
-        let window_id = ctx.window_id();
+        let screen_id = crate::workspace::owning_screen_id(pane_group_id, ctx.window_id(), ctx);
         ctx.subscribe_to_view(&child, move |pane_group, _, event, ctx| {
             let AgentPickerViewEvent::Pane(pane_event) = event;
             pane_group.handle_pane_event(pane_id, pane_event, ctx);
@@ -60,15 +60,17 @@ impl PaneContent for AgentPickerPane {
             pane_group.handle_pane_view_event(pane_id, event, ctx);
         });
 
-        AgentPickerPaneManager::handle(ctx).update(ctx, |manager, _ctx| {
-            manager.register_pane(
-                window_id,
-                PaneViewLocator {
-                    pane_group_id,
-                    pane_id,
-                },
-            );
-        });
+        if let Some(screen_id) = screen_id {
+            AgentPickerPaneManager::handle(ctx).update(ctx, |manager, _ctx| {
+                manager.register_pane(
+                    screen_id,
+                    PaneViewLocator {
+                        pane_group_id,
+                        pane_id,
+                    },
+                );
+            });
+        }
     }
 
     fn detach(
@@ -81,10 +83,13 @@ impl PaneContent for AgentPickerPane {
         ctx.unsubscribe_to_view(&child);
         ctx.unsubscribe_to_view(&self.view);
 
-        let window_id = ctx.window_id();
-        AgentPickerPaneManager::handle(ctx).update(ctx, |manager, _ctx| {
-            manager.deregister_pane(&window_id);
-        });
+        if let Some(screen_id) =
+            crate::workspace::owning_screen_id(ctx.view_id(), ctx.window_id(), ctx)
+        {
+            AgentPickerPaneManager::handle(ctx).update(ctx, |manager, _ctx| {
+                manager.deregister_pane(&screen_id);
+            });
+        }
     }
 
     fn snapshot(&self, _ctx: &AppContext) -> LeafContents {

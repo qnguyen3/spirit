@@ -694,6 +694,7 @@ mod imp {
     }
 }
 
+#[allow(unused_imports)]
 pub use imp::{
     clone, current_branch, delete_branch_safe, detect_primary_branch, discover_repo_root,
     force_delete_branch, init_new_project, local_branches, same_path, status_is_dirty,

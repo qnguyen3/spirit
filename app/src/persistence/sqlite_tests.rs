@@ -12,11 +12,12 @@ use warp_graphql::scalars::time::ServerTimestamp;
 use super::{
     app_database_file_path, database_file_path_for_current_scope, database_file_path_for_scope,
     decode_path, deduplicate_events, encode_path, get_all_codebase_index_metadata,
-    read_sqlite_data, save_app_state, save_codebase_index_metadata, setup_database, start_writer,
+    read_sqlite_data, save_app_state, save_codebase_index_metadata, save_project, setup_database,
+    start_writer,
 };
 use crate::app_state::{
     AppState, CodePaneSnapShot, CodePaneTabSnapshot, LeafContents, LeafSnapshot, PaneNodeSnapshot,
-    TabGroupSnapshot, TabSnapshot, TerminalPaneSnapshot, WindowSnapshot,
+    ProjectScreenSnapshot, TabGroupSnapshot, TabSnapshot, TerminalPaneSnapshot, WindowSnapshot,
 };
 use crate::auth::UserUid;
 use crate::cloud_object::{CloudObjectPermissions, Owner};
@@ -317,7 +318,7 @@ fn legacy_ai_panes_restore_as_terminal_panes() {
             1,
             "the window must survive a {legacy_kind} pane"
         );
-        let tabs = &restored_app_state.windows[0].tabs;
+        let tabs = &restored_app_state.windows[0].tabs();
         assert_eq!(tabs.len(), 1, "the tab must survive a {legacy_kind} pane");
 
         let PaneNodeSnapshot::Leaf(leaf) = &tabs[0].root else {
@@ -339,30 +340,35 @@ fn legacy_ai_panes_restore_as_terminal_panes() {
 
 fn test_terminal_window_snapshot(vertical_tabs_panel_open: bool) -> WindowSnapshot {
     WindowSnapshot {
-        tabs: vec![TabSnapshot {
-            custom_title: None,
-            root: PaneNodeSnapshot::Leaf(LeafSnapshot {
-                is_focused: true,
-                custom_vertical_tabs_title: None,
-                contents: LeafContents::Terminal(TerminalPaneSnapshot {
-                    uuid: vec![u8::from(vertical_tabs_panel_open) + 1],
-                    cwd: Some("/tmp".to_string()),
-                    shell_launch_data: Some(ShellLaunchData::Executable {
-                        executable_path: PathBuf::from("/bin/zsh"),
-                        shell_type: crate::terminal::shell::ShellType::Zsh,
+        screens: vec![ProjectScreenSnapshot {
+            project_id: None,
+            active_tab_index: 0,
+            tab_groups: vec![],
+            tabs: vec![TabSnapshot {
+                custom_title: None,
+                root: PaneNodeSnapshot::Leaf(LeafSnapshot {
+                    is_focused: true,
+                    custom_vertical_tabs_title: None,
+                    contents: LeafContents::Terminal(TerminalPaneSnapshot {
+                        uuid: vec![u8::from(vertical_tabs_panel_open) + 1],
+                        cwd: Some("/tmp".to_string()),
+                        shell_launch_data: Some(ShellLaunchData::Executable {
+                            executable_path: PathBuf::from("/bin/zsh"),
+                            shell_type: crate::terminal::shell::ShellType::Zsh,
+                        }),
+                        is_active: true,
+                        is_read_only: false,
                     }),
-                    is_active: true,
-                    is_read_only: false,
                 }),
-            }),
-            default_directory_color: None,
-            selected_color: SelectedTabColor::default(),
-            left_panel: None,
-            right_panel: None,
-            group_id: None,
-            pinned: false,
+                default_directory_color: None,
+                selected_color: SelectedTabColor::default(),
+                left_panel: None,
+                right_panel: None,
+                group_id: None,
+                pinned: false,
+            }],
         }],
-        active_tab_index: 0,
+        active_screen_index: 0,
         team_uid: None,
         bounds: None,
         fullscreen_state: Default::default(),
@@ -374,7 +380,6 @@ fn test_terminal_window_snapshot(vertical_tabs_panel_open: bool) -> WindowSnapsh
         vertical_tabs_panel_open,
         left_panel_width: None,
         right_panel_width: None,
-        tab_groups: vec![],
     }
 }
 
@@ -445,30 +450,35 @@ fn test_sqlite_round_trips_custom_vertical_tabs_title() {
 
     let app_state = AppState {
         windows: vec![WindowSnapshot {
-            tabs: vec![TabSnapshot {
-                custom_title: None,
-                root: PaneNodeSnapshot::Leaf(LeafSnapshot {
-                    is_focused: true,
-                    custom_vertical_tabs_title: Some("Production API".to_string()),
-                    contents: LeafContents::Terminal(TerminalPaneSnapshot {
-                        uuid: vec![42],
-                        cwd: Some("/tmp".to_string()),
-                        shell_launch_data: Some(ShellLaunchData::Executable {
-                            executable_path: PathBuf::from("/bin/zsh"),
-                            shell_type: crate::terminal::shell::ShellType::Zsh,
+            screens: vec![ProjectScreenSnapshot {
+                project_id: None,
+                tabs: vec![TabSnapshot {
+                    custom_title: None,
+                    root: PaneNodeSnapshot::Leaf(LeafSnapshot {
+                        is_focused: true,
+                        custom_vertical_tabs_title: Some("Production API".to_string()),
+                        contents: LeafContents::Terminal(TerminalPaneSnapshot {
+                            uuid: vec![42],
+                            cwd: Some("/tmp".to_string()),
+                            shell_launch_data: Some(ShellLaunchData::Executable {
+                                executable_path: PathBuf::from("/bin/zsh"),
+                                shell_type: crate::terminal::shell::ShellType::Zsh,
+                            }),
+                            is_active: true,
+                            is_read_only: false,
                         }),
-                        is_active: true,
-                        is_read_only: false,
                     }),
-                }),
-                default_directory_color: None,
-                selected_color: SelectedTabColor::default(),
-                left_panel: None,
-                right_panel: None,
-                group_id: None,
-                pinned: false,
+                    default_directory_color: None,
+                    selected_color: SelectedTabColor::default(),
+                    left_panel: None,
+                    right_panel: None,
+                    group_id: None,
+                    pinned: false,
+                }],
+                active_tab_index: 0,
+                tab_groups: vec![],
             }],
-            active_tab_index: 0,
+            active_screen_index: 0,
             team_uid: None,
             bounds: None,
             fullscreen_state: Default::default(),
@@ -480,7 +490,6 @@ fn test_sqlite_round_trips_custom_vertical_tabs_title() {
             vertical_tabs_panel_open: false,
             left_panel_width: None,
             right_panel_width: None,
-            tab_groups: vec![],
         }],
         active_window_index: Some(0),
         block_lists: Default::default(),
@@ -496,7 +505,7 @@ fn test_sqlite_round_trips_custom_vertical_tabs_title() {
     let PaneNodeSnapshot::Leaf(LeafSnapshot {
         custom_vertical_tabs_title,
         ..
-    }) = &restored.windows[0].tabs[0].root
+    }) = &restored.windows[0].tabs()[0].root
     else {
         panic!("Expected terminal pane leaf");
     };
@@ -514,37 +523,42 @@ fn test_sqlite_round_trips_code_pane_with_multiple_tabs() {
 
     let app_state = AppState {
         windows: vec![WindowSnapshot {
-            tabs: vec![TabSnapshot {
-                custom_title: None,
-                root: PaneNodeSnapshot::Leaf(LeafSnapshot {
-                    is_focused: true,
-                    custom_vertical_tabs_title: None,
-                    contents: LeafContents::Code(CodePaneSnapShot::Local {
-                        tabs: vec![
-                            CodePaneTabSnapshot {
-                                path: Some(PathBuf::from("/tmp/main.rs")),
-                            },
-                            CodePaneTabSnapshot {
-                                path: Some(PathBuf::from("/tmp/lib.rs")),
-                            },
-                            CodePaneTabSnapshot { path: None },
-                        ],
-                        active_tab_index: 1,
-                        source: Some(CodeSource::FileTree {
-                            location: crate::code::buffer_location::LocalOrRemotePath::Local(
-                                PathBuf::from("/tmp/main.rs"),
-                            ),
+            screens: vec![ProjectScreenSnapshot {
+                project_id: None,
+                tabs: vec![TabSnapshot {
+                    custom_title: None,
+                    root: PaneNodeSnapshot::Leaf(LeafSnapshot {
+                        is_focused: true,
+                        custom_vertical_tabs_title: None,
+                        contents: LeafContents::Code(CodePaneSnapShot::Local {
+                            tabs: vec![
+                                CodePaneTabSnapshot {
+                                    path: Some(PathBuf::from("/tmp/main.rs")),
+                                },
+                                CodePaneTabSnapshot {
+                                    path: Some(PathBuf::from("/tmp/lib.rs")),
+                                },
+                                CodePaneTabSnapshot { path: None },
+                            ],
+                            active_tab_index: 1,
+                            source: Some(CodeSource::FileTree {
+                                location: crate::code::buffer_location::LocalOrRemotePath::Local(
+                                    PathBuf::from("/tmp/main.rs"),
+                                ),
+                            }),
                         }),
                     }),
-                }),
-                default_directory_color: None,
-                selected_color: SelectedTabColor::default(),
-                left_panel: None,
-                right_panel: None,
-                group_id: None,
-                pinned: false,
+                    default_directory_color: None,
+                    selected_color: SelectedTabColor::default(),
+                    left_panel: None,
+                    right_panel: None,
+                    group_id: None,
+                    pinned: false,
+                }],
+                active_tab_index: 0,
+                tab_groups: vec![],
             }],
-            active_tab_index: 0,
+            active_screen_index: 0,
             team_uid: None,
             bounds: None,
             fullscreen_state: Default::default(),
@@ -556,7 +570,6 @@ fn test_sqlite_round_trips_code_pane_with_multiple_tabs() {
             vertical_tabs_panel_open: false,
             left_panel_width: None,
             right_panel_width: None,
-            tab_groups: vec![],
         }],
         active_window_index: Some(0),
         block_lists: Default::default(),
@@ -570,7 +583,7 @@ fn test_sqlite_round_trips_code_pane_with_multiple_tabs() {
         .expect("app state should be present for the full scope");
 
     assert_eq!(restored.windows.len(), 1);
-    let restored_tab = &restored.windows[0].tabs[0];
+    let restored_tab = &restored.windows[0].tabs()[0];
     let PaneNodeSnapshot::Leaf(LeafSnapshot {
         contents:
             LeafContents::Code(CodePaneSnapShot::Local {
@@ -649,8 +662,19 @@ fn test_sqlite_round_trips_tab_groups() {
 
     let app_state = AppState {
         windows: vec![WindowSnapshot {
-            tabs: vec![tab_in_group, tab_outside_group],
-            active_tab_index: 0,
+            screens: vec![ProjectScreenSnapshot {
+                project_id: None,
+                tabs: vec![tab_in_group, tab_outside_group],
+                active_tab_index: 0,
+                tab_groups: vec![TabGroupSnapshot {
+                    id: group_id,
+                    name: Some("Backend".to_string()),
+                    color: SelectedTabColor::Color(AnsiColorIdentifier::Blue),
+                    collapsed: true,
+                    pinned: false,
+                }],
+            }],
+            active_screen_index: 0,
             team_uid: None,
             bounds: None,
             fullscreen_state: Default::default(),
@@ -662,13 +686,6 @@ fn test_sqlite_round_trips_tab_groups() {
             vertical_tabs_panel_open: false,
             left_panel_width: None,
             right_panel_width: None,
-            tab_groups: vec![TabGroupSnapshot {
-                id: group_id,
-                name: Some("Backend".to_string()),
-                color: SelectedTabColor::Color(AnsiColorIdentifier::Blue),
-                collapsed: true,
-                pinned: false,
-            }],
         }],
         active_window_index: Some(0),
         block_lists: Default::default(),
@@ -683,8 +700,8 @@ fn test_sqlite_round_trips_tab_groups() {
 
     assert_eq!(restored.windows.len(), 1);
     let restored_window = &restored.windows[0];
-    assert_eq!(restored_window.tab_groups.len(), 1);
-    let restored_group = &restored_window.tab_groups[0];
+    assert_eq!(restored_window.tab_groups().len(), 1);
+    let restored_group = &restored_window.tab_groups()[0];
     assert_eq!(restored_group.name.as_deref(), Some("Backend"));
     assert_eq!(
         restored_group.color,
@@ -695,9 +712,9 @@ fn test_sqlite_round_trips_tab_groups() {
     // The in-memory `TabGroupId` is minted fresh on restore, so we check that
     // the grouped tab points at the restored group, and the ungrouped tab
     // remains ungrouped.
-    assert_eq!(restored_window.tabs.len(), 2);
-    assert_eq!(restored_window.tabs[0].group_id, Some(restored_group.id));
-    assert_eq!(restored_window.tabs[1].group_id, None);
+    assert_eq!(restored_window.tabs().len(), 2);
+    assert_eq!(restored_window.tabs()[0].group_id, Some(restored_group.id));
+    assert_eq!(restored_window.tabs()[1].group_id, None);
 }
 
 /// Verifies that the `pinned` flag on tabs and tab groups round-trips through
@@ -783,8 +800,28 @@ fn test_sqlite_round_trips_pinned_state() {
 
     let app_state = AppState {
         windows: vec![WindowSnapshot {
-            tabs: vec![pinned_tab, tab_in_pinned_group, unpinned_tab],
-            active_tab_index: 0,
+            screens: vec![ProjectScreenSnapshot {
+                project_id: None,
+                tabs: vec![pinned_tab, tab_in_pinned_group, unpinned_tab],
+                active_tab_index: 0,
+                tab_groups: vec![
+                    TabGroupSnapshot {
+                        id: pinned_group_id,
+                        name: Some("Pinned".to_string()),
+                        color: SelectedTabColor::default(),
+                        collapsed: false,
+                        pinned: true,
+                    },
+                    TabGroupSnapshot {
+                        id: unpinned_group_id,
+                        name: Some("Loose".to_string()),
+                        color: SelectedTabColor::default(),
+                        collapsed: false,
+                        pinned: false,
+                    },
+                ],
+            }],
+            active_screen_index: 0,
             team_uid: None,
             bounds: None,
             fullscreen_state: Default::default(),
@@ -796,22 +833,6 @@ fn test_sqlite_round_trips_pinned_state() {
             vertical_tabs_panel_open: false,
             left_panel_width: None,
             right_panel_width: None,
-            tab_groups: vec![
-                TabGroupSnapshot {
-                    id: pinned_group_id,
-                    name: Some("Pinned".to_string()),
-                    color: SelectedTabColor::default(),
-                    collapsed: false,
-                    pinned: true,
-                },
-                TabGroupSnapshot {
-                    id: unpinned_group_id,
-                    name: Some("Loose".to_string()),
-                    color: SelectedTabColor::default(),
-                    collapsed: false,
-                    pinned: false,
-                },
-            ],
         }],
         active_window_index: Some(0),
         block_lists: Default::default(),
@@ -828,21 +849,21 @@ fn test_sqlite_round_trips_pinned_state() {
     let restored_window = &restored.windows[0];
 
     // Tabs come back in insertion order; pinned flag should match what we saved.
-    assert_eq!(restored_window.tabs.len(), 3);
-    assert!(restored_window.tabs[0].pinned);
-    assert!(!restored_window.tabs[1].pinned);
-    assert!(!restored_window.tabs[2].pinned);
+    assert_eq!(restored_window.tabs().len(), 3);
+    assert!(restored_window.tabs()[0].pinned);
+    assert!(!restored_window.tabs()[1].pinned);
+    assert!(!restored_window.tabs()[2].pinned);
 
     // Both groups round-trip with their pinned state preserved. Group ids are
     // minted fresh on restore, so we look them up by name.
-    assert_eq!(restored_window.tab_groups.len(), 2);
+    assert_eq!(restored_window.tab_groups().len(), 2);
     let restored_pinned_group = restored_window
-        .tab_groups
+        .tab_groups()
         .iter()
         .find(|group| group.name.as_deref() == Some("Pinned"))
         .expect("pinned group should restore");
     let restored_loose_group = restored_window
-        .tab_groups
+        .tab_groups()
         .iter()
         .find(|group| group.name.as_deref() == Some("Loose"))
         .expect("unpinned group should restore");
@@ -1194,4 +1215,179 @@ fn removing_a_project_cascades_its_worktree_rows() {
 
     assert!(restored.projects.is_empty());
     assert!(restored.worktrees.is_empty());
+}
+
+fn test_screen_snapshot(
+    project_id: Option<ProjectId>,
+    uuid_seed: u8,
+    active_tab_index: usize,
+) -> ProjectScreenSnapshot {
+    ProjectScreenSnapshot {
+        project_id,
+        tabs: vec![TabSnapshot {
+            custom_title: None,
+            root: PaneNodeSnapshot::Leaf(LeafSnapshot {
+                is_focused: true,
+                custom_vertical_tabs_title: None,
+                contents: LeafContents::Terminal(TerminalPaneSnapshot {
+                    uuid: vec![uuid_seed],
+                    cwd: Some("/tmp".to_string()),
+                    shell_launch_data: None,
+                    is_active: true,
+                    is_read_only: false,
+                }),
+            }),
+            default_directory_color: None,
+            selected_color: SelectedTabColor::default(),
+            left_panel: None,
+            right_panel: None,
+            group_id: None,
+            pinned: false,
+        }],
+        active_tab_index,
+        tab_groups: vec![],
+    }
+}
+
+fn test_multi_screen_window(screens: Vec<ProjectScreenSnapshot>, active: usize) -> WindowSnapshot {
+    WindowSnapshot {
+        screens,
+        active_screen_index: active,
+        team_uid: None,
+        bounds: None,
+        fullscreen_state: Default::default(),
+        quake_mode: false,
+        universal_search_width: None,
+        voltron_width: None,
+        warp_drive_index_width: None,
+        left_panel_open: false,
+        vertical_tabs_panel_open: false,
+        left_panel_width: None,
+        right_panel_width: None,
+    }
+}
+
+fn persist_test_project(
+    conn: &mut diesel::SqliteConnection,
+    root: &str,
+    last_opened_ts: i64,
+) -> ProjectId {
+    let project = Project {
+        id: ProjectId::new(),
+        root_path: PathBuf::from(root),
+        display_name: root.to_owned(),
+        kind: ProjectKind::Git,
+        primary_branch: Some("main".to_owned()),
+        created_ts: 1,
+        last_opened_ts,
+    };
+    save_project(conn, ProjectRow::from(&project)).expect("project should save");
+    project.id
+}
+
+#[test]
+fn screens_round_trip_grouped_by_project() {
+    let tempdir = tempfile::tempdir().expect("tempdir should be created");
+    let database_path = tempdir.path().join("warp.sqlite");
+    let mut conn = setup_database(&database_path).expect("database should initialize");
+
+    let older = persist_test_project(&mut conn, "/tmp/spirit-older", 10);
+    let newer = persist_test_project(&mut conn, "/tmp/spirit-newer", 20);
+
+    let app_state = AppState {
+        windows: vec![test_multi_screen_window(
+            vec![
+                test_screen_snapshot(None, 1, 0),
+                test_screen_snapshot(Some(older), 2, 0),
+                test_screen_snapshot(Some(newer), 3, 0),
+            ],
+            2,
+        )],
+        active_window_index: Some(0),
+        block_lists: Default::default(),
+    };
+    save_app_state(&mut conn, &app_state).expect("app state should save");
+
+    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
+        .expect("persisted data should load")
+        .app_state
+        .expect("app state should be present");
+
+    let window = &restored.windows[0];
+    assert_eq!(window.screens.len(), 3);
+    assert_eq!(window.screens[0].project_id, None, "Home restores first");
+    assert_eq!(
+        window.screens[1].project_id,
+        Some(newer),
+        "project screens restore MRU-first"
+    );
+    assert_eq!(window.screens[2].project_id, Some(older));
+    assert_eq!(
+        window.active_screen_index, 1,
+        "the active screen follows windows.active_project_id"
+    );
+    for screen in &window.screens {
+        assert_eq!(screen.tabs.len(), 1);
+    }
+}
+
+#[test]
+fn tabs_of_an_unknown_project_fold_into_home() {
+    let tempdir = tempfile::tempdir().expect("tempdir should be created");
+    let database_path = tempdir.path().join("warp.sqlite");
+    let mut conn = setup_database(&database_path).expect("database should initialize");
+
+    let forgotten = ProjectId::new();
+    let app_state = AppState {
+        windows: vec![test_multi_screen_window(
+            vec![
+                test_screen_snapshot(None, 1, 0),
+                test_screen_snapshot(Some(forgotten), 2, 0),
+            ],
+            1,
+        )],
+        active_window_index: Some(0),
+        block_lists: Default::default(),
+    };
+    save_app_state(&mut conn, &app_state).expect("app state should save");
+
+    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
+        .expect("persisted data should load")
+        .app_state
+        .expect("app state should be present");
+
+    let window = &restored.windows[0];
+    assert_eq!(window.screens.len(), 1, "no screen for a forgotten project");
+    assert_eq!(window.screens[0].project_id, None);
+    assert_eq!(
+        window.screens[0].tabs.len(),
+        2,
+        "both tabs survive, folded into Home"
+    );
+    assert_eq!(window.active_screen_index, 0);
+}
+
+#[test]
+fn a_legacy_window_restores_into_a_single_home_screen() {
+    let tempdir = tempfile::tempdir().expect("tempdir should be created");
+    let database_path = tempdir.path().join("warp.sqlite");
+    let mut conn = setup_database(&database_path).expect("database should initialize");
+
+    let app_state = AppState {
+        windows: vec![test_terminal_window_snapshot(false)],
+        active_window_index: Some(0),
+        block_lists: Default::default(),
+    };
+    save_app_state(&mut conn, &app_state).expect("app state should save");
+
+    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
+        .expect("persisted data should load")
+        .app_state
+        .expect("app state should be present");
+
+    let window = &restored.windows[0];
+    assert_eq!(window.screens.len(), 1);
+    assert_eq!(window.screens[0].project_id, None);
+    assert_eq!(window.active_screen_index, 0);
+    assert_eq!(window.tabs().len(), 1);
 }

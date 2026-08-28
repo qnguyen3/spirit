@@ -66,6 +66,7 @@ use crate::notebooks::manager::NotebookSource;
 use crate::pane_group::{NewTerminalOptions, PanesLayout};
 use crate::persistence::ModelEvent;
 use crate::pricing::{PricingInfoModel, PricingInfoModelEvent};
+use crate::projects::host::ProjectHost;
 use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::ids::{ServerId, SyncId};
 use crate::server::server_api::auth::UserAuthenticationError;
@@ -735,6 +736,7 @@ fn open_from_restored(arg: &OpenFromRestoredArg, ctx: &mut AppContext) {
                                 global_resource_handles.clone(),
                                 NewWorkspaceSource::Restored {
                                     window_snapshot: window.clone(),
+                                    screen_index: window.active_screen_index,
                                     block_lists: app_state.block_lists.clone(),
                                 },
                                 ctx,
@@ -775,6 +777,7 @@ fn open_from_restored(arg: &OpenFromRestoredArg, ctx: &mut AppContext) {
                                     global_resource_handles.clone(),
                                     NewWorkspaceSource::Restored {
                                         window_snapshot: window.clone(),
+                                        screen_index: window.active_screen_index,
                                         block_lists: app_state.block_lists.clone(),
                                     },
                                     ctx,
@@ -827,6 +830,7 @@ fn open_from_restored(arg: &OpenFromRestoredArg, ctx: &mut AppContext) {
                             global_resource_handles,
                             NewWorkspaceSource::Restored {
                                 window_snapshot: window.clone(),
+                                screen_index: window.active_screen_index,
                                 block_lists: app_state.block_lists.clone(),
                             },
                             ctx,
@@ -894,9 +898,7 @@ fn open_team_settings_with_email_invite_in_new_window(
 ) {
     let root_handle = open_new_window_get_handles(None, ctx).1;
     root_handle.update(ctx, |root_view, ctx| {
-        if let AuthOnboardingState::Terminal(workspace_view_handle) =
-            &root_view.auth_onboarding_state
-        {
+        if let Some(workspace_view_handle) = root_view.active_workspace(ctx) {
             let initial_load_complete = UpdateManager::as_ref(ctx).initial_load_complete();
             let email_invite = arg.invite_email.clone();
             workspace_view_handle.update(ctx, |_, ctx| {
@@ -911,9 +913,7 @@ fn open_team_settings_with_email_invite_in_new_window(
 fn open_settings_page_in_new_window(section: &SettingsSection, ctx: &mut AppContext) {
     let root_handle = open_new_window_get_handles(None, ctx).1;
     root_handle.update(ctx, |root_view, ctx| {
-        if let AuthOnboardingState::Terminal(workspace_view_handle) =
-            &root_view.auth_onboarding_state
-        {
+        if let Some(workspace_view_handle) = root_view.active_workspace(ctx) {
             let window_id = ctx.window_id();
             ctx.dispatch_typed_action_for_view(
                 window_id,
@@ -943,9 +943,7 @@ fn open_settings_in_new_window(args: &OpenSettingsArgs, ctx: &mut AppContext) {
     let action = workspace_action_for_open_settings(args);
     let root_handle = open_new_window_get_handles(None, ctx).1;
     root_handle.update(ctx, |root_view, ctx| {
-        if let AuthOnboardingState::Terminal(workspace_view_handle) =
-            &root_view.auth_onboarding_state
-        {
+        if let Some(workspace_view_handle) = root_view.active_workspace(ctx) {
             let window_id = ctx.window_id();
             ctx.dispatch_typed_action_for_view(window_id, workspace_view_handle.id(), &action);
         }
@@ -1055,9 +1053,7 @@ fn open_new_tab_insert_subshell_command_and_bootstrap_if_supported(
     let root_view_handle = match root_view_handle {
         Some(root_view_handle) => {
             root_view_handle.update(ctx, |root_view, ctx| {
-                if let AuthOnboardingState::Terminal(workspace_view_handle) =
-                    &root_view.auth_onboarding_state
-                {
+                if let Some(workspace_view_handle) = root_view.active_workspace(ctx) {
                     workspace_view_handle.update(ctx, |workspace, ctx| {
                         workspace.add_terminal_tab(false /* hide_homepage */, ctx);
                     });
@@ -1376,6 +1372,7 @@ pub enum NewWorkspaceSource {
     },
     Restored {
         window_snapshot: WindowSnapshot,
+        screen_index: usize,
         block_lists: Arc<HashMap<PaneUuid, Vec<SerializedBlock>>>,
     },
     Session {
@@ -1425,16 +1422,20 @@ impl NewWorkspaceSource {
     pub fn has_horizontal_split(&self) -> bool {
         match self {
             NewWorkspaceSource::Restored {
-                window_snapshot, ..
+                window_snapshot,
+                screen_index,
+                ..
             } => {
-                if window_snapshot.tabs.is_empty() {
+                let Some(screen) = window_snapshot.screen(*screen_index) else {
+                    return false;
+                };
+                if screen.tabs.is_empty() {
                     false
                 } else {
-                    let active_index = window_snapshot.active_tab_index;
-                    let active_tab = window_snapshot
+                    let active_tab = screen
                         .tabs
-                        .get(active_index)
-                        .unwrap_or(&window_snapshot.tabs[0]);
+                        .get(screen.active_tab_index)
+                        .unwrap_or(&screen.tabs[0]);
                     active_tab.root.has_horizontal_split()
                 }
             }
@@ -1485,7 +1486,7 @@ struct WorkspaceArgs {
 #[derive(Clone)]
 enum AuthOnboardingTarget {
     Workspace(Box<WorkspaceArgs>),
-    Terminal(ViewHandle<Workspace>),
+    Terminal(ViewHandle<ProjectHost>),
 }
 
 #[derive(Clone)]
@@ -1582,7 +1583,7 @@ enum AuthOnboardingState {
         account_class: FtueAccountClass,
         upgrade_started: bool,
     },
-    Terminal(ViewHandle<Workspace>),
+    Terminal(ViewHandle<ProjectHost>),
 }
 
 pub struct RootView {
@@ -1723,8 +1724,9 @@ impl RootView {
         };
 
         match &root_view.auth_onboarding_state {
-            AuthOnboardingState::Terminal(workspace) if FeatureFlag::Changelog.is_enabled() => {
+            AuthOnboardingState::Terminal(host) if FeatureFlag::Changelog.is_enabled() => {
                 // Only show the changelog if we aren't about to launch the authentication flow
+                let workspace = host.as_ref(ctx).active_workspace().clone();
                 workspace.update(ctx, |workspace, ctx| {
                     workspace.check_for_changelog(ChangelogRequestType::WindowLaunch, ctx);
                 })
@@ -1802,12 +1804,22 @@ impl RootView {
         }
     }
 
-    /// Used for integration tests.
-    pub fn workspace_view(&self) -> Option<&ViewHandle<Workspace>> {
+    fn active_workspace(&self, app: &AppContext) -> Option<ViewHandle<Workspace>> {
+        self.project_host_view()
+            .map(|host| host.as_ref(app).active_workspace().clone())
+    }
+
+    pub fn project_host_view(&self) -> Option<&ViewHandle<ProjectHost>> {
         match &self.auth_onboarding_state {
-            AuthOnboardingState::Terminal(workspace) => Some(workspace),
+            AuthOnboardingState::Terminal(host) => Some(host),
             _ => None,
         }
+    }
+
+    /// Used for integration tests.
+    pub fn workspace_view(&self, app: &AppContext) -> Option<ViewHandle<Workspace>> {
+        self.project_host_view()
+            .map(|host| host.as_ref(app).active_workspace().clone())
     }
 
     fn polling_update_check_complete(
@@ -1837,7 +1849,7 @@ impl RootView {
             let server_time = Arc::new(server_time);
             self.server_time = Some(server_time.clone());
 
-            if let AuthOnboardingState::Terminal(workspace) = &self.auth_onboarding_state {
+            if let Some(workspace) = self.active_workspace(ctx) {
                 workspace.update(ctx, |workspace, ctx| {
                     workspace.set_server_time(server_time);
                     ctx.notify();
@@ -2600,7 +2612,7 @@ impl RootView {
         ctx.windows().show_window_and_focus_app(window_id);
 
         // Focus the appropriate tab/pane.
-        if let AuthOnboardingState::Terminal(workspace) = &self.auth_onboarding_state {
+        if let Some(workspace) = self.active_workspace(ctx) {
             workspace.update(ctx, |view, ctx| {
                 view.focus_pane(*pane_view_locator, ctx);
             });
@@ -2614,7 +2626,7 @@ impl RootView {
         ctx: &mut ViewContext<Self>,
     ) -> bool {
         ctx.windows().show_window_and_focus_app(ctx.window_id());
-        if let AuthOnboardingState::Terminal(workspace) = &self.auth_onboarding_state {
+        if let Some(workspace) = self.active_workspace(ctx) {
             workspace.update(ctx, |view, ctx| {
                 view.activate_tab_by_pane_group_id(*pane_group_id, ctx);
             });
@@ -2680,7 +2692,7 @@ impl RootView {
     #[allow(clippy::ptr_arg)]
     fn add_session_at_path(&mut self, path: &PathBuf, ctx: &mut ViewContext<Self>) -> bool {
         let window_id = ctx.window_id();
-        if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
+        if let Some(handle) = self.active_workspace(ctx) {
             handle.update(ctx, |view, ctx| {
                 view.add_tab_with_pane_layout(
                     PanesLayout::SingleTerminal(Box::new(
@@ -2705,7 +2717,7 @@ impl RootView {
         arg: &OpenTeamsSettingsModalArgs,
         ctx: &mut ViewContext<Self>,
     ) -> bool {
-        if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
+        if let Some(handle) = self.active_workspace(ctx) {
             handle.update(ctx, |workspace, ctx| {
                 workspace.show_team_settings_page_with_email_invite(arg.invite_email.as_ref(), ctx)
             });
@@ -2721,7 +2733,7 @@ impl RootView {
         arg: &OpenWarpDriveObjectArgs,
         ctx: &mut ViewContext<Self>,
     ) -> bool {
-        if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
+        if let Some(handle) = self.active_workspace(ctx) {
             let cloud_model = CloudModel::as_ref(ctx);
 
             match arg.object_type {
@@ -2813,7 +2825,7 @@ impl RootView {
         session_id: &SessionId,
         ctx: &mut ViewContext<Self>,
     ) -> bool {
-        if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
+        if let Some(handle) = self.active_workspace(ctx) {
             handle.update(ctx, |workspace, ctx| {
                 // Generic session link: ambient-ness (if any) is discovered at SessionJoined.
                 workspace.add_tab_for_joining_shared_session(*session_id, ctx);
@@ -2829,7 +2841,7 @@ impl RootView {
     }
 
     pub fn add_file_pane(&mut self, path: &PathBuf, ctx: &mut ViewContext<Self>) -> bool {
-        if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
+        if let Some(handle) = self.active_workspace(ctx) {
             handle.update(ctx, |workspace, ctx| {
                 workspace.add_tab_for_file_notebook(Some(path.to_owned()), ctx);
             });
@@ -2851,7 +2863,7 @@ impl RootView {
         ctx: &mut ViewContext<Self>,
     ) -> bool {
         let window_id = ctx.window_id();
-        if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
+        if let Some(handle) = self.active_workspace(ctx) {
             handle.update(ctx, |workspace, ctx| {
                 workspace.insert_subshell_command_and_bootstrap_if_supported(
                     &arg.command,
@@ -2871,7 +2883,7 @@ impl RootView {
     pub fn handle_team_intent_link_action(&mut self, _: &(), ctx: &mut ViewContext<Self>) -> bool {
         // Force-open warp drive.
         let window_id = ctx.window_id();
-        if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
+        if let Some(handle) = self.active_workspace(ctx) {
             ctx.dispatch_typed_action_for_view(
                 window_id,
                 handle.id(),
@@ -2891,7 +2903,7 @@ impl RootView {
 
     pub fn open_team_settings_page(&mut self, _: &(), ctx: &mut ViewContext<Self>) -> bool {
         let window_id = ctx.window_id();
-        if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
+        if let Some(handle) = self.active_workspace(ctx) {
             ctx.dispatch_typed_action_for_view(
                 window_id,
                 handle.id(),
@@ -2910,7 +2922,7 @@ impl RootView {
         ctx: &mut ViewContext<Self>,
     ) -> bool {
         let window_id = ctx.window_id();
-        if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
+        if let Some(handle) = self.active_workspace(ctx) {
             let handle = handle.clone();
             ctx.dispatch_typed_action_for_view(
                 window_id,
@@ -2944,7 +2956,7 @@ impl RootView {
         ctx: &mut ViewContext<Self>,
     ) -> bool {
         let window_id = ctx.window_id();
-        if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
+        if let Some(handle) = self.active_workspace(ctx) {
             let action = workspace_action_for_open_settings(args);
             ctx.dispatch_typed_action_for_view(window_id, handle.id(), &action);
             ctx.windows().show_window_and_focus_app(window_id);
@@ -3300,7 +3312,7 @@ impl RootView {
             return;
         }
 
-        let AuthOnboardingState::Terminal(workspace) = &self.auth_onboarding_state else {
+        let Some(workspace) = self.active_workspace(ctx) else {
             return;
         };
 
@@ -3461,9 +3473,9 @@ impl TypedActionView for RootView {
 }
 
 impl WorkspaceArgs {
-    fn create_workspace(self, ctx: &mut ViewContext<RootView>) -> ViewHandle<Workspace> {
+    fn create_workspace(self, ctx: &mut ViewContext<RootView>) -> ViewHandle<ProjectHost> {
         ctx.add_typed_action_view(|ctx| {
-            Workspace::new(
+            ProjectHost::new(
                 self.global_resource_handles,
                 self.server_time,
                 self.workspace_setting,
@@ -3623,11 +3635,14 @@ impl AuthOnboardingState {
             | AuthOnboardingState::PostAuthOnboarding { .. } => {
                 // No workspace to clean up for onboarding/login slide state
             }
-            AuthOnboardingState::Terminal(workspace) => {
-                // Clean up current workspace before resetting.
-                workspace.update(ctx, |workspace, ctx| {
-                    workspace.on_log_out(ctx);
-                });
+            AuthOnboardingState::Terminal(host) => {
+                // Clean up every open Workspace screen before resetting.
+                let workspaces: Vec<_> = host.as_ref(ctx).workspaces().cloned().collect();
+                for workspace in workspaces {
+                    workspace.update(ctx, |workspace, ctx| {
+                        workspace.on_log_out(ctx);
+                    });
+                }
 
                 let global_resource_handles =
                     GlobalResourceHandlesProvider::as_ref(ctx).get().clone();
@@ -3654,7 +3669,7 @@ impl AuthOnboardingState {
 }
 
 impl AuthOnboardingTarget {
-    fn to_workspace(&self, ctx: &mut ViewContext<RootView>) -> ViewHandle<Workspace> {
+    fn to_workspace(&self, ctx: &mut ViewContext<RootView>) -> ViewHandle<ProjectHost> {
         match self {
             AuthOnboardingTarget::Terminal(workspace) => workspace.clone(),
             AuthOnboardingTarget::Workspace(args) => args.clone().create_workspace(ctx),

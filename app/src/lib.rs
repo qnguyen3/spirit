@@ -1497,9 +1497,14 @@ pub(crate) fn initialize_app(
                     .set_has_lower_power_gpu(warpui::rendering::is_low_power_gpu_available(), ctx);
             });
 
-            for window_id in ctx.window_ids().collect_vec() {
+            for screen_id in crate::workspace::WorkspaceRegistry::as_ref(ctx)
+                .all_workspaces(ctx)
+                .into_iter()
+                .map(|(_, workspace)| workspace.id())
+                .collect_vec()
+            {
                 SettingsPaneManager::handle(ctx)
-                    .read(ctx, |model, _| model.settings_view(window_id))
+                    .read(ctx, |model, _| model.settings_view(screen_id))
                     .update(ctx, |settings, ctx| {
                         settings.refresh_preferred_graphics_backend_dropdown(ctx);
                     })

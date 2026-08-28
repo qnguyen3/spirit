@@ -4660,6 +4660,10 @@ impl SettingsWidget for VerticalTabsWidget {
         "vertical tabs sidebar layout"
     }
 
+    fn should_render(&self, _app: &AppContext) -> bool {
+        !crate::tab::vertical_tabs_forced()
+    }
+
     fn render(
         &self,
         view: &Self::View,

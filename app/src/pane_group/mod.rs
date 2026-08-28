@@ -1514,12 +1514,21 @@ impl PaneGroup {
                     SettingsPaneSnapshot::Local {
                         current_page,
                         search_query,
-                    } => Box::new(SettingsPane::new(
-                        current_page,
-                        search_query.as_deref(),
-                        ctx.window_id(),
-                        ctx,
-                    )),
+                    } => {
+                        let screen_id =
+                            crate::workspace::owning_screen_id(ctx.view_id(), ctx.window_id(), ctx);
+                        let Some(pane) = SettingsPane::new(
+                            current_page,
+                            search_query.as_deref(),
+                            screen_id,
+                            ctx,
+                        ) else {
+                            return Err(anyhow::anyhow!(
+                                "No settings view registered for this screen"
+                            ));
+                        };
+                        Box::new(pane)
+                    }
                 };
 
                 let pane_id = pane.as_pane().id();

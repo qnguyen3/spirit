@@ -9,6 +9,7 @@ use warpui::{AppContext, SingletonEntity as _};
 
 use crate::code::editor_management::CodeSource;
 use crate::drive::OpenWarpDriveObjectSettings;
+use crate::projects::ProjectId;
 use crate::root_view::quake_mode_window_id;
 use crate::server::ids::{ServerId, SyncId};
 use crate::settings_view::SettingsSection;
@@ -33,8 +34,8 @@ pub struct PaneUuid(pub Vec<u8>);
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct WindowSnapshot {
-    pub tabs: Vec<TabSnapshot>,
-    pub active_tab_index: usize,
+    pub screens: Vec<ProjectScreenSnapshot>,
+    pub active_screen_index: usize,
     pub team_uid: Option<ServerId>,
     pub bounds: Option<RectF>,
     pub fullscreen_state: FullscreenState,
@@ -46,9 +47,48 @@ pub struct WindowSnapshot {
     pub vertical_tabs_panel_open: bool,
     pub left_panel_width: Option<f32>,
     pub right_panel_width: Option<f32>,
-    /// Tab groups defined in this window. Group order is implicit from
+}
+
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct ProjectScreenSnapshot {
+    pub project_id: Option<ProjectId>,
+    pub tabs: Vec<TabSnapshot>,
+    pub active_tab_index: usize,
+    /// Tab groups defined in this screen. Group order is implicit from
     /// member tabs' positions, so no explicit ordering is persisted.
     pub tab_groups: Vec<TabGroupSnapshot>,
+}
+
+impl WindowSnapshot {
+    pub fn screen(&self, index: usize) -> Option<&ProjectScreenSnapshot> {
+        self.screens.get(index)
+    }
+
+    pub fn has_tabs(&self) -> bool {
+        self.screens.iter().any(|screen| !screen.tabs.is_empty())
+    }
+
+    pub fn active_screen(&self) -> Option<&ProjectScreenSnapshot> {
+        self.screens.get(self.active_screen_index)
+    }
+
+    pub fn tabs(&self) -> &[TabSnapshot] {
+        self.active_screen()
+            .map(|screen| screen.tabs.as_slice())
+            .unwrap_or_default()
+    }
+
+    pub fn active_tab_index(&self) -> usize {
+        self.active_screen()
+            .map(|screen| screen.active_tab_index)
+            .unwrap_or(0)
+    }
+
+    pub fn tab_groups(&self) -> &[TabGroupSnapshot] {
+        self.active_screen()
+            .map(|screen| screen.tab_groups.as_slice())
+            .unwrap_or_default()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -314,24 +354,36 @@ pub fn get_app_state(app: &AppContext) -> AppState {
             active_window_index = Some(index);
         }
 
-        if let Some(workspace) = WorkspaceRegistry::as_ref(app).get(window_id, app) {
-            let ws = workspace.as_ref(app);
-            // Transient drag-preview windows are not real user-visible
-            // workspaces; skip them so they never end up in the persisted
-            // session. (Persistence is also short-circuited entirely while a
-            // cross-window drag is active; see `save_app` in
-            // `workspace/global_actions.rs`.)
-            if ws.is_tab_drag_preview() {
-                continue;
-            }
-            let snapshot = ws.snapshot(
-                window_id,
-                quake_mode_id.map(|id| id == window_id).unwrap_or(false),
-                app,
-            );
-            if !snapshot.tabs.is_empty() {
-                windows.push(snapshot);
-            }
+        let screens = WorkspaceRegistry::as_ref(app).workspaces_for_window(window_id, app);
+        let Some(active) = WorkspaceRegistry::as_ref(app).get(window_id, app) else {
+            continue;
+        };
+        let active_workspace = active.as_ref(app);
+        // Transient drag-preview windows are not real user-visible
+        // workspaces; skip them so they never end up in the persisted
+        // session. (Persistence is also short-circuited entirely while a
+        // cross-window drag is active; see `save_app` in
+        // `workspace/global_actions.rs`.)
+        if active_workspace.is_tab_drag_preview() {
+            continue;
+        }
+
+        let mut snapshot = active_workspace.snapshot(
+            window_id,
+            quake_mode_id.map(|id| id == window_id).unwrap_or(false),
+            app,
+        );
+        snapshot.screens = screens
+            .iter()
+            .map(|screen| screen.as_ref(app).screen_snapshot(window_id, app))
+            .collect();
+        snapshot.active_screen_index = screens
+            .iter()
+            .position(|screen| screen.id() == active.id())
+            .unwrap_or(0);
+
+        if snapshot.has_tabs() {
+            windows.push(snapshot);
         }
     }
 

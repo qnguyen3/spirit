@@ -59,9 +59,9 @@ use super::{
 use crate::app_state::{
     AppState, BranchSnapshot, CodePaneSnapShot, CodePaneTabSnapshot, CodeReviewPaneSnapshot,
     EnvVarCollectionPaneSnapshot, LeafContents, LeafSnapshot, LeftPanelSnapshot,
-    NotebookPaneSnapshot, PaneFlex, PaneNodeSnapshot, RightPanelSnapshot, SettingsPaneSnapshot,
-    SplitDirection, TabGroupSnapshot, TabSnapshot, TerminalPaneSnapshot, WindowSnapshot,
-    WorkflowPaneSnapshot,
+    NotebookPaneSnapshot, PaneFlex, PaneNodeSnapshot, ProjectScreenSnapshot, RightPanelSnapshot,
+    SettingsPaneSnapshot, SplitDirection, TabGroupSnapshot, TabSnapshot, TerminalPaneSnapshot,
+    WindowSnapshot, WorkflowPaneSnapshot,
 };
 use crate::auth::UserUid;
 use crate::auth::auth_manager::PersistedCurrentUserInformation;
@@ -80,7 +80,7 @@ use crate::persistence::model::{
     CODE_REVIEW_PANE_KIND, GET_STARTED_PANE_KIND, NewPersistedObjectAction, NewTeamSettings,
     UserProfile,
 };
-use crate::projects::{Project, Worktree};
+use crate::projects::{Project, ProjectId, Worktree};
 use crate::server::experiments::ServerExperiment;
 use crate::server::ids::{ClientId, HashableId, ServerId, SyncId};
 use crate::server::telemetry::TelemetryEvent;
@@ -833,9 +833,17 @@ fn save_app_state(conn: &mut SqliteConnection, app_state: &AppState) -> Result<(
         let mut active_window_id = None;
 
         for (idx, window) in app_state.windows.iter().enumerate() {
+            let active_screen = window.screens.get(window.active_screen_index);
             // Just save zero as the tab index, if we overflow when converting
             // unsigned to signed.
-            let active_tab_index: i32 = window.active_tab_index.try_into().unwrap_or(0);
+            let active_tab_index: i32 = active_screen
+                .map(|screen| screen.active_tab_index)
+                .unwrap_or(0)
+                .try_into()
+                .unwrap_or(0);
+            let active_project_id = active_screen
+                .and_then(|screen| screen.project_id)
+                .map(|project_id| project_id.to_string());
 
             // In the database each individual field is nullable but in practice these
             // fields are either all null or all non-null as they together represent
@@ -873,7 +881,7 @@ fn save_app_state(conn: &mut SqliteConnection, app_state: &AppState) -> Result<(
                 fullscreen_state: window.fullscreen_state as i32,
                 agent_management_filters: None,
                 team_uid: window.team_uid.map(Into::into),
-                active_project_id: None,
+                active_project_id,
             };
             diesel::insert_into(schema::windows::dsl::windows)
                 .values(new_window)
@@ -897,11 +905,21 @@ fn save_app_state(conn: &mut SqliteConnection, app_state: &AppState) -> Result<(
             // Insert tab groups first so we can map each `TabGroupId` to a
             // DB row id when inserting the tabs below.
             let mut tab_group_row_ids: HashMap<TabGroupId, i32> = HashMap::new();
-            if !window.tab_groups.is_empty() {
-                let new_tab_groups: Vec<NewTabGroup> = window
-                    .tab_groups
+            let screen_groups: Vec<(Option<String>, &TabGroupSnapshot)> = window
+                .screens
+                .iter()
+                .flat_map(|screen| {
+                    let project_id = screen.project_id.map(|id| id.to_string());
+                    screen
+                        .tab_groups
+                        .iter()
+                        .map(move |group| (project_id.clone(), group))
+                })
+                .collect();
+            if !screen_groups.is_empty() {
+                let new_tab_groups: Vec<NewTabGroup> = screen_groups
                     .iter()
-                    .map(|group| NewTabGroup {
+                    .map(|(project_id, group)| NewTabGroup {
                         window_id,
                         name: group.name.clone(),
                         color: match group.color {
@@ -910,7 +928,7 @@ fn save_app_state(conn: &mut SqliteConnection, app_state: &AppState) -> Result<(
                         },
                         collapsed: group.collapsed,
                         pinned: group.pinned,
-                        project_id: None,
+                        project_id: project_id.clone(),
                     })
                     .collect();
                 diesel::insert_into(schema::tab_groups::dsl::tab_groups)
@@ -918,21 +936,29 @@ fn save_app_state(conn: &mut SqliteConnection, app_state: &AppState) -> Result<(
                     .execute(conn)?;
 
                 // SQLite assigns ids in insertion order, so the inserted rows
-                // share the order of `window.tab_groups`.
+                // share the order of `screen_groups`.
                 let inserted_ids: Vec<i32> = schema::tab_groups::dsl::tab_groups
                     .filter(schema::tab_groups::columns::window_id.eq(window_id))
                     .select(schema::tab_groups::columns::id)
                     .order(schema::tab_groups::columns::id.asc())
                     .load(conn)?;
-                for (group, row_id) in window.tab_groups.iter().zip(inserted_ids.iter()) {
+                for ((_, group), row_id) in screen_groups.iter().zip(inserted_ids.iter()) {
                     tab_group_row_ids.insert(group.id, *row_id);
                 }
             }
 
-            let tabs: Vec<NewTab> = window
-                .tabs
+            let screen_tabs: Vec<(Option<String>, &TabSnapshot)> = window
+                .screens
                 .iter()
-                .map(|tab| NewTab {
+                .flat_map(|screen| {
+                    let project_id = screen.project_id.map(|id| id.to_string());
+                    screen.tabs.iter().map(move |tab| (project_id.clone(), tab))
+                })
+                .collect();
+
+            let tabs: Vec<NewTab> = screen_tabs
+                .iter()
+                .map(|(project_id, tab)| NewTab {
                     window_id,
                     custom_title: tab.custom_title.clone(),
                     // We only persist and restore the selected color here
@@ -946,7 +972,7 @@ fn save_app_state(conn: &mut SqliteConnection, app_state: &AppState) -> Result<(
                         .group_id
                         .and_then(|group_id| tab_group_row_ids.get(&group_id).copied()),
                     pinned: tab.pinned,
-                    project_id: None,
+                    project_id: project_id.clone(),
                     worktree_id: None,
                 })
                 .collect();
@@ -964,7 +990,7 @@ fn save_app_state(conn: &mut SqliteConnection, app_state: &AppState) -> Result<(
 
             // Since we retrieved the tab ids in descending order, we need to reverse them when we
             // iterate to restore the correct order.
-            for (tab_id, tab) in tab_ids.iter().rev().zip(window.tabs.iter()) {
+            for (tab_id, (_, tab)) in tab_ids.iter().rev().zip(screen_tabs.iter()) {
                 let mut pane_nodes = VecDeque::new();
                 pane_nodes.push_back(SaveAppStateNodeTraversal {
                     node: &tab.root,
@@ -1423,6 +1449,59 @@ fn delete_codebase_index_metadata(conn: &mut SqliteConnection, index_path: &Path
     diesel::delete(workspace_metadata.filter(repo_path.eq(target_path))).execute(conn)?;
 
     Ok(())
+}
+
+fn known_project_id(
+    raw: Option<&str>,
+    known_project_ids: &HashSet<ProjectId>,
+) -> Option<ProjectId> {
+    raw.and_then(|value| value.parse::<ProjectId>().ok())
+        .filter(|project_id| known_project_ids.contains(project_id))
+}
+
+fn group_tabs_into_screens(
+    tabs: Vec<(Option<ProjectId>, TabSnapshot)>,
+    tab_groups: Vec<(Option<ProjectId>, TabGroupSnapshot)>,
+    project_order: &[ProjectId],
+) -> Vec<ProjectScreenSnapshot> {
+    let mut home = ProjectScreenSnapshot::default();
+    let mut by_project: HashMap<ProjectId, ProjectScreenSnapshot> = HashMap::new();
+
+    for (project_id, tab) in tabs {
+        match project_id {
+            Some(project_id) => by_project
+                .entry(project_id)
+                .or_insert_with(|| ProjectScreenSnapshot {
+                    project_id: Some(project_id),
+                    ..Default::default()
+                })
+                .tabs
+                .push(tab),
+            None => home.tabs.push(tab),
+        }
+    }
+    for (project_id, group) in tab_groups {
+        match project_id {
+            Some(project_id) => by_project
+                .entry(project_id)
+                .or_insert_with(|| ProjectScreenSnapshot {
+                    project_id: Some(project_id),
+                    ..Default::default()
+                })
+                .tab_groups
+                .push(group),
+            None => home.tab_groups.push(group),
+        }
+    }
+
+    let mut screens = vec![home];
+    for project_id in project_order {
+        if let Some(screen) = by_project.remove(project_id) {
+            screens.push(screen);
+        }
+    }
+    screens.extend(by_project.into_values());
+    screens
 }
 
 fn save_project(conn: &mut SqliteConnection, project: ProjectRow) -> Result<()> {
@@ -2101,8 +2180,20 @@ fn read_sqlite_data(
         });
     }
 
+    let restored_projects = get_all_projects(conn)?;
+    let restored_worktrees = get_all_project_worktrees(conn)?;
+
     let app_state = if data_scope.session_restoration() {
         use schema::windows::dsl::*;
+
+        let known_project_ids: HashSet<ProjectId> =
+            restored_projects.iter().map(|project| project.id).collect();
+        let mut projects_by_recency: Vec<&Project> = restored_projects.iter().collect();
+        projects_by_recency.sort_by_key(|project| std::cmp::Reverse(project.last_opened_ts));
+        let project_order: Vec<ProjectId> = projects_by_recency
+            .into_iter()
+            .map(|project| project.id)
+            .collect();
 
         let active_window_id = schema::app::dsl::app
             .select(schema::app::dsl::active_window_id)
@@ -2141,7 +2232,8 @@ fn read_sqlite_data(
                     // Mint a fresh `TabGroupId` per row and build a `row id -> TabGroupId`
                     // map so tabs can be reattached to their group below.
                     let mut tab_group_id_by_row_id: HashMap<i32, TabGroupId> = HashMap::new();
-                    let mut tab_groups_snapshots: Vec<TabGroupSnapshot> = Vec::new();
+                    let mut tab_groups_snapshots: Vec<(Option<ProjectId>, TabGroupSnapshot)> =
+                        Vec::new();
                     for group in tab_groups_for_window {
                         let tab_group_id = TabGroupId::new();
                         tab_group_id_by_row_id.insert(group.id, tab_group_id);
@@ -2150,15 +2242,20 @@ fn read_sqlite_data(
                             .as_deref()
                             .and_then(|s| serde_yaml::from_str::<SelectedTabColor>(s).ok())
                             .unwrap_or_default();
-                        tab_groups_snapshots.push(TabGroupSnapshot {
-                            id: tab_group_id,
-                            name: group.name,
-                            color,
-                            collapsed: group.collapsed,
-                            pinned: group.pinned,
-                        });
+                        let screen_project_id =
+                            known_project_id(group.project_id.as_deref(), &known_project_ids);
+                        tab_groups_snapshots.push((
+                            screen_project_id,
+                            TabGroupSnapshot {
+                                id: tab_group_id,
+                                name: group.name,
+                                color,
+                                collapsed: group.collapsed,
+                                pinned: group.pinned,
+                            },
+                        ));
                     }
-                    let saved_tabs: Vec<_> = tabs_for_window
+                    let saved_tabs: Vec<(Option<ProjectId>, TabSnapshot)> = tabs_for_window
                         .into_iter()
                         .filter_map(|tab| {
                             let root = read_root_node(conn, tab.id).ok()?;
@@ -2175,29 +2272,34 @@ fn read_sqlite_data(
                             let group_id = tab
                                 .tab_group_id
                                 .and_then(|row_id| tab_group_id_by_row_id.get(&row_id).copied());
-                            Some(TabSnapshot {
-                                root,
-                                custom_title: tab.custom_title,
-                                default_directory_color: None,
-                                selected_color: tab
-                                    .color
-                                    .as_deref()
-                                    .and_then(|s| {
-                                        serde_yaml::from_str::<SelectedTabColor>(s).ok().or_else(
-                                            || {
-                                                // Fall back to the old format which stored a bare AnsiColorIdentifier
-                                                serde_yaml::from_str::<AnsiColorIdentifier>(s)
-                                                    .ok()
-                                                    .map(SelectedTabColor::Color)
-                                            },
-                                        )
-                                    })
-                                    .unwrap_or_default(),
-                                left_panel,
-                                right_panel,
-                                group_id,
-                                pinned: tab.pinned,
-                            })
+                            let screen_project_id =
+                                known_project_id(tab.project_id.as_deref(), &known_project_ids);
+                            Some((
+                                screen_project_id,
+                                TabSnapshot {
+                                    root,
+                                    custom_title: tab.custom_title,
+                                    default_directory_color: None,
+                                    selected_color: tab
+                                        .color
+                                        .as_deref()
+                                        .and_then(|s| {
+                                            serde_yaml::from_str::<SelectedTabColor>(s)
+                                                .ok()
+                                                .or_else(|| {
+                                                    // Fall back to the old format which stored a bare AnsiColorIdentifier
+                                                    serde_yaml::from_str::<AnsiColorIdentifier>(s)
+                                                        .ok()
+                                                        .map(SelectedTabColor::Color)
+                                                })
+                                        })
+                                        .unwrap_or_default(),
+                                    left_panel,
+                                    right_panel,
+                                    group_id,
+                                    pinned: tab.pinned,
+                                },
+                            ))
                         })
                         .collect();
 
@@ -2210,6 +2312,26 @@ fn read_sqlite_data(
 
                     // Default active tab index to 0 if we overflow when converting.
                     let tab_index: usize = window.active_tab_index.try_into().unwrap_or(0);
+
+                    let active_screen_project_id =
+                        known_project_id(window.active_project_id.as_deref(), &known_project_ids);
+                    let mut screens =
+                        group_tabs_into_screens(saved_tabs, tab_groups_snapshots, &project_order);
+                    let active_screen_index = screens
+                        .iter()
+                        .position(|screen| screen.project_id == active_screen_project_id)
+                        .unwrap_or(0);
+                    if let Some(active_screen) = screens.get_mut(active_screen_index) {
+                        active_screen.active_tab_index =
+                            tab_index.min(active_screen.tabs.len().saturating_sub(1));
+                    }
+                    let active_screen_tabs = screens
+                        .get(active_screen_index)
+                        .map(|screen| screen.tabs.as_slice())
+                        .unwrap_or_default();
+                    let active_tab_of_active_screen = screens
+                        .get(active_screen_index)
+                        .and_then(|screen| active_screen_tabs.get(screen.active_tab_index));
 
                     let fullscreen_state_val =
                         FullscreenState::from_i32(window.fullscreen_state).unwrap_or_default();
@@ -2249,31 +2371,28 @@ fn read_sqlite_data(
                     };
 
                     let left_panel_width: Option<f32> =
-                        saved_tabs
-                            .get(tab_index)
-                            .and_then(|tab| match tab.left_panel.as_ref() {
-                                Some(LeftPanelSnapshot { width, .. }) => Some(*width as f32),
-                                _ => None,
-                            });
+                        active_tab_of_active_screen.and_then(|tab| match tab.left_panel.as_ref() {
+                            Some(LeftPanelSnapshot { width, .. }) => Some(*width as f32),
+                            _ => None,
+                        });
 
                     let right_panel_width: Option<f32> =
-                        saved_tabs
-                            .get(tab_index)
-                            .and_then(|tab| match tab.right_panel.as_ref() {
+                        active_tab_of_active_screen.and_then(|tab| {
+                            match tab.right_panel.as_ref() {
                                 Some(RightPanelSnapshot { width, .. }) => Some(*width as f32),
                                 _ => None,
-                            });
+                            }
+                        });
 
                     let window_left_panel_open = window.left_panel_open.unwrap_or_else(|| {
-                        saved_tabs
-                            .get(tab_index)
+                        active_tab_of_active_screen
                             .and_then(|tab| tab.left_panel.as_ref())
                             .is_some()
                     });
 
                     WindowSnapshot {
-                        tabs: saved_tabs,
-                        active_tab_index: tab_index,
+                        screens,
+                        active_screen_index,
                         team_uid: window.team_uid.and_then(|persisted_team_uid| {
                             ServerId::try_from(persisted_team_uid).ok()
                         }),
@@ -2287,7 +2406,6 @@ fn read_sqlite_data(
                         fullscreen_state: fullscreen_state_val,
                         left_panel_width,
                         right_panel_width,
-                        tab_groups: tab_groups_snapshots,
                     }
                 },
             )
@@ -2460,8 +2578,6 @@ fn read_sqlite_data(
 
     let codebase_indices = get_all_codebase_index_metadata(conn)?;
     let workspace_language_servers = get_all_workspace_language_servers_by_workspace(conn)?;
-    let projects = get_all_projects(conn)?;
-    let worktrees = get_all_project_worktrees(conn)?;
     let ignored_suggestions = get_all_ignored_suggestions(conn)?;
 
     Ok(PersistedData {
@@ -2476,8 +2592,8 @@ fn read_sqlite_data(
         experiments: server_experiments,
         codebase_indices,
         workspace_language_servers,
-        projects,
-        worktrees,
+        projects: restored_projects,
+        worktrees: restored_worktrees,
         ignored_suggestions,
     })
 }

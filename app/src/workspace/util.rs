@@ -37,6 +37,7 @@ pub(super) struct WorkspaceMouseStates {
     pub(super) tools_panel_icon: MouseStateHandle,
     pub(super) title_bar_search_bar: MouseStateHandle,
     pub(super) team_switcher_pill: MouseStateHandle,
+    pub(super) workspace_switcher_pill: MouseStateHandle,
     #[cfg(target_family = "wasm")]
     pub(super) warp_logo: MouseStateHandle,
 }
@@ -268,6 +269,23 @@ pub enum TerminalSessionFallbackBehavior {
 /// that.
 ///
 /// Note that "active" is not the same as "focused" in Warp's pane management.
+pub fn owning_screen_id(
+    view_id: EntityId,
+    window_id: WindowId,
+    app: &AppContext,
+) -> Option<EntityId> {
+    let registry = crate::workspace::WorkspaceRegistry::as_ref(app);
+    let screens = registry.screen_ids_for_window(window_id);
+    app.view_ancestors(window_id, view_id)
+        .into_iter()
+        .find(|id| screens.contains(id))
+        .or_else(|| registry.active_workspace_view_id(window_id))
+}
+
+pub fn active_screen_id(window_id: WindowId, app: &AppContext) -> Option<EntityId> {
+    crate::workspace::WorkspaceRegistry::as_ref(app).active_workspace_view_id(window_id)
+}
+
 pub fn active_terminal_in_window<T, F>(
     window_id: WindowId,
     ctx: &mut AppContext,

@@ -1948,6 +1948,10 @@ fn cross_window_attach_target(
             continue;
         }
 
+        if workspace.read(ctx, |workspace, _| workspace.project_id().is_some()) {
+            continue;
+        }
+
         let Some(window_bounds) = ctx.window_bounds(&window_id) else {
             continue;
         };

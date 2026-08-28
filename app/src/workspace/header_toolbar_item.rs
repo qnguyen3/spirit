@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use settings::Setting as _;
 use warpui::{AppContext, SingletonEntity};
 
-use crate::features::FeatureFlag;
 use crate::ui_components::icons::Icon;
 use crate::workspace::tab_settings::TabSettings;
 
@@ -51,10 +50,7 @@ impl HeaderToolbarItemKind {
     /// Does not check user show/hide preferences — use `is_available` for that.
     pub fn is_supported(&self, app: &AppContext) -> bool {
         match self {
-            Self::TabsPanel => {
-                FeatureFlag::VerticalTabs.is_enabled()
-                    && *TabSettings::as_ref(app).use_vertical_tabs
-            }
+            Self::TabsPanel => crate::tab::uses_vertical_tabs(app),
             Self::ToolsPanel => true,
             Self::CodeReview => cfg!(feature = "local_fs"),
         }

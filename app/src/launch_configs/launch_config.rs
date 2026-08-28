@@ -46,14 +46,21 @@ impl From<WindowSnapshot> for WindowTemplate {
         let mut active_tab_index = None;
         let mut num_valid_tabs = 0;
 
-        let tabs = snapshot
+        let screen = snapshot
+            .screens
+            .into_iter()
+            .nth(snapshot.active_screen_index)
+            .unwrap_or_default();
+        let screen_active_tab_index = screen.active_tab_index;
+
+        let tabs = screen
             .tabs
             .into_iter()
             .enumerate()
             .filter_map(|(i, tab)| {
                 let tab = tab.try_into().ok()?;
 
-                if i == snapshot.active_tab_index {
+                if i == screen_active_tab_index {
                     active_tab_index = Some(num_valid_tabs);
                 }
 

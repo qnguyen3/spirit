@@ -24,7 +24,9 @@ pub use action::{
 };
 pub use active_session::ActiveSession;
 use serde::{Deserialize, Serialize};
-pub use util::{PaneViewLocator, TabMovement, active_terminal_in_window};
+pub use util::{
+    PaneViewLocator, TabMovement, active_screen_id, active_terminal_in_window, owning_screen_id,
+};
 pub use view::{
     NEW_SESSION_MENU_BUTTON_POSITION_ID, NEW_TAB_BUTTON_POSITION_ID, PANEL_HEADER_HEIGHT,
     TAB_BAR_HEIGHT, TOTAL_TAB_BAR_HEIGHT, WORKSPACE_PADDING, Workspace,
@@ -61,8 +63,23 @@ use crate::workspace::view::{
     TOGGLE_WARP_DRIVE_BINDING_NAME,
 };
 
+pub fn purge_screen_scoped_state(screen_id: warpui::EntityId, app: &mut AppContext) {
+    use warpui::SingletonEntity as _;
+
+    use crate::agent_launcher::pane_manager::AgentPickerPaneManager;
+    use crate::server::network_log_pane_manager::NetworkLogPaneManager;
+    use crate::settings_view::pane_manager::SettingsPaneManager;
+
+    SettingsPaneManager::handle(app).update(app, |manager, _| manager.forget_screen(&screen_id));
+    NetworkLogPaneManager::handle(app)
+        .update(app, |manager, _| manager.deregister_pane(&screen_id));
+    AgentPickerPaneManager::handle(app)
+        .update(app, |manager, _| manager.deregister_pane(&screen_id));
+}
+
 pub fn init(app: &mut AppContext) {
     app.add_singleton_model(|_| WorkspaceRegistry::new());
+    crate::projects::host::init(app);
     app.add_singleton_model(|_| cross_window_tab_drag::CrossWindowTabDrag::new());
     use warpui::keymap::macros::*;
     app.register_binding_validator::<Workspace>(is_binding_pty_compliant);

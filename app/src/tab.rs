@@ -250,11 +250,17 @@ fn tab_group_menu_entry_flags(
     (show_new_group, has_other_groups, in_group)
 }
 
-/// True when the user has opted into vertical tabs and the feature flag is on.
-/// Exposed so binding-description overrides in `workspace/mod.rs` and context-
-/// menu builders here can share a single predicate.
+/// True when the user has opted into vertical tabs and the feature flag is on,
+/// or when ADE Workspaces forces them. Exposed so binding-description overrides
+/// in `workspace/mod.rs` and context-menu builders here can share a single
+/// predicate.
 pub fn uses_vertical_tabs(ctx: &AppContext) -> bool {
-    FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(ctx).use_vertical_tabs
+    vertical_tabs_forced()
+        || (FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(ctx).use_vertical_tabs)
+}
+
+pub fn vertical_tabs_forced() -> bool {
+    FeatureFlag::AdeWorkspaces.is_enabled()
 }
 
 const WARP_2_TAB_COLOR_OPACITY: Opacity = 25;

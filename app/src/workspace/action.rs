@@ -615,6 +615,7 @@ pub enum WorkspaceAction {
     },
     /// Shows (toggles) the team-switcher dropdown menu in the title bar.
     ShowTeamSwitcherMenu,
+    ShowWorkspaceSwitcherMenu,
 }
 
 impl From<&WorkspaceAction> for LoginGatedFeature {
@@ -888,7 +889,8 @@ impl WorkspaceAction {
             | OpenSettingsFile
             | OpenNetworkLogPane
             | OpenNewWindowForTeam { .. }
-            | ShowTeamSwitcherMenu => false,
+            | ShowTeamSwitcherMenu
+            | ShowWorkspaceSwitcherMenu => false,
             #[cfg(debug_assertions)]
             InstallOpenCodeWarpPlugin | UseLocalOpenCodeWarpPlugin => false,
             #[cfg(not(target_family = "wasm"))]

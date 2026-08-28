@@ -1,25 +1,25 @@
 use std::collections::HashMap;
 
-use warpui::{Entity, SingletonEntity, WindowId};
+use warpui::{Entity, EntityId, SingletonEntity};
 
 use crate::workspace::PaneViewLocator;
 
 #[derive(Default)]
 pub struct AgentPickerPaneManager {
-    panes: HashMap<WindowId, PaneViewLocator>,
+    panes: HashMap<EntityId, PaneViewLocator>,
 }
 
 impl AgentPickerPaneManager {
-    pub fn find_pane(&self, window_id: WindowId) -> Option<PaneViewLocator> {
-        self.panes.get(&window_id).copied()
+    pub fn find_pane(&self, screen_id: EntityId) -> Option<PaneViewLocator> {
+        self.panes.get(&screen_id).copied()
     }
 
-    pub fn register_pane(&mut self, window_id: WindowId, locator: PaneViewLocator) {
-        self.panes.insert(window_id, locator);
+    pub fn register_pane(&mut self, screen_id: EntityId, locator: PaneViewLocator) {
+        self.panes.insert(screen_id, locator);
     }
 
-    pub fn deregister_pane(&mut self, window_id: &WindowId) {
-        self.panes.remove(window_id);
+    pub fn deregister_pane(&mut self, screen_id: &EntityId) {
+        self.panes.remove(screen_id);
     }
 }
 

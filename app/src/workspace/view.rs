@@ -131,8 +131,8 @@ use crate::agent_launcher::catalog::agent_catalog;
 use crate::agent_launcher::pane_manager::AgentPickerPaneManager;
 use crate::app_state::{
     LeafContents, LeafSnapshot, LeftPanelDisplayedTab, LeftPanelSnapshot, NotebookPaneSnapshot,
-    PaneNodeSnapshot, PaneUuid, RightPanelSnapshot, SettingsPaneSnapshot, TabGroupSnapshot,
-    TabSnapshot, TerminalPaneSnapshot, WindowSnapshot, WorkflowPaneSnapshot,
+    PaneNodeSnapshot, PaneUuid, ProjectScreenSnapshot, RightPanelSnapshot, SettingsPaneSnapshot,
+    TabGroupSnapshot, TabSnapshot, TerminalPaneSnapshot, WindowSnapshot, WorkflowPaneSnapshot,
 };
 use crate::appearance::{Appearance, AppearanceManager};
 use crate::auth::AuthStateProvider;
@@ -195,16 +195,19 @@ use crate::notebooks::CloudNotebook;
 use crate::notebooks::manager::{NotebookManager, NotebookSource};
 use crate::notification::NotificationContext;
 use crate::palette::PaletteMode;
-#[cfg(feature = "local_fs")]
-use crate::pane_group::FilePane;
 use crate::pane_group::pane::ActionOrigin;
 use crate::pane_group::{
     self, AGENT_PICKER_PANE_TITLE, AnyPaneContent, CodePane, CodeReviewPanelArg,
-    Direction as PaneGroupDirection, Direction, EnvironmentManagementPane, NetworkLogPane,
-    NewTerminalOptions, PaneGroup, PaneId, PanesLayout, TabBarHoverIndex, TerminalPaneId,
+    Direction as PaneGroupDirection, Direction, EnvironmentManagementPane, FilePane,
+    NetworkLogPane, NewTerminalOptions, PaneGroup, PaneId, PanesLayout, TabBarHoverIndex,
+    TerminalPaneId,
 };
 use crate::persisted_workspace::PersistedWorkspace;
 use crate::persistence::ModelEvent;
+#[cfg(feature = "local_fs")]
+use crate::projects::host::ProjectHostAction;
+use crate::projects::registry::ProjectRegistryModel;
+use crate::projects::{Project, ProjectId};
 use crate::prompt::editor_modal::{
     EditorModal as PromptEditorModal, EditorModalEvent as PromptEditorModalEvent,
     OpenSource as PromptEditorOpenSource,
@@ -260,7 +263,7 @@ use crate::tab::{
     PaneNameMenuTarget, SelectedTabColor, TAB_BAR_BORDER_HEIGHT, TAB_INDICATOR_HEIGHT,
     TAB_PIN_INDICATOR_ICON_SIZE, TAB_PIN_VANISH_THRESHOLD, TabBarState, TabComponent, TabData,
     TabShortcutModifierState, TabTelemetryAction, color_picker_menu_items, next_tab_color,
-    tab_position_id, uses_vertical_tabs,
+    tab_position_id, uses_vertical_tabs, vertical_tabs_forced,
 };
 use crate::tab_configs::action_sidecar::SidecarItemKind;
 use crate::tab_configs::remove_confirmation_dialog::{
@@ -436,6 +439,7 @@ const THEME_CHOOSER_RATIO: f32 = 3.5;
 /// Save position for the tab bar.
 pub(crate) const TAB_BAR_POSITION_ID: &str = "workspace_view:tab_bar";
 const TEAM_SWITCHER_PILL_POSITION_ID: &str = "workspace_view:team_switcher_pill";
+const WORKSPACE_SWITCHER_PILL_POSITION_ID: &str = "workspace_view:workspace_switcher_pill";
 const TEAM_SWITCHER_DOT_ALPHA: u8 = 204;
 
 /// Save position for the vertical tabs panel.
@@ -762,6 +766,7 @@ enum TabBarSlot {
 
 pub struct Workspace {
     window_id: WindowId,
+    project_id: Option<ProjectId>,
     pub(crate) tabs: Vec<TabData>,
     active_tab_index: usize,
     /// Tracks tab activation order (most-recently-used first).
@@ -845,6 +850,8 @@ pub struct Workspace {
     /// Dropdown menu for the title-bar team-switcher pill.
     team_switcher_menu: ViewHandle<Menu<WorkspaceAction>>,
     show_team_switcher_menu: bool,
+    workspace_switcher_menu: ViewHandle<Menu<ProjectHostAction>>,
+    show_workspace_switcher_menu: bool,
     theme_creator_modal: ViewHandle<ThemeCreatorModal>,
     theme_deletion_modal: ViewHandle<ThemeDeletionModal>,
     toast_stack: ViewHandle<DismissibleToastStack<WorkspaceAction>>,
@@ -1459,9 +1466,9 @@ impl Workspace {
             me.handle_settings_pane_event(event, ctx);
         });
 
-        let window_id = ctx.window_id();
+        let screen_id = ctx.view_id();
         SettingsPaneManager::handle(ctx).update(ctx, |manager, _| {
-            manager.register_view(window_id, settings_pane.clone());
+            manager.register_view(screen_id, settings_pane.clone());
         });
 
         (settings_pane, theme_chooser_view)
@@ -2237,6 +2244,7 @@ impl Workspace {
         global_resource_handles: GlobalResourceHandles,
         server_time: Option<Arc<ServerTime>>,
         workspace_setting: NewWorkspaceSource,
+        project_id: Option<ProjectId>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         let GlobalResourceHandles {
@@ -2514,6 +2522,7 @@ impl Workspace {
         );
 
         let mut ws = Self {
+            project_id,
             tabs: Vec::new(),
             active_tab_index: 0,
             tab_mru_order: Vec::new(),
@@ -2584,6 +2593,8 @@ impl Workspace {
             show_header_toolbar_context_menu: None,
             team_switcher_menu: Self::build_team_switcher_menu(ctx),
             show_team_switcher_menu: false,
+            workspace_switcher_menu: Self::build_workspace_switcher_menu(ctx),
+            show_workspace_switcher_menu: false,
             is_user_menu_open: false,
             tab_bar_pinned_by_popup: false,
             user_menu,
@@ -2624,6 +2635,13 @@ impl Workspace {
                 Self::build_remove_tab_config_confirmation_dialog(ctx),
         };
 
+        // Registered before the tabs are built so panes restored below can
+        // resolve which screen owns them (see `owning_screen_id`).
+        let weak_handle = ctx.handle();
+        WorkspaceRegistry::handle(ctx).update(ctx, |registry, _| {
+            registry.register(window_id, weak_handle);
+        });
+
         ws.configure_new_workspace(workspace_setting, ctx);
         ws.sync_panel_positions_from_config(ctx);
         ws.sync_window_button_visibility(ctx);
@@ -2632,11 +2650,6 @@ impl Workspace {
         // any) read from `GlobalResourceHandles`. Subsequent updates are
         // pushed by `subscribe_to_settings_errors` and `dismiss_workspace_banner`.
         ws.sync_settings_error_state_into_settings_pane(ctx);
-
-        let weak_handle = ctx.handle();
-        WorkspaceRegistry::handle(ctx).update(ctx, |registry, _| {
-            registry.register(window_id, weak_handle);
-        });
 
         ws
     }
@@ -2865,15 +2878,20 @@ impl Workspace {
             }
             NewWorkspaceSource::Restored {
                 window_snapshot,
+                screen_index,
                 block_lists,
             } => {
-                let active_tab_index = window_snapshot.active_tab_index;
+                let screen = window_snapshot
+                    .screen(screen_index)
+                    .cloned()
+                    .unwrap_or_default();
+                let active_tab_index = screen.active_tab_index;
                 let restored_left_panel_open = window_snapshot.left_panel_open;
 
                 // Restore groups first so per-tab `group_id` assignments
                 // below can validate membership against a populated map.
                 if FeatureFlag::GroupedTabs.is_enabled() {
-                    self.tab_groups = window_snapshot
+                    self.tab_groups = screen
                         .tab_groups
                         .iter()
                         .map(|group_snapshot| {
@@ -2895,7 +2913,7 @@ impl Workspace {
                         .collect();
                 }
 
-                window_snapshot
+                screen
                     .tabs
                     .iter()
                     .enumerate()
@@ -3065,8 +3083,7 @@ impl Workspace {
         workspace_setting: &NewWorkspaceSource,
         ctx: &AppContext,
     ) -> bool {
-        let should_default_open =
-            FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(ctx).use_vertical_tabs;
+        let should_default_open = uses_vertical_tabs(ctx);
 
         match workspace_setting {
             NewWorkspaceSource::Restored {
@@ -3075,7 +3092,9 @@ impl Workspace {
                 if !should_default_open {
                     // Stale "panel open" snapshot would leave a click-eating dismiss underlay (#9505).
                     false
-                } else if *TabSettings::as_ref(ctx).show_vertical_tab_panel_in_restored_windows {
+                } else if vertical_tabs_forced()
+                    || *TabSettings::as_ref(ctx).show_vertical_tab_panel_in_restored_windows
+                {
                     true
                 } else {
                     window_snapshot.vertical_tabs_panel_open
@@ -3743,6 +3762,23 @@ impl Workspace {
         self.active_tab_index
     }
 
+    pub fn project_id(&self) -> Option<ProjectId> {
+        self.project_id
+    }
+
+    pub fn close_all_tabs_for_screen_teardown(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.tabs.is_empty() {
+            return;
+        }
+        self.close_tabs(
+            (0..self.tabs.len()).rev(),
+            OpenDialogSource::CloseOtherTabs { tab_index: 0 },
+            true,
+            false,
+            ctx,
+        );
+    }
+
     pub fn is_overflow_menu_showing(&self) -> bool {
         self.show_tab_bar_overflow_menu
     }
@@ -3938,10 +3974,7 @@ impl Workspace {
             self.tab_mru_order.retain(|id| *id != pane_group_id);
             self.tab_mru_order.insert(0, pane_group_id);
         }
-        if self.vertical_tabs_panel_open
-            && FeatureFlag::VerticalTabs.is_enabled()
-            && *TabSettings::as_ref(ctx).use_vertical_tabs
-        {
+        if self.vertical_tabs_panel_open && uses_vertical_tabs(ctx) {
             self.vertical_tabs_panel.scroll_to_tab(index);
         }
 
@@ -4551,6 +4584,181 @@ impl Workspace {
             }
         });
         menu
+    }
+
+    fn build_workspace_switcher_menu(
+        ctx: &mut ViewContext<Self>,
+    ) -> ViewHandle<Menu<ProjectHostAction>> {
+        let menu = ctx.add_typed_action_view(|_| {
+            Menu::new()
+                .with_drop_shadow()
+                .prevent_interaction_with_other_elements()
+        });
+        ctx.subscribe_to_view(&menu, |me, _, event, ctx| {
+            if let MenuEvent::Close { .. } = event {
+                me.show_workspace_switcher_menu = false;
+                ctx.notify();
+            }
+        });
+        menu
+    }
+
+    fn workspace_switcher_label(&self, ctx: &AppContext) -> String {
+        match self.project_id {
+            None => "Home".to_owned(),
+            Some(project_id) => ProjectRegistryModel::as_ref(ctx)
+                .project(project_id)
+                .map(|project| project.display_name.clone())
+                .unwrap_or_else(|| "Workspace".to_owned()),
+        }
+    }
+
+    pub fn show_workspace_switcher_dropdown(&mut self, ctx: &mut ViewContext<Self>) {
+        if !FeatureFlag::AdeWorkspaces.is_enabled() {
+            return;
+        }
+        let window_id = self.window_id;
+        let open_project_ids: Vec<ProjectId> = WorkspaceRegistry::as_ref(ctx)
+            .workspaces_for_window(window_id, ctx)
+            .iter()
+            .filter_map(|workspace| workspace.as_ref(ctx).project_id)
+            .collect();
+        let registry = ProjectRegistryModel::as_ref(ctx);
+        let active_project_id = self.project_id;
+
+        let mut items: Vec<MenuItem<ProjectHostAction>> = vec![
+            MenuItemFields::new("Switch Workspace")
+                .with_disabled(true)
+                .into_item(),
+        ];
+
+        let mut home =
+            MenuItemFields::new("Home").with_on_select_action(ProjectHostAction::ActivateHome);
+        home = if active_project_id.is_none() {
+            home.with_icon(icons::Icon::Check)
+        } else {
+            home.with_indent()
+        };
+        items.push(home.into_item());
+
+        let open_projects: Vec<&Project> = open_project_ids
+            .iter()
+            .filter_map(|project_id| registry.project(*project_id))
+            .collect();
+        for project in &open_projects {
+            let mut fields = MenuItemFields::new(project.display_name.clone())
+                .with_on_select_action(ProjectHostAction::OpenProject {
+                    project_id: project.id,
+                });
+            fields = if Some(project.id) == active_project_id {
+                fields.with_icon(icons::Icon::Check)
+            } else {
+                fields.with_indent()
+            };
+            items.push(fields.into_item());
+        }
+
+        let closed_projects: Vec<&Project> = registry
+            .projects_mru()
+            .into_iter()
+            .filter(|project| !open_project_ids.contains(&project.id))
+            .collect();
+        if !closed_projects.is_empty() {
+            items.push(MenuItem::Separator);
+            for project in closed_projects {
+                items.push(
+                    MenuItemFields::new(project.display_name.clone())
+                        .with_indent()
+                        .with_on_select_action(ProjectHostAction::OpenProject {
+                            project_id: project.id,
+                        })
+                        .into_item(),
+                );
+            }
+        }
+
+        items.push(MenuItem::Separator);
+        items.push(
+            MenuItemFields::new("Open Folder as Workspace\u{2026}")
+                .with_indent()
+                .with_on_select_action(ProjectHostAction::OpenFolderAsWorkspace)
+                .into_item(),
+        );
+
+        self.workspace_switcher_menu
+            .update(ctx, |menu, ctx| menu.set_items(items, ctx));
+        self.show_workspace_switcher_menu = true;
+        ctx.focus(&self.workspace_switcher_menu);
+        ctx.notify();
+    }
+
+    fn render_workspace_switcher_pill(
+        &self,
+        appearance: &Appearance,
+        ctx: &AppContext,
+    ) -> Option<Box<dyn Element>> {
+        if !FeatureFlag::AdeWorkspaces.is_enabled() {
+            return None;
+        }
+        let has_workspaces = self.project_id.is_some()
+            || !ProjectRegistryModel::as_ref(ctx).is_empty()
+            || WorkspaceRegistry::as_ref(ctx)
+                .workspaces_for_window(self.window_id, ctx)
+                .len()
+                > 1;
+        if !has_workspaces {
+            return None;
+        }
+
+        let label = self.workspace_switcher_label(ctx);
+        let theme = appearance.theme();
+        let text_color = theme.foreground();
+        let pill_bg_normal = internal_colors::fg_overlay_1(theme);
+        let pill_bg_hover = internal_colors::fg_overlay_2(theme);
+
+        let pill = Hoverable::new(
+            self.mouse_states.workspace_switcher_pill.clone(),
+            move |state| {
+                let name_text = Text::new_inline(
+                    label.clone(),
+                    appearance.ui_font_family(),
+                    appearance.ui_font_size(),
+                )
+                .with_color(text_color.into())
+                .with_clip(ClipConfig::ellipsis())
+                .finish();
+
+                let row = Flex::row()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_spacing(4.)
+                    .with_child(ConstrainedBox::new(name_text).with_max_width(160.).finish())
+                    .finish();
+
+                Container::new(row)
+                    .with_background(if state.is_hovered() {
+                        pill_bg_hover
+                    } else {
+                        pill_bg_normal
+                    })
+                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
+                    .with_padding_left(8.)
+                    .with_padding_right(8.)
+                    .with_padding_top(4.)
+                    .with_padding_bottom(4.)
+                    .finish()
+            },
+        )
+        .with_cursor(Cursor::PointingHand)
+        .on_click(|ctx, _, _| {
+            ctx.dispatch_typed_action(WorkspaceAction::ShowWorkspaceSwitcherMenu);
+        })
+        .finish();
+
+        Some(
+            Container::new(SavePosition::new(pill, WORKSPACE_SWITCHER_PILL_POSITION_ID).finish())
+                .with_margin_left(TAB_BAR_PADDING_LEFT)
+                .finish(),
+        )
     }
 
     fn build_team_switcher_menu(ctx: &mut ViewContext<Self>) -> ViewHandle<Menu<WorkspaceAction>> {
@@ -6794,7 +7002,7 @@ impl Workspace {
     ) {
         // Ensure there is only one settings pane per window
         let settings_pane_manager = SettingsPaneManager::handle(ctx);
-        if let Some(locator) = settings_pane_manager.as_ref(ctx).find_pane(ctx.window_id()) {
+        if let Some(locator) = settings_pane_manager.as_ref(ctx).find_pane(ctx.view_id()) {
             // Update the page and/or search query if specified. The search query
             // must be applied even when no page is given (e.g. `warp://settings?q=`)
             // so an already-open settings tab reflects the new query.
@@ -9508,18 +9716,7 @@ impl Workspace {
         });
     }
 
-    pub fn snapshot(
-        &self,
-        window_id: WindowId,
-        quake_mode: bool,
-        app: &AppContext,
-    ) -> WindowSnapshot {
-        let window_bounds = app.window_bounds(&window_id);
-        let window_fullscreen_state = app
-            .windows()
-            .platform_window(window_id)
-            .map(|window| window.fullscreen_state())
-            .unwrap_or_default();
+    pub fn screen_snapshot(&self, window_id: WindowId, app: &AppContext) -> ProjectScreenSnapshot {
         let active_tab_index = self.active_tab_index();
         let drag_model = CrossWindowTabDrag::as_ref(app);
         // Use the placeholder-aware getter so we don't skip an unrelated
@@ -9634,6 +9831,27 @@ impl Workspace {
             Vec::new()
         };
 
+        ProjectScreenSnapshot {
+            project_id: self.project_id,
+            tabs,
+            active_tab_index,
+            tab_groups,
+        }
+    }
+
+    pub fn snapshot(
+        &self,
+        window_id: WindowId,
+        quake_mode: bool,
+        app: &AppContext,
+    ) -> WindowSnapshot {
+        let window_bounds = app.window_bounds(&window_id);
+        let window_fullscreen_state = app
+            .windows()
+            .platform_window(window_id)
+            .map(|window| window.fullscreen_state())
+            .unwrap_or_default();
+
         let resizable_data = ResizableData::handle(app);
         let modal_sizes = resizable_data.as_ref(app).get_all_handles(window_id);
 
@@ -9674,8 +9892,8 @@ impl Workspace {
         });
 
         WindowSnapshot {
-            tabs,
-            active_tab_index,
+            screens: vec![self.screen_snapshot(window_id, app)],
+            active_screen_index: 0,
             team_uid: UserWorkspaces::as_ref(app).team_uid_for_window(window_id),
             bounds: window_bounds,
             fullscreen_state: window_fullscreen_state,
@@ -9687,7 +9905,6 @@ impl Workspace {
             vertical_tabs_panel_open: self.vertical_tabs_panel_open,
             left_panel_width,
             right_panel_width,
-            tab_groups,
         }
     }
 
@@ -10354,7 +10571,7 @@ impl Workspace {
     fn add_agent_picker_tab(&mut self, ctx: &mut ViewContext<Self>) {
         if let Some(locator) = AgentPickerPaneManager::handle(ctx)
             .as_ref(ctx)
-            .find_pane(ctx.window_id())
+            .find_pane(ctx.view_id())
         {
             self.focus_pane(locator, ctx);
             return;
@@ -10379,7 +10596,7 @@ impl Workspace {
         };
         let picker_locator = AgentPickerPaneManager::handle(ctx)
             .as_ref(ctx)
-            .find_pane(ctx.window_id());
+            .find_pane(ctx.view_id());
 
         let startup_directory = self.get_new_tab_startup_directory(
             NewSessionSource::Tab,
@@ -11058,9 +11275,7 @@ impl Workspace {
             || self.traffic_light_mouse_states.are_traffic_lights_hovered();
 
         // Check if any of the menus/popups rendered relative to the tab bar are open.
-        let is_vertical_tabs_active = FeatureFlag::VerticalTabs.is_enabled()
-            && *TabSettings::as_ref(app).use_vertical_tabs
-            && self.vertical_tabs_panel_open;
+        let is_vertical_tabs_active = uses_vertical_tabs(app) && self.vertical_tabs_panel_open;
         let is_tab_menu_open = self.show_tab_bar_overflow_menu
             || (self.show_tab_right_click_menu.is_some() && !is_vertical_tabs_active)
             || (self.show_new_session_dropdown_menu.is_some() && !is_vertical_tabs_active)
@@ -11962,7 +12177,7 @@ impl Workspace {
     pub(crate) fn open_network_log_pane(&mut self, ctx: &mut ViewContext<Self>) {
         let manager = NetworkLogPaneManager::handle(ctx);
 
-        if let Some(locator) = manager.as_ref(ctx).find_pane(ctx.window_id()) {
+        if let Some(locator) = manager.as_ref(ctx).find_pane(ctx.view_id()) {
             // Pane is already open: refresh its snapshot so any items
             // captured since the last open are reflected, then focus it.
             if let Some(tab) = self
@@ -13296,7 +13511,13 @@ impl Workspace {
                     });
 
                 let window_id = ctx.window_id();
+                let is_active_screen = WorkspaceRegistry::as_ref(ctx)
+                    .active_workspace_view_id(window_id)
+                    == Some(ctx.view_id());
                 ActiveSession::handle(ctx).update(ctx, |active_session, ctx| {
+                    if !is_active_screen {
+                        return;
+                    }
                     active_session.set_session_state(
                         window_id,
                         session,
@@ -14601,7 +14822,7 @@ impl Workspace {
             || self.changelog_model.as_ref(ctx).is_check_pending()
     }
 
-    pub(crate) fn focus_active_tab(&mut self, ctx: &mut ViewContext<Self>) {
+    pub fn focus_active_tab(&mut self, ctx: &mut ViewContext<Self>) {
         self.active_tab_pane_group().update(ctx, |tab, ctx| {
             tab.focus(ctx);
         })
@@ -15840,8 +16061,7 @@ impl Workspace {
         }
 
         // Check if vertical tabs mode is active
-        let vertical_tabs_active =
-            FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(ctx).use_vertical_tabs;
+        let vertical_tabs_active = uses_vertical_tabs(ctx);
 
         // Render config-driven left-side toolbar buttons (both horizontal and vertical tabs)
         let knowledge_center_closed = true;
@@ -16112,6 +16332,10 @@ impl Workspace {
         appearance: &Appearance,
         ctx: &AppContext,
     ) {
+        if let Some(pill) = self.render_workspace_switcher_pill(appearance, ctx) {
+            target.add_child(pill);
+        }
+
         if let Some(pill) = self.render_team_switcher_pill(appearance, ctx) {
             target.add_child(pill);
         }
@@ -19788,6 +20012,9 @@ impl TypedActionView for Workspace {
             ShowTeamSwitcherMenu => {
                 self.show_team_switcher_dropdown(ctx);
             }
+            ShowWorkspaceSwitcherMenu => {
+                self.show_workspace_switcher_dropdown(ctx);
+            }
         };
         if action.should_save_app_state_on_action() {
             ctx.dispatch_global_action("workspace:save_app", ());
@@ -20166,6 +20393,19 @@ impl View for Workspace {
                 ChildView::new(&self.team_switcher_menu).finish(),
                 OffsetPositioning::offset_from_save_position_element(
                     TEAM_SWITCHER_PILL_POSITION_ID,
+                    vec2f(0., 4.),
+                    PositionedElementOffsetBounds::WindowByPosition,
+                    PositionedElementAnchor::BottomLeft,
+                    ChildAnchor::TopLeft,
+                ),
+            );
+        }
+
+        if self.show_workspace_switcher_menu {
+            stack.add_positioned_overlay_child(
+                ChildView::new(&self.workspace_switcher_menu).finish(),
+                OffsetPositioning::offset_from_save_position_element(
+                    WORKSPACE_SWITCHER_PILL_POSITION_ID,
                     vec2f(0., 4.),
                     PositionedElementOffsetBounds::WindowByPosition,
                     PositionedElementAnchor::BottomLeft,
@@ -21511,7 +21751,10 @@ impl Workspace {
         }
 
         let source_is_single_tab = self.tabs.len() == 1;
+        let cross_window_drag_allowed = self.project_id.is_none();
+
         if (is_drag_outside_tab_bar || source_is_single_tab)
+            && cross_window_drag_allowed
             && FeatureFlag::DragTabsToWindows.is_enabled()
         {
             let source_was_single_tab = source_is_single_tab;

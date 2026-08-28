@@ -1,4 +1,4 @@
-use warpui::{AppContext, ModelHandle, SingletonEntity, View, ViewContext, ViewHandle, WindowId};
+use warpui::{AppContext, EntityId, ModelHandle, SingletonEntity, View, ViewContext, ViewHandle};
 
 use super::view::PaneView;
 use super::{
@@ -31,18 +31,18 @@ impl SettingsPane {
     pub fn new<V: View>(
         page: SettingsSection,
         search_query: Option<&str>,
-        window_id: WindowId,
+        screen_id: Option<EntityId>,
         ctx: &mut ViewContext<V>,
-    ) -> Self {
+    ) -> Option<Self> {
         let view = SettingsPaneManager::handle(ctx)
-            .read(ctx, |manager, _| manager.settings_view(window_id));
+            .read(ctx, |manager, _| manager.settings_view_for(screen_id))?;
         view.update(ctx, |view, ctx| {
             view.set_and_refresh_current_page(page, ctx);
             if let Some(search_query) = search_query {
                 view.set_search_query(search_query, ctx);
             }
         });
-        Self::from_view(view, ctx)
+        Some(Self::from_view(view, ctx))
     }
 
     fn settings_view(&self, ctx: &AppContext) -> ViewHandle<SettingsView> {
@@ -75,10 +75,13 @@ impl PaneContent for SettingsPane {
         });
 
         let pane_group_id = ctx.view_id();
-        let window_id = ctx.window_id();
-        SettingsPaneManager::handle(ctx).update(ctx, |manager, ctx| {
-            manager.register_pane(self, pane_group_id, window_id, ctx);
-        });
+        if let Some(screen_id) =
+            crate::workspace::owning_screen_id(pane_group_id, ctx.window_id(), ctx)
+        {
+            SettingsPaneManager::handle(ctx).update(ctx, |manager, ctx| {
+                manager.register_pane(self, pane_group_id, screen_id, ctx);
+            });
+        }
     }
 
     fn detach(
@@ -94,12 +97,15 @@ impl PaneContent for SettingsPane {
 
         // Always deregister from SettingsPaneManager - it will be re-registered on attach if restored.
         // Only clear the locator if this is the currently registered settings pane for the window.
-        let window_id = ctx.window_id();
         let pane_group_id = ctx.view_id();
         let pane_id = self.id();
-        SettingsPaneManager::handle(ctx).update(ctx, |manager, ctx| {
-            manager.deregister_pane(&window_id, pane_group_id, pane_id, ctx);
-        });
+        if let Some(screen_id) =
+            crate::workspace::owning_screen_id(pane_group_id, ctx.window_id(), ctx)
+        {
+            SettingsPaneManager::handle(ctx).update(ctx, |manager, ctx| {
+                manager.deregister_pane(&screen_id, pane_group_id, pane_id, ctx);
+            });
+        }
     }
 
     fn snapshot(&self, app: &AppContext) -> LeafContents {

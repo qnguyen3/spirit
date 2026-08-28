@@ -16,7 +16,7 @@ use crate::terminal::alt_screen_reporting::AltScreenReporting;
 use crate::terminal::general_settings::GeneralSettings;
 use crate::undo_close::UndoCloseStack;
 use crate::workspace::cross_window_tab_drag::CrossWindowTabDrag;
-use crate::workspace::{Workspace, WorkspaceAction};
+use crate::workspace::{WorkspaceAction, WorkspaceRegistry};
 use crate::{GlobalResourceHandlesProvider, auth};
 
 /// DEPRECATED. Global actions are being phased out.
@@ -145,8 +145,7 @@ fn trigger_maybe_log_out(_: &(), ctx: &mut AppContext) {
 /// Dispatches an action to the active workspace, if one exists.
 fn dispatch_to_active_workspace(ctx: &mut AppContext, action: WorkspaceAction) {
     if let Some(window_id) = WindowManager::as_ref(ctx).active_window()
-        && let Some(workspaces) = ctx.views_of_type::<Workspace>(window_id)
-        && let Some(workspace) = workspaces.into_iter().next()
+        && let Some(workspace) = WorkspaceRegistry::as_ref(ctx).get(window_id, ctx)
     {
         workspace.update(ctx, |workspace, ctx| {
             workspace.handle_action(&action, ctx);

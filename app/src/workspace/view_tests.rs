@@ -184,6 +184,7 @@ pub(crate) fn mock_workspace(app: &mut App) -> ViewHandle<Workspace> {
                 previous_active_window: active_window_id,
                 shell: None,
             },
+            None,
             ctx,
         )
     });
@@ -254,8 +255,10 @@ fn restored_workspace(
             None,
             NewWorkspaceSource::Restored {
                 window_snapshot,
+                screen_index: 0,
                 block_lists: Arc::new(HashMap::new()),
             },
+            None,
             ctx,
         )
     });
@@ -281,6 +284,7 @@ fn transferred_tab_workspace(
                 is_right_panel_maximized: false,
                 is_tab_drag_preview: false,
             },
+            None,
             ctx,
         )
     });
@@ -934,6 +938,7 @@ fn mock_workspace_with_shared_session(app: &mut App) -> ViewHandle<Workspace> {
                 previous_active_window: None,
                 shell: None,
             },
+            None,
             ctx,
         )
     });
@@ -981,6 +986,7 @@ fn mock_workspace_viewing_shared_session(app: &mut App) -> ViewHandle<Workspace>
             global_resource_handles,
             None,
             NewWorkspaceSource::SharedSessionAsViewer { session_id },
+            None,
             ctx,
         )
     });
@@ -4656,10 +4662,10 @@ fn add_agent_picker_tab_opens_a_single_picker_tab_per_window() {
         initialize_app(&mut app);
         let workspace = mock_workspace(&mut app);
 
-        let (initial_tab_count, window_id) = workspace.update(&mut app, |workspace, ctx| {
+        let initial_tab_count = workspace.update(&mut app, |workspace, ctx| {
             let initial_tab_count = workspace.tabs.len();
             workspace.add_agent_picker_tab(ctx);
-            (initial_tab_count, ctx.window_id())
+            initial_tab_count
         });
 
         workspace.update(&mut app, |workspace, ctx| {
@@ -4667,7 +4673,7 @@ fn add_agent_picker_tab_opens_a_single_picker_tab_per_window() {
             assert!(
                 AgentPickerPaneManager::handle(ctx)
                     .as_ref(ctx)
-                    .find_pane(window_id)
+                    .find_pane(ctx.view_id())
                     .is_some(),
                 "the picker pane should be registered for the window"
             );
@@ -4686,7 +4692,7 @@ fn add_agent_picker_tab_opens_a_single_picker_tab_per_window() {
             );
             let locator = AgentPickerPaneManager::handle(ctx)
                 .as_ref(ctx)
-                .find_pane(window_id)
+                .find_pane(ctx.view_id())
                 .expect("the picker pane should still be registered");
             assert_eq!(
                 workspace.tabs[workspace.active_tab_index].pane_group.id(),
@@ -4703,9 +4709,8 @@ fn launch_agent_from_picker_stages_the_agent_command_and_closes_the_picker() {
         initialize_app(&mut app);
         let workspace = mock_workspace(&mut app);
 
-        let window_id = workspace.update(&mut app, |workspace, ctx| {
+        workspace.update(&mut app, |workspace, ctx| {
             workspace.add_agent_picker_tab(ctx);
-            ctx.window_id()
         });
 
         workspace.update(&mut app, |workspace, ctx| {
@@ -4730,7 +4735,7 @@ fn launch_agent_from_picker_stages_the_agent_command_and_closes_the_picker() {
             assert!(
                 AgentPickerPaneManager::handle(ctx)
                     .as_ref(ctx)
-                    .find_pane(window_id)
+                    .find_pane(ctx.view_id())
                     .is_none(),
                 "the picker tab should be closed after launching an agent"
             );
