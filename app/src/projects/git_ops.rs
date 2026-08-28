@@ -604,7 +604,7 @@ mod imp {
                 "--progress",
                 "--",
                 url,
-                &dest.to_string_lossy().to_string(),
+                dest.to_string_lossy().as_ref(),
             ])
             .current_dir(dest_parent)
             .env("GIT_TERMINAL_PROMPT", "0")

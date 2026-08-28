@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use pathfinder_color::ColorU;
 use settings::Setting as _;
@@ -449,7 +449,7 @@ impl NewWorkspaceModal {
     fn render_path_row(
         &self,
         label: &str,
-        path: &PathBuf,
+        path: &Path,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
         let theme = appearance.theme();

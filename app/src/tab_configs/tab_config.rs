@@ -39,7 +39,7 @@ fn handlebars_placeholder(name: &str) -> String {
     format!("{{{{{name}}}}}")
 }
 
-pub(crate) use crate::projects::git_ops::{generated_worktree_path, generated_worktree_repo_dir};
+pub(crate) use crate::projects::git_ops::generated_worktree_path;
 pub(crate) fn generated_worktree_path_string(repo_path: &Path, worktree_name: &str) -> String {
     generated_worktree_path(repo_path, worktree_name)
         .display()

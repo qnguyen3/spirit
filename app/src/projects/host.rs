@@ -19,6 +19,7 @@ use super::registry::{ProjectRegistryModel, now_ts};
 use super::remove_workspace_dialog::{RemoveWorkspaceDialog, RemoveWorkspaceEvent};
 use super::settings::WorkspaceCreationSettings;
 use super::{Project, ProjectId, ProjectKind};
+use crate::app_state::ProjectScreenSnapshot;
 use crate::features::FeatureFlag;
 use crate::global_resource_handles::GlobalResourceHandles;
 use crate::modal::{Modal, ModalEvent, ModalViewState};
@@ -389,6 +390,32 @@ impl ProjectHost {
                 .first()
                 .and_then(|screen| screen.project_id);
             return (vec![(project_id, workspace_setting.clone())], 0);
+        }
+
+        // Flag off: fold every screen's tabs into Home so none of them are
+        // unreachable. The Projects themselves stay registered, so turning the
+        // flag back on brings the Workspaces back.
+        if !FeatureFlag::AdeWorkspaces.is_enabled() {
+            let mut collapsed = window_snapshot.clone();
+            let mut home = ProjectScreenSnapshot::default();
+            for screen in std::mem::take(&mut collapsed.screens) {
+                home.tabs.extend(screen.tabs);
+                home.tab_groups.extend(screen.tab_groups);
+            }
+            home.active_tab_index = home.active_tab_index.min(home.tabs.len().saturating_sub(1));
+            collapsed.screens = vec![home];
+            collapsed.active_screen_index = 0;
+            return (
+                vec![(
+                    None,
+                    NewWorkspaceSource::Restored {
+                        window_snapshot: collapsed,
+                        screen_index: 0,
+                        block_lists: block_lists.clone(),
+                    },
+                )],
+                0,
+            );
         }
 
         let settings = window_snapshot
@@ -861,3 +888,7 @@ impl ProjectHost {
 fn save_app_state(ctx: &mut ViewContext<ProjectHost>) {
     ctx.dispatch_global_action("workspace:save_app", ());
 }
+
+#[cfg(test)]
+#[path = "host_tests.rs"]
+mod tests;

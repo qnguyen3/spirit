@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::Path;
 
 use warp_core::ui::theme::color::internal_colors;
 use warpui::elements::{
@@ -499,7 +499,7 @@ fn reveal_label() -> &'static str {
     }
 }
 
-fn middle_truncate(path: &PathBuf, max_len: usize) -> String {
+fn middle_truncate(path: &Path, max_len: usize) -> String {
     let text = path.to_string_lossy().to_string();
     if text.chars().count() <= max_len {
         return text;

@@ -151,39 +151,43 @@ impl Workspace {
         };
         let taken_names =
             ProjectRegistryModel::as_ref(ctx).worktree_names_for_project(context.project_id);
-        let branches = crate::util::git::list_local_branches_sync(&context.root_path);
-
-        let sanitized = sanitize_worktree_name(&name);
-        let branch = next_available(&sanitized, &|candidate| {
-            taken_names.contains(candidate)
-                || branches.contains(candidate)
-                || generated_worktree_path(&context.root_path, candidate).exists()
-        });
-        let path = generated_worktree_path(&context.root_path, &branch);
-
-        let creation = WorktreeCreation {
-            name: branch.clone(),
-            branch: branch.clone(),
-            path: path.clone(),
-            base_branch: context.primary_branch.clone(),
-            agent_catalog_index,
-        };
 
         let root_path = context.root_path.clone();
         let base_branch = context.primary_branch.clone();
-        let branch_for_task = branch.clone();
-        let path_for_task = path.clone();
+        let sanitized = sanitize_worktree_name(&name);
         let _ = ctx.spawn(
             async move {
-                git_ops::worktree_add(&root_path, &branch_for_task, &path_for_task, &base_branch)
-                    .await?;
-                let report = git_ops::copy_worktree_includes(&root_path, &path_for_task)
+                let branches = git_ops::local_branches(&root_path).await;
+                let branch = next_available(&sanitized, &|candidate| {
+                    taken_names.contains(candidate)
+                        || branches.contains(candidate)
+                        || generated_worktree_path(&root_path, candidate).exists()
+                });
+                let path = generated_worktree_path(&root_path, &branch);
+
+                git_ops::worktree_add(&root_path, &branch, &path, &base_branch).await?;
+                if !path.exists() {
+                    let _ = git_ops::worktree_remove(&root_path, &path, true).await;
+                    let _ = git_ops::force_delete_branch(&root_path, &branch).await;
+                    anyhow::bail!("git created no worktree at {}", path.display());
+                }
+
+                let report = git_ops::copy_worktree_includes(&root_path, &path)
                     .await
                     .unwrap_or_default();
-                Ok::<_, anyhow::Error>(report)
+                Ok::<_, anyhow::Error>((
+                    WorktreeCreation {
+                        name: branch.clone(),
+                        branch,
+                        path,
+                        base_branch,
+                        agent_catalog_index,
+                    },
+                    report,
+                ))
             },
             move |me: &mut Self, result, ctx| match result {
-                Ok(report) => me.finish_worktree_creation(creation, report, ctx),
+                Ok((creation, report)) => me.finish_worktree_creation(creation, report, ctx),
                 Err(err) => {
                     let body = me.create_worktree_modal.view.as_ref(ctx).body().clone();
                     body.update(ctx, |body, ctx| body.set_error(err.to_string(), ctx));

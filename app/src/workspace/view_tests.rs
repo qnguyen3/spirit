@@ -4744,3 +4744,76 @@ fn launch_agent_from_picker_stages_the_agent_command_and_closes_the_picker() {
         });
     });
 }
+
+#[test]
+fn a_tab_bound_to_an_unknown_worktree_restores_as_a_plain_tab() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        let workspace = mock_workspace(&mut app);
+        let mut snapshot = workspace.update(&mut app, |workspace, ctx| {
+            workspace.snapshot(ctx.window_id(), false, ctx)
+        });
+        let forgotten = crate::projects::WorktreeId::new();
+        for tab in &mut snapshot.screens[0].tabs {
+            tab.worktree_id = Some(forgotten);
+        }
+        assert!(!snapshot.screens[0].tabs.is_empty());
+
+        let restored = restored_workspace(&mut app, snapshot);
+        restored.read(&app, |workspace, _| {
+            assert!(
+                workspace.tabs.iter().all(|tab| tab.worktree_id.is_none()),
+                "a worktree the registry does not know must not survive restore"
+            );
+        });
+    })
+}
+
+#[test]
+fn a_tab_bound_to_a_registered_worktree_keeps_its_binding() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        let root = std::env::temp_dir().join(format!(
+            "spirit-restore-binding-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+
+        let worktree_id = app.update(|ctx| {
+            ProjectRegistryModel::handle(ctx).update(ctx, |registry, ctx| {
+                let project_id = registry.register_project(
+                    root.clone(),
+                    "repo".to_owned(),
+                    crate::projects::ProjectKind::Git,
+                    Some("main".to_owned()),
+                    ctx,
+                );
+                registry
+                    .primary_worktree_id(project_id)
+                    .expect("registering a project creates its Primary worktree")
+            })
+        });
+
+        let workspace = mock_workspace(&mut app);
+        let mut snapshot = workspace.update(&mut app, |workspace, ctx| {
+            workspace.snapshot(ctx.window_id(), false, ctx)
+        });
+        for tab in &mut snapshot.screens[0].tabs {
+            tab.worktree_id = Some(worktree_id);
+        }
+
+        let restored = restored_workspace(&mut app, snapshot);
+        restored.read(&app, |workspace, _| {
+            assert!(
+                workspace
+                    .tabs
+                    .iter()
+                    .all(|tab| tab.worktree_id == Some(worktree_id))
+            );
+        });
+
+        std::fs::remove_dir_all(&root).ok();
+    })
+}
