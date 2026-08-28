@@ -844,6 +844,24 @@ fn open_from_restored(arg: &OpenFromRestoredArg, ctx: &mut AppContext) {
     }
 }
 
+pub(crate) fn dispatch_project_host_action(
+    action: crate::projects::host::ProjectHostAction,
+    ctx: &mut AppContext,
+) {
+    let Some(window_id) = ctx.windows().active_window() else {
+        return;
+    };
+    let root_view: Option<ViewHandle<RootView>> = ctx.root_view(window_id);
+    let host_id = root_view.and_then(|root| {
+        root.read(ctx, |root, _| {
+            root.project_host_view().map(|host| host.id())
+        })
+    });
+    if let Some(host_id) = host_id {
+        ctx.dispatch_typed_action_for_view(window_id, host_id, &action);
+    }
+}
+
 fn path_if_directory(path: &Path) -> Option<&Path> {
     path.is_dir().then_some(path)
 }

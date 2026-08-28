@@ -1,6 +1,10 @@
 pub mod git_ops;
 pub mod host;
+pub mod new_workspace_modal;
+pub mod overview;
 pub mod registry;
+pub mod remove_workspace_dialog;
+pub mod settings;
 
 use std::fmt;
 use std::path::{Path, PathBuf};

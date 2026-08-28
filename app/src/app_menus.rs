@@ -22,6 +22,7 @@ use crate::auth::AuthStateProvider;
 use crate::default_terminal::DefaultTerminal;
 use crate::features::{FeatureFlag, runtime_flags_menu_items};
 use crate::persisted_workspace::PersistedWorkspace;
+use crate::projects::host::ProjectHostAction;
 use crate::root_view::OpenLaunchConfigArg;
 use crate::server::telemetry::LaunchConfigUiLocation;
 use crate::settings::{BlockVisibilitySettings, DebugSettings, SelectionSettings};
@@ -268,6 +269,24 @@ fn make_new_file_menu(ctx: &AppContext) -> Menu {
         updateable_custom_item_without_checkmark(CustomAction::CloseWindow, ctx),
     ]);
 
+    if FeatureFlag::AdeWorkspaces.is_enabled() {
+        file_menu_options.insert(0, MenuItem::Separator);
+        file_menu_options.insert(
+            0,
+            MenuItem::Custom(CustomMenuItem::new(
+                "New Workspace\u{2026}",
+                move |ctx| {
+                    crate::root_view::dispatch_project_host_action(
+                        ProjectHostAction::ShowNewWorkspaceModal { mode: None },
+                        ctx,
+                    );
+                },
+                no_updates,
+                None,
+            )),
+        );
+    }
+
     Menu::new("File", file_menu_options)
 }
 
@@ -370,7 +389,22 @@ fn make_new_edit_menu(ctx: &AppContext) -> Menu {
 }
 
 fn make_new_view_menu(ctx: &AppContext) -> Menu {
-    let mut items = vec![
+    let mut items = vec![];
+    if FeatureFlag::AdeWorkspaces.is_enabled() {
+        items.push(MenuItem::Custom(CustomMenuItem::new(
+            "Workspace Overview",
+            move |ctx| {
+                crate::root_view::dispatch_project_host_action(
+                    ProjectHostAction::ShowOverview,
+                    ctx,
+                );
+            },
+            no_updates,
+            None,
+        )));
+        items.push(MenuItem::Separator);
+    }
+    items.extend([
         updateable_custom_item_without_checkmark(CustomAction::ToggleWarpDrive, ctx),
         MenuItem::Separator,
         updateable_custom_item_without_checkmark(CustomAction::CommandPalette, ctx),
@@ -430,7 +464,7 @@ fn make_new_view_menu(ctx: &AppContext) -> Menu {
             },
             None,
         )),
-    ];
+    ]);
 
     let is_compact_mode = matches!(
         TerminalSettings::handle(ctx)

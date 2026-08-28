@@ -4679,6 +4679,18 @@ impl Workspace {
 
         items.push(MenuItem::Separator);
         items.push(
+            MenuItemFields::new("New Workspace\u{2026}")
+                .with_indent()
+                .with_on_select_action(ProjectHostAction::ShowNewWorkspaceModal { mode: None })
+                .into_item(),
+        );
+        items.push(
+            MenuItemFields::new("Workspace Overview")
+                .with_indent()
+                .with_on_select_action(ProjectHostAction::ShowOverview)
+                .into_item(),
+        );
+        items.push(
             MenuItemFields::new("Open Folder as Workspace\u{2026}")
                 .with_indent()
                 .with_on_select_action(ProjectHostAction::OpenFolderAsWorkspace)

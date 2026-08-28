@@ -72,6 +72,7 @@ pub fn register_all_settings(ctx: &mut AppContext) {
     ChangelogSettings::register(ctx);
     GeneralSettings::register(ctx);
     NewSessionSettings::register(ctx);
+    crate::projects::settings::WorkspaceCreationSettings::register(ctx);
     ScrollSettings::register(ctx);
     SelectionSettings::register(ctx);
     InputModeSettings::register(ctx);

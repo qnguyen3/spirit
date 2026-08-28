@@ -1,22 +1,33 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
+use settings::Setting;
+use warpui::elements::{ParentElement, Stack};
 use warpui::platform::FilePickerConfiguration;
 use warpui::presenter::ChildView;
+use warpui::ui_components::components::UiComponentStyles;
 use warpui::{
     AppContext, Element, Entity, EntityId, FocusContext, SingletonEntity, TypedActionView, View,
     ViewContext, ViewHandle, WindowId, keymap,
 };
 
+use super::git_ops::CloneProgress;
+use super::new_workspace_modal::{NewWorkspaceModal, NewWorkspaceModalEvent, NewWorkspaceMode};
+use super::overview::{OverviewEvent, WorkspaceOverviewView};
 use super::registry::{ProjectRegistryModel, now_ts};
+use super::remove_workspace_dialog::{RemoveWorkspaceDialog, RemoveWorkspaceEvent};
+use super::settings::WorkspaceCreationSettings;
 use super::{Project, ProjectId, ProjectKind};
 use crate::features::FeatureFlag;
 use crate::global_resource_handles::GlobalResourceHandles;
+use crate::modal::{Modal, ModalEvent, ModalViewState};
 use crate::pane_group::NewTerminalOptions;
 use crate::persisted_workspace::PersistedWorkspace;
 use crate::root_view::NewWorkspaceSource;
 use crate::server::server_api::ServerTime;
-use crate::workspace::{Workspace, WorkspaceRegistry};
+use crate::view_components::DismissibleToast;
+use crate::workspace::{ToastStack, Workspace, WorkspaceRegistry};
 
 pub const MULTIPLE_SCREENS_FLAG: &str = "ProjectHost_MultipleScreens";
 
@@ -25,6 +36,10 @@ pub fn init(app: &mut AppContext) {
     use warpui::keymap::macros::*;
 
     use crate::util::bindings::BindingGroup;
+
+    super::new_workspace_modal::init(app);
+    super::overview::init(app);
+    super::remove_workspace_dialog::init(app);
 
     fn ade_workspaces_enabled() -> bool {
         FeatureFlag::AdeWorkspaces.is_enabled()
@@ -67,6 +82,23 @@ pub fn init(app: &mut AppContext) {
         .with_enabled(ade_workspaces_enabled)
         .with_group(BindingGroup::Workspaces.as_str()),
         EditableBinding::new(
+            "workspaces:new",
+            "New Workspace\u{2026}",
+            ProjectHostAction::ShowNewWorkspaceModal { mode: None },
+        )
+        .with_context_predicate(id!("ProjectHost"))
+        .with_enabled(ade_workspaces_enabled)
+        .with_group(BindingGroup::Workspaces.as_str()),
+        EditableBinding::new(
+            "workspaces:overview",
+            "Workspace Overview",
+            ProjectHostAction::ShowOverview,
+        )
+        .with_context_predicate(id!("ProjectHost"))
+        .with_enabled(ade_workspaces_enabled)
+        .with_group(BindingGroup::Workspaces.as_str())
+        .with_key_binding("ctrl-cmd-o"),
+        EditableBinding::new(
             "workspaces:activate_home",
             "Go to Home Workspace",
             ProjectHostAction::ActivateHome,
@@ -88,6 +120,11 @@ pub struct ProjectHost {
     active_screen_index: usize,
     global_resource_handles: GlobalResourceHandles,
     server_time: Option<Arc<ServerTime>>,
+    new_workspace_modal: ModalViewState<Modal<NewWorkspaceModal>>,
+    overview: ViewHandle<WorkspaceOverviewView>,
+    overview_active: bool,
+    remove_dialog: ModalViewState<RemoveWorkspaceDialog>,
+    clone_cancelled: Arc<AtomicBool>,
 }
 
 #[derive(Debug, Clone)]
@@ -100,6 +137,10 @@ pub enum ProjectHostAction {
     PreviousScreen,
     ShowSwitcherMenu,
     OpenFolderAsWorkspace,
+    ShowNewWorkspaceModal { mode: Option<NewWorkspaceMode> },
+    ShowOverview,
+    HideOverview,
+    RemoveProject { project_id: ProjectId },
 }
 
 impl Entity for ProjectHost {
@@ -125,7 +166,17 @@ impl TypedActionView for ProjectHost {
                     workspace.show_workspace_switcher_dropdown(ctx);
                 });
             }
-            ProjectHostAction::OpenFolderAsWorkspace => self.open_folder_as_workspace(ctx),
+            ProjectHostAction::OpenFolderAsWorkspace => {
+                self.show_new_workspace_modal(Some(NewWorkspaceMode::Open), ctx)
+            }
+            ProjectHostAction::ShowNewWorkspaceModal { mode } => {
+                self.show_new_workspace_modal(*mode, ctx)
+            }
+            ProjectHostAction::ShowOverview => self.set_overview_active(true, ctx),
+            ProjectHostAction::HideOverview => self.set_overview_active(false, ctx),
+            ProjectHostAction::RemoveProject { project_id } => {
+                self.show_remove_dialog(*project_id, ctx)
+            }
         }
     }
 }
@@ -136,14 +187,31 @@ impl View for ProjectHost {
     }
 
     fn render(&self, _app: &AppContext) -> Box<dyn Element> {
-        ChildView::new(self.active_workspace()).finish()
+        let mut stack = Stack::new();
+        if self.overview_active {
+            ParentElement::add_child(&mut stack, ChildView::new(&self.overview).finish());
+        } else {
+            ParentElement::add_child(&mut stack, ChildView::new(self.active_workspace()).finish());
+        }
+        if self.new_workspace_modal.is_open() {
+            ParentElement::add_child(&mut stack, self.new_workspace_modal.render());
+        }
+        if self.remove_dialog.is_open() {
+            ParentElement::add_child(&mut stack, self.remove_dialog.render());
+        }
+        stack.finish()
     }
 
     fn child_view_ids(&self, _app: &AppContext) -> Vec<EntityId> {
-        self.screens
+        let mut ids: Vec<EntityId> = self
+            .screens
             .iter()
             .map(|screen| screen.workspace.id())
-            .collect()
+            .collect();
+        ids.push(self.overview.id());
+        ids.push(self.new_workspace_modal.view.id());
+        ids.push(self.remove_dialog.view.id());
+        ids
     }
 
     fn keymap_context(&self, _app: &AppContext) -> keymap::Context {
@@ -155,7 +223,13 @@ impl View for ProjectHost {
     }
 
     fn on_focus(&mut self, focus_ctx: &FocusContext, ctx: &mut ViewContext<Self>) {
-        if focus_ctx.is_self_focused() {
+        if !focus_ctx.is_self_focused() {
+            return;
+        }
+        if self.overview_active {
+            let overview = self.overview.clone();
+            ctx.focus(&overview);
+        } else {
             let workspace = self.active_workspace().clone();
             ctx.focus(&workspace);
         }
@@ -191,15 +265,69 @@ impl ProjectHost {
             })
             .collect();
 
+        let new_workspace_modal = Self::build_new_workspace_modal(ctx);
+        let overview = Self::build_overview(ctx);
+        let remove_dialog = Self::build_remove_dialog(ctx);
+
         let host = Self {
             window_id,
             screens,
             active_screen_index,
             global_resource_handles,
             server_time,
+            new_workspace_modal,
+            overview,
+            overview_active: false,
+            remove_dialog,
+            clone_cancelled: Arc::new(AtomicBool::new(false)),
         };
         host.publish_active_screen(ctx);
         host
+    }
+
+    fn build_new_workspace_modal(
+        ctx: &mut ViewContext<Self>,
+    ) -> ModalViewState<Modal<NewWorkspaceModal>> {
+        let body = ctx.add_typed_action_view(NewWorkspaceModal::new);
+        ctx.subscribe_to_view(&body, |me, _, event, ctx| {
+            me.handle_new_workspace_modal_event(event, ctx);
+        });
+        let modal = ctx.add_typed_action_view(|ctx| {
+            Modal::new(None, body, ctx).with_modal_style(UiComponentStyles {
+                width: Some(480.),
+                ..Default::default()
+            })
+        });
+        ctx.subscribe_to_view(&modal, |me, _, event, ctx| {
+            if matches!(event, ModalEvent::Close) {
+                me.close_new_workspace_modal(ctx);
+            }
+        });
+        ModalViewState::new(modal)
+    }
+
+    fn build_overview(ctx: &mut ViewContext<Self>) -> ViewHandle<WorkspaceOverviewView> {
+        let overview = ctx.add_typed_action_view(WorkspaceOverviewView::new);
+        ctx.subscribe_to_view(&overview, |me, _, event, ctx| {
+            me.handle_overview_event(event, ctx);
+        });
+        overview
+    }
+
+    fn build_remove_dialog(ctx: &mut ViewContext<Self>) -> ModalViewState<RemoveWorkspaceDialog> {
+        let dialog = ctx.add_typed_action_view(RemoveWorkspaceDialog::new);
+        ctx.subscribe_to_view(&dialog, |me, _, event, ctx| match event {
+            RemoveWorkspaceEvent::Confirm { project_id } => {
+                let project_id = *project_id;
+                me.remove_dialog.close();
+                me.remove_project(project_id, ctx);
+            }
+            RemoveWorkspaceEvent::Cancel => {
+                me.remove_dialog.close();
+                ctx.notify();
+            }
+        });
+        ModalViewState::new(dialog)
     }
 
     fn screen_settings(
@@ -386,28 +514,6 @@ impl ProjectHost {
         save_app_state(ctx);
     }
 
-    fn open_folder_as_workspace(&mut self, ctx: &mut ViewContext<Self>) {
-        if !FeatureFlag::AdeWorkspaces.is_enabled() {
-            return;
-        }
-        ctx.open_file_picker(
-            |result, ctx| {
-                let Ok(paths) = result else {
-                    return;
-                };
-                let Some(path) = paths.into_iter().next() else {
-                    return;
-                };
-                if let Some(handle) = ctx.handle().upgrade(ctx) {
-                    handle.update(ctx, |host, ctx| {
-                        host.register_and_open_folder(PathBuf::from(path), ctx);
-                    });
-                }
-            },
-            FilePickerConfiguration::new().folders_only(),
-        );
-    }
-
     pub fn register_and_open_folder(&mut self, path: PathBuf, ctx: &mut ViewContext<Self>) {
         let _ = ctx.spawn(
             async move {
@@ -437,6 +543,263 @@ impl ProjectHost {
             persisted.user_added_workspace(root_path, ctx);
         });
         self.open_project(project_id, ctx);
+    }
+}
+
+impl ProjectHost {
+    fn set_overview_active(&mut self, active: bool, ctx: &mut ViewContext<Self>) {
+        if !FeatureFlag::AdeWorkspaces.is_enabled() && active {
+            return;
+        }
+        if self.overview_active == active {
+            return;
+        }
+        self.overview_active = active;
+        if active {
+            let open = self.open_project_ids();
+            let overview = self.overview.clone();
+            overview.update(ctx, |overview, ctx| {
+                overview.refresh(ctx);
+                overview.set_open_projects(open, ctx);
+            });
+            ctx.focus(&overview);
+        } else {
+            self.focus_active_screen(ctx);
+        }
+        ctx.notify();
+    }
+
+    fn show_new_workspace_modal(
+        &mut self,
+        mode: Option<NewWorkspaceMode>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if !FeatureFlag::AdeWorkspaces.is_enabled() {
+            return;
+        }
+        let body = self.modal_body(ctx);
+        body.update(ctx, |body, ctx| body.on_open(mode, ctx));
+        self.new_workspace_modal.open();
+        ctx.focus(&self.new_workspace_modal.view);
+        ctx.notify();
+    }
+
+    fn close_new_workspace_modal(&mut self, ctx: &mut ViewContext<Self>) {
+        self.clone_cancelled.store(true, Ordering::Relaxed);
+        self.new_workspace_modal.close();
+        if self.overview_active {
+            let overview = self.overview.clone();
+            ctx.focus(&overview);
+        } else {
+            self.focus_active_screen(ctx);
+        }
+        ctx.notify();
+    }
+
+    fn modal_body(&self, ctx: &AppContext) -> ViewHandle<NewWorkspaceModal> {
+        self.new_workspace_modal.view.as_ref(ctx).body().clone()
+    }
+
+    fn handle_new_workspace_modal_event(
+        &mut self,
+        event: &NewWorkspaceModalEvent,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        match event {
+            NewWorkspaceModalEvent::Close => self.close_new_workspace_modal(ctx),
+            NewWorkspaceModalEvent::CancelClone => {
+                self.clone_cancelled.store(true, Ordering::Relaxed);
+            }
+            NewWorkspaceModalEvent::BrowseFolder(mode) => self.browse_folder_for_modal(*mode, ctx),
+            NewWorkspaceModalEvent::OpenFolder { path } => {
+                let path = path.clone();
+                self.close_new_workspace_modal(ctx);
+                self.register_and_open_folder(path, ctx);
+            }
+            NewWorkspaceModalEvent::CloneRepo {
+                url,
+                parent,
+                directory_name,
+            } => self.start_clone(url.clone(), parent.clone(), directory_name.clone(), ctx),
+            NewWorkspaceModalEvent::CreateProject { name, parent } => {
+                self.start_create(name.clone(), parent.clone(), ctx)
+            }
+        }
+    }
+
+    fn browse_folder_for_modal(&mut self, _mode: NewWorkspaceMode, ctx: &mut ViewContext<Self>) {
+        ctx.open_file_picker(
+            |result, ctx| {
+                let Ok(paths) = result else {
+                    return;
+                };
+                let Some(path) = paths.into_iter().next() else {
+                    return;
+                };
+                if let Some(handle) = ctx.handle().upgrade(ctx) {
+                    handle.update(ctx, |host, ctx| {
+                        let body = host.modal_body(ctx);
+                        body.update(ctx, |body, ctx| {
+                            body.set_selected_folder(PathBuf::from(path), ctx);
+                        });
+                    });
+                }
+            },
+            FilePickerConfiguration::new().folders_only(),
+        );
+    }
+
+    fn start_clone(
+        &mut self,
+        url: String,
+        parent: PathBuf,
+        directory_name: String,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        WorkspaceCreationSettings::handle(ctx).update(ctx, |settings, ctx| {
+            let _ = Setting::set_value(
+                &mut settings.last_clone_parent,
+                parent.to_string_lossy().to_string(),
+                ctx,
+            );
+        });
+
+        self.clone_cancelled = Arc::new(AtomicBool::new(false));
+        let cancelled = self.clone_cancelled.clone();
+        let progress_cancelled = cancelled.clone();
+        let body = self.modal_body(ctx);
+        let (progress_sender, progress_receiver) = std::sync::mpsc::channel::<CloneProgress>();
+
+        let _ = ctx.spawn(
+            async move {
+                super::git_ops::clone(
+                    &url,
+                    &parent,
+                    Some(&directory_name),
+                    |update| {
+                        let _ = progress_sender.send(update);
+                    },
+                    move || progress_cancelled.load(Ordering::Relaxed),
+                )
+                .await
+            },
+            move |host: &mut Self, result, ctx| {
+                for update in progress_receiver.try_iter() {
+                    let body = body.clone();
+                    body.update(ctx, |body, ctx| body.set_clone_progress(update, ctx));
+                }
+                match result {
+                    Ok(root) => {
+                        host.close_new_workspace_modal(ctx);
+                        host.register_and_open_folder(root, ctx);
+                    }
+                    Err(err) => {
+                        let body = host.modal_body(ctx);
+                        body.update(ctx, |body, ctx| body.set_error(err.to_string(), ctx));
+                    }
+                }
+            },
+        );
+    }
+
+    fn start_create(&mut self, name: String, parent: PathBuf, ctx: &mut ViewContext<Self>) {
+        WorkspaceCreationSettings::handle(ctx).update(ctx, |settings, ctx| {
+            let _ = Setting::set_value(
+                &mut settings.last_create_parent,
+                parent.to_string_lossy().to_string(),
+                ctx,
+            );
+        });
+
+        let root = parent.join(&name);
+        let _ = ctx.spawn(
+            async move {
+                super::git_ops::init_new_project(&root).await?;
+                let branch = super::git_ops::current_branch(&root).await.ok();
+                Ok::<_, anyhow::Error>((root, branch))
+            },
+            move |host: &mut Self, result, ctx| match result {
+                Ok((root, branch)) => {
+                    host.close_new_workspace_modal(ctx);
+                    host.finish_registering_folder((root, ProjectKind::Git, branch), ctx);
+                }
+                Err(err) => {
+                    let body = host.modal_body(ctx);
+                    body.update(ctx, |body, ctx| body.set_error(err.to_string(), ctx));
+                }
+            },
+        );
+    }
+
+    fn handle_overview_event(&mut self, event: &OverviewEvent, ctx: &mut ViewContext<Self>) {
+        match event {
+            OverviewEvent::Close => self.set_overview_active(false, ctx),
+            OverviewEvent::ActivateHome => {
+                self.set_overview_active(false, ctx);
+                self.activate_screen(0, ctx);
+            }
+            OverviewEvent::OpenProject(project_id) => {
+                let project_id = *project_id;
+                self.set_overview_active(false, ctx);
+                self.open_project(project_id, ctx);
+            }
+            OverviewEvent::NewWorkspace => self.show_new_workspace_modal(None, ctx),
+            OverviewEvent::RemoveProject(project_id) => self.show_remove_dialog(*project_id, ctx),
+            OverviewEvent::RevealProject(project_id) => {
+                if let Some(path) = ProjectRegistryModel::as_ref(ctx)
+                    .project(*project_id)
+                    .map(|project| project.root_path.clone())
+                {
+                    ctx.open_file_path_in_explorer(&path);
+                }
+            }
+            OverviewEvent::MissingRoot(project_id) => {
+                let name = ProjectRegistryModel::as_ref(ctx)
+                    .project(*project_id)
+                    .map(|project| project.display_name.clone())
+                    .unwrap_or_else(|| "Workspace".to_owned());
+                self.toast(format!("'{name}' is no longer on disk"), ctx);
+            }
+        }
+    }
+
+    fn show_remove_dialog(&mut self, project_id: ProjectId, ctx: &mut ViewContext<Self>) {
+        let registry = ProjectRegistryModel::as_ref(ctx);
+        let Some(project) = registry.project(project_id) else {
+            return;
+        };
+        let display_name = project.display_name.clone();
+        let worktree_count = registry.linked_worktree_count(project_id);
+        let worktree_note = (worktree_count > 0).then(|| {
+            format!(
+                "{worktree_count} worktrees will remain on disk under the Spirit data directory."
+            )
+        });
+
+        let dialog = self.remove_dialog.view.clone();
+        dialog.update(ctx, |dialog, _| {
+            dialog.set_target(project_id, display_name, worktree_note);
+        });
+        self.remove_dialog.open();
+        ctx.focus(&dialog);
+        ctx.notify();
+    }
+
+    fn remove_project(&mut self, project_id: ProjectId, ctx: &mut ViewContext<Self>) {
+        self.close_project_screen(project_id, ctx);
+        ProjectRegistryModel::handle(ctx).update(ctx, |registry, ctx| {
+            registry.remove_project(project_id, ctx);
+        });
+        let overview = self.overview.clone();
+        overview.update(ctx, |overview, ctx| overview.refresh(ctx));
+        ctx.notify();
+    }
+
+    fn toast(&self, message: String, ctx: &mut ViewContext<Self>) {
+        let window_id = self.window_id;
+        ToastStack::handle(ctx).update(ctx, |toasts, ctx| {
+            toasts.add_ephemeral_toast(DismissibleToast::error(message), window_id, ctx);
+        });
     }
 }
 
