@@ -4817,3 +4817,126 @@ fn a_tab_bound_to_a_registered_worktree_keeps_its_binding() {
         std::fs::remove_dir_all(&root).ok();
     })
 }
+
+#[test]
+fn a_worktree_tab_spawned_from_elsewhere_lands_at_the_end_of_its_run() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let _guard = FeatureFlag::AdeWorkspaces.override_enabled(true);
+
+        let root = std::env::temp_dir().join(format!(
+            "spirit-worktree-run-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+
+        let (project_id, primary_id, linked_id) = app.update(|ctx| {
+            ProjectRegistryModel::handle(ctx).update(ctx, |registry, ctx| {
+                let project_id = registry.register_project(
+                    root.clone(),
+                    "repo".to_owned(),
+                    crate::projects::ProjectKind::Git,
+                    Some("main".to_owned()),
+                    ctx,
+                );
+                let primary_id = registry
+                    .primary_worktree_id(project_id)
+                    .expect("registering a project creates its Primary worktree");
+                let linked_id = registry.add_linked_worktree(
+                    project_id,
+                    "auth".to_owned(),
+                    root.join("auth"),
+                    "auth".to_owned(),
+                    "main".to_owned(),
+                    ctx,
+                );
+                (project_id, primary_id, linked_id)
+            })
+        });
+
+        let workspace = mock_workspace(&mut app);
+        workspace.update(&mut app, |workspace, ctx| {
+            workspace.project_id = Some(project_id);
+            workspace.bind_active_tab_to_worktree(Some(primary_id), ctx);
+
+            workspace.add_tab_in_worktree(linked_id, None, ctx);
+            assert_eq!(
+                workspace.tabs[workspace.active_tab_index].worktree_id,
+                Some(linked_id)
+            );
+
+            workspace.activate_tab_internal(0, ctx);
+            workspace.add_tab_in_worktree(linked_id, None, ctx);
+
+            let bindings: Vec<_> = workspace.tabs.iter().map(|tab| tab.worktree_id).collect();
+            assert_eq!(
+                bindings,
+                vec![Some(primary_id), Some(linked_id), Some(linked_id)],
+                "a spawn while a foreign tab is active must land contiguously in its run"
+            );
+        });
+    })
+}
+
+#[test]
+fn closing_the_last_tab_of_a_worktree_moves_it_to_the_closed_list() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let _guard = FeatureFlag::AdeWorkspaces.override_enabled(true);
+
+        let root = std::env::temp_dir().join(format!(
+            "spirit-worktree-closed-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+
+        let (project_id, linked_id) = app.update(|ctx| {
+            ProjectRegistryModel::handle(ctx).update(ctx, |registry, ctx| {
+                let project_id = registry.register_project(
+                    root.clone(),
+                    "repo".to_owned(),
+                    crate::projects::ProjectKind::Git,
+                    Some("main".to_owned()),
+                    ctx,
+                );
+                let linked_id = registry.add_linked_worktree(
+                    project_id,
+                    "auth".to_owned(),
+                    root.join("auth"),
+                    "auth".to_owned(),
+                    "main".to_owned(),
+                    ctx,
+                );
+                (project_id, linked_id)
+            })
+        });
+
+        let workspace = mock_workspace(&mut app);
+        workspace.update(&mut app, |workspace, ctx| {
+            workspace.project_id = Some(project_id);
+            workspace.add_tab_in_worktree(linked_id, None, ctx);
+            let closed = workspace.closed_worktrees(ctx);
+            assert!(
+                closed.iter().all(|(id, _)| *id != linked_id),
+                "a worktree with an open tab is not closed"
+            );
+
+            let index = workspace
+                .tab_index_for_worktree(linked_id)
+                .expect("the worktree has a tab");
+            workspace.close_tabs(
+                std::iter::once(index),
+                crate::workspace::close_session_confirmation_dialog::OpenDialogSource::CloseOtherTabs { tab_index: 0 },
+                true,
+                false,
+                ctx,
+            );
+
+            let closed = workspace.closed_worktrees(ctx);
+            assert!(
+                closed.iter().any(|(id, _)| *id == linked_id),
+                "a worktree with no tabs reappears in the closed list"
+            );
+        });
+    })
+}

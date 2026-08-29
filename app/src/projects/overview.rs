@@ -1,21 +1,29 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use chrono::{DateTime, Utc};
+use pathfinder_color::ColorU;
 use warp_core::ui::theme::color::internal_colors;
 use warpui::elements::{
-    Align, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
-    DispatchEventResult, Element, Empty, EventHandler, Flex, Hoverable, MainAxisSize,
-    MouseStateHandle, Padding, ParentElement, Radius, Stack, Text,
+    Align, ChildView, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox, Container,
+    CornerRadius, CrossAxisAlignment, DispatchEventResult, Element, Empty, EventHandler, Fill,
+    Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, Padding, ParentElement,
+    Radius, ScrollbarWidth, Shrinkable, Stack, Text,
 };
 use warpui::keymap::FixedBinding;
 use warpui::platform::Cursor;
+use warpui::text_layout::ClipConfig;
+use warpui::ui_components::components::UiComponent;
 use warpui::{AppContext, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle};
 
-use super::ProjectId;
 use super::registry::{ProjectRegistryEvent, ProjectRegistryModel};
+use super::{ProjectId, ProjectKind, agent_status};
 use crate::appearance::Appearance;
 use crate::editor::{EditorView, Event as EditorEvent, SingleLineEditorOptions};
 use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields};
+use crate::ui_components::buttons::close_button;
+use crate::ui_components::icons::Icon;
+use crate::util::time_format::format_approx_duration_from_now_utc;
 
 const CARD_WIDTH: f32 = 240.;
 const CARD_HEIGHT: f32 = 112.;
@@ -24,6 +32,11 @@ const CARD_RADIUS: Radius = Radius::Pixels(8.);
 const TITLE_FONT_SIZE: f32 = 20.;
 const CARD_NAME_FONT_SIZE: f32 = 14.;
 const CARD_DETAIL_FONT_SIZE: f32 = 11.;
+const CARD_CHIP_FONT_SIZE: f32 = 10.;
+const CARD_ICON_SIZE: f32 = 16.;
+const STATUS_DOT_SIZE: f32 = 8.;
+const HEADER_MAX_WIDTH: f32 = (CARD_WIDTH + CARD_GAP) * COLUMNS as f32 - CARD_GAP;
+const SCROLLBAR_WIDTH: ScrollbarWidth = ScrollbarWidth::Custom(8.);
 const COLUMNS: usize = 4;
 
 pub fn init(app: &mut AppContext) {
@@ -95,6 +108,8 @@ enum CardKind {
 pub struct WorkspaceOverviewView {
     cards: Vec<CardKind>,
     mouse_states: HashMap<usize, MouseStateHandle>,
+    close_mouse_state: MouseStateHandle,
+    scroll_state: ClippedScrollStateHandle,
     selected_index: usize,
     renaming: Option<ProjectId>,
     rename_editor: ViewHandle<EditorView>,
@@ -173,6 +188,8 @@ impl WorkspaceOverviewView {
         let mut view = Self {
             cards: Vec::new(),
             mouse_states: HashMap::new(),
+            close_mouse_state: MouseStateHandle::default(),
+            scroll_state: ClippedScrollStateHandle::default(),
             selected_index: 0,
             renaming: None,
             rename_editor,
@@ -300,96 +317,236 @@ impl WorkspaceOverviewView {
         ctx.notify();
     }
 
+    fn card_content(&self, card: CardKind, app: &AppContext) -> CardContent {
+        match card {
+            CardKind::Home => CardContent {
+                icon: Icon::Terminal,
+                name: "Home".to_owned(),
+                detail: "Free-floating terminal tabs".to_owned(),
+                chips: Vec::new(),
+                status_dot: None,
+                last_opened: None,
+            },
+            CardKind::New => CardContent {
+                icon: Icon::Plus,
+                name: "New Workspace".to_owned(),
+                detail: "Open, clone, or create".to_owned(),
+                chips: Vec::new(),
+                status_dot: None,
+                last_opened: None,
+            },
+            CardKind::Project(project_id) => {
+                let registry = ProjectRegistryModel::as_ref(app);
+                let Some(project) = registry.project(project_id) else {
+                    return CardContent {
+                        icon: Icon::Folder,
+                        name: "Unknown".to_owned(),
+                        detail: String::new(),
+                        chips: Vec::new(),
+                        status_dot: None,
+                        last_opened: None,
+                    };
+                };
+                let theme = Appearance::as_ref(app).theme();
+
+                let mut chips = Vec::new();
+                if !project.root_path.exists() {
+                    chips.push(CardChip {
+                        label: "missing".to_owned(),
+                        emphasized: true,
+                    });
+                } else if self.open_project_ids.contains(&project_id) {
+                    chips.push(CardChip {
+                        label: "open".to_owned(),
+                        emphasized: false,
+                    });
+                }
+                if let Some(branch) = &project.primary_branch {
+                    chips.push(CardChip {
+                        label: branch.clone(),
+                        emphasized: false,
+                    });
+                }
+                let worktrees = registry.linked_worktree_count(project_id);
+                if worktrees > 0 {
+                    let label = if worktrees == 1 {
+                        "1 worktree".to_owned()
+                    } else {
+                        format!("{worktrees} worktrees")
+                    };
+                    chips.push(CardChip {
+                        label,
+                        emphasized: false,
+                    });
+                }
+                let (working, needs_attention) = agent_status::project_counts(project_id, app);
+                if needs_attention > 0 {
+                    let label = if needs_attention == 1 {
+                        "1 agent needs attention".to_owned()
+                    } else {
+                        format!("{needs_attention} agents need attention")
+                    };
+                    chips.push(CardChip {
+                        label,
+                        emphasized: true,
+                    });
+                } else if working > 0 {
+                    let label = if working == 1 {
+                        "1 agent working".to_owned()
+                    } else {
+                        format!("{working} agents working")
+                    };
+                    chips.push(CardChip {
+                        label,
+                        emphasized: false,
+                    });
+                }
+
+                let status_dot = match agent_status::summarize_project(project_id, app) {
+                    agent_status::WorktreeAgentSummary::NeedsAttention => {
+                        Some(theme.ansi_fg_yellow())
+                    }
+                    agent_status::WorktreeAgentSummary::Working => Some(theme.ansi_fg_green()),
+                    agent_status::WorktreeAgentSummary::None => None,
+                };
+
+                let last_opened = DateTime::<Utc>::from_timestamp(project.last_opened_ts, 0)
+                    .filter(|_| project.last_opened_ts > 0)
+                    .map(|opened| {
+                        format!("Opened {}", format_approx_duration_from_now_utc(opened))
+                    });
+
+                let kind_icon = match project.kind {
+                    ProjectKind::Git => Icon::GitBranch,
+                    ProjectKind::Folder => Icon::Folder,
+                };
+
+                CardContent {
+                    icon: kind_icon,
+                    name: project.display_name.clone(),
+                    detail: middle_truncate(&project.root_path, 30),
+                    chips,
+                    status_dot,
+                    last_opened,
+                }
+            }
+        }
+    }
+
     fn render_card(&self, index: usize, card: CardKind, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
         let is_selected = index == self.selected_index;
-        let mouse_state = self.mouse_states.get(&index).cloned().unwrap_or_default();
-
-        let (name, detail, badge) = match card {
-            CardKind::Home => (
-                "Home".to_owned(),
-                "Free-floating terminal tabs".to_owned(),
-                None,
-            ),
-            CardKind::New => ("+ New Workspace".to_owned(), String::new(), None),
-            CardKind::Project(project_id) => {
-                let registry = ProjectRegistryModel::as_ref(app);
-                match registry.project(project_id) {
-                    Some(project) => {
-                        let mut badges = Vec::new();
-                        if !project.root_path.exists() {
-                            badges.push("missing".to_owned());
-                        } else if self.open_project_ids.contains(&project_id) {
-                            badges.push("open".to_owned());
-                        }
-                        if let Some(branch) = &project.primary_branch {
-                            badges.push(branch.clone());
-                        }
-                        let worktrees = registry.linked_worktree_count(project_id);
-                        if worktrees > 0 {
-                            badges.push(format!("{worktrees} worktrees"));
-                        }
-                        let (working, needs_attention) =
-                            crate::projects::agent_status::project_counts(project_id, app);
-                        if working > 0 || needs_attention > 0 {
-                            badges.push(format!(
-                                "{working} working \u{00B7} {needs_attention} needs attention"
-                            ));
-                        }
-                        (
-                            project.display_name.clone(),
-                            middle_truncate(&project.root_path, 34),
-                            Some(badges.join(" · ")),
-                        )
-                    }
-                    None => ("Unknown".to_owned(), String::new(), None),
-                }
-            }
+        let Some(mouse_state) = self.mouse_states.get(&index).cloned() else {
+            return Empty::new().finish();
         };
 
+        let content = self.card_content(card, app);
         let renaming_this = matches!(card, CardKind::Project(id) if self.renaming == Some(id));
-        let name_element: Box<dyn Element> = if renaming_this {
-            ChildView::new(&self.rename_editor).finish()
-        } else {
-            Text::new_inline(name, appearance.ui_font_family(), CARD_NAME_FONT_SIZE)
-                .with_color(theme.foreground().into())
-                .finish()
-        };
+        let rename_editor = renaming_this.then(|| self.rename_editor.clone());
 
-        let mut column = Flex::column()
-            .with_cross_axis_alignment(CrossAxisAlignment::Start)
-            .with_spacing(6.)
-            .with_child(name_element);
-
-        if !detail.is_empty() {
-            column.add_child(
-                Text::new_inline(
-                    detail,
-                    appearance.monospace_font_family(),
-                    CARD_DETAIL_FONT_SIZE,
-                )
-                .with_color(theme.sub_text_color(theme.background()).into())
-                .finish(),
-            );
-        }
-        if let Some(badge) = badge.filter(|badge| !badge.is_empty()) {
-            column.add_child(
-                Text::new_inline(badge, appearance.ui_font_family(), CARD_DETAIL_FONT_SIZE)
-                    .with_color(theme.sub_text_color(theme.background()).into())
-                    .finish(),
-            );
-        }
-
+        let ui_font = appearance.ui_font_family();
+        let mono_font = appearance.monospace_font_family();
+        let name_color = theme.foreground();
+        let sub_color = theme.sub_text_color(theme.background());
+        let chip_background = internal_colors::fg_overlay_2(theme);
+        let missing_chip_color = theme.ansi_fg_yellow();
         let background = if is_selected {
             internal_colors::fg_overlay_2(theme)
         } else {
             internal_colors::fg_overlay_1(theme)
         };
         let hovered_background = internal_colors::fg_overlay_2(theme);
-        let card_body = Hoverable::new(mouse_state, move |state| {
+
+        let card_element = Hoverable::new(mouse_state, move |state| {
+            let name_element: Box<dyn Element> = match &rename_editor {
+                Some(editor) => ChildView::new(editor).finish(),
+                None => Text::new_inline(content.name.clone(), ui_font, CARD_NAME_FONT_SIZE)
+                    .with_clip(ClipConfig::ellipsis())
+                    .with_color(name_color.into())
+                    .finish(),
+            };
+
+            let mut name_row = Flex::row()
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_spacing(6.)
+                .with_child(
+                    ConstrainedBox::new(content.icon.to_warpui_icon(sub_color).finish())
+                        .with_width(CARD_ICON_SIZE)
+                        .with_height(CARD_ICON_SIZE)
+                        .finish(),
+                )
+                .with_child(Shrinkable::new(1., name_element).finish());
+            if let Some(dot_color) = content.status_dot {
+                name_row.add_child(
+                    ConstrainedBox::new(
+                        Container::new(Empty::new().finish())
+                            .with_background(Fill::from(dot_color))
+                            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
+                                STATUS_DOT_SIZE / 2.,
+                            )))
+                            .finish(),
+                    )
+                    .with_width(STATUS_DOT_SIZE)
+                    .with_height(STATUS_DOT_SIZE)
+                    .finish(),
+                );
+            }
+
+            let mut column = Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Start)
+                .with_spacing(6.)
+                .with_child(name_row.finish());
+
+            if !content.detail.is_empty() {
+                column.add_child(
+                    Text::new_inline(content.detail.clone(), mono_font, CARD_DETAIL_FONT_SIZE)
+                        .with_clip(ClipConfig::ellipsis())
+                        .with_color(sub_color.into())
+                        .finish(),
+                );
+            }
+
+            if !content.chips.is_empty() {
+                let mut chips_row = Flex::row()
+                    .with_main_axis_size(MainAxisSize::Min)
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_spacing(4.);
+                for chip in &content.chips {
+                    let label_color = if chip.emphasized {
+                        missing_chip_color
+                    } else {
+                        sub_color.into()
+                    };
+                    chips_row.add_child(
+                        Container::new(
+                            Text::new_inline(chip.label.clone(), ui_font, CARD_CHIP_FONT_SIZE)
+                                .with_clip(ClipConfig::ellipsis())
+                                .with_color(label_color)
+                                .finish(),
+                        )
+                        .with_background(chip_background)
+                        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+                        .with_horizontal_padding(6.)
+                        .with_vertical_padding(2.)
+                        .finish(),
+                    );
+                }
+                column.add_child(chips_row.finish());
+            }
+
+            if let Some(last_opened) = &content.last_opened {
+                column.add_child(
+                    Text::new_inline(last_opened.clone(), ui_font, CARD_CHIP_FONT_SIZE)
+                        .with_color(sub_color.into())
+                        .finish(),
+                );
+            }
+
             ConstrainedBox::new(
-                Container::new(Empty::new().finish())
+                Container::new(column.finish())
+                    .with_padding(Padding::uniform(12.))
                     .with_background(if state.is_hovered() {
                         hovered_background
                     } else {
@@ -408,29 +565,30 @@ impl WorkspaceOverviewView {
         })
         .finish();
 
-        let mut stack = Stack::new();
-        stack.add_child(card_body);
-        stack.add_child(
-            ConstrainedBox::new(
-                Container::new(column.finish())
-                    .with_padding(Padding::uniform(12.))
-                    .finish(),
-            )
-            .with_width(CARD_WIDTH)
-            .with_height(CARD_HEIGHT)
-            .finish(),
-        );
-
         match card {
-            CardKind::Project(project_id) => EventHandler::new(stack.finish())
+            CardKind::Project(project_id) => EventHandler::new(card_element)
                 .on_right_mouse_down(move |ctx, _, _, _| {
                     ctx.dispatch_typed_action(OverviewAction::ShowCardMenu { index, project_id });
                     DispatchEventResult::StopPropagation
                 })
                 .finish(),
-            _ => stack.finish(),
+            CardKind::Home | CardKind::New => card_element,
         }
     }
+}
+
+struct CardContent {
+    icon: Icon,
+    name: String,
+    detail: String,
+    chips: Vec<CardChip>,
+    status_dot: Option<ColorU>,
+    last_opened: Option<String>,
+}
+
+struct CardChip {
+    label: String,
+    emphasized: bool,
 }
 
 impl View for WorkspaceOverviewView {
@@ -445,12 +603,8 @@ impl View for WorkspaceOverviewView {
         let mut grid = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Start)
             .with_spacing(CARD_GAP);
-        for chunk in self.cards.chunks(COLUMNS) {
-            let offset = self
-                .cards
-                .iter()
-                .position(|card| Some(card) == chunk.first())
-                .unwrap_or(0);
+        for (row_index, chunk) in self.cards.chunks(COLUMNS).enumerate() {
+            let offset = row_index * COLUMNS;
             let mut row = Flex::row()
                 .with_main_axis_size(MainAxisSize::Min)
                 .with_spacing(CARD_GAP);
@@ -459,20 +613,44 @@ impl View for WorkspaceOverviewView {
             }
             grid.add_child(row.finish());
         }
+        let scrollable_grid = ClippedScrollable::vertical(
+            self.scroll_state.clone(),
+            grid.finish(),
+            SCROLLBAR_WIDTH,
+            theme.disabled_text_color(theme.background()).into(),
+            theme.main_text_color(theme.background()).into(),
+            Fill::None,
+        )
+        .finish();
+
+        let header = ConstrainedBox::new(
+            Flex::row()
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_children([
+                    Text::new_inline(
+                        "Workspaces".to_owned(),
+                        appearance.ui_font_family(),
+                        TITLE_FONT_SIZE,
+                    )
+                    .with_color(theme.foreground().into())
+                    .finish(),
+                    close_button(appearance, self.close_mouse_state.clone())
+                        .build()
+                        .on_click(|ctx, _, _| ctx.dispatch_typed_action(OverviewAction::Close))
+                        .with_cursor(Cursor::PointingHand)
+                        .finish(),
+                ])
+                .finish(),
+        )
+        .with_width(HEADER_MAX_WIDTH)
+        .finish();
 
         let content = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Start)
             .with_spacing(20.)
-            .with_children([
-                Text::new_inline(
-                    "Workspaces".to_owned(),
-                    appearance.ui_font_family(),
-                    TITLE_FONT_SIZE,
-                )
-                .with_color(theme.foreground().into())
-                .finish(),
-                grid.finish(),
-            ])
+            .with_children([header, scrollable_grid])
             .finish();
 
         let mut stack = Stack::new();

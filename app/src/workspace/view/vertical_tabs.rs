@@ -35,6 +35,7 @@ use warpui::ui_components::components::{UiComponent, UiComponentStyles};
 use warpui::ui_components::text_input::TextInput;
 use warpui::{AppContext, EntityId, SingletonEntity, ViewHandle, WindowId};
 
+use super::worktrees::worktree_run_partition;
 use super::{render_group_member_icon_collage, select_unique_pane_kinds};
 use crate::appearance::Appearance;
 use crate::code::editor::{add_color, remove_color};
@@ -48,6 +49,8 @@ use crate::pane_group::pane::IPaneType;
 use crate::pane_group::{
     CodePane, NotebookPane, PaneGroup, PaneId, TabBarHoverIndex, TerminalPane, WorkflowPane,
 };
+use crate::projects::registry::ProjectRegistryModel;
+use crate::projects::{Worktree, WorktreeId};
 use crate::safe_triangle::SafeTriangle;
 use crate::tab::{
     SelectedTabColor, TAB_INDICATOR_SYNCED_COLOR, TabData, reveals_tab_shortcut_hints,
@@ -135,6 +138,10 @@ fn vtab_pane_row_position_id(pane_group_id: EntityId, pane_id: PaneId) -> String
 /// Save-position id for a tab group header's kebab button; anchors the group menu.
 pub(crate) fn vtab_group_kebab_position_id(tab_group_id: TabGroupId) -> String {
     format!("vertical_tabs:group_kebab:{tab_group_id:?}")
+}
+
+pub(crate) fn vtab_worktree_kebab_position_id(worktree_id: WorktreeId) -> String {
+    format!("vertical_tabs:worktree_kebab:{worktree_id:?}")
 }
 
 /// Save-position id for a tab group's full container rect, used for drop hit-testing.
@@ -299,6 +306,15 @@ struct TabGroupMouseStates {
     chevron: MouseStateHandle,
     kebab: MouseStateHandle,
     close: MouseStateHandle,
+}
+
+#[derive(Clone, Default)]
+struct WorktreeSectionMouseStates {
+    container: MouseStateHandle,
+    header: MouseStateHandle,
+    chevron: MouseStateHandle,
+    plus: MouseStateHandle,
+    kebab: MouseStateHandle,
 }
 
 /// Describes how a pane row sits in its tab's row layout. Carried as state
@@ -694,6 +710,7 @@ pub(super) struct VerticalTabsPanelState {
     group_mouse_states: RefCell<HashMap<EntityId, PaneGroupStateHandles>>,
     /// Hover states per tab group, keyed by `TabGroupId`.
     tab_group_mouse_states: RefCell<HashMap<TabGroupId, TabGroupMouseStates>>,
+    worktree_section_mouse_states: RefCell<HashMap<WorktreeId, WorktreeSectionMouseStates>>,
     pane_row_mouse_states: RefCell<HashMap<PaneId, MouseStateHandle>>,
     pane_title_mouse_states: RefCell<HashMap<PaneId, MouseStateHandle>>,
     pane_badge_mouse_states: RefCell<HashMap<PaneId, PaneRowBadgeMouseStates>>,
@@ -736,6 +753,7 @@ impl Default for VerticalTabsPanelState {
             resizable_state: resizable_state_handle(PANEL_WIDTH),
             group_mouse_states: RefCell::default(),
             tab_group_mouse_states: RefCell::default(),
+            worktree_section_mouse_states: RefCell::default(),
             pane_row_mouse_states: RefCell::default(),
             pane_title_mouse_states: RefCell::default(),
             pane_badge_mouse_states: RefCell::default(),
@@ -1947,67 +1965,40 @@ fn render_groups(
         groups = groups.with_spacing(TABS_MODE_ITEM_SPACING);
     }
 
-    // Consecutive tabs sharing a group_id collapse into a single group container.
-    // TODO(johnturcoo) adopt horizontal tabs 'tab slot' pattern to remove this while loop.
+    // Consecutive tabs bound to the same worktree collapse into a worktree section.
     let total_visible = visible_tabs.len();
+    let run_ctx = TabRunRenderContext {
+        is_any_pane_dragging,
+        ghost_insertion_index,
+        total_visible,
+    };
+    let sections_enabled = workspace.worktree_sections_enabled();
+    let resolved_bindings: Vec<Option<WorktreeId>> = visible_tabs
+        .iter()
+        .map(|(index, _)| {
+            if sections_enabled {
+                resolved_worktree_of_tab(workspace, *index, app).map(|worktree| worktree.id)
+            } else {
+                None
+            }
+        })
+        .collect();
     let mut i = 0;
-    while i < total_visible {
-        let (tab_index, ref filtered_pane_ids) = visible_tabs[i];
-        if ghost_insertion_index == Some(tab_index) {
-            groups.add_child(render_ghost_vertical_tab_slot(workspace, app));
-        }
-        let tab = &workspace.tabs[tab_index];
-        match tab.group_id.and_then(|gid| {
-            workspace
-                .tab_groups
-                .get(&gid)
-                .map(|group| (gid, group.clone()))
-        }) {
-            Some((group_id, group)) => {
-                // Members are a contiguous subslice of `visible_tabs`.
-                let run_len = visible_tabs[i..]
-                    .iter()
-                    .take_while(|(idx, _)| workspace.tabs[*idx].group_id == Some(group_id))
-                    .count();
-                let members = &visible_tabs[i..i + run_len];
-                // The group's last member needs an "after" drop target only when
-                // it's also the absolute last visible tab.
-                let last_member_after_index =
-                    (i + run_len == total_visible).then(|| members.last().unwrap().0 + 1);
-                groups.add_child(render_grouped_tab_container(
-                    state,
-                    workspace,
-                    &group,
-                    members,
-                    last_member_after_index,
-                    is_any_pane_dragging,
-                    app,
+    for (binding, run_len) in worktree_run_partition(&resolved_bindings) {
+        let run = &visible_tabs[i..i + run_len];
+        let worktree =
+            binding.and_then(|worktree_id| ProjectRegistryModel::as_ref(app).worktree(worktree_id));
+        match worktree {
+            Some(worktree) => {
+                groups.add_child(render_worktree_section(
+                    state, workspace, worktree, run, i, &run_ctx, app,
                 ));
-                i += run_len;
             }
             None => {
-                let insert_before_index = tab_index;
-                // Gaps between tabs are covered by the next tab's before-indicator,
-                // and the area after the last tab by the trailing indicator below,
-                // so an ungrouped row doesn't render its own "after" indicator.
-                let insert_after_index = None;
-                groups.add_child(render_tab_group(
-                    state,
-                    workspace,
-                    tab_index,
-                    tab,
-                    filtered_pane_ids.as_deref(),
-                    TabGroupDragState {
-                        is_any_pane_dragging,
-                        insert_before_index,
-                        insert_after_index,
-                    },
-                    false, // in_tab_group
-                    app,
-                ));
-                i += 1;
+                add_tab_run_items(&mut groups, state, workspace, run, i, &run_ctx, app);
             }
         }
+        i += run_len;
     }
     // Ghost after all tab groups (fencepost).
     if ghost_insertion_index == Some(workspace.tabs.len()) {
@@ -2021,6 +2012,16 @@ fn render_groups(
     {
         groups.add_child(render_vertical_tab_insertion_target(None, theme));
     }
+
+    let bound_worktree_ids: std::collections::HashSet<WorktreeId> = workspace
+        .tabs
+        .iter()
+        .filter_map(|tab| tab.worktree_id)
+        .collect();
+    state
+        .worktree_section_mouse_states
+        .borrow_mut()
+        .retain(|id, _| bound_worktree_ids.contains(id));
 
     // Prune stale badge mouse states for panes that no longer exist.
     let all_pane_ids: std::collections::HashSet<PaneId> = workspace
@@ -2053,6 +2054,402 @@ fn render_groups(
             .with_padding(Padding::uniform(8.).with_top(0.))
             .finish()
     }
+}
+
+struct TabRunRenderContext {
+    is_any_pane_dragging: bool,
+    ghost_insertion_index: Option<usize>,
+    total_visible: usize,
+}
+
+fn resolved_worktree_of_tab<'a>(
+    workspace: &Workspace,
+    tab_index: usize,
+    app: &'a AppContext,
+) -> Option<&'a Worktree> {
+    let worktree_id = workspace.tabs.get(tab_index)?.worktree_id?;
+    ProjectRegistryModel::as_ref(app).worktree(worktree_id)
+}
+
+// TODO(johnturcoo) adopt horizontal tabs 'tab slot' pattern to remove this while loop.
+fn add_tab_run_items(
+    column: &mut Flex,
+    state: &VerticalTabsPanelState,
+    workspace: &Workspace,
+    run: &[(usize, Option<Vec<PaneId>>)],
+    run_offset: usize,
+    run_ctx: &TabRunRenderContext,
+    app: &AppContext,
+) {
+    let mut i = 0;
+    while i < run.len() {
+        let (tab_index, ref filtered_pane_ids) = run[i];
+        if run_ctx.ghost_insertion_index == Some(tab_index) {
+            column.add_child(render_ghost_vertical_tab_slot(workspace, app));
+        }
+        let tab = &workspace.tabs[tab_index];
+        match tab.group_id.and_then(|gid| {
+            workspace
+                .tab_groups
+                .get(&gid)
+                .map(|group| (gid, group.clone()))
+        }) {
+            Some((group_id, group)) => {
+                // Members are a contiguous subslice of `run`.
+                let run_len = run[i..]
+                    .iter()
+                    .take_while(|(idx, _)| workspace.tabs[*idx].group_id == Some(group_id))
+                    .count();
+                let members = &run[i..i + run_len];
+                // The group's last member needs an "after" drop target only when
+                // it's also the absolute last visible tab.
+                let last_member_after_index = (run_offset + i + run_len == run_ctx.total_visible)
+                    .then(|| members.last().unwrap().0 + 1);
+                column.add_child(render_grouped_tab_container(
+                    state,
+                    workspace,
+                    &group,
+                    members,
+                    last_member_after_index,
+                    run_ctx.is_any_pane_dragging,
+                    app,
+                ));
+                i += run_len;
+            }
+            None => {
+                let insert_before_index = tab_index;
+                // Gaps between tabs are covered by the next tab's before-indicator,
+                // and the area after the last tab by the trailing indicator below,
+                // so an ungrouped row doesn't render its own "after" indicator.
+                let insert_after_index = None;
+                column.add_child(render_tab_group(
+                    state,
+                    workspace,
+                    tab_index,
+                    tab,
+                    filtered_pane_ids.as_deref(),
+                    TabGroupDragState {
+                        is_any_pane_dragging: run_ctx.is_any_pane_dragging,
+                        insert_before_index,
+                        insert_after_index,
+                    },
+                    false, // in_tab_group
+                    app,
+                ));
+                i += 1;
+            }
+        }
+    }
+}
+
+fn worktree_section_labels(
+    worktree: &Worktree,
+    member_count: usize,
+    app: &AppContext,
+) -> (String, String) {
+    let tabs_label = if member_count == 1 {
+        "1 tab".to_owned()
+    } else {
+        format!("{member_count} tabs")
+    };
+    if worktree.is_primary() {
+        let title = ProjectRegistryModel::as_ref(app)
+            .project(worktree.project_id)
+            .and_then(|project| project.primary_branch.clone())
+            .unwrap_or_else(|| worktree.name.clone());
+        (title, tabs_label)
+    } else {
+        let subtitle = worktree.branch().map(str::to_owned).unwrap_or(tabs_label);
+        (worktree.name.clone(), subtitle)
+    }
+}
+
+fn render_worktree_section(
+    state: &VerticalTabsPanelState,
+    workspace: &Workspace,
+    worktree: &Worktree,
+    members: &[(usize, Option<Vec<PaneId>>)],
+    run_offset: usize,
+    run_ctx: &TabRunRenderContext,
+    app: &AppContext,
+) -> Box<dyn Element> {
+    let appearance = Appearance::as_ref(app);
+    let theme = appearance.theme();
+
+    let mouse_states = state
+        .worktree_section_mouse_states
+        .borrow_mut()
+        .entry(worktree.id)
+        .or_default()
+        .clone();
+
+    let worktree_id = worktree.id;
+    let is_linked = !worktree.is_primary();
+    let is_collapsed = workspace.collapsed_worktree_sections.contains(&worktree_id);
+    let any_member_active = members
+        .iter()
+        .any(|(tab_index, _)| *tab_index == workspace.active_tab_index);
+    let (title, subtitle) = worktree_section_labels(worktree, members.len(), app);
+
+    let resolved_mode = resolve_vertical_tabs_mode(app);
+    let needs_outer_horizontal_padding = uses_outer_group_container(match resolved_mode {
+        VerticalTabsResolvedMode::Panes => VerticalTabsDisplayGranularity::Panes,
+        _ => VerticalTabsDisplayGranularity::Tabs,
+    });
+    let member_tab_spacing = if FeatureFlag::GroupedTabs.is_enabled()
+        && matches!(resolved_mode, VerticalTabsResolvedMode::Panes)
+    {
+        0.
+    } else {
+        TABS_MODE_ITEM_SPACING
+    };
+
+    Hoverable::new(mouse_states.container.clone(), |hover_state| {
+        let mut content = Flex::column()
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_spacing(member_tab_spacing);
+
+        let is_header_selected = is_collapsed && any_member_active;
+        let is_being_renamed = workspace
+            .current_workspace_state
+            .is_worktree_being_renamed(worktree_id);
+        let rename_editor = is_being_renamed.then(|| workspace.worktree_rename_editor.clone());
+        content.add_child(render_worktree_section_header(
+            worktree_id,
+            is_linked,
+            title.clone(),
+            subtitle.clone(),
+            &mouse_states,
+            is_collapsed,
+            is_header_selected,
+            hover_state.is_hovered(),
+            rename_editor.as_ref(),
+            app,
+        ));
+
+        if !is_collapsed {
+            let mut body = Flex::column()
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                .with_spacing(member_tab_spacing);
+            add_tab_run_items(
+                &mut body, state, workspace, members, run_offset, run_ctx, app,
+            );
+            content.add_child(
+                Container::new(body.finish())
+                    .with_padding(
+                        Padding::uniform(0.)
+                            .with_left(TAB_GROUP_MEMBER_INDENT)
+                            .with_right(TAB_GROUP_CONTENT_INSET),
+                    )
+                    .finish(),
+            );
+        }
+
+        let is_highlighted = hover_state.is_hovered() || any_member_active;
+        let background = if is_highlighted {
+            internal_colors::fg_overlay_1(theme)
+        } else {
+            ThemeFill::Solid(ColorU::transparent_black())
+        };
+
+        let mut padding = Padding::uniform(0.);
+        if needs_outer_horizontal_padding {
+            padding = Padding::uniform(GROUP_HORIZONTAL_PADDING);
+            if !is_collapsed {
+                padding = padding.with_bottom(GROUP_HORIZONTAL_PADDING + TAB_GROUP_CONTENT_INSET);
+            }
+        } else if !is_collapsed {
+            padding = padding.with_bottom(TAB_GROUP_CONTENT_INSET);
+        }
+
+        let mut container = Container::new(content.finish())
+            .with_padding(padding)
+            .with_background(background);
+        if needs_outer_horizontal_padding {
+            container = container.with_border(
+                Border::new(1.)
+                    .with_sides(
+                        true,
+                        false,
+                        run_offset + members.len() == run_ctx.total_visible,
+                        false,
+                    )
+                    .with_border_fill(internal_colors::fg_overlay_1(theme)),
+            );
+        } else {
+            container = container
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(ROW_CORNER_RADIUS)));
+        }
+        container.finish()
+    })
+    .on_right_click(move |ctx, _, position| {
+        ctx.dispatch_typed_action(WorkspaceAction::ToggleWorktreeSectionMenu {
+            worktree_id,
+            anchor: TabContextMenuAnchor::Pointer(position),
+        });
+    })
+    .with_defer_events_to_children()
+    .finish()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_worktree_section_header(
+    worktree_id: WorktreeId,
+    is_linked: bool,
+    title: String,
+    subtitle: String,
+    mouse_states: &WorktreeSectionMouseStates,
+    is_collapsed: bool,
+    is_header_selected: bool,
+    show_action_buttons: bool,
+    rename_editor: Option<&ViewHandle<EditorView>>,
+    app: &AppContext,
+) -> Box<dyn Element> {
+    let appearance = Appearance::as_ref(app);
+    let theme = appearance.theme();
+    let font_family = appearance.ui_font_family();
+    let main_text_color = theme.main_text_color(theme.background());
+    let sub_text_color = theme.sub_text_color(theme.background());
+
+    let chevron_icon = if is_collapsed {
+        WarpIcon::ChevronRight
+    } else {
+        WarpIcon::ChevronDown
+    };
+    let chevron_button = render_tab_group_header_icon_button(
+        chevron_icon,
+        TAB_GROUP_ICON_SIZE,
+        main_text_color,
+        internal_colors::fg_overlay_2(theme),
+        mouse_states.chevron.clone(),
+        Some(WorkspaceAction::ToggleWorktreeSectionCollapsed { worktree_id }),
+    );
+    let section_icon = ConstrainedBox::new(
+        Flex::row()
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_main_axis_alignment(MainAxisAlignment::Center)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(chevron_button)
+            .finish(),
+    )
+    .with_width(VERTICAL_TABS_ICON_SIZE)
+    .with_height(VERTICAL_TABS_ICON_SIZE)
+    .finish();
+
+    let title_element: Box<dyn Element> = if let Some(editor) = rename_editor {
+        render_inline_tab_rename_editor(editor, appearance, app)
+    } else {
+        Text::new_inline(title, font_family, 12.)
+            .with_clip(ClipConfig::ellipsis())
+            .with_color(main_text_color.into())
+            .finish()
+    };
+    let subtitle_element = Text::new_inline(subtitle, font_family, 10.)
+        .with_clip(ClipConfig::ellipsis())
+        .with_color(sub_text_color.into())
+        .finish();
+    let text_column: Box<dyn Element> = Flex::column()
+        .with_main_axis_size(MainAxisSize::Min)
+        .with_cross_axis_alignment(CrossAxisAlignment::Start)
+        .with_spacing(1.)
+        .with_child(title_element)
+        .with_child(subtitle_element)
+        .finish();
+
+    let action_buttons = if show_action_buttons {
+        let plus_button = render_tab_group_header_icon_button(
+            WarpIcon::Plus,
+            TAB_GROUP_HEADER_ACTION_ICON_SIZE,
+            sub_text_color,
+            internal_colors::fg_overlay_2(theme),
+            mouse_states.plus.clone(),
+            Some(WorkspaceAction::NewTerminalInWorktree { worktree_id }),
+        );
+        let kebab_button = SavePosition::new(
+            render_tab_group_header_icon_button(
+                WarpIcon::DotsVertical,
+                TAB_GROUP_HEADER_ACTION_ICON_SIZE,
+                sub_text_color,
+                internal_colors::fg_overlay_2(theme),
+                mouse_states.kebab.clone(),
+                Some(WorkspaceAction::ToggleWorktreeSectionMenu {
+                    worktree_id,
+                    anchor: TabContextMenuAnchor::VerticalTabsKebab,
+                }),
+            ),
+            &vtab_worktree_kebab_position_id(worktree_id),
+        )
+        .finish();
+        Flex::row()
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(GROUP_ACTION_BUTTON_GAP)
+            .with_child(plus_button)
+            .with_child(kebab_button)
+            .finish()
+    } else {
+        Empty::new().finish()
+    };
+
+    let row = Flex::row()
+        .with_main_axis_size(MainAxisSize::Max)
+        .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_child(
+            Shrinkable::new(
+                1.,
+                Flex::row()
+                    .with_main_axis_size(MainAxisSize::Max)
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_spacing(ICON_WITH_STATUS_GAP)
+                    .with_child(section_icon)
+                    .with_child(Shrinkable::new(1., text_column).finish())
+                    .finish(),
+            )
+            .finish(),
+        )
+        .with_child(action_buttons)
+        .finish();
+
+    let mut hoverable = Hoverable::new(mouse_states.header.clone(), move |state| {
+        let border_fill = if is_header_selected {
+            internal_colors::fg_overlay_3(theme)
+        } else {
+            WarpThemeFill::Solid(ColorU::transparent_black())
+        };
+        let mut container = Container::new(row)
+            .with_padding(Padding::uniform(GROUP_HORIZONTAL_PADDING))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(ROW_CORNER_RADIUS)))
+            .with_border(Border::all(1.).with_border_fill(border_fill));
+        if is_header_selected || state.is_hovered() {
+            container = container.with_background(internal_colors::fg_overlay_2(theme));
+        }
+        container.finish()
+    })
+    .with_cursor(Cursor::PointingHand)
+    .with_defer_events_to_children();
+
+    hoverable = hoverable.on_click(move |ctx, _, _| {
+        ctx.dispatch_typed_action(WorkspaceAction::ToggleWorktreeSectionCollapsed { worktree_id });
+    });
+    if is_linked {
+        // The first toggle undoes the collapse the double-click's first click caused.
+        hoverable = hoverable.on_double_click(move |ctx, _, _| {
+            ctx.dispatch_typed_action(WorkspaceAction::ToggleWorktreeSectionCollapsed {
+                worktree_id,
+            });
+            ctx.dispatch_typed_action(WorkspaceAction::RenameWorktree { worktree_id });
+        });
+    }
+    hoverable = hoverable.on_right_click(move |ctx, _, position| {
+        ctx.dispatch_typed_action(WorkspaceAction::ToggleWorktreeSectionMenu {
+            worktree_id,
+            anchor: TabContextMenuAnchor::Pointer(position),
+        });
+    });
+    hoverable.finish()
 }
 
 #[allow(clippy::too_many_arguments)]

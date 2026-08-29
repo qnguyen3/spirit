@@ -102,3 +102,37 @@ fn a_listed_worktree_on_its_recorded_branch_is_kept() {
         WorktreeReconciliation::Keep
     );
 }
+
+#[test]
+fn run_partition_collapses_consecutive_bindings() {
+    let alpha = WorktreeId::new();
+    let beta = WorktreeId::new();
+    let bindings = [
+        None,
+        Some(alpha),
+        Some(alpha),
+        Some(beta),
+        None,
+        Some(alpha),
+    ];
+    assert_eq!(
+        worktree_run_partition(&bindings),
+        vec![
+            (None, 1),
+            (Some(alpha), 2),
+            (Some(beta), 1),
+            (None, 1),
+            (Some(alpha), 1),
+        ]
+    );
+}
+
+#[test]
+fn run_partition_of_unbound_tabs_is_a_single_run() {
+    assert_eq!(worktree_run_partition(&[None, None, None]), vec![(None, 3)]);
+}
+
+#[test]
+fn run_partition_of_no_tabs_is_empty() {
+    assert!(worktree_run_partition(&[]).is_empty());
+}

@@ -843,6 +843,10 @@ pub struct Workspace {
     new_worktree_modal: ModalViewState<Modal<NewWorktreeModal>>,
     create_worktree_modal: ModalViewState<Modal<CreateWorktreeModal>>,
     delete_worktree_dialog: ModalViewState<DeleteWorktreeDialog>,
+    pub(crate) collapsed_worktree_sections: HashSet<WorktreeId>,
+    pub(crate) worktree_rename_editor: ViewHandle<EditorView>,
+    /// Open worktree section more-options menu; reuses the `tab_right_click_menu` view.
+    show_worktree_section_menu: Option<(WorktreeId, TabContextMenuAnchor)>,
     close_session_confirmation_dialog: ViewHandle<CloseSessionConfirmationDialog>,
     resource_center_view: ViewHandle<ResourceCenterView>,
     command_search_view: ViewHandle<CommandSearchView>,
@@ -1243,7 +1247,9 @@ impl Workspace {
                     view.set_title(&title, ctx);
                 }
             });
-            self.rename_bound_worktree(tab_index, &title, ctx);
+            if !self.worktree_sections_enabled() {
+                self.rename_bound_worktree(tab_index, &title, ctx);
+            }
             self.clear_tab_name_editor(ctx);
             self.update_window_title(ctx);
             ctx.notify();
@@ -2586,6 +2592,9 @@ impl Workspace {
             new_worktree_modal,
             create_worktree_modal,
             delete_worktree_dialog,
+            collapsed_worktree_sections: HashSet::new(),
+            worktree_rename_editor: Self::build_worktree_rename_editor(ctx),
+            show_worktree_section_menu: None,
             close_session_confirmation_dialog,
             resource_center_view,
             command_search_view,
@@ -6524,6 +6533,7 @@ impl Workspace {
             context_menu.set_items(menu_items, view_ctx);
         });
         self.show_tab_group_right_click_menu = None;
+        self.show_worktree_section_menu = None;
         self.show_tab_right_click_menu = Some((tab_index, anchor));
         ctx.focus(&self.tab_right_click_menu);
         ctx.notify();
@@ -6552,7 +6562,34 @@ impl Workspace {
         });
         self.show_tab_right_click_menu = None;
         self.hide_move_to_group_sidecar(ctx);
+        self.show_worktree_section_menu = None;
         self.show_tab_group_right_click_menu = Some((group_id, anchor));
+        ctx.focus(&self.tab_right_click_menu);
+        ctx.notify();
+    }
+
+    pub fn toggle_worktree_section_menu(
+        &mut self,
+        worktree_id: WorktreeId,
+        anchor: TabContextMenuAnchor,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if self.show_worktree_section_menu.is_some() {
+            self.show_worktree_section_menu = None;
+            ctx.notify();
+            return;
+        }
+        let menu_items = self.worktree_section_menu_items(worktree_id, ctx);
+        if menu_items.is_empty() {
+            return;
+        }
+        ctx.update_view(&self.tab_right_click_menu, |context_menu, view_ctx| {
+            context_menu.set_items(menu_items, view_ctx);
+        });
+        self.show_tab_right_click_menu = None;
+        self.hide_move_to_group_sidecar(ctx);
+        self.show_tab_group_right_click_menu = None;
+        self.show_worktree_section_menu = Some((worktree_id, anchor));
         ctx.focus(&self.tab_right_click_menu);
         ctx.notify();
     }
@@ -8321,6 +8358,7 @@ impl Workspace {
                 self.show_tab_right_click_menu = None;
                 self.show_tab_group_right_click_menu = None;
                 self.show_tab_selection_right_click_menu = None;
+                self.show_worktree_section_menu = None;
                 self.hide_move_to_group_sidecar(ctx);
                 ctx.notify();
             }
@@ -10919,8 +10957,15 @@ impl Workspace {
         };
 
         match TabSettings::as_ref(ctx).new_tab_placement {
-            // End of the bar, outside any group.
-            NewTabPlacement::AfterAllTabs => (self.tab_count(), None),
+            // End of the bar, outside any group; clamped so the new tab (which
+            // inherits the worktree binding) cannot split or escape its section.
+            NewTabPlacement::AfterAllTabs => {
+                let insert_idx = self
+                    .resolved_worktree_id_of_tab(self.active_tab_index, ctx)
+                    .and_then(|worktree_id| self.index_after_worktree_run(worktree_id))
+                    .unwrap_or(self.tab_count());
+                (insert_idx, None)
+            }
             NewTabPlacement::AfterCurrentTab => {
                 let insert_idx = self.active_tab_index + 1;
                 // A standalone (ungrouped) new tab must not land inside the
@@ -11059,7 +11104,19 @@ impl Workspace {
             me.handle_file_tree_event(pane_group, event, ctx)
         });
 
-        let inherited_worktree_id = self.inherited_worktree_id();
+        // The binding follows the drop position, not the active tab, so a pane
+        // dropped elsewhere cannot silently join the active worktree's section.
+        let inherited_worktree_id = if self.worktree_sections_enabled() {
+            let prev = new_idx
+                .checked_sub(1)
+                .and_then(|index| self.resolved_worktree_id_of_tab(index, ctx));
+            let next = self.resolved_worktree_id_of_tab(new_idx, ctx);
+            prev.zip(next)
+                .filter(|(before, after)| before == after)
+                .map(|(before, _)| before)
+        } else {
+            self.inherited_worktree_id()
+        };
         if self.tab_count() == 0 {
             self.tabs.push(TabData::new(new_pane_group));
             self.tab_mru_order
@@ -18790,6 +18847,7 @@ impl TypedActionView for Workspace {
                 self.cancel_tab_rename(ctx);
                 self.cancel_pane_rename(ctx);
                 self.cancel_tab_group_rename(ctx);
+                self.cancel_worktree_rename(ctx);
             }
             NewTabGroupFromTab(tab_index) => self.new_tab_group_from_tab(*tab_index, ctx),
             MoveTabToGroup {
@@ -19603,6 +19661,7 @@ impl TypedActionView for Workspace {
                         tab.pinned = false;
                     }
                 }
+                self.normalize_worktree_runs(ctx);
                 send_telemetry_from_ctx!(TelemetryEvent::DragAndDropTab, ctx);
                 if is_cross_window {
                     let drop_result =
@@ -20213,6 +20272,27 @@ impl TypedActionView for Workspace {
             RevealWorktreeFolder { worktree_id } => {
                 self.reveal_worktree_folder(*worktree_id, ctx);
             }
+            NewTerminalInWorktree { worktree_id } => {
+                self.add_tab_in_worktree(*worktree_id, None, ctx);
+            }
+            NewAgentInWorktree {
+                worktree_id,
+                catalog_index,
+            } => {
+                self.add_tab_in_worktree(*worktree_id, Some(*catalog_index), ctx);
+            }
+            RenameWorktree { worktree_id } => {
+                self.rename_worktree_inline(*worktree_id, ctx);
+            }
+            ToggleWorktreeSectionCollapsed { worktree_id } => {
+                self.toggle_worktree_section_collapsed(*worktree_id, ctx);
+            }
+            ToggleWorktreeSectionMenu {
+                worktree_id,
+                anchor,
+            } => {
+                self.toggle_worktree_section_menu(*worktree_id, *anchor, ctx);
+            }
         };
         if action.should_save_app_state_on_action() {
             ctx.dispatch_global_action("workspace:save_app", ());
@@ -20781,6 +20861,46 @@ impl View for Workspace {
                 }
                 // The kebab anchor only exists in the vertical tabs panel.
                 (false, TabContextMenuAnchor::VerticalTabsKebab) => None,
+            };
+            if let Some(positioning) = positioning {
+                stack.add_positioned_overlay_child(
+                    ChildView::new(&self.tab_right_click_menu).finish(),
+                    positioning,
+                );
+            }
+        }
+
+        // Worktree section more-options menu (reuses the `tab_right_click_menu` view).
+        if let Some((worktree_id, anchor)) = self.show_worktree_section_menu {
+            let is_vertical = uses_vertical_tabs(app) && self.vertical_tabs_panel_open;
+            let positioning = match (is_vertical, anchor) {
+                (true, TabContextMenuAnchor::VerticalTabsKebab) => {
+                    let tabs_side = Self::tabs_panel_side(
+                        &TabSettings::as_ref(app).header_toolbar_chip_selection,
+                    );
+                    let (anchor, child_anchor) = if tabs_side == PanelPosition::Left {
+                        (PositionedElementAnchor::BottomLeft, ChildAnchor::TopLeft)
+                    } else {
+                        (PositionedElementAnchor::BottomRight, ChildAnchor::TopRight)
+                    };
+                    Some(OffsetPositioning::offset_from_save_position_element(
+                        vertical_tabs::vtab_worktree_kebab_position_id(worktree_id),
+                        vec2f(0., 4.),
+                        PositionedElementOffsetBounds::WindowByPosition,
+                        anchor,
+                        child_anchor,
+                    ))
+                }
+                (true, TabContextMenuAnchor::Pointer(position)) => {
+                    Some(OffsetPositioning::offset_from_parent(
+                        position,
+                        ParentOffsetBounds::WindowByPosition,
+                        ParentAnchor::TopLeft,
+                        ChildAnchor::TopLeft,
+                    ))
+                }
+                (false, TabContextMenuAnchor::Pointer(_))
+                | (false, TabContextMenuAnchor::VerticalTabsKebab) => None,
             };
             if let Some(positioning) = positioning {
                 stack.add_positioned_overlay_child(
@@ -22066,6 +22186,14 @@ impl Workspace {
                 self.target_group_at_axis(midpoint_drag, source_group, use_vertical_tabs, ctx);
             let expanded_target =
                 hovered_group.filter(|gid| !self.tab_groups.get(gid).is_some_and(|g| g.collapsed));
+            // Entering a group with a different worktree binding would split
+            // that section's contiguous run around the group.
+            let expanded_target = expanded_target.filter(|gid| {
+                !self.worktree_sections_enabled()
+                    || group_member_index_range(&self.tabs, *gid)
+                        .map(|(first, _)| self.tabs[first].worktree_id)
+                        == Some(self.tabs[current_index].worktree_id)
+            });
             // A pinned tab keeps its individual pin while dragging over a
             // pinned group (it's committed on drop — see the `DropTab` handler).
             let was_pinned = self.tabs[current_index].pinned;
@@ -22165,6 +22293,25 @@ impl Workspace {
                 let insert_at = if current_index < first { last } else { first };
                 self.hop_tab_to_index(current_index, insert_at, ctx);
                 return;
+            }
+
+            // Worktree runs must stay contiguous: a bound tab never leaves its
+            // section and an unbound tab hops past a foreign section whole.
+            if self.worktree_sections_enabled() {
+                let dragged_worktree = self.resolved_worktree_id_of_tab(current_index, ctx);
+                let neighbor_worktree = self.resolved_worktree_id_of_tab(new_index, ctx);
+                if dragged_worktree != neighbor_worktree {
+                    if dragged_worktree.is_some() {
+                        return;
+                    }
+                    if let Some(worktree_id) = neighbor_worktree
+                        && let Some((first, last)) = self.worktree_run_range(worktree_id)
+                    {
+                        let insert_at = if current_index < first { last } else { first };
+                        self.hop_tab_to_index(current_index, insert_at, ctx);
+                        return;
+                    }
+                }
             }
 
             self.tabs.swap(new_index, current_index);

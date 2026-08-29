@@ -4,6 +4,7 @@ use warpui::{AppContext, EntityId, SingletonEntity, ViewContext, ViewHandle, Win
 
 use crate::appearance::Appearance;
 use crate::pane_group::PaneId;
+use crate::projects::WorktreeId;
 use crate::terminal::TerminalView;
 use crate::window_settings::WindowSettings;
 use crate::workspace::Workspace;
@@ -105,6 +106,7 @@ pub struct WorkspaceState {
     pane_being_renamed: Option<PaneViewLocator>,
     /// The tab group whose header is currently being renamed inline.
     tab_group_being_renamed: Option<TabGroupId>,
+    worktree_being_renamed: Option<WorktreeId>,
 }
 
 impl WorkspaceState {
@@ -123,6 +125,7 @@ impl WorkspaceState {
             || self.tab_being_renamed.is_some()
             || self.pane_being_renamed.is_some()
             || self.tab_group_being_renamed.is_some()
+            || self.worktree_being_renamed.is_some()
             || self.is_reward_modal_open
             || self.is_launch_config_save_modal_open
             || self.is_command_search_open
@@ -152,6 +155,7 @@ impl WorkspaceState {
         self.tab_being_renamed = None;
         self.pane_being_renamed = None;
         self.tab_group_being_renamed = None;
+        self.worktree_being_renamed = None;
         self.is_reward_modal_open = false;
         self.is_launch_config_save_modal_open = false;
         self.is_command_search_open = false;
@@ -189,6 +193,7 @@ impl WorkspaceState {
         self.tab_being_renamed = Some(index);
         self.pane_being_renamed = None;
         self.tab_group_being_renamed = None;
+        self.worktree_being_renamed = None;
     }
 
     pub fn clear_tab_being_renamed(&mut self) {
@@ -211,6 +216,7 @@ impl WorkspaceState {
         self.pane_being_renamed = Some(pane);
         self.tab_being_renamed = None;
         self.tab_group_being_renamed = None;
+        self.worktree_being_renamed = None;
     }
 
     pub fn clear_pane_being_renamed(&mut self) {
@@ -233,6 +239,7 @@ impl WorkspaceState {
         self.tab_group_being_renamed = Some(group_id);
         self.tab_being_renamed = None;
         self.pane_being_renamed = None;
+        self.worktree_being_renamed = None;
     }
 
     pub fn clear_tab_group_being_renamed(&mut self) {
@@ -241,6 +248,29 @@ impl WorkspaceState {
 
     pub fn tab_group_being_renamed(&self) -> Option<TabGroupId> {
         self.tab_group_being_renamed
+    }
+
+    pub fn is_worktree_being_renamed(&self, worktree_id: WorktreeId) -> bool {
+        self.worktree_being_renamed == Some(worktree_id)
+    }
+
+    pub fn is_any_worktree_being_renamed(&self) -> bool {
+        self.worktree_being_renamed.is_some()
+    }
+
+    pub fn set_worktree_being_renamed(&mut self, worktree_id: WorktreeId) {
+        self.worktree_being_renamed = Some(worktree_id);
+        self.tab_being_renamed = None;
+        self.pane_being_renamed = None;
+        self.tab_group_being_renamed = None;
+    }
+
+    pub fn clear_worktree_being_renamed(&mut self) {
+        self.worktree_being_renamed = None;
+    }
+
+    pub fn worktree_being_renamed(&self) -> Option<WorktreeId> {
+        self.worktree_being_renamed
     }
 }
 
