@@ -155,8 +155,11 @@ impl Workspace {
         let root_path = context.root_path.clone();
         let base_branch = context.primary_branch.clone();
         let sanitized = sanitize_worktree_name(&name);
+        let path_future = crate::projects::interactive_path_env(ctx);
         let _ = ctx.spawn(
             async move {
+                let path_env = path_future.await;
+                let path_env = path_env.as_deref();
                 let branches = git_ops::local_branches(&root_path).await;
                 let branch = next_available(&sanitized, &|candidate| {
                     taken_names.contains(candidate)
@@ -165,12 +168,14 @@ impl Workspace {
                 });
                 let path = generated_worktree_path(&root_path, &branch);
 
-                git_ops::worktree_add(&root_path, &branch, &path, &base_branch).await?;
-                if !path.exists() {
-                    let _ = git_ops::worktree_remove(&root_path, &path, true).await;
-                    let _ = git_ops::force_delete_branch(&root_path, &branch).await;
-                    anyhow::bail!("git created no worktree at {}", path.display());
-                }
+                git_ops::worktree_add_or_rollback(
+                    &root_path,
+                    &branch,
+                    &path,
+                    &base_branch,
+                    path_env,
+                )
+                .await?;
 
                 let report = git_ops::copy_worktree_includes(&root_path, &path)
                     .await
@@ -189,8 +194,10 @@ impl Workspace {
             move |me: &mut Self, result, ctx| match result {
                 Ok((creation, report)) => me.finish_worktree_creation(creation, report, ctx),
                 Err(err) => {
+                    log::warn!("Worktree creation failed: {err:#}");
+                    let detail = crate::projects::error_summary(&err);
                     let body = me.create_worktree_modal.view.as_ref(ctx).body().clone();
-                    body.update(ctx, |body, ctx| body.set_error(err.to_string(), ctx));
+                    body.update(ctx, |body, ctx| body.set_error(detail, ctx));
                 }
             },
         );
@@ -305,8 +312,14 @@ impl Workspace {
         ctx.focus(&dialog);
         ctx.notify();
 
+        let path_future = crate::projects::interactive_path_env(ctx);
         let _ = ctx.spawn(
-            async move { git_ops::status_is_dirty(&directory).await.unwrap_or(false) },
+            async move {
+                let path_env = path_future.await;
+                git_ops::status_is_dirty(&directory, path_env.as_deref())
+                    .await
+                    .unwrap_or(false)
+            },
             move |me: &mut Self, dirty, ctx| {
                 let dialog = me.delete_worktree_dialog.view.clone();
                 dialog.update(ctx, |dialog, ctx| dialog.set_dirty(dirty, ctx));
@@ -353,9 +366,12 @@ impl Workspace {
         }
 
         let root_path = context.root_path.clone();
+        let path_future = crate::projects::interactive_path_env(ctx);
         let _ = ctx.spawn(
             async move {
-                git_ops::worktree_remove(&root_path, &directory, force).await?;
+                let path_env = path_future.await;
+                git_ops::worktree_remove(&root_path, &directory, force, path_env.as_deref())
+                    .await?;
                 let outcome = if branch.is_empty() {
                     BranchDeleteOutcome::Deleted
                 } else {
@@ -383,7 +399,9 @@ impl Workspace {
                     ctx.notify();
                 }
                 Err(err) => {
-                    me.toast_worktree_message(format!("Could not delete '{name}': {err}"), ctx);
+                    log::warn!("Worktree deletion failed: {err:#}");
+                    let detail = crate::projects::error_summary(&err);
+                    me.toast_worktree_message(format!("Could not delete '{name}': {detail}"), ctx);
                 }
             },
         );

@@ -172,14 +172,14 @@ mod with_git {
     fn init_new_project_creates_a_worktree_capable_repo() {
         let scratch = TempRepo::new("init");
         let project = scratch.root.join("brand-new");
-        block_on(init_new_project(&project)).unwrap();
+        block_on(init_new_project(&project, None)).unwrap();
 
         assert!(project.join(".git").exists());
         let branch = block_on(current_branch(&project)).unwrap();
         assert!(!branch.is_empty());
 
         let worktree = scratch.root.join("wt");
-        block_on(worktree_add(&project, "spun-off", &worktree, &branch)).unwrap();
+        block_on(worktree_add(&project, "spun-off", &worktree, &branch, None)).unwrap();
         assert!(worktree.join(".git").exists());
     }
 
@@ -190,7 +190,64 @@ mod with_git {
         std::fs::create_dir_all(&project).unwrap();
         std::fs::write(project.join("file.txt"), "hello").unwrap();
 
-        assert!(block_on(init_new_project(&project)).is_err());
+        assert!(block_on(init_new_project(&project, None)).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn worktree_add_runs_checkout_filters_from_the_supplied_path() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let repo = TempRepo::init("filter-path", "main");
+        let filter_bin = repo.root.join("bin");
+        std::fs::create_dir_all(&filter_bin).unwrap();
+        let filter = filter_bin.join("spirit-probe-filter");
+        std::fs::write(&filter, "#!/bin/sh\ncat\n").unwrap();
+        std::fs::set_permissions(&filter, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        std::fs::write(repo.root.join(".gitattributes"), "*.probe filter=probe\n").unwrap();
+        std::fs::write(repo.root.join("payload.probe"), "contents\n").unwrap();
+        git(&repo.root, &["config", "filter.probe.clean", "cat"]);
+        git(
+            &repo.root,
+            &["config", "filter.probe.smudge", "spirit-probe-filter"],
+        );
+        git(&repo.root, &["config", "filter.probe.required", "true"]);
+        git(&repo.root, &["add", "-A"]);
+        git(&repo.root, &["commit", "-m", "Add filtered file"]);
+
+        let without_path = repo.root.join("wt-without-path");
+        assert!(
+            block_on(worktree_add_or_rollback(
+                &repo.root,
+                "without-path",
+                &without_path,
+                "main",
+                None
+            ))
+            .is_err(),
+            "the filter is not on the inherited PATH, so the checkout must fail"
+        );
+        assert!(
+            !git(&repo.root, &["branch", "--list", "without-path"]).contains("without-path"),
+            "a failed checkout must not leave its branch behind"
+        );
+
+        let with_path = repo.root.join("wt-with-path");
+        let path_env = format!(
+            "{}:{}",
+            filter_bin.display(),
+            std::env::var("PATH").unwrap_or_default()
+        );
+        block_on(worktree_add_or_rollback(
+            &repo.root,
+            "with-path",
+            &with_path,
+            "main",
+            Some(&path_env),
+        ))
+        .unwrap();
+        assert!(with_path.join("payload.probe").exists());
     }
 
     #[test]
@@ -202,7 +259,14 @@ mod with_git {
             .unwrap()
             .join(format!("spirit-wt-{}", uuid::Uuid::new_v4().simple()));
 
-        block_on(worktree_add(&repo.root, "feature", &worktree_path, "main")).unwrap();
+        block_on(worktree_add(
+            &repo.root,
+            "feature",
+            &worktree_path,
+            "main",
+            None,
+        ))
+        .unwrap();
 
         let entries = block_on(worktree_list(&repo.root)).unwrap();
         assert_eq!(entries.len(), 2);
@@ -213,7 +277,7 @@ mod with_git {
                 .any(|entry| entry.branch.as_deref() == Some("feature"))
         );
 
-        block_on(worktree_remove(&repo.root, &worktree_path, false)).unwrap();
+        block_on(worktree_remove(&repo.root, &worktree_path, false, None)).unwrap();
         let entries = block_on(worktree_list(&repo.root)).unwrap();
         assert_eq!(entries.len(), 1);
         assert!(!worktree_path.exists());
@@ -222,17 +286,17 @@ mod with_git {
     #[test]
     fn dirty_detection_sees_modified_and_untracked_files() {
         let repo = TempRepo::init("dirty", "main");
-        assert!(!block_on(status_is_dirty(&repo.root)).unwrap());
+        assert!(!block_on(status_is_dirty(&repo.root, None)).unwrap());
 
         std::fs::write(repo.root.join("untracked.txt"), "hi").unwrap();
-        assert!(block_on(status_is_dirty(&repo.root)).unwrap());
+        assert!(block_on(status_is_dirty(&repo.root, None)).unwrap());
 
         git(&repo.root, &["add", "untracked.txt"]);
         git(&repo.root, &["commit", "-m", "add file"]);
-        assert!(!block_on(status_is_dirty(&repo.root)).unwrap());
+        assert!(!block_on(status_is_dirty(&repo.root, None)).unwrap());
 
         std::fs::write(repo.root.join("untracked.txt"), "changed").unwrap();
-        assert!(block_on(status_is_dirty(&repo.root)).unwrap());
+        assert!(block_on(status_is_dirty(&repo.root, None)).unwrap());
     }
 
     #[test]
@@ -277,7 +341,14 @@ mod with_git {
             .parent()
             .unwrap()
             .join(format!("spirit-wt-{}", uuid::Uuid::new_v4().simple()));
-        block_on(worktree_add(&repo.root, "side", &worktree_path, "main")).unwrap();
+        block_on(worktree_add(
+            &repo.root,
+            "side",
+            &worktree_path,
+            "main",
+            None,
+        ))
+        .unwrap();
 
         let from_worktree = block_on(discover_repo_root(&worktree_path))
             .unwrap()
@@ -285,7 +356,7 @@ mod with_git {
         assert!(same_path(&from_worktree.root, &repo.root));
         assert!(from_worktree.resolved_from_linked_worktree);
 
-        block_on(worktree_remove(&repo.root, &worktree_path, true)).unwrap();
+        block_on(worktree_remove(&repo.root, &worktree_path, true, None)).unwrap();
     }
 
     #[test]

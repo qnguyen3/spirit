@@ -452,6 +452,7 @@ supergrok = []
 agent_mode = []
 agent_onboarding = []
 account_first_onboarding = []
+ade_workspaces = []
 agent_shared_sessions = []
 async_find = []
 changelog = []
@@ -601,6 +602,7 @@ default = [
     "well_known_mcp_ids",
     "ime_marked_text",
     "ctrl_c_cancels_third_party_harness",
+    "ade_workspaces",
 ]
 # Enable this feature to automatically perform heap profiling.  NOTE: This will
 # substantially slow down program execution.

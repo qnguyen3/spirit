@@ -308,7 +308,7 @@ mod imp {
     use std::path::{Path, PathBuf};
 
     use anyhow::{Context, Result, anyhow, bail};
-    use warp_util::git::run_git_command;
+    use warp_util::git::{run_git_command, run_git_command_with_env};
 
     use super::{
         BranchDeleteOutcome, CloneProgress, INCLUDE_COPY_MAX_BYTES, INCLUDE_COPY_MAX_FILES,
@@ -396,15 +396,44 @@ mod imp {
         Ok(current)
     }
 
-    pub async fn worktree_add(root: &Path, branch: &str, path: &Path, base: &str) -> Result<()> {
+    pub async fn worktree_add(
+        root: &Path,
+        branch: &str,
+        path: &Path,
+        base: &str,
+        path_env: Option<&str>,
+    ) -> Result<()> {
         let path = path.to_string_lossy().to_string();
-        run_git_command(
+        run_git_command_with_env(
             root,
             &["worktree", "add", "--no-track", "-b", branch, &path, base],
+            path_env,
         )
         .await
         .map(|_| ())
         .with_context(|| format!("Failed to create worktree for branch {branch}"))
+    }
+
+    pub async fn worktree_add_or_rollback(
+        root: &Path,
+        branch: &str,
+        path: &Path,
+        base: &str,
+        path_env: Option<&str>,
+    ) -> Result<()> {
+        let added = worktree_add(root, branch, path, base, path_env).await;
+        let failure = match added {
+            Err(err) => err,
+            Ok(()) if !path.exists() => {
+                anyhow!("git created no worktree at {}", path.display())
+            }
+            Ok(()) => return Ok(()),
+        };
+
+        let _ = worktree_remove(root, path, true, path_env).await;
+        let _ = worktree_prune(root).await;
+        let _ = force_delete_branch(root, branch).await;
+        Err(failure)
     }
 
     pub async fn worktree_list(root: &Path) -> Result<Vec<WorktreeListEntry>> {
@@ -414,7 +443,12 @@ mod imp {
         Ok(parse_worktree_list(&output))
     }
 
-    pub async fn worktree_remove(root: &Path, path: &Path, force: bool) -> Result<()> {
+    pub async fn worktree_remove(
+        root: &Path,
+        path: &Path,
+        force: bool,
+        path_env: Option<&str>,
+    ) -> Result<()> {
         let path_arg = path.to_string_lossy().to_string();
         let mut args = vec!["worktree", "remove"];
         if force {
@@ -422,7 +456,7 @@ mod imp {
         }
         args.push(&path_arg);
 
-        let Err(err) = run_git_command(root, &args).await else {
+        let Err(err) = run_git_command_with_env(root, &args, path_env).await else {
             return Ok(());
         };
 
@@ -466,10 +500,11 @@ mod imp {
             .with_context(|| format!("Failed to force-delete branch {branch}"))
     }
 
-    pub async fn status_is_dirty(worktree_path: &Path) -> Result<bool> {
-        let output = run_git_command(
+    pub async fn status_is_dirty(worktree_path: &Path, path_env: Option<&str>) -> Result<bool> {
+        let output = run_git_command_with_env(
             worktree_path,
             &["status", "--porcelain", "--untracked-files=all", "-z"],
+            path_env,
         )
         .await
         .context("Failed to read worktree status")?;
@@ -493,16 +528,20 @@ mod imp {
             .unwrap_or_default()
     }
 
-    pub async fn init_new_project(path: &Path) -> Result<()> {
+    pub async fn init_new_project(path: &Path, path_env: Option<&str>) -> Result<()> {
         let created_dir = prepare_new_project_dir(path)?;
 
         let result = async {
             run_git_command(path, &["init"])
                 .await
                 .context("Failed to run git init")?;
-            run_git_command(path, &["commit", "--allow-empty", "-m", "Initial commit"])
-                .await
-                .map_err(missing_git_identity_hint)?;
+            run_git_command_with_env(
+                path,
+                &["commit", "--allow-empty", "-m", "Initial commit"],
+                path_env,
+            )
+            .await
+            .map_err(missing_git_identity_hint)?;
             Ok::<(), anyhow::Error>(())
         }
         .await;
@@ -559,6 +598,7 @@ mod imp {
         url: &str,
         dest_parent: &Path,
         dir_name: Option<&str>,
+        path_env: Option<&str>,
         mut progress: impl FnMut(CloneProgress),
         cancel: impl Fn() -> bool,
     ) -> Result<PathBuf> {
@@ -598,7 +638,8 @@ mod imp {
             }
         };
 
-        let mut child = Command::new("git")
+        let mut command = Command::new("git");
+        command
             .args([
                 "clone",
                 "--progress",
@@ -609,7 +650,11 @@ mod imp {
             .current_dir(dest_parent)
             .env("GIT_TERMINAL_PROMPT", "0")
             .env("GIT_ASKPASS", "")
-            .env("GIT_OPTIONAL_LOCKS", "0")
+            .env("GIT_OPTIONAL_LOCKS", "0");
+        if let Some(path_env) = path_env {
+            command.env("PATH", path_env);
+        }
+        let mut child = command
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .kill_on_drop(true)
@@ -784,6 +829,17 @@ mod imp {
         _branch: &str,
         _path: &Path,
         _base: &str,
+        _path_env: Option<&str>,
+    ) -> Result<()> {
+        unsupported()
+    }
+
+    pub async fn worktree_add_or_rollback(
+        _root: &Path,
+        _branch: &str,
+        _path: &Path,
+        _base: &str,
+        _path_env: Option<&str>,
     ) -> Result<()> {
         unsupported()
     }
@@ -792,7 +848,12 @@ mod imp {
         unsupported()
     }
 
-    pub async fn worktree_remove(_root: &Path, _path: &Path, _force: bool) -> Result<()> {
+    pub async fn worktree_remove(
+        _root: &Path,
+        _path: &Path,
+        _force: bool,
+        _path_env: Option<&str>,
+    ) -> Result<()> {
         unsupported()
     }
 
@@ -808,7 +869,7 @@ mod imp {
         unsupported()
     }
 
-    pub async fn status_is_dirty(_worktree_path: &Path) -> Result<bool> {
+    pub async fn status_is_dirty(_worktree_path: &Path, _path_env: Option<&str>) -> Result<bool> {
         unsupported()
     }
 
@@ -820,7 +881,7 @@ mod imp {
         HashSet::new()
     }
 
-    pub async fn init_new_project(_path: &Path) -> Result<()> {
+    pub async fn init_new_project(_path: &Path, _path_env: Option<&str>) -> Result<()> {
         unsupported()
     }
 
@@ -828,6 +889,7 @@ mod imp {
         _url: &str,
         _dest_parent: &Path,
         _dir_name: Option<&str>,
+        _path_env: Option<&str>,
         _progress: impl FnMut(CloneProgress),
         _cancel: impl Fn() -> bool,
     ) -> Result<PathBuf> {
@@ -846,7 +908,8 @@ mod imp {
 pub use imp::{
     clone, copy_worktree_includes, current_branch, delete_branch_safe, detect_primary_branch,
     discover_repo_root, force_delete_branch, init_new_project, local_branches, same_path,
-    status_is_dirty, worktree_add, worktree_list, worktree_prune, worktree_remove,
+    status_is_dirty, worktree_add, worktree_add_or_rollback, worktree_list, worktree_prune,
+    worktree_remove,
 };
 
 #[cfg(test)]

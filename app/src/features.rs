@@ -331,6 +331,8 @@ fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::TerminalLifecycleRecovery,
         #[cfg(feature = "ctrl_c_cancels_third_party_harness")]
         FeatureFlag::CtrlCCancelsThirdPartyHarness,
+        #[cfg(feature = "ade_workspaces")]
+        FeatureFlag::AdeWorkspaces,
     ]);
 
     flags

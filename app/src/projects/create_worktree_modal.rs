@@ -1,14 +1,17 @@
 use std::collections::HashSet;
 
 use pathfinder_color::ColorU;
+use pathfinder_geometry::vector::vec2f;
 use warp_core::ui::theme::color::internal_colors;
 use warpui::elements::{
-    Align, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Element, Flex,
-    Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, Padding, ParentElement, Radius,
-    Text,
+    Align, ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
+    Element, Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning,
+    Padding, ParentAnchor, ParentElement, ParentOffsetBounds, Radius, Shrinkable, Stack, Text,
 };
 use warpui::keymap::FixedBinding;
 use warpui::platform::Cursor;
+use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
+use warpui::ui_components::text_input::TextInput;
 use warpui::{AppContext, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle};
 
 use super::git_ops::sanitize_worktree_name;
@@ -156,6 +159,7 @@ impl CreateWorktreeModal {
         self.primary_branch = primary_branch;
         self.existing_branches = existing_branches;
         self.selected_agent = agent_catalog_index;
+        self.show_agent_menu = false;
         self.in_flight = false;
         self.error = None;
         self.regenerate_name(ctx);
@@ -266,6 +270,42 @@ impl CreateWorktreeModal {
         });
     }
 
+    fn render_agent_control(&self, label: String, appearance: &Appearance) -> Box<dyn Element> {
+        let button = Self::render_button(
+            label,
+            self.agent_mouse_state.clone(),
+            false,
+            !self.in_flight,
+            CreateWorktreeModalAction::ShowAgentMenu,
+            appearance,
+        );
+        if !self.show_agent_menu {
+            return button;
+        }
+
+        let mut stack = Stack::new().with_child(button);
+        stack.add_positioned_overlay_child(
+            ChildView::new(&self.agent_menu).finish(),
+            OffsetPositioning::offset_from_parent(
+                vec2f(0., 4.),
+                ParentOffsetBounds::WindowByPosition,
+                ParentAnchor::BottomLeft,
+                ChildAnchor::TopLeft,
+            ),
+        );
+        stack.finish()
+    }
+
+    fn name_input_styles(appearance: &Appearance) -> UiComponentStyles {
+        let theme = appearance.theme();
+        UiComponentStyles::default()
+            .set_background(theme.background().into())
+            .set_border_radius(CornerRadius::with_all(BUTTON_RADIUS))
+            .set_border_width(1.)
+            .set_border_color(theme.foreground().with_opacity(20).into())
+            .set_padding(Coords::uniform(6.).left(8.).right(8.))
+    }
+
     fn render_button(
         label: String,
         mouse_state: MouseStateHandle,
@@ -362,21 +402,29 @@ impl View for CreateWorktreeModal {
                 .with_color(theme.foreground().into())
                 .finish(),
                 Flex::row()
+                    .with_main_axis_size(MainAxisSize::Max)
                     .with_cross_axis_alignment(CrossAxisAlignment::Center)
                     .with_spacing(8.)
-                    .with_children([
-                        ConstrainedBox::new(ChildView::new(&self.name_editor).finish())
-                            .with_min_width(240.)
+                    .with_child(
+                        Shrinkable::new(
+                            1.,
+                            TextInput::new(
+                                self.name_editor.clone(),
+                                Self::name_input_styles(appearance),
+                            )
+                            .build()
                             .finish(),
-                        Self::render_button(
-                            "\u{1F3B2}".to_owned(),
-                            self.regenerate_mouse_state.clone(),
-                            false,
-                            !self.in_flight,
-                            CreateWorktreeModalAction::Regenerate,
-                            appearance,
-                        ),
-                    ])
+                        )
+                        .finish(),
+                    )
+                    .with_child(Self::render_button(
+                        "\u{1F3B2}".to_owned(),
+                        self.regenerate_mouse_state.clone(),
+                        false,
+                        !self.in_flight,
+                        CreateWorktreeModalAction::Regenerate,
+                        appearance,
+                    ))
                     .finish(),
                 Text::new_inline(
                     format!("Branch {branch} from {base}"),
@@ -385,14 +433,7 @@ impl View for CreateWorktreeModal {
                 )
                 .with_color(muted.into())
                 .finish(),
-                Self::render_button(
-                    agent_label,
-                    self.agent_mouse_state.clone(),
-                    false,
-                    !self.in_flight,
-                    CreateWorktreeModalAction::ShowAgentMenu,
-                    appearance,
-                ),
+                self.render_agent_control(agent_label, appearance),
             ]);
 
         if let Some(error) = &self.error {
@@ -434,16 +475,12 @@ impl View for CreateWorktreeModal {
                 .finish(),
         );
 
-        let mut stack = warpui::elements::Stack::new();
-        ParentElement::add_child(
-            &mut stack,
-            Container::new(body.finish())
-                .with_padding(Padding::uniform(CONTENT_PADDING))
-                .finish(),
-        );
-        if self.show_agent_menu {
-            ParentElement::add_child(&mut stack, ChildView::new(&self.agent_menu).finish());
-        }
-        stack.finish()
+        Container::new(body.finish())
+            .with_padding(Padding::uniform(CONTENT_PADDING))
+            .finish()
     }
 }
+
+#[cfg(test)]
+#[path = "create_worktree_modal_tests.rs"]
+mod tests;

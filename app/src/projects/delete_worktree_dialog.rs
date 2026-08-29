@@ -256,3 +256,7 @@ impl TypedActionView for DeleteWorktreeDialog {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "delete_worktree_dialog_tests.rs"]
+mod tests;

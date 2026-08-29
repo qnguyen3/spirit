@@ -939,7 +939,7 @@ impl Workspace {
         self.suppress_detach_panes_on_window_close = value;
     }
     fn tab_rename_editor_font_size(ctx: &AppContext, appearance: &Appearance) -> f32 {
-        if FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(ctx).use_vertical_tabs {
+        if uses_vertical_tabs(ctx) {
             match *TabSettings::as_ref(ctx)
                 .vertical_tabs_display_granularity
                 .value()
@@ -1939,7 +1939,7 @@ impl Workspace {
     /// Opens the vertical tabs panel if the setting was enabled.
     /// Called from the onboarding flow before the session config modal is shown.
     pub(crate) fn open_vertical_tabs_panel_if_enabled(&mut self, ctx: &mut ViewContext<Self>) {
-        if FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(ctx).use_vertical_tabs {
+        if uses_vertical_tabs(ctx) {
             self.vertical_tabs_panel_open = true;
             self.sync_window_button_visibility(ctx);
             ctx.notify();
@@ -2758,7 +2758,7 @@ impl Workspace {
                 ctx.notify();
             }
             TabSettingsChangedEvent::UseVerticalTabs { .. } => {
-                let vertical_tabs_enabled = *TabSettings::as_ref(ctx).use_vertical_tabs;
+                let vertical_tabs_enabled = uses_vertical_tabs(ctx);
                 self.vertical_tabs_panel_open = vertical_tabs_enabled;
 
                 if vertical_tabs_enabled {
@@ -2780,8 +2780,7 @@ impl Workspace {
                 ctx.notify();
             }
             TabSettingsChangedEvent::ShowVerticalTabPanelInRestoredWindows { .. } => {
-                if FeatureFlag::VerticalTabs.is_enabled()
-                    && *TabSettings::as_ref(ctx).use_vertical_tabs
+                if uses_vertical_tabs(ctx)
                     && *TabSettings::as_ref(ctx).show_vertical_tab_panel_in_restored_windows
                 {
                     self.vertical_tabs_panel_open = true;
@@ -4711,6 +4710,18 @@ impl Workspace {
         }
 
         items.push(MenuItem::Separator);
+        if self.can_create_worktree(ctx) {
+            items.push(
+                MenuItemFields::new("New Worktree\u{2026}")
+                    .with_indent()
+                    .with_key_shortcut_label(keybinding_name_to_display_string(
+                        NEW_WORKTREE_BINDING_NAME,
+                        ctx,
+                    ))
+                    .with_on_select_action(ProjectHostAction::ShowCreateWorktreeModal)
+                    .into_item(),
+            );
+        }
         items.push(
             MenuItemFields::new("New Workspace\u{2026}")
                 .with_indent()
@@ -5600,8 +5611,7 @@ impl Workspace {
         anchor: NewSessionMenuAnchor,
         ctx: &ViewContext<Self>,
     ) -> f32 {
-        let use_vertical_tabs =
-            FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(ctx).use_vertical_tabs;
+        let use_vertical_tabs = uses_vertical_tabs(ctx);
         match anchor {
             NewSessionMenuAnchor::AddTabButton(position)
                 if use_vertical_tabs && self.vertical_tabs_panel_open =>
@@ -5629,8 +5639,7 @@ impl Workspace {
     }
 
     fn toggle_tab_configs_menu(&mut self, ctx: &mut ViewContext<Self>) {
-        let use_vertical_tabs =
-            FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(ctx).use_vertical_tabs;
+        let use_vertical_tabs = uses_vertical_tabs(ctx);
         if self.show_new_session_dropdown_menu.is_some() {
             self.close_new_session_dropdown_menu(ctx);
             return;
@@ -15791,8 +15800,7 @@ impl Workspace {
         appearance: &Appearance,
         ctx: &AppContext,
     ) -> Box<dyn Element> {
-        let vertical_tabs_active =
-            FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(ctx).use_vertical_tabs;
+        let vertical_tabs_active = uses_vertical_tabs(ctx);
 
         let (is_active, tooltip_text, action, keybinding_name, save_position_id) =
             if vertical_tabs_active {
@@ -16452,8 +16460,7 @@ impl Workspace {
         if !item.is_available(ctx) {
             return None;
         }
-        let vertical_tabs_active =
-            FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(ctx).use_vertical_tabs;
+        let vertical_tabs_active = uses_vertical_tabs(ctx);
         let inner = match item {
             HeaderToolbarItemKind::TabsPanel => self.render_left_toggle_button(appearance, ctx),
             HeaderToolbarItemKind::ToolsPanel => {
@@ -17168,8 +17175,7 @@ impl Workspace {
             None => active_content,
         };
 
-        let vertical_tabs_active =
-            FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(app).use_vertical_tabs;
+        let vertical_tabs_active = uses_vertical_tabs(app);
         let pane_group = self.active_tab_pane_group().as_ref(app);
         let is_right_open = pane_group.right_panel_open;
         let is_right_maximized = is_right_open && pane_group.is_right_panel_maximized;
@@ -17703,8 +17709,7 @@ impl Workspace {
         let mut contents = contents;
 
         let traffic_light_data = traffic_light_data(app, self.window_id);
-        let vertical_tabs_active =
-            FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(app).use_vertical_tabs;
+        let vertical_tabs_active = uses_vertical_tabs(app);
         // Add a spacer for the traffic light buttons on Windows/Linux.
         if traffic_light_data.is_some_and(|data| data.side == TrafficLightSide::Right)
             && *side == PanelPosition::Right
@@ -17781,9 +17786,7 @@ impl Workspace {
         // Config-driven vertical-tabs-era panels (left side).
         // Hidden for simplified WASM views (notebooks, shared sessions, etc.)
         // where these panels are unnecessary.
-        let vertical_tabs_active = !hide_vertical_tabs
-            && FeatureFlag::VerticalTabs.is_enabled()
-            && *TabSettings::as_ref(app).use_vertical_tabs;
+        let vertical_tabs_active = !hide_vertical_tabs && uses_vertical_tabs(app);
 
         // In vertical tabs mode, config-driven panels are rendered here.
         // In horizontal tabs mode, they're rendered inside render_banner_and_active_tab.
@@ -18255,7 +18258,7 @@ impl Workspace {
         {
             context.set.insert(flags::AUTO_OPEN_CODE_REVIEW_PANE_FLAG);
         }
-        if *tab_settings.use_vertical_tabs.value() {
+        if uses_vertical_tabs(app) {
             context.set.insert(flags::USE_VERTICAL_TABS_FLAG);
         }
         if *tab_settings.preserve_active_tab_color.value() {
@@ -19427,10 +19430,7 @@ impl TypedActionView for Workspace {
                 }
             }
             ToggleVerticalTabsSettingsPopup => {
-                if FeatureFlag::VerticalTabs.is_enabled()
-                    && *TabSettings::as_ref(ctx).use_vertical_tabs
-                    && self.vertical_tabs_panel_open
-                {
+                if uses_vertical_tabs(ctx) && self.vertical_tabs_panel_open {
                     self.vertical_tabs_panel.show_settings_popup =
                         !self.vertical_tabs_panel.show_settings_popup;
                     ctx.notify();
@@ -20523,8 +20523,7 @@ impl View for Workspace {
         );
 
         if !use_simplified_wasm_tab_bar
-            && FeatureFlag::VerticalTabs.is_enabled()
-            && *TabSettings::as_ref(app).use_vertical_tabs
+            && uses_vertical_tabs(app)
             && self.vertical_tabs_panel_open
             && self.vertical_tabs_panel.show_settings_popup
         {
@@ -20545,8 +20544,7 @@ impl View for Workspace {
             );
         }
 
-        if FeatureFlag::VerticalTabs.is_enabled()
-            && *TabSettings::as_ref(app).use_vertical_tabs
+        if uses_vertical_tabs(app)
             && self.vertical_tabs_panel_open
             && let Some(vertical_tabs::DetailSidecarOverlay {
                 anchor_position_id,
@@ -20652,9 +20650,7 @@ impl View for Workspace {
         }
 
         if let Some((tab_idx, right_click_menu_anchor)) = self.show_tab_right_click_menu {
-            let is_vertical = FeatureFlag::VerticalTabs.is_enabled()
-                && *TabSettings::as_ref(app).use_vertical_tabs
-                && self.vertical_tabs_panel_open;
+            let is_vertical = uses_vertical_tabs(app) && self.vertical_tabs_panel_open;
             if tab_bar_mode.has_tab_bar() || is_vertical {
                 let positioning = if is_vertical {
                     match right_click_menu_anchor {
@@ -20714,9 +20710,7 @@ impl View for Workspace {
         // Rendered for both the horizontal tab bar and the vertical tabs panel
         // — the right-click handlers on both surfaces dispatch the same action.
         if let Some((_tab_idx, anchor)) = self.show_tab_selection_right_click_menu {
-            let is_vertical = FeatureFlag::VerticalTabs.is_enabled()
-                && *TabSettings::as_ref(app).use_vertical_tabs
-                && self.vertical_tabs_panel_open;
+            let is_vertical = uses_vertical_tabs(app) && self.vertical_tabs_panel_open;
             if tab_bar_mode.has_tab_bar() || is_vertical {
                 let position = match anchor {
                     TabContextMenuAnchor::Pointer(position) => position,
@@ -20746,9 +20740,7 @@ impl View for Workspace {
 
         // Tab group more-options menu (reuses the `tab_right_click_menu` view).
         if let Some((group_id, anchor)) = self.show_tab_group_right_click_menu {
-            let is_vertical = FeatureFlag::VerticalTabs.is_enabled()
-                && *TabSettings::as_ref(app).use_vertical_tabs
-                && self.vertical_tabs_panel_open;
+            let is_vertical = uses_vertical_tabs(app) && self.vertical_tabs_panel_open;
             let positioning = match (is_vertical, anchor) {
                 (true, TabContextMenuAnchor::VerticalTabsKebab) => {
                     let tabs_side = Self::tabs_panel_side(
@@ -20801,9 +20793,7 @@ impl View for Workspace {
         // Render the new session dropdown menu. This is outside the tab bar visibility
         // gate because it can also be opened from the vertical tabs panel.
         if let Some(menu_anchor) = self.show_new_session_dropdown_menu {
-            let is_vertical = FeatureFlag::VerticalTabs.is_enabled()
-                && *TabSettings::as_ref(app).use_vertical_tabs
-                && self.vertical_tabs_panel_open;
+            let is_vertical = uses_vertical_tabs(app) && self.vertical_tabs_panel_open;
 
             match (is_vertical, menu_anchor) {
                 (true, NewSessionMenuAnchor::AddTabButton(_)) => {
@@ -21075,9 +21065,7 @@ impl View for Workspace {
         }
 
         if self.should_show_session_config_tab_config_chip() {
-            let use_vertical = FeatureFlag::VerticalTabs.is_enabled()
-                && *TabSettings::as_ref(app).use_vertical_tabs
-                && self.vertical_tabs_panel_open;
+            let use_vertical = uses_vertical_tabs(app) && self.vertical_tabs_panel_open;
             let chip =
                 self.render_session_config_tab_config_chip(use_vertical, Appearance::as_ref(app));
             if use_vertical {
@@ -21226,8 +21214,7 @@ impl View for Workspace {
         }
 
         // Add workspace-wide UI event handling.
-        let stack = if FeatureFlag::VerticalTabs.is_enabled()
-            && *TabSettings::as_ref(app).use_vertical_tabs
+        let stack = if uses_vertical_tabs(app)
             && self.vertical_tabs_panel_open
             // The vertical-tabs detail sidecar can become stale if the pointer moves through a
             // covered region (for example, its scrollbar gutter) and the row/sidecar hoverables
@@ -21918,8 +21905,7 @@ impl Workspace {
                     // the normal reorder path below: the placeholder is
                     // detached mid cross-window drag and shouldn't churn group
                     // membership.
-                    let use_vertical_tabs = FeatureFlag::VerticalTabs.is_enabled()
-                        && *TabSettings::as_ref(ctx).use_vertical_tabs;
+                    let use_vertical_tabs = uses_vertical_tabs(ctx);
                     let new_index = if use_vertical_tabs {
                         self.calculate_updated_tab_index_vertical(current_index, position, ctx)
                     } else {
@@ -22063,8 +22049,7 @@ impl Workspace {
             return;
         }
 
-        let use_vertical_tabs =
-            FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(ctx).use_vertical_tabs;
+        let use_vertical_tabs = uses_vertical_tabs(ctx);
         let groups_enabled = FeatureFlag::GroupedTabs.is_enabled();
 
         if groups_enabled {

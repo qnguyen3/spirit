@@ -707,6 +707,7 @@ pub(super) struct VerticalTabsPanelState {
     detail_overlay_state: Arc<Mutex<VerticalTabsDetailOverlayState>>,
     new_tab_hover_state: MouseStateHandle,
     new_tab_button_state: MouseStateHandle,
+    new_worktree_hover_state: MouseStateHandle,
     pub(super) search_query: String,
     settings_button_mouse_state: MouseStateHandle,
     panes_segment_mouse_state: MouseStateHandle,
@@ -745,6 +746,7 @@ impl Default for VerticalTabsPanelState {
             detail_overlay_state: Arc::new(Mutex::new(VerticalTabsDetailOverlayState::default())),
             new_tab_hover_state: Default::default(),
             new_tab_button_state: Default::default(),
+            new_worktree_hover_state: Default::default(),
             search_query: String::new(),
             settings_button_mouse_state: Default::default(),
             panes_segment_mouse_state: Default::default(),
@@ -1403,22 +1405,24 @@ fn render_control_bar(
     let settings_button = render_settings_button(state, appearance);
     let new_tab_button = render_new_tab_button(state, workspace, appearance, app);
 
-    Container::new(
-        Flex::row()
-            .with_main_axis_size(MainAxisSize::Max)
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_spacing(CONTROL_BAR_SPACING)
-            .with_child(Shrinkable::new(1., search_bar).finish())
-            .with_child(settings_button)
-            .with_child(new_tab_button)
-            .finish(),
-    )
-    .with_padding(
-        Padding::uniform(CONTROL_BAR_VERTICAL_PADDING)
-            .with_left(GROUP_HORIZONTAL_PADDING)
-            .with_right(GROUP_HORIZONTAL_PADDING),
-    )
-    .finish()
+    let mut controls = Flex::row()
+        .with_main_axis_size(MainAxisSize::Max)
+        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_spacing(CONTROL_BAR_SPACING)
+        .with_child(Shrinkable::new(1., search_bar).finish())
+        .with_child(settings_button);
+    if workspace.can_create_worktree(app) {
+        controls.add_child(render_new_worktree_button(state, appearance, app));
+    }
+    controls.add_child(new_tab_button);
+
+    Container::new(controls.finish())
+        .with_padding(
+            Padding::uniform(CONTROL_BAR_VERTICAL_PADDING)
+                .with_left(GROUP_HORIZONTAL_PADDING)
+                .with_right(GROUP_HORIZONTAL_PADDING),
+        )
+        .finish()
 }
 
 fn render_detail_kind_badge_icon(
@@ -1522,6 +1526,69 @@ fn render_settings_button(
     .finish();
 
     SavePosition::new(button, VERTICAL_TABS_SETTINGS_BUTTON_POSITION_ID).finish()
+}
+
+fn render_new_worktree_button(
+    state: &VerticalTabsPanelState,
+    appearance: &Appearance,
+    app: &AppContext,
+) -> Box<dyn Element> {
+    let theme = appearance.theme();
+    let sub_text = theme.sub_text_color(theme.background());
+    let ui_builder = appearance.ui_builder().clone();
+    let shortcut = keybinding_name_to_display_string(super::NEW_WORKTREE_BINDING_NAME, app);
+
+    Hoverable::new(state.new_worktree_hover_state.clone(), move |hover_state| {
+        let icon = ConstrainedBox::new(WarpIcon::Dataflow02.to_warpui_icon(sub_text).finish())
+            .with_width(16.)
+            .with_height(16.)
+            .finish();
+
+        let background = if hover_state.is_hovered() {
+            internal_colors::fg_overlay_2(theme)
+        } else {
+            ThemeFill::Solid(ColorU::transparent_black())
+        };
+
+        let button_container = Container::new(icon)
+            .with_padding(Padding::uniform(2.))
+            .with_background(background)
+            .with_corner_radius(CornerRadius::with_all(CONTROL_BAR_BUTTON_RADIUS))
+            .finish();
+
+        if hover_state.is_hovered() {
+            let tooltip = match shortcut.clone() {
+                Some(sublabel) => ui_builder
+                    .tool_tip_with_sublabel("New Worktree".to_string(), sublabel)
+                    .build()
+                    .finish(),
+                None => ui_builder
+                    .tool_tip("New Worktree".to_string())
+                    .build()
+                    .finish(),
+            };
+            let mut stack = Stack::new().with_child(button_container);
+            stack.add_positioned_overlay_child(
+                tooltip,
+                OffsetPositioning::offset_from_parent(
+                    vec2f(0., 4.),
+                    ParentOffsetBounds::WindowByPosition,
+                    ParentAnchor::BottomMiddle,
+                    ChildAnchor::TopMiddle,
+                ),
+            );
+            stack.finish()
+        } else {
+            button_container
+        }
+    })
+    .on_click(|ctx, _, _| {
+        ctx.dispatch_typed_action(WorkspaceAction::ShowCreateWorktreeModal {
+            agent_catalog_index: None,
+        });
+    })
+    .with_cursor(Cursor::PointingHand)
+    .finish()
 }
 
 fn render_new_tab_button(
