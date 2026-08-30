@@ -14,8 +14,46 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use anyhow::{Result, anyhow};
+use futures::FutureExt;
+use futures::future::BoxFuture;
 use persistence::model::{Project as ProjectRow, ProjectWorktree as WorktreeRow};
 use uuid::Uuid;
+use warpui::AppContext;
+
+// A GUI launch inherits only `/usr/bin:/bin:/usr/sbin:/sbin`, so git cannot find the binaries
+// its repo-configured filters and hooks need: a checkout in a Git LFS repository dies with
+// "git-lfs: command not found" unless the commands run with this PATH.
+pub fn interactive_path_env(ctx: &mut AppContext) -> BoxFuture<'static, Option<String>> {
+    #[cfg(all(not(target_family = "wasm"), feature = "local_tty"))]
+    {
+        use warpui::SingletonEntity;
+
+        use crate::terminal::local_shell::LocalShellState;
+
+        if ctx.has_singleton_model::<LocalShellState>() {
+            return LocalShellState::handle(ctx).update(ctx, |shell_state, ctx| {
+                shell_state.get_interactive_path_env_var(ctx)
+            });
+        }
+    }
+    let _ = ctx;
+    futures::future::ready(None).boxed()
+}
+
+const ERROR_SUMMARY_MAX_CHARS: usize = 220;
+
+pub fn error_summary(err: &anyhow::Error) -> String {
+    let flattened = format!("{err:#}");
+    let mut summary = flattened.split_whitespace().collect::<Vec<_>>().join(" ");
+    if summary.chars().count() > ERROR_SUMMARY_MAX_CHARS {
+        summary = summary
+            .chars()
+            .take(ERROR_SUMMARY_MAX_CHARS)
+            .collect::<String>()
+            + "\u{2026}";
+    }
+    summary
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ProjectId(pub Uuid);

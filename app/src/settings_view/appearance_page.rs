@@ -1356,11 +1356,11 @@ impl AppearanceSettingsPageView {
             categories.push(Category::new("Window", window_settings_widgets));
         }
 
-        // Tools panel tab visibility toggles. These control which of the four
-        // tabs appear in the tools panel and mirror the onboarding "Customize
+        // Right sidebar tab visibility toggles. These control which tabs appear
+        // in the sidebar and mirror the onboarding "Customize
         // your UI" tools-panel selection (see `crates/onboarding`); each toggle
         // points at the same backing setting as onboarding so the two surfaces
-        // stay in sync, and the tools panel already recomputes its available
+        // stay in sync, and the right sidebar already recomputes its available
         // views live when these settings change (see `Workspace::new`).
         // Each toggle is gated only on compile-time / feature-flag availability
         // of the corresponding tab (not on transient login/AI state), so the
@@ -1374,7 +1374,7 @@ impl AppearanceSettingsPageView {
         }
         tools_panel_widgets.push(Box::new(ToolsPanelWarpDriveWidget::default()));
         if !tools_panel_widgets.is_empty() {
-            categories.push(Category::new("Tools panel", tools_panel_widgets));
+            categories.push(Category::new("Right Sidebar", tools_panel_widgets));
         }
 
         // Create the Input category with all widgets
@@ -3369,7 +3369,7 @@ impl SettingsWidget for ToolsPanelStateScopeWidget {
         let is_enabled = *window_settings.left_panel_visibility_across_tabs;
 
         render_body_item::<AppearancePageAction>(
-            "Tools panel visibility is consistent across tabs".to_string(),
+            "Right Sidebar visibility is consistent across tabs".to_string(),
             None,
             LocalOnlyIconState::for_setting(
                 LeftPanelVisibilityAcrossTabs::storage_key(),
@@ -3393,9 +3393,9 @@ impl SettingsWidget for ToolsPanelStateScopeWidget {
     }
 }
 
-/// Tools panel tab-visibility toggles. Each mirrors an onboarding tools-panel
+/// Right sidebar tab-visibility toggles. Each mirrors an onboarding sidebar
 /// chip and points at the same backing setting so Settings and onboarding stay
-/// in sync; toggling live-updates the tools panel via `Workspace`'s settings
+/// in sync; toggling live-updates the right sidebar via `Workspace`'s settings
 /// subscriptions.
 #[derive(Default)]
 struct ToolsPanelProjectExplorerWidget {
@@ -3432,7 +3432,7 @@ impl SettingsWidget for ToolsPanelProjectExplorerWidget {
                     );
                 })
                 .finish(),
-            Some("Show the project explorer / file tree tab in the tools panel.".to_string()),
+            Some("Show the project explorer / file tree tab in the right sidebar.".to_string()),
         )
     }
 }
@@ -3471,7 +3471,7 @@ impl SettingsWidget for ToolsPanelGlobalSearchWidget {
                         .dispatch_typed_action(AppearancePageAction::ToggleToolsPanelGlobalSearch);
                 })
                 .finish(),
-            Some("Show the global file search tab in the tools panel.".to_string()),
+            Some("Show the global file search tab in the right sidebar.".to_string()),
         )
     }
 }
@@ -3509,7 +3509,7 @@ impl SettingsWidget for ToolsPanelWarpDriveWidget {
                     evt_ctx.dispatch_typed_action(AppearancePageAction::ToggleToolsPanelWarpDrive);
                 })
                 .finish(),
-            Some("Show the Warp Drive tab in the tools panel.".to_string()),
+            Some("Show the Warp Drive tab in the right sidebar.".to_string()),
         )
     }
 }

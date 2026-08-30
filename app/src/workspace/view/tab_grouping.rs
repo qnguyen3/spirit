@@ -681,6 +681,12 @@ impl Workspace {
             None => self.selection_shared_group(),
         };
 
+        // A destination with a different worktree binding would split that
+        // section's contiguous run around the group.
+        let source_worktree = match tab_index {
+            Some(idx) => self.tabs.get(idx).and_then(|tab| tab.worktree_id),
+            None => None,
+        };
         let mut groups_with_first_index: Vec<(TabGroupId, usize)> = self
             .tab_groups
             .keys()
@@ -690,6 +696,10 @@ impl Workspace {
                 group_member_indices(&self.tabs, gid)
                     .next()
                     .map(|idx| (gid, idx))
+            })
+            .filter(|(_, first_idx)| {
+                !self.worktree_sections_enabled()
+                    || self.tabs[*first_idx].worktree_id == source_worktree
             })
             .collect();
         groups_with_first_index.sort_by_key(|(_, idx)| *idx);

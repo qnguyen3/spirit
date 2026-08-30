@@ -61,6 +61,12 @@ pub enum TabContextMenuAnchor {
     VerticalTabsKebab,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorktreeSectionMenuKind {
+    NewTab,
+    Options,
+}
+
 /// Describes how the new-session dropdown menu was opened so the renderer
 /// can pick the right anchor strategy.
 #[derive(Debug, Clone, Copy)]
@@ -629,6 +635,23 @@ pub enum WorkspaceAction {
     RevealWorktreeFolder {
         worktree_id: WorktreeId,
     },
+    NewTerminalInWorktree {
+        worktree_id: WorktreeId,
+    },
+    NewAgentPickerInWorktree {
+        worktree_id: WorktreeId,
+    },
+    RenameWorktree {
+        worktree_id: WorktreeId,
+    },
+    ToggleWorktreeSectionCollapsed {
+        worktree_id: WorktreeId,
+    },
+    ToggleWorktreeSectionMenu {
+        worktree_id: WorktreeId,
+        anchor: TabContextMenuAnchor,
+        kind: WorktreeSectionMenuKind,
+    },
 }
 
 impl From<&WorkspaceAction> for LoginGatedFeature {
@@ -741,6 +764,8 @@ impl WorkspaceAction {
             | OpenRepository { .. }
             | SelectTabConfig(_)
             | ToggleVerticalTabsPanel
+            | NewTerminalInWorktree { .. }
+            | NewAgentPickerInWorktree { .. }
             | OpenVerticalTabsPanel => true, // actions that actually change a state of the state of user's
             // workspace would most likely require a save, so that if the app gets
             // restarted, the user can continue working
@@ -907,7 +932,10 @@ impl WorkspaceAction {
             | ShowCreateWorktreeModal { .. }
             | OpenWorktreeTab { .. }
             | DeleteWorktree { .. }
-            | RevealWorktreeFolder { .. } => false,
+            | RevealWorktreeFolder { .. }
+            | RenameWorktree { .. }
+            | ToggleWorktreeSectionCollapsed { .. }
+            | ToggleWorktreeSectionMenu { .. } => false,
             #[cfg(debug_assertions)]
             InstallOpenCodeWarpPlugin | UseLocalOpenCodeWarpPlugin => false,
             #[cfg(not(target_family = "wasm"))]

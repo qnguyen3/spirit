@@ -1,3 +1,4 @@
+pub mod layout;
 pub mod settings;
 pub mod terminal;
 mod virtual_fs;

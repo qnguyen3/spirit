@@ -1,7 +1,8 @@
 use warpui::EntityId;
 
-use super::WorkspaceAction;
+use super::{TabContextMenuAnchor, WorkspaceAction, WorktreeSectionMenuKind};
 use crate::pane_group::TerminalPaneId;
+use crate::projects::WorktreeId;
 use crate::workspace::PaneViewLocator;
 use crate::workspace::tab_settings::{
     VerticalTabsDisplayGranularity, VerticalTabsPrimaryInfo, VerticalTabsTabItemMode,
@@ -79,4 +80,33 @@ fn pane_name_actions_save_workspace_state() {
     // same conditions as the locator-based one, since both ultimately drive
     // `rename_pane` which mutates `pane_configuration`.
     assert!(WorkspaceAction::RenameActivePane.should_save_app_state_on_action());
+}
+
+#[test]
+fn spawning_tabs_in_a_worktree_saves_workspace_state() {
+    let worktree_id = WorktreeId::new();
+    assert!(
+        WorkspaceAction::NewTerminalInWorktree { worktree_id }.should_save_app_state_on_action()
+    );
+    assert!(
+        WorkspaceAction::NewAgentPickerInWorktree { worktree_id }.should_save_app_state_on_action()
+    );
+}
+
+#[test]
+fn worktree_section_ui_actions_do_not_save_workspace_state() {
+    let worktree_id = WorktreeId::new();
+    assert!(!WorkspaceAction::RenameWorktree { worktree_id }.should_save_app_state_on_action());
+    assert!(
+        !WorkspaceAction::ToggleWorktreeSectionCollapsed { worktree_id }
+            .should_save_app_state_on_action()
+    );
+    assert!(
+        !WorkspaceAction::ToggleWorktreeSectionMenu {
+            worktree_id,
+            anchor: TabContextMenuAnchor::VerticalTabsKebab,
+            kind: WorktreeSectionMenuKind::NewTab,
+        }
+        .should_save_app_state_on_action()
+    );
 }

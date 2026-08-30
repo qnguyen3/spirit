@@ -144,6 +144,7 @@ pub enum ProjectHostAction {
     ShowOverview,
     HideOverview,
     RemoveProject { project_id: ProjectId },
+    ShowCreateWorktreeModal,
 }
 
 impl Entity for ProjectHost {
@@ -179,6 +180,12 @@ impl TypedActionView for ProjectHost {
             ProjectHostAction::HideOverview => self.set_overview_active(false, ctx),
             ProjectHostAction::RemoveProject { project_id } => {
                 self.show_remove_dialog(*project_id, ctx)
+            }
+            ProjectHostAction::ShowCreateWorktreeModal => {
+                let workspace = self.active_workspace().clone();
+                workspace.update(ctx, |workspace, ctx| {
+                    workspace.show_create_worktree_modal(None, ctx);
+                });
             }
         }
     }
@@ -545,16 +552,8 @@ impl ProjectHost {
                 ctx,
             )
         });
-        let display_name = ProjectRegistryModel::handle(ctx).read(ctx, |registry, _| {
-            registry
-                .project(project_id)
-                .map(|project| project.display_name.clone())
-        });
         workspace.update(ctx, |workspace, ctx| {
             workspace.bind_active_tab_to_worktree(primary_worktree_id, ctx);
-            if let Some(display_name) = display_name {
-                workspace.set_active_tab_title(&display_name, ctx);
-            }
             workspace.reconcile_worktrees(ctx);
         });
 
@@ -752,12 +751,15 @@ impl ProjectHost {
         let body = self.modal_body(ctx);
         let (progress_sender, progress_receiver) = std::sync::mpsc::channel::<CloneProgress>();
 
+        let path_future = super::interactive_path_env(ctx);
         let _ = ctx.spawn(
             async move {
+                let path_env = path_future.await;
                 super::git_ops::clone(
                     &url,
                     &parent,
                     Some(&directory_name),
+                    path_env.as_deref(),
                     |update| {
                         let _ = progress_sender.send(update);
                     },
@@ -776,8 +778,10 @@ impl ProjectHost {
                         host.register_and_open_folder(root, ctx);
                     }
                     Err(err) => {
+                        log::warn!("Workspace clone failed: {err:#}");
+                        let detail = super::error_summary(&err);
                         let body = host.modal_body(ctx);
-                        body.update(ctx, |body, ctx| body.set_error(err.to_string(), ctx));
+                        body.update(ctx, |body, ctx| body.set_error(detail, ctx));
                     }
                 }
             },
@@ -794,9 +798,11 @@ impl ProjectHost {
         });
 
         let root = parent.join(&name);
+        let path_future = super::interactive_path_env(ctx);
         let _ = ctx.spawn(
             async move {
-                super::git_ops::init_new_project(&root).await?;
+                let path_env = path_future.await;
+                super::git_ops::init_new_project(&root, path_env.as_deref()).await?;
                 let branch = super::git_ops::current_branch(&root).await.ok();
                 Ok::<_, anyhow::Error>((root, branch))
             },
@@ -806,8 +812,10 @@ impl ProjectHost {
                     host.finish_registering_folder((root, ProjectKind::Git, branch), ctx);
                 }
                 Err(err) => {
+                    log::warn!("Workspace creation failed: {err:#}");
+                    let detail = super::error_summary(&err);
                     let body = host.modal_body(ctx);
-                    body.update(ctx, |body, ctx| body.set_error(err.to_string(), ctx));
+                    body.update(ctx, |body, ctx| body.set_error(detail, ctx));
                 }
             },
         );

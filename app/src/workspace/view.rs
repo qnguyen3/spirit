@@ -111,7 +111,7 @@ use self::vertical_tabs::{
 };
 use super::action::{
     InitContent, NewSessionMenuAnchor, TabContextMenuAnchor, VerticalTabsPaneContextMenuTarget,
-    WorkspaceAction,
+    WorkspaceAction, WorktreeSectionMenuKind,
 };
 pub(crate) use super::close_session_confirmation_dialog::OpenDialogSource;
 use super::close_session_confirmation_dialog::{
@@ -843,6 +843,10 @@ pub struct Workspace {
     new_worktree_modal: ModalViewState<Modal<NewWorktreeModal>>,
     create_worktree_modal: ModalViewState<Modal<CreateWorktreeModal>>,
     delete_worktree_dialog: ModalViewState<DeleteWorktreeDialog>,
+    pub(crate) collapsed_worktree_sections: HashSet<WorktreeId>,
+    pub(crate) worktree_rename_editor: ViewHandle<EditorView>,
+    /// Open worktree section header menu; reuses the `tab_right_click_menu` view.
+    show_worktree_section_menu: Option<(WorktreeId, TabContextMenuAnchor, WorktreeSectionMenuKind)>,
     close_session_confirmation_dialog: ViewHandle<CloseSessionConfirmationDialog>,
     resource_center_view: ViewHandle<ResourceCenterView>,
     command_search_view: ViewHandle<CommandSearchView>,
@@ -939,7 +943,7 @@ impl Workspace {
         self.suppress_detach_panes_on_window_close = value;
     }
     fn tab_rename_editor_font_size(ctx: &AppContext, appearance: &Appearance) -> f32 {
-        if FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(ctx).use_vertical_tabs {
+        if uses_vertical_tabs(ctx) {
             match *TabSettings::as_ref(ctx)
                 .vertical_tabs_display_granularity
                 .value()
@@ -1243,7 +1247,9 @@ impl Workspace {
                     view.set_title(&title, ctx);
                 }
             });
-            self.rename_bound_worktree(tab_index, &title, ctx);
+            if !self.worktree_sections_enabled() {
+                self.rename_bound_worktree(tab_index, &title, ctx);
+            }
             self.clear_tab_name_editor(ctx);
             self.update_window_title(ctx);
             ctx.notify();
@@ -1939,7 +1945,7 @@ impl Workspace {
     /// Opens the vertical tabs panel if the setting was enabled.
     /// Called from the onboarding flow before the session config modal is shown.
     pub(crate) fn open_vertical_tabs_panel_if_enabled(&mut self, ctx: &mut ViewContext<Self>) {
-        if FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(ctx).use_vertical_tabs {
+        if uses_vertical_tabs(ctx) {
             self.vertical_tabs_panel_open = true;
             self.sync_window_button_visibility(ctx);
             ctx.notify();
@@ -2398,25 +2404,28 @@ impl Workspace {
         let working_directories_model =
             ctx.add_model(|_| pane_group::WorkingDirectoriesModel::new());
 
+        let right_panel_view = ctx.add_typed_action_view(|ctx| {
+            let mut view = RightPanelView::new(working_directories_model.clone(), ctx);
+            view.set_embedded_in_sidebar(true);
+            view
+        });
+        ctx.subscribe_to_view(&right_panel_view, |me, _, event, ctx| {
+            me.handle_right_panel_event(event.clone(), ctx);
+        });
+
         let left_panel_views = Self::compute_left_panel_views(ctx);
 
         let left_panel_view = ctx.add_typed_action_view(|ctx| {
             LeftPanelView::new(
                 working_directories_model.clone(),
                 left_panel_views.clone(),
+                right_panel_view.clone(),
                 ctx,
             )
         });
 
         ctx.subscribe_to_view(&left_panel_view, |me, _, event, ctx| {
             me.handle_left_panel_event(event, ctx);
-        });
-
-        let right_panel_view = ctx.add_typed_action_view(|ctx| {
-            RightPanelView::new(working_directories_model.clone(), ctx)
-        });
-        ctx.subscribe_to_view(&right_panel_view, |me, _, event, ctx| {
-            me.handle_right_panel_event(event.clone(), ctx);
         });
 
         ctx.observe(&tips_completed, Workspace::on_tips_model_changed);
@@ -2586,6 +2595,9 @@ impl Workspace {
             new_worktree_modal,
             create_worktree_modal,
             delete_worktree_dialog,
+            collapsed_worktree_sections: HashSet::new(),
+            worktree_rename_editor: Self::build_worktree_rename_editor(ctx),
+            show_worktree_section_menu: None,
             close_session_confirmation_dialog,
             resource_center_view,
             command_search_view,
@@ -2758,7 +2770,7 @@ impl Workspace {
                 ctx.notify();
             }
             TabSettingsChangedEvent::UseVerticalTabs { .. } => {
-                let vertical_tabs_enabled = *TabSettings::as_ref(ctx).use_vertical_tabs;
+                let vertical_tabs_enabled = uses_vertical_tabs(ctx);
                 self.vertical_tabs_panel_open = vertical_tabs_enabled;
 
                 if vertical_tabs_enabled {
@@ -2780,8 +2792,7 @@ impl Workspace {
                 ctx.notify();
             }
             TabSettingsChangedEvent::ShowVerticalTabPanelInRestoredWindows { .. } => {
-                if FeatureFlag::VerticalTabs.is_enabled()
-                    && *TabSettings::as_ref(ctx).use_vertical_tabs
+                if uses_vertical_tabs(ctx)
                     && *TabSettings::as_ref(ctx).show_vertical_tab_panel_in_restored_windows
                 {
                     self.vertical_tabs_panel_open = true;
@@ -2935,7 +2946,7 @@ impl Workspace {
                     .iter()
                     .enumerate()
                     .for_each(|(tab_index, saved_tab)| {
-                        let custom_title = saved_tab.custom_title.clone();
+                        let custom_title = self.restored_custom_title(saved_tab, ctx);
                         self.add_tab_with_pane_layout(
                             PanesLayout::Snapshot(Box::new(saved_tab.root.clone())),
                             block_lists.clone(),
@@ -3156,7 +3167,7 @@ impl Workspace {
 
         let resizable = ResizableData::handle(ctx);
         if let Some(modal_sizes) = resizable.as_ref(ctx).get_all_handles(self.window_id)
-            && let Ok(mut handle) = modal_sizes.left_panel_width.lock()
+            && let Ok(mut handle) = modal_sizes.right_panel_width.lock()
         {
             handle.set_size(left_panel_snapshot.width as f32);
         }
@@ -3169,6 +3180,7 @@ impl Workspace {
                     entry_focus: GlobalSearchEntryFocus::Results,
                 },
                 LeftPanelDisplayedTab::WarpDrive => ToolPanelView::WarpDrive,
+                LeftPanelDisplayedTab::SourceControl => ToolPanelView::SourceControl,
             };
             lp.restore_active_view_from_snapshot(active_view, ctx);
             lp.set_active_pane_group(pane_group.clone(), &self.working_directories_model, ctx);
@@ -3198,6 +3210,10 @@ impl Workspace {
         self.right_panel_view.update(ctx, |rp, ctx| {
             rp.set_active_pane_group(pane_group.clone(), &self.working_directories_model, ctx);
             rp.set_maximized(right_panel_snapshot.is_maximized, ctx);
+        });
+        self.open_left_panel(ctx);
+        self.left_panel_view.update(ctx, |sidebar, ctx| {
+            sidebar.restore_active_view_from_snapshot(ToolPanelView::SourceControl, ctx);
         });
 
         ctx.notify();
@@ -3514,7 +3530,7 @@ impl Workspace {
         }
 
         if self.left_panel_view.is_self_or_child_focused(app) {
-            return FocusRegion::LeftPanel;
+            return FocusRegion::RightPanel;
         }
         if self.right_panel_view.is_self_or_child_focused(app) {
             return FocusRegion::RightPanel;
@@ -3527,13 +3543,13 @@ impl Workspace {
         FocusRegion::Other
     }
 
-    fn has_left_region(&self, app: &AppContext) -> bool {
-        self.active_tab_pane_group().as_ref(app).left_panel_open
+    fn has_left_region(&self) -> bool {
+        false
     }
 
     fn has_right_region(&self, app: &AppContext) -> bool {
         let group = self.active_tab_pane_group().as_ref(app);
-        group.right_panel_open || self.current_workspace_state.is_right_panel_open()
+        group.left_panel_open || self.current_workspace_state.is_right_panel_open()
     }
 
     fn focus_next_pane_in_group(&mut self, ctx: &mut ViewContext<Self>) -> bool {
@@ -3556,18 +3572,14 @@ impl Workspace {
         handle.update(ctx, |pane_group, ctx| pane_group.focus_last_pane(ctx))
     }
 
-    fn focus_left_region_entry(&mut self, ctx: &mut ViewContext<Self>) {
-        if self.has_left_region(ctx) {
-            self.left_panel_view.update(ctx, |left_panel, ctx| {
-                left_panel.focus_active_view_on_entry(ctx);
-            });
-        }
-    }
+    fn focus_left_region_entry(&mut self) {}
 
     fn focus_right_region_entry(&mut self, ctx: &mut ViewContext<Self>) {
         let group = self.active_tab_pane_group().as_ref(ctx);
-        if group.right_panel_open {
-            ctx.focus(&self.right_panel_view);
+        if group.left_panel_open {
+            self.left_panel_view.update(ctx, |sidebar, ctx| {
+                sidebar.focus_active_view_on_entry(ctx);
+            });
             return;
         }
         if self.current_workspace_state.is_resource_center_open {
@@ -3581,7 +3593,7 @@ impl Workspace {
         ctx: &mut ViewContext<Self>,
     ) {
         let current_region = self.current_focus_region(ctx);
-        let has_left_panel = self.has_left_region(ctx);
+        let has_left_panel = self.has_left_region();
         let has_right_panel = self.has_right_region(ctx);
 
         let target_region = self.compute_target_focus_region(
@@ -3617,7 +3629,7 @@ impl Workspace {
             // NEXT: Right panel to left panel if open, else first pane
             (FocusRegion::RightPanel, PanePanelDirection::Next) => {
                 if has_left_panel {
-                    self.focus_left_region_entry(ctx);
+                    self.focus_left_region_entry();
                     FocusRegion::LeftPanel
                 } else {
                     self.focus_first_visible_pane_in_group(ctx);
@@ -3635,7 +3647,7 @@ impl Workspace {
                     self.focus_right_region_entry(ctx);
                     FocusRegion::RightPanel
                 } else if has_left_panel {
-                    self.focus_left_region_entry(ctx);
+                    self.focus_left_region_entry();
                     FocusRegion::LeftPanel
                 } else {
                     // No panels, wrap within panes.
@@ -3670,7 +3682,7 @@ impl Workspace {
                 if did_move {
                     FocusRegion::PaneGroup
                 } else if has_left_panel {
-                    self.focus_left_region_entry(ctx);
+                    self.focus_left_region_entry();
                     FocusRegion::LeftPanel
                 } else if has_right_panel {
                     self.focus_right_region_entry(ctx);
@@ -3956,7 +3968,7 @@ impl Workspace {
             .value()
     }
 
-    /// Reconciles the active tab's tools panel open/closed state to match the window-scoped desired state
+    /// Reconciles the active tab's right sidebar open/closed state to match the window-scoped desired state
     /// (syncing left panel open/closed state across tabs).
     fn reconcile_left_panel_open_for_active_tab(&mut self, ctx: &mut ViewContext<Self>) {
         let pane_group = self.active_tab_pane_group().clone();
@@ -4579,12 +4591,8 @@ impl Workspace {
             .header_toolbar_chip_selection
             .clone();
         let left_items = config.left_items();
-        let tools_position = if left_items.contains(&HeaderToolbarItemKind::ToolsPanel) {
-            PanelPosition::Left
-        } else {
-            PanelPosition::Right
-        };
-        let code_review_position = if left_items.contains(&HeaderToolbarItemKind::CodeReview) {
+        let tools_position = PanelPosition::Right;
+        let code_review_position = if left_items.contains(&HeaderToolbarItemKind::SourceControl) {
             PanelPosition::Left
         } else {
             PanelPosition::Right
@@ -4711,6 +4719,18 @@ impl Workspace {
         }
 
         items.push(MenuItem::Separator);
+        if self.can_create_worktree(ctx) {
+            items.push(
+                MenuItemFields::new("New Worktree\u{2026}")
+                    .with_indent()
+                    .with_key_shortcut_label(keybinding_name_to_display_string(
+                        NEW_WORKTREE_BINDING_NAME,
+                        ctx,
+                    ))
+                    .with_on_select_action(ProjectHostAction::ShowCreateWorktreeModal)
+                    .into_item(),
+            );
+        }
         items.push(
             MenuItemFields::new("New Workspace\u{2026}")
                 .with_indent()
@@ -5183,6 +5203,12 @@ impl Workspace {
                     modal.start_sign_in(ctx);
                 });
             }
+            LeftPanelEvent::SourceControlSelected => {
+                let pane_group = self.active_tab_pane_group().clone();
+                if !pane_group.as_ref(ctx).right_panel_open {
+                    self.toggle_right_panel(&pane_group, ctx);
+                }
+            }
         }
     }
 
@@ -5600,8 +5626,7 @@ impl Workspace {
         anchor: NewSessionMenuAnchor,
         ctx: &ViewContext<Self>,
     ) -> f32 {
-        let use_vertical_tabs =
-            FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(ctx).use_vertical_tabs;
+        let use_vertical_tabs = uses_vertical_tabs(ctx);
         match anchor {
             NewSessionMenuAnchor::AddTabButton(position)
                 if use_vertical_tabs && self.vertical_tabs_panel_open =>
@@ -5629,8 +5654,7 @@ impl Workspace {
     }
 
     fn toggle_tab_configs_menu(&mut self, ctx: &mut ViewContext<Self>) {
-        let use_vertical_tabs =
-            FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(ctx).use_vertical_tabs;
+        let use_vertical_tabs = uses_vertical_tabs(ctx);
         if self.show_new_session_dropdown_menu.is_some() {
             self.close_new_session_dropdown_menu(ctx);
             return;
@@ -6515,6 +6539,7 @@ impl Workspace {
             context_menu.set_items(menu_items, view_ctx);
         });
         self.show_tab_group_right_click_menu = None;
+        self.show_worktree_section_menu = None;
         self.show_tab_right_click_menu = Some((tab_index, anchor));
         ctx.focus(&self.tab_right_click_menu);
         ctx.notify();
@@ -6543,7 +6568,43 @@ impl Workspace {
         });
         self.show_tab_right_click_menu = None;
         self.hide_move_to_group_sidecar(ctx);
+        self.show_worktree_section_menu = None;
         self.show_tab_group_right_click_menu = Some((group_id, anchor));
+        ctx.focus(&self.tab_right_click_menu);
+        ctx.notify();
+    }
+
+    pub fn toggle_worktree_section_menu(
+        &mut self,
+        worktree_id: WorktreeId,
+        anchor: TabContextMenuAnchor,
+        kind: WorktreeSectionMenuKind,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if self
+            .show_worktree_section_menu
+            .is_some_and(|(open_id, _, open_kind)| open_id == worktree_id && open_kind == kind)
+        {
+            self.show_worktree_section_menu = None;
+            ctx.notify();
+            return;
+        }
+        let menu_items = match kind {
+            WorktreeSectionMenuKind::NewTab => {
+                self.worktree_section_new_tab_menu_items(worktree_id, ctx)
+            }
+            WorktreeSectionMenuKind::Options => self.worktree_section_menu_items(worktree_id, ctx),
+        };
+        if menu_items.is_empty() {
+            return;
+        }
+        ctx.update_view(&self.tab_right_click_menu, |context_menu, view_ctx| {
+            context_menu.set_items(menu_items, view_ctx);
+        });
+        self.show_tab_right_click_menu = None;
+        self.hide_move_to_group_sidecar(ctx);
+        self.show_tab_group_right_click_menu = None;
+        self.show_worktree_section_menu = Some((worktree_id, anchor, kind));
         ctx.focus(&self.tab_right_click_menu);
         ctx.notify();
     }
@@ -7766,7 +7827,7 @@ impl Workspace {
             let resizable_data = ResizableData::handle(ctx);
             if let Some(handle) = resizable_data
                 .as_ref(ctx)
-                .get_handle(window_id, ModalType::LeftPanelWidth)
+                .get_handle(window_id, ModalType::RightPanelWidth)
                 && let Ok(mut state) = handle.lock()
             {
                 // Get the current width from ResizableData - this reflects the most recent tab's width
@@ -7774,12 +7835,12 @@ impl Workspace {
 
                 // Only recompute default if the current width is at the default value
                 // This preserves the width from the most recent tab
-                if current_width == DEFAULT_LEFT_PANEL_WIDTH {
+                if current_width == DEFAULT_RIGHT_PANEL_WIDTH {
                     let has_horizontal_split = active_pane_group
                         .read(ctx, |pane_group, _| pane_group.has_horizontal_split());
-                    let (left_width, _right_width) =
+                    let (_left_width, right_width) =
                         compute_default_panel_widths(ctx, window_id, has_horizontal_split);
-                    state.set_size(left_width);
+                    state.set_size(right_width);
                 }
                 // If current_width is not the default, it means we have a width from a previous tab,
                 // so we don't need to do anything - the width is already preserved
@@ -7913,6 +7974,10 @@ impl Workspace {
         });
 
         if should_open {
+            self.open_left_panel(ctx);
+            self.left_panel_view.update(ctx, |sidebar, ctx| {
+                sidebar.restore_active_view_from_snapshot(ToolPanelView::SourceControl, ctx);
+            });
             #[cfg(feature = "local_fs")]
             {
                 let window_id = ctx.window_id();
@@ -7953,6 +8018,9 @@ impl Workspace {
                 self.setup_code_review_panel(panel_update_params.review_pane_context, ctx);
             }
         } else {
+            if self.left_panel_view.as_ref(ctx).is_source_control_active() {
+                self.close_left_panel(ctx);
+            }
             self.focus_active_tab(ctx);
         }
 
@@ -7964,8 +8032,9 @@ impl Workspace {
         pane_group_handle: &ViewHandle<PaneGroup>,
         ctx: &mut ViewContext<Self>,
     ) {
-        let target_open_state =
-            pane_group_handle.read(ctx, |pane_group, _| !pane_group.right_panel_open);
+        let source_control_visible = pane_group_handle.as_ref(ctx).left_panel_open
+            && self.left_panel_view.as_ref(ctx).is_source_control_active();
+        let target_open_state = !source_control_visible;
 
         // Read repo_path and preferred session from pane group (immutable context).
         let read_result = pane_group_handle.read(ctx, |pane_group, ctx| {
@@ -8012,6 +8081,10 @@ impl Workspace {
         ctx: &mut ViewContext<Self>,
     ) {
         if pane_group_handle.as_ref(ctx).right_panel_open {
+            self.open_left_panel(ctx);
+            self.left_panel_view.update(ctx, |sidebar, ctx| {
+                sidebar.restore_active_view_from_snapshot(ToolPanelView::SourceControl, ctx);
+            });
             if let Some(repo_path) = &context.repo_path {
                 self.right_panel_view.update(ctx, |right_panel, ctx| {
                     right_panel.update_selected_repo(repo_path.clone(), ctx);
@@ -8312,6 +8385,7 @@ impl Workspace {
                 self.show_tab_right_click_menu = None;
                 self.show_tab_group_right_click_menu = None;
                 self.show_tab_selection_right_click_menu = None;
+                self.show_worktree_section_menu = None;
                 self.hide_move_to_group_sidecar(ctx);
                 ctx.notify();
             }
@@ -9838,7 +9912,7 @@ impl Workspace {
                 let modal_sizes = resizable_data.as_ref(app).get_all_handles(window_id);
 
                 let left_panel_width = modal_sizes.map(|ms| {
-                    ms.left_panel_width
+                    ms.right_panel_width
                         .lock()
                         .expect("should be able to lock left panel handle")
                         .size()
@@ -9965,7 +10039,7 @@ impl Workspace {
         });
 
         let left_panel_width = modal_sizes.map(|ms| {
-            ms.left_panel_width
+            ms.right_panel_width
                 .lock()
                 .map(|guard| guard.size())
                 .unwrap_or(DEFAULT_LEFT_PANEL_WIDTH)
@@ -10684,36 +10758,52 @@ impl Workspace {
         let picker_locator = AgentPickerPaneManager::handle(ctx)
             .as_ref(ctx)
             .find_pane(ctx.view_id());
+        let picker_worktree_id = picker_locator
+            .and_then(|locator| {
+                self.tabs
+                    .iter()
+                    .position(|tab| tab.pane_group.id() == locator.pane_group_id)
+            })
+            .and_then(|tab_index| self.resolved_worktree_id_of_tab(tab_index, ctx));
 
-        let startup_directory = self.get_new_tab_startup_directory(
-            NewSessionSource::Tab,
-            Some(ctx.window_id()),
-            None,
-            ctx,
-        );
-        self.add_tab_with_pane_layout(
-            PanesLayout::SingleTerminal(Box::new(
-                NewTerminalOptions::default()
-                    .with_initial_directory_opt(startup_directory)
-                    .with_homepage_hidden(),
-            )),
-            Arc::new(HashMap::new()),
-            Some(agent.display_name.to_owned()),
-            ctx,
-        );
-
-        match self
-            .active_tab_pane_group()
-            .as_ref(ctx)
-            .active_session_view(ctx)
-        {
-            Some(terminal_view) => {
-                terminal_view.update(ctx, |terminal_view, ctx| {
-                    terminal_view.execute_command_or_set_pending(agent.command, ctx);
-                });
+        match picker_worktree_id {
+            Some(worktree_id) => {
+                self.add_tab_in_worktree(worktree_id, Some(catalog_index), ctx);
             }
             None => {
-                log::warn!("Agent launcher: could not find terminal view after creating new tab");
+                let startup_directory = self.get_new_tab_startup_directory(
+                    NewSessionSource::Tab,
+                    Some(ctx.window_id()),
+                    None,
+                    ctx,
+                );
+                self.add_tab_with_pane_layout(
+                    PanesLayout::SingleTerminal(Box::new(
+                        NewTerminalOptions::default()
+                            .with_initial_directory_opt(startup_directory)
+                            .with_homepage_hidden(),
+                    )),
+                    Arc::new(HashMap::new()),
+                    None,
+                    ctx,
+                );
+
+                match self
+                    .active_tab_pane_group()
+                    .as_ref(ctx)
+                    .active_session_view(ctx)
+                {
+                    Some(terminal_view) => {
+                        terminal_view.update(ctx, |terminal_view, ctx| {
+                            terminal_view.execute_command_or_set_pending(agent.command, ctx);
+                        });
+                    }
+                    None => {
+                        log::warn!(
+                            "Agent launcher: could not find terminal view after creating new tab"
+                        );
+                    }
+                }
             }
         }
 
@@ -10869,13 +10959,29 @@ impl Workspace {
             .and_then(|tab| tab.worktree_id)
     }
 
-    pub fn set_active_tab_title(&mut self, title: &str, ctx: &mut ViewContext<Self>) {
-        let Some(tab) = self.tabs.get(self.active_tab_index) else {
-            return;
-        };
-        let pane_group = tab.pane_group.clone();
-        pane_group.update(ctx, |pane_group, ctx| pane_group.set_title(title, ctx));
-        self.update_window_title(ctx);
+    /// Clears titles that older builds auto-pinned, so they follow the live terminal again.
+    fn restored_custom_title(&self, saved_tab: &TabSnapshot, ctx: &AppContext) -> Option<String> {
+        let title = saved_tab.custom_title.clone()?;
+        if agent_catalog()
+            .iter()
+            .any(|agent| agent.display_name == title)
+        {
+            return None;
+        }
+        let registry = ProjectRegistryModel::as_ref(ctx);
+        let is_primary_worktree_tab = saved_tab.worktree_id.is_some_and(|worktree_id| {
+            registry
+                .worktree(worktree_id)
+                .is_some_and(|worktree| worktree.is_primary())
+        });
+        let matches_project_name = self
+            .project_id
+            .and_then(|project_id| registry.project(project_id))
+            .is_some_and(|project| project.display_name == title);
+        if is_primary_worktree_tab && matches_project_name {
+            return None;
+        }
+        Some(title)
     }
 
     pub fn bind_active_tab_to_worktree(
@@ -10910,8 +11016,15 @@ impl Workspace {
         };
 
         match TabSettings::as_ref(ctx).new_tab_placement {
-            // End of the bar, outside any group.
-            NewTabPlacement::AfterAllTabs => (self.tab_count(), None),
+            // End of the bar, outside any group; clamped so the new tab (which
+            // inherits the worktree binding) cannot split or escape its section.
+            NewTabPlacement::AfterAllTabs => {
+                let insert_idx = self
+                    .resolved_worktree_id_of_tab(self.active_tab_index, ctx)
+                    .and_then(|worktree_id| self.index_after_worktree_run(worktree_id))
+                    .unwrap_or(self.tab_count());
+                (insert_idx, None)
+            }
             NewTabPlacement::AfterCurrentTab => {
                 let insert_idx = self.active_tab_index + 1;
                 // A standalone (ungrouped) new tab must not land inside the
@@ -11050,7 +11163,19 @@ impl Workspace {
             me.handle_file_tree_event(pane_group, event, ctx)
         });
 
-        let inherited_worktree_id = self.inherited_worktree_id();
+        // The binding follows the drop position, not the active tab, so a pane
+        // dropped elsewhere cannot silently join the active worktree's section.
+        let inherited_worktree_id = if self.worktree_sections_enabled() {
+            let prev = new_idx
+                .checked_sub(1)
+                .and_then(|index| self.resolved_worktree_id_of_tab(index, ctx));
+            let next = self.resolved_worktree_id_of_tab(new_idx, ctx);
+            prev.zip(next)
+                .filter(|(before, after)| before == after)
+                .map(|(before, _)| before)
+        } else {
+            self.inherited_worktree_id()
+        };
         if self.tab_count() == 0 {
             self.tabs.push(TabData::new(new_pane_group));
             self.tab_mru_order
@@ -15791,8 +15916,7 @@ impl Workspace {
         appearance: &Appearance,
         ctx: &AppContext,
     ) -> Box<dyn Element> {
-        let vertical_tabs_active =
-            FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(ctx).use_vertical_tabs;
+        let vertical_tabs_active = uses_vertical_tabs(ctx);
 
         let (is_active, tooltip_text, action, keybinding_name, save_position_id) =
             if vertical_tabs_active {
@@ -15814,9 +15938,10 @@ impl Workspace {
                         ToolPanelView::ProjectExplorer => "Project explorer",
                         ToolPanelView::GlobalSearch { .. } => "Global search",
                         ToolPanelView::WarpDrive => "Warp Drive",
+                        ToolPanelView::SourceControl => "Source control",
                     }
                 } else {
-                    "Tools panel"
+                    "Right Sidebar"
                 };
                 (
                     self.active_tab_pane_group().as_ref(ctx).left_panel_open,
@@ -15867,9 +15992,10 @@ impl Workspace {
                 ToolPanelView::ProjectExplorer => "Project explorer",
                 ToolPanelView::GlobalSearch { .. } => "Global search",
                 ToolPanelView::WarpDrive => "Warp Drive",
+                ToolPanelView::SourceControl => "Source control",
             }
         } else {
-            "Tools panel"
+            "Right Sidebar"
         };
 
         SavePosition::new(
@@ -15907,10 +16033,11 @@ impl Workspace {
         appearance: &Appearance,
         ctx: &AppContext,
     ) -> Box<dyn Element> {
-        let is_active = self.active_tab_pane_group().as_ref(ctx).right_panel_open;
-        let is_enabled = Self::should_enable_file_tree_and_global_search_for_pane_group(
-            self.active_tab_pane_group().as_ref(ctx),
-        );
+        let pane_group = self.active_tab_pane_group().as_ref(ctx);
+        let is_active = pane_group.right_panel_open
+            && pane_group.left_panel_open
+            && self.left_panel_view.as_ref(ctx).is_source_control_active();
+        let is_enabled = Self::should_enable_file_tree_and_global_search_for_pane_group(pane_group);
         let disable = !is_enabled;
 
         let theme = appearance.theme();
@@ -16021,7 +16148,7 @@ impl Workspace {
             button
                 .with_tooltip(self.render_tab_bar_icon_button_tooltip(
                     appearance,
-                    "Code review panel".to_string(),
+                    "Source control".to_string(),
                     keybinding_name_to_display_string("workspace:toggle_right_panel", ctx),
                 ))
                 .build()
@@ -16452,21 +16579,15 @@ impl Workspace {
         if !item.is_available(ctx) {
             return None;
         }
-        let vertical_tabs_active =
-            FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(ctx).use_vertical_tabs;
         let inner = match item {
             HeaderToolbarItemKind::TabsPanel => self.render_left_toggle_button(appearance, ctx),
-            HeaderToolbarItemKind::ToolsPanel => {
+            HeaderToolbarItemKind::RightSidebar => {
                 if self.left_panel_views.is_empty() {
                     return None;
                 }
-                if vertical_tabs_active {
-                    self.render_tools_panel_button(appearance, ctx)
-                } else {
-                    self.render_left_toggle_button(appearance, ctx)
-                }
+                self.render_tools_panel_button(appearance, ctx)
             }
-            HeaderToolbarItemKind::CodeReview => self.render_right_panel_button(appearance, ctx),
+            HeaderToolbarItemKind::SourceControl => self.render_right_panel_button(appearance, ctx),
         };
         Some(
             Container::new(
@@ -17168,11 +17289,12 @@ impl Workspace {
             None => active_content,
         };
 
-        let vertical_tabs_active =
-            FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(app).use_vertical_tabs;
+        let vertical_tabs_active = uses_vertical_tabs(app);
         let pane_group = self.active_tab_pane_group().as_ref(app);
         let is_right_open = pane_group.right_panel_open;
-        let is_right_maximized = is_right_open && pane_group.is_right_panel_maximized;
+        let is_right_maximized = is_right_open
+            && pane_group.is_right_panel_maximized
+            && self.left_panel_view.as_ref(app).is_source_control_active();
 
         let mut main_content = Flex::row();
 
@@ -17184,7 +17306,11 @@ impl Workspace {
                 .header_toolbar_chip_selection
                 .clone();
             let mut prev_panel_added = false;
-            for item in config.left_items() {
+            for item in config
+                .left_items()
+                .into_iter()
+                .filter(|item| item != &HeaderToolbarItemKind::RightSidebar)
+            {
                 Self::add_panel_with_separator(
                     &mut main_content,
                     &mut prev_panel_added,
@@ -17210,6 +17336,22 @@ impl Workspace {
                     app,
                 );
             }
+            if config
+                .left_items()
+                .contains(&HeaderToolbarItemKind::RightSidebar)
+            {
+                Self::add_panel_with_separator(
+                    &mut main_content,
+                    &mut prev_panel_added,
+                    self.render_config_panel(
+                        &HeaderToolbarItemKind::RightSidebar,
+                        pane_group,
+                        &config,
+                        app,
+                    ),
+                    app,
+                );
+            }
 
             if is_right_maximized {
                 Self::add_panel_with_separator(
@@ -17218,12 +17360,12 @@ impl Workspace {
                     self.render_config_panel_maximized(pane_group, &config, app),
                     app,
                 );
-            } else if !config.contains_item(&HeaderToolbarItemKind::CodeReview) {
+            } else if !config.contains_item(&HeaderToolbarItemKind::SourceControl) {
                 Self::add_panel_with_separator(
                     &mut main_content,
                     &mut prev_panel_added,
                     self.render_config_panel(
-                        &HeaderToolbarItemKind::CodeReview,
+                        &HeaderToolbarItemKind::SourceControl,
                         pane_group,
                         &config,
                         app,
@@ -17703,8 +17845,7 @@ impl Workspace {
         let mut contents = contents;
 
         let traffic_light_data = traffic_light_data(app, self.window_id);
-        let vertical_tabs_active =
-            FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(app).use_vertical_tabs;
+        let vertical_tabs_active = uses_vertical_tabs(app);
         // Add a spacer for the traffic light buttons on Windows/Linux.
         if traffic_light_data.is_some_and(|data| data.side == TrafficLightSide::Right)
             && *side == PanelPosition::Right
@@ -17781,9 +17922,7 @@ impl Workspace {
         // Config-driven vertical-tabs-era panels (left side).
         // Hidden for simplified WASM views (notebooks, shared sessions, etc.)
         // where these panels are unnecessary.
-        let vertical_tabs_active = !hide_vertical_tabs
-            && FeatureFlag::VerticalTabs.is_enabled()
-            && *TabSettings::as_ref(app).use_vertical_tabs;
+        let vertical_tabs_active = !hide_vertical_tabs && uses_vertical_tabs(app);
 
         // In vertical tabs mode, config-driven panels are rendered here.
         // In horizontal tabs mode, they're rendered inside render_banner_and_active_tab.
@@ -17793,7 +17932,11 @@ impl Workspace {
                 .clone();
             let pane_group = self.active_tab_pane_group().as_ref(app);
 
-            for item in config.left_items() {
+            for item in config
+                .left_items()
+                .into_iter()
+                .filter(|item| item != &HeaderToolbarItemKind::RightSidebar)
+            {
                 Self::add_panel_with_separator(
                     &mut panels_view,
                     &mut prev_panel_added,
@@ -17841,6 +17984,22 @@ impl Workspace {
                     app,
                 );
             }
+            if config
+                .left_items()
+                .contains(&HeaderToolbarItemKind::RightSidebar)
+            {
+                Self::add_panel_with_separator(
+                    &mut panels_view,
+                    &mut prev_panel_added,
+                    self.render_config_panel(
+                        &HeaderToolbarItemKind::RightSidebar,
+                        pane_group,
+                        &config,
+                        app,
+                    ),
+                    app,
+                );
+            }
 
             if pane_group.right_panel_open && pane_group.is_right_panel_maximized {
                 Self::add_panel_with_separator(
@@ -17849,12 +18008,12 @@ impl Workspace {
                     self.render_config_panel_maximized(pane_group, &config, app),
                     app,
                 );
-            } else if !config.contains_item(&HeaderToolbarItemKind::CodeReview) {
+            } else if !config.contains_item(&HeaderToolbarItemKind::SourceControl) {
                 Self::add_panel_with_separator(
                     &mut panels_view,
                     &mut prev_panel_added,
                     self.render_config_panel(
-                        &HeaderToolbarItemKind::CodeReview,
+                        &HeaderToolbarItemKind::SourceControl,
                         pane_group,
                         &config,
                         app,
@@ -17921,21 +18080,19 @@ impl Workspace {
                     .finish(),
                 )
             }
-            HeaderToolbarItemKind::ToolsPanel => {
+            HeaderToolbarItemKind::RightSidebar => {
                 if !pane_group.left_panel_open || warpui::platform::is_mobile_device() {
+                    return None;
+                }
+                if pane_group.right_panel_open
+                    && pane_group.is_right_panel_maximized
+                    && self.left_panel_view.as_ref(app).is_source_control_active()
+                {
                     return None;
                 }
                 Some(ChildView::new(&self.left_panel_view).finish())
             }
-            HeaderToolbarItemKind::CodeReview => {
-                if !pane_group.right_panel_open {
-                    return None;
-                }
-                if pane_group.is_right_panel_maximized {
-                    return None;
-                }
-                Some(ChildView::new(&self.right_panel_view).finish())
-            }
+            HeaderToolbarItemKind::SourceControl => None,
         }
     }
 
@@ -17946,10 +18103,13 @@ impl Workspace {
         _config: &HeaderToolbarChipSelection,
         app: &AppContext,
     ) -> Option<Box<dyn Element>> {
-        if !pane_group.right_panel_open || !pane_group.is_right_panel_maximized {
+        if !pane_group.right_panel_open
+            || !pane_group.is_right_panel_maximized
+            || !self.left_panel_view.as_ref(app).is_source_control_active()
+        {
             return None;
         }
-        if !HeaderToolbarItemKind::CodeReview.is_supported(app) {
+        if !HeaderToolbarItemKind::SourceControl.is_supported(app) {
             return None;
         }
         Some(Shrinkable::new(1.0, ChildView::new(&self.right_panel_view).finish()).finish())
@@ -18255,7 +18415,7 @@ impl Workspace {
         {
             context.set.insert(flags::AUTO_OPEN_CODE_REVIEW_PANE_FLAG);
         }
-        if *tab_settings.use_vertical_tabs.value() {
+        if uses_vertical_tabs(app) {
             context.set.insert(flags::USE_VERTICAL_TABS_FLAG);
         }
         if *tab_settings.preserve_active_tab_color.value() {
@@ -18587,6 +18747,9 @@ impl Workspace {
         if *WarpDriveSettings::as_ref(ctx).enable_warp_drive {
             views.push(ToolPanelView::WarpDrive);
         }
+        if cfg!(feature = "local_fs") {
+            views.push(ToolPanelView::SourceControl);
+        }
         views
     }
 
@@ -18787,6 +18950,7 @@ impl TypedActionView for Workspace {
                 self.cancel_tab_rename(ctx);
                 self.cancel_pane_rename(ctx);
                 self.cancel_tab_group_rename(ctx);
+                self.cancel_worktree_rename(ctx);
             }
             NewTabGroupFromTab(tab_index) => self.new_tab_group_from_tab(*tab_index, ctx),
             MoveTabToGroup {
@@ -19356,7 +19520,7 @@ impl TypedActionView for Workspace {
                             ctx
                         );
                     } else if warp_drive_active {
-                        // Tools panel opened with Warp Drive as the active view
+                        // Right sidebar opened with Warp Drive as the active view
                         send_telemetry_from_ctx!(
                             TelemetryEvent::WarpDriveOpened {
                                 source: WarpDriveSource::LeftPanelToolbelt,
@@ -19427,10 +19591,7 @@ impl TypedActionView for Workspace {
                 }
             }
             ToggleVerticalTabsSettingsPopup => {
-                if FeatureFlag::VerticalTabs.is_enabled()
-                    && *TabSettings::as_ref(ctx).use_vertical_tabs
-                    && self.vertical_tabs_panel_open
-                {
+                if uses_vertical_tabs(ctx) && self.vertical_tabs_panel_open {
                     self.vertical_tabs_panel.show_settings_popup =
                         !self.vertical_tabs_panel.show_settings_popup;
                     ctx.notify();
@@ -19557,7 +19718,12 @@ impl TypedActionView for Workspace {
             }
             ClosePanel => {
                 if self.left_panel_view.is_self_or_child_focused(ctx) {
-                    self.close_left_panel(ctx);
+                    if self.left_panel_view.as_ref(ctx).is_source_control_active() {
+                        let pane_group_handle = self.active_tab_pane_group().clone();
+                        self.close_right_panel(&pane_group_handle, ctx);
+                    } else {
+                        self.close_left_panel(ctx);
+                    }
                 } else if self.right_panel_view.is_self_or_child_focused(ctx) {
                     let pane_group_handle = self.active_tab_pane_group().clone();
                     self.close_right_panel(&pane_group_handle, ctx);
@@ -19603,6 +19769,7 @@ impl TypedActionView for Workspace {
                         tab.pinned = false;
                     }
                 }
+                self.normalize_worktree_runs(ctx);
                 send_telemetry_from_ctx!(TelemetryEvent::DragAndDropTab, ctx);
                 if is_cross_window {
                     let drop_result =
@@ -20213,6 +20380,25 @@ impl TypedActionView for Workspace {
             RevealWorktreeFolder { worktree_id } => {
                 self.reveal_worktree_folder(*worktree_id, ctx);
             }
+            NewTerminalInWorktree { worktree_id } => {
+                self.add_tab_in_worktree(*worktree_id, None, ctx);
+            }
+            NewAgentPickerInWorktree { worktree_id } => {
+                self.add_agent_picker_tab_in_worktree(*worktree_id, ctx);
+            }
+            RenameWorktree { worktree_id } => {
+                self.rename_worktree_inline(*worktree_id, ctx);
+            }
+            ToggleWorktreeSectionCollapsed { worktree_id } => {
+                self.toggle_worktree_section_collapsed(*worktree_id, ctx);
+            }
+            ToggleWorktreeSectionMenu {
+                worktree_id,
+                anchor,
+                kind,
+            } => {
+                self.toggle_worktree_section_menu(*worktree_id, *anchor, *kind, ctx);
+            }
         };
         if action.should_save_app_state_on_action() {
             ctx.dispatch_global_action("workspace:save_app", ());
@@ -20495,8 +20681,8 @@ impl View for Workspace {
                         TAB_BAR_POSITION_ID,
                         vec2f(0., 0.),
                         PositionedElementOffsetBounds::WindowBySize,
-                        PositionedElementAnchor::BottomRight,
-                        ChildAnchor::TopRight,
+                        PositionedElementAnchor::BottomLeft,
+                        ChildAnchor::TopLeft,
                     ),
                 );
 
@@ -20509,8 +20695,8 @@ impl View for Workspace {
                         TAB_BAR_POSITION_ID,
                         vec2f(0., 0.),
                         PositionedElementOffsetBounds::WindowBySize,
-                        PositionedElementAnchor::BottomLeft,
-                        ChildAnchor::TopLeft,
+                        PositionedElementAnchor::BottomRight,
+                        ChildAnchor::TopRight,
                     ),
                 );
             }
@@ -20523,8 +20709,7 @@ impl View for Workspace {
         );
 
         if !use_simplified_wasm_tab_bar
-            && FeatureFlag::VerticalTabs.is_enabled()
-            && *TabSettings::as_ref(app).use_vertical_tabs
+            && uses_vertical_tabs(app)
             && self.vertical_tabs_panel_open
             && self.vertical_tabs_panel.show_settings_popup
         {
@@ -20545,8 +20730,7 @@ impl View for Workspace {
             );
         }
 
-        if FeatureFlag::VerticalTabs.is_enabled()
-            && *TabSettings::as_ref(app).use_vertical_tabs
+        if uses_vertical_tabs(app)
             && self.vertical_tabs_panel_open
             && let Some(vertical_tabs::DetailSidecarOverlay {
                 anchor_position_id,
@@ -20652,9 +20836,7 @@ impl View for Workspace {
         }
 
         if let Some((tab_idx, right_click_menu_anchor)) = self.show_tab_right_click_menu {
-            let is_vertical = FeatureFlag::VerticalTabs.is_enabled()
-                && *TabSettings::as_ref(app).use_vertical_tabs
-                && self.vertical_tabs_panel_open;
+            let is_vertical = uses_vertical_tabs(app) && self.vertical_tabs_panel_open;
             if tab_bar_mode.has_tab_bar() || is_vertical {
                 let positioning = if is_vertical {
                     match right_click_menu_anchor {
@@ -20714,9 +20896,7 @@ impl View for Workspace {
         // Rendered for both the horizontal tab bar and the vertical tabs panel
         // — the right-click handlers on both surfaces dispatch the same action.
         if let Some((_tab_idx, anchor)) = self.show_tab_selection_right_click_menu {
-            let is_vertical = FeatureFlag::VerticalTabs.is_enabled()
-                && *TabSettings::as_ref(app).use_vertical_tabs
-                && self.vertical_tabs_panel_open;
+            let is_vertical = uses_vertical_tabs(app) && self.vertical_tabs_panel_open;
             if tab_bar_mode.has_tab_bar() || is_vertical {
                 let position = match anchor {
                     TabContextMenuAnchor::Pointer(position) => position,
@@ -20746,9 +20926,7 @@ impl View for Workspace {
 
         // Tab group more-options menu (reuses the `tab_right_click_menu` view).
         if let Some((group_id, anchor)) = self.show_tab_group_right_click_menu {
-            let is_vertical = FeatureFlag::VerticalTabs.is_enabled()
-                && *TabSettings::as_ref(app).use_vertical_tabs
-                && self.vertical_tabs_panel_open;
+            let is_vertical = uses_vertical_tabs(app) && self.vertical_tabs_panel_open;
             let positioning = match (is_vertical, anchor) {
                 (true, TabContextMenuAnchor::VerticalTabsKebab) => {
                     let tabs_side = Self::tabs_panel_side(
@@ -20798,12 +20976,58 @@ impl View for Workspace {
             }
         }
 
+        // Worktree section header menus (reuse the `tab_right_click_menu` view).
+        if let Some((worktree_id, anchor, kind)) = self.show_worktree_section_menu {
+            let is_vertical = uses_vertical_tabs(app) && self.vertical_tabs_panel_open;
+            let positioning = match (is_vertical, anchor) {
+                (true, TabContextMenuAnchor::VerticalTabsKebab) => {
+                    let tabs_side = Self::tabs_panel_side(
+                        &TabSettings::as_ref(app).header_toolbar_chip_selection,
+                    );
+                    let (anchor, child_anchor) = if tabs_side == PanelPosition::Left {
+                        (PositionedElementAnchor::BottomLeft, ChildAnchor::TopLeft)
+                    } else {
+                        (PositionedElementAnchor::BottomRight, ChildAnchor::TopRight)
+                    };
+                    let position_id = match kind {
+                        WorktreeSectionMenuKind::NewTab => {
+                            vertical_tabs::vtab_worktree_plus_position_id(worktree_id)
+                        }
+                        WorktreeSectionMenuKind::Options => {
+                            vertical_tabs::vtab_worktree_kebab_position_id(worktree_id)
+                        }
+                    };
+                    Some(OffsetPositioning::offset_from_save_position_element(
+                        position_id,
+                        vec2f(0., 4.),
+                        PositionedElementOffsetBounds::WindowByPosition,
+                        anchor,
+                        child_anchor,
+                    ))
+                }
+                (true, TabContextMenuAnchor::Pointer(position)) => {
+                    Some(OffsetPositioning::offset_from_parent(
+                        position,
+                        ParentOffsetBounds::WindowByPosition,
+                        ParentAnchor::TopLeft,
+                        ChildAnchor::TopLeft,
+                    ))
+                }
+                (false, TabContextMenuAnchor::Pointer(_))
+                | (false, TabContextMenuAnchor::VerticalTabsKebab) => None,
+            };
+            if let Some(positioning) = positioning {
+                stack.add_positioned_overlay_child(
+                    ChildView::new(&self.tab_right_click_menu).finish(),
+                    positioning,
+                );
+            }
+        }
+
         // Render the new session dropdown menu. This is outside the tab bar visibility
         // gate because it can also be opened from the vertical tabs panel.
         if let Some(menu_anchor) = self.show_new_session_dropdown_menu {
-            let is_vertical = FeatureFlag::VerticalTabs.is_enabled()
-                && *TabSettings::as_ref(app).use_vertical_tabs
-                && self.vertical_tabs_panel_open;
+            let is_vertical = uses_vertical_tabs(app) && self.vertical_tabs_panel_open;
 
             match (is_vertical, menu_anchor) {
                 (true, NewSessionMenuAnchor::AddTabButton(_)) => {
@@ -21075,9 +21299,7 @@ impl View for Workspace {
         }
 
         if self.should_show_session_config_tab_config_chip() {
-            let use_vertical = FeatureFlag::VerticalTabs.is_enabled()
-                && *TabSettings::as_ref(app).use_vertical_tabs
-                && self.vertical_tabs_panel_open;
+            let use_vertical = uses_vertical_tabs(app) && self.vertical_tabs_panel_open;
             let chip =
                 self.render_session_config_tab_config_chip(use_vertical, Appearance::as_ref(app));
             if use_vertical {
@@ -21226,8 +21448,7 @@ impl View for Workspace {
         }
 
         // Add workspace-wide UI event handling.
-        let stack = if FeatureFlag::VerticalTabs.is_enabled()
-            && *TabSettings::as_ref(app).use_vertical_tabs
+        let stack = if uses_vertical_tabs(app)
             && self.vertical_tabs_panel_open
             // The vertical-tabs detail sidecar can become stale if the pointer moves through a
             // covered region (for example, its scrollbar gutter) and the row/sidecar hoverables
@@ -21918,8 +22139,7 @@ impl Workspace {
                     // the normal reorder path below: the placeholder is
                     // detached mid cross-window drag and shouldn't churn group
                     // membership.
-                    let use_vertical_tabs = FeatureFlag::VerticalTabs.is_enabled()
-                        && *TabSettings::as_ref(ctx).use_vertical_tabs;
+                    let use_vertical_tabs = uses_vertical_tabs(ctx);
                     let new_index = if use_vertical_tabs {
                         self.calculate_updated_tab_index_vertical(current_index, position, ctx)
                     } else {
@@ -22063,8 +22283,7 @@ impl Workspace {
             return;
         }
 
-        let use_vertical_tabs =
-            FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(ctx).use_vertical_tabs;
+        let use_vertical_tabs = uses_vertical_tabs(ctx);
         let groups_enabled = FeatureFlag::GroupedTabs.is_enabled();
 
         if groups_enabled {
@@ -22081,6 +22300,14 @@ impl Workspace {
                 self.target_group_at_axis(midpoint_drag, source_group, use_vertical_tabs, ctx);
             let expanded_target =
                 hovered_group.filter(|gid| !self.tab_groups.get(gid).is_some_and(|g| g.collapsed));
+            // Entering a group with a different worktree binding would split
+            // that section's contiguous run around the group.
+            let expanded_target = expanded_target.filter(|gid| {
+                !self.worktree_sections_enabled()
+                    || group_member_index_range(&self.tabs, *gid)
+                        .map(|(first, _)| self.tabs[first].worktree_id)
+                        == Some(self.tabs[current_index].worktree_id)
+            });
             // A pinned tab keeps its individual pin while dragging over a
             // pinned group (it's committed on drop — see the `DropTab` handler).
             let was_pinned = self.tabs[current_index].pinned;
@@ -22180,6 +22407,25 @@ impl Workspace {
                 let insert_at = if current_index < first { last } else { first };
                 self.hop_tab_to_index(current_index, insert_at, ctx);
                 return;
+            }
+
+            // Worktree runs must stay contiguous: a bound tab never leaves its
+            // section and an unbound tab hops past a foreign section whole.
+            if self.worktree_sections_enabled() {
+                let dragged_worktree = self.resolved_worktree_id_of_tab(current_index, ctx);
+                let neighbor_worktree = self.resolved_worktree_id_of_tab(new_index, ctx);
+                if dragged_worktree != neighbor_worktree {
+                    if dragged_worktree.is_some() {
+                        return;
+                    }
+                    if let Some(worktree_id) = neighbor_worktree
+                        && let Some((first, last)) = self.worktree_run_range(worktree_id)
+                    {
+                        let insert_at = if current_index < first { last } else { first };
+                        self.hop_tab_to_index(current_index, insert_at, ctx);
+                        return;
+                    }
+                }
             }
 
             self.tabs.swap(new_index, current_index);

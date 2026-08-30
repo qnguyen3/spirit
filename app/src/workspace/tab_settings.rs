@@ -475,7 +475,7 @@ define_settings_group!(TabSettings, settings: [
         surface: settings::SettingSurfaces::GUI,
         private: false,
         toml_path: "code.editor.show_code_review_button",
-        description: "Whether to show the code review button on tabs.",
+        description: "Whether to show the source control button on tabs.",
     },
     show_code_review_diff_stats: ShowCodeReviewDiffStats {
         type: bool,
@@ -485,7 +485,7 @@ define_settings_group!(TabSettings, settings: [
         surface: settings::SettingSurfaces::GUI,
         private: false,
         toml_path: "code.editor.show_code_review_diff_stats",
-        description: "Whether to show lines added/removed counts on the code review button.",
+        description: "Whether to show lines added/removed counts on the source control button.",
     },
     preserve_active_tab_color: PreserveActiveTabColor {
         type: bool,

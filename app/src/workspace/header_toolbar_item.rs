@@ -24,24 +24,26 @@ use crate::workspace::tab_settings::TabSettings;
 #[schemars(rename_all = "snake_case")]
 pub enum HeaderToolbarItemKind {
     TabsPanel,
-    ToolsPanel,
-    CodeReview,
+    #[serde(alias = "ToolsPanel", alias = "tools_panel")]
+    RightSidebar,
+    #[serde(alias = "CodeReview", alias = "code_review")]
+    SourceControl,
 }
 
 impl HeaderToolbarItemKind {
     pub fn display_label(&self) -> &'static str {
         match self {
             Self::TabsPanel => "Tabs Panel",
-            Self::ToolsPanel => "Tools Panel",
-            Self::CodeReview => "Code Review",
+            Self::RightSidebar => "Right Sidebar",
+            Self::SourceControl => "Source Control",
         }
     }
 
     pub fn icon(&self) -> Icon {
         match self {
             Self::TabsPanel => Icon::Menu,
-            Self::ToolsPanel => Icon::Tool2,
-            Self::CodeReview => Icon::Diff,
+            Self::RightSidebar => Icon::Tool2,
+            Self::SourceControl => Icon::Diff,
         }
     }
 
@@ -51,8 +53,8 @@ impl HeaderToolbarItemKind {
     pub fn is_supported(&self, app: &AppContext) -> bool {
         match self {
             Self::TabsPanel => crate::tab::uses_vertical_tabs(app),
-            Self::ToolsPanel => true,
-            Self::CodeReview => cfg!(feature = "local_fs"),
+            Self::RightSidebar => true,
+            Self::SourceControl => cfg!(feature = "local_fs"),
         }
     }
 
@@ -63,27 +65,30 @@ impl HeaderToolbarItemKind {
             return false;
         }
         match self {
-            Self::CodeReview => *TabSettings::as_ref(app).show_code_review_button.value(),
-            Self::TabsPanel | Self::ToolsPanel => true,
+            Self::SourceControl => *TabSettings::as_ref(app).show_code_review_button.value(),
+            Self::TabsPanel | Self::RightSidebar => true,
         }
     }
 
     /// Whether this item opens a side panel (as opposed to replacing the content
     /// area or opening a popover).
     pub fn is_panel(&self) -> bool {
-        matches!(self, Self::TabsPanel | Self::ToolsPanel | Self::CodeReview)
+        matches!(
+            self,
+            Self::TabsPanel | Self::RightSidebar | Self::SourceControl
+        )
     }
 
     pub fn default_left() -> Vec<Self> {
-        vec![Self::TabsPanel, Self::ToolsPanel]
+        vec![Self::TabsPanel]
     }
 
     pub fn default_right() -> Vec<Self> {
-        vec![Self::CodeReview]
+        vec![Self::RightSidebar, Self::SourceControl]
     }
 
     /// All toolbar item variants (availability filtering is done at the call site).
     pub fn all_items() -> Vec<Self> {
-        vec![Self::TabsPanel, Self::ToolsPanel, Self::CodeReview]
+        vec![Self::TabsPanel, Self::RightSidebar, Self::SourceControl]
     }
 }

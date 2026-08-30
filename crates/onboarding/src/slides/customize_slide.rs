@@ -28,7 +28,7 @@ enum SettingCard {
     CodeReview,
 }
 
-/// Sub-settings within the tools panel.
+/// Sub-settings within the right sidebar.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ToolsPanelSubSetting {
     ConversationHistory,
@@ -52,7 +52,7 @@ pub enum CustomizeSlideAction {
 pub struct CustomizeUISlide {
     onboarding_state: ModelHandle<OnboardingStateModel>,
     selected_setting: Option<SettingCard>,
-    /// The last-hovered tools panel chip; persists until a different chip is hovered
+    /// The last-hovered right sidebar chip; persists until a different chip is hovered
     /// or a different card is selected.
     hovered_chip: Option<ToolsPanelSubSetting>,
     // Mouse states for setting cards
@@ -66,7 +66,7 @@ pub struct CustomizeUISlide {
     tools_seg_right_mouse: MouseStateHandle,
     code_seg_left_mouse: MouseStateHandle,
     code_seg_right_mouse: MouseStateHandle,
-    // Mouse states for tools panel chip buttons
+    // Mouse states for right sidebar chip buttons
     chip_file_explorer_mouse: MouseStateHandle,
     chip_global_search_mouse: MouseStateHandle,
     chip_warp_drive_mouse: MouseStateHandle,
@@ -292,7 +292,7 @@ impl CustomizeUISlide {
         render_toggle_card(
             appearance,
             ToggleCardSpec {
-                title: "Tools panel",
+                title: "Right Sidebar",
                 is_expanded: is_selected,
                 is_left_selected: ui.tools_panel_enabled(),
                 left_label: "Enabled",
@@ -330,7 +330,7 @@ impl CustomizeUISlide {
         render_toggle_card(
             appearance,
             ToggleCardSpec {
-                title: "Code review",
+                title: "Source control",
                 is_expanded: is_selected,
                 is_left_selected: ui.show_code_review_button,
                 left_label: "Enabled",

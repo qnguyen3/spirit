@@ -479,16 +479,16 @@ fn test_tools_panel_does_not_suppress_vertical_tab_bar_traffic_light_padding() {
             left: vec![],
             right: vec![
                 HeaderToolbarItemKind::TabsPanel,
-                HeaderToolbarItemKind::ToolsPanel,
-                HeaderToolbarItemKind::CodeReview,
+                HeaderToolbarItemKind::RightSidebar,
+                HeaderToolbarItemKind::SourceControl,
             ],
         },
         HeaderToolbarChipSelection::Custom {
             left: vec![
                 HeaderToolbarItemKind::TabsPanel,
-                HeaderToolbarItemKind::ToolsPanel,
+                HeaderToolbarItemKind::RightSidebar,
             ],
-            right: vec![HeaderToolbarItemKind::CodeReview],
+            right: vec![HeaderToolbarItemKind::SourceControl],
         },
     ] {
         assert_vertical_tabs_tools_panel_preserves_padding(config);
@@ -4815,5 +4815,296 @@ fn a_tab_bound_to_a_registered_worktree_keeps_its_binding() {
         });
 
         std::fs::remove_dir_all(&root).ok();
+    })
+}
+
+#[test]
+fn a_worktree_tab_spawned_from_elsewhere_lands_at_the_end_of_its_run() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let _guard = FeatureFlag::AdeWorkspaces.override_enabled(true);
+
+        let root = std::env::temp_dir().join(format!(
+            "spirit-worktree-run-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+
+        let (project_id, primary_id, linked_id) = app.update(|ctx| {
+            ProjectRegistryModel::handle(ctx).update(ctx, |registry, ctx| {
+                let project_id = registry.register_project(
+                    root.clone(),
+                    "repo".to_owned(),
+                    crate::projects::ProjectKind::Git,
+                    Some("main".to_owned()),
+                    ctx,
+                );
+                let primary_id = registry
+                    .primary_worktree_id(project_id)
+                    .expect("registering a project creates its Primary worktree");
+                let linked_id = registry.add_linked_worktree(
+                    project_id,
+                    "auth".to_owned(),
+                    root.join("auth"),
+                    "auth".to_owned(),
+                    "main".to_owned(),
+                    ctx,
+                );
+                (project_id, primary_id, linked_id)
+            })
+        });
+
+        let workspace = mock_workspace(&mut app);
+        workspace.update(&mut app, |workspace, ctx| {
+            workspace.project_id = Some(project_id);
+            workspace.bind_active_tab_to_worktree(Some(primary_id), ctx);
+
+            workspace.add_tab_in_worktree(linked_id, None, ctx);
+            assert_eq!(
+                workspace.tabs[workspace.active_tab_index].worktree_id,
+                Some(linked_id)
+            );
+
+            workspace.activate_tab_internal(0, ctx);
+            workspace.add_tab_in_worktree(linked_id, None, ctx);
+
+            let bindings: Vec<_> = workspace.tabs.iter().map(|tab| tab.worktree_id).collect();
+            assert_eq!(
+                bindings,
+                vec![Some(primary_id), Some(linked_id), Some(linked_id)],
+                "a spawn while a foreign tab is active must land contiguously in its run"
+            );
+        });
+    })
+}
+
+#[test]
+fn closing_the_last_tab_of_a_worktree_moves_it_to_the_closed_list() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let _guard = FeatureFlag::AdeWorkspaces.override_enabled(true);
+
+        let root = std::env::temp_dir().join(format!(
+            "spirit-worktree-closed-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+
+        let (project_id, linked_id) = app.update(|ctx| {
+            ProjectRegistryModel::handle(ctx).update(ctx, |registry, ctx| {
+                let project_id = registry.register_project(
+                    root.clone(),
+                    "repo".to_owned(),
+                    crate::projects::ProjectKind::Git,
+                    Some("main".to_owned()),
+                    ctx,
+                );
+                let linked_id = registry.add_linked_worktree(
+                    project_id,
+                    "auth".to_owned(),
+                    root.join("auth"),
+                    "auth".to_owned(),
+                    "main".to_owned(),
+                    ctx,
+                );
+                (project_id, linked_id)
+            })
+        });
+
+        let workspace = mock_workspace(&mut app);
+        workspace.update(&mut app, |workspace, ctx| {
+            workspace.project_id = Some(project_id);
+            workspace.add_tab_in_worktree(linked_id, None, ctx);
+            let closed = workspace.closed_worktrees(ctx);
+            assert!(
+                closed.iter().all(|(id, _)| *id != linked_id),
+                "a worktree with an open tab is not closed"
+            );
+
+            let index = workspace
+                .tab_index_for_worktree(linked_id)
+                .expect("the worktree has a tab");
+            workspace.close_tabs(
+                std::iter::once(index),
+                crate::workspace::close_session_confirmation_dialog::OpenDialogSource::CloseOtherTabs { tab_index: 0 },
+                true,
+                false,
+                ctx,
+            );
+
+            let closed = workspace.closed_worktrees(ctx);
+            assert!(
+                closed.iter().any(|(id, _)| *id == linked_id),
+                "a worktree with no tabs reappears in the closed list"
+            );
+        });
+    })
+}
+
+#[test]
+fn the_worktree_section_header_menus_split_creation_from_management() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let _guard = FeatureFlag::AdeWorkspaces.override_enabled(true);
+
+        let root = std::env::temp_dir().join(format!(
+            "spirit-worktree-menus-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+
+        let (project_id, linked_id) = app.update(|ctx| {
+            ProjectRegistryModel::handle(ctx).update(ctx, |registry, ctx| {
+                let project_id = registry.register_project(
+                    root.clone(),
+                    "repo".to_owned(),
+                    crate::projects::ProjectKind::Git,
+                    Some("main".to_owned()),
+                    ctx,
+                );
+                let linked_id = registry.add_linked_worktree(
+                    project_id,
+                    "auth".to_owned(),
+                    root.join("auth"),
+                    "auth".to_owned(),
+                    "main".to_owned(),
+                    ctx,
+                );
+                (project_id, linked_id)
+            })
+        });
+
+        let workspace = mock_workspace(&mut app);
+        workspace.update(&mut app, |workspace, ctx| {
+            workspace.project_id = Some(project_id);
+
+            let new_tab_items = workspace.worktree_section_new_tab_menu_items(linked_id, ctx);
+            let new_tab_labels = new_tab_items
+                .iter()
+                .map(new_session_menu_label)
+                .collect::<Vec<_>>();
+            assert_eq!(new_tab_labels, vec!["New Agent\u{2026}", "Terminal"]);
+            assert!(matches!(
+                new_tab_items[0],
+                MenuItem::Item(ref fields)
+                    if matches!(
+                        fields.on_select_action(),
+                        Some(WorkspaceAction::NewAgentPickerInWorktree { worktree_id })
+                            if *worktree_id == linked_id
+                    )
+            ));
+
+            let option_labels = workspace
+                .worktree_section_menu_items(linked_id, ctx)
+                .iter()
+                .map(new_session_menu_label)
+                .collect::<Vec<_>>();
+            assert_eq!(
+                option_labels,
+                vec![
+                    "Reveal Worktree Folder",
+                    "Rename Worktree",
+                    "Delete Worktree\u{2026}"
+                ]
+            );
+        });
+    })
+}
+
+#[test]
+fn restoring_a_tab_drops_auto_pinned_agent_and_workspace_titles() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let _guard = FeatureFlag::AdeWorkspaces.override_enabled(true);
+
+        let root = std::env::temp_dir().join(format!(
+            "spirit-restored-title-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+
+        let (project_id, primary_id, linked_id) = app.update(|ctx| {
+            ProjectRegistryModel::handle(ctx).update(ctx, |registry, ctx| {
+                let project_id = registry.register_project(
+                    root.clone(),
+                    "repo".to_owned(),
+                    crate::projects::ProjectKind::Git,
+                    Some("main".to_owned()),
+                    ctx,
+                );
+                let primary_id = registry
+                    .primary_worktree_id(project_id)
+                    .expect("registering a project creates its Primary worktree");
+                let linked_id = registry.add_linked_worktree(
+                    project_id,
+                    "auth".to_owned(),
+                    root.join("auth"),
+                    "auth".to_owned(),
+                    "main".to_owned(),
+                    ctx,
+                );
+                (project_id, primary_id, linked_id)
+            })
+        });
+
+        let display_name = app.update(|ctx| {
+            ProjectRegistryModel::as_ref(ctx)
+                .project(project_id)
+                .map(|project| project.display_name.clone())
+                .expect("the project is registered")
+        });
+
+        let snapshot = |custom_title: Option<&str>, worktree_id: Option<WorktreeId>| TabSnapshot {
+            custom_title: custom_title.map(str::to_owned),
+            root: PaneNodeSnapshot::Leaf(LeafSnapshot {
+                is_focused: true,
+                custom_vertical_tabs_title: None,
+                contents: LeafContents::Terminal(TerminalPaneSnapshot {
+                    uuid: vec![1],
+                    cwd: None,
+                    shell_launch_data: None,
+                    is_active: true,
+                    is_read_only: false,
+                }),
+            }),
+            default_directory_color: None,
+            selected_color: SelectedTabColor::default(),
+            left_panel: None,
+            right_panel: None,
+            group_id: None,
+            pinned: false,
+            worktree_id,
+        };
+
+        let workspace = mock_workspace(&mut app);
+        workspace.update(&mut app, |workspace, ctx| {
+            workspace.project_id = Some(project_id);
+
+            assert_eq!(
+                workspace.restored_custom_title(&snapshot(Some("Claude Code"), None), ctx),
+                None,
+                "an agent name pinned by an older build falls back to the terminal title"
+            );
+            assert_eq!(
+                workspace
+                    .restored_custom_title(&snapshot(Some(&display_name), Some(primary_id)), ctx),
+                None,
+                "the workspace name pinned onto its default terminal falls back too"
+            );
+            assert_eq!(
+                workspace
+                    .restored_custom_title(&snapshot(Some("my notes"), Some(linked_id)), ctx)
+                    .as_deref(),
+                Some("my notes"),
+                "an explicit rename survives a restore"
+            );
+            assert_eq!(
+                workspace
+                    .restored_custom_title(&snapshot(Some(&display_name), Some(linked_id)), ctx)
+                    .as_deref(),
+                Some(display_name.as_str()),
+                "the project name on a linked worktree tab was chosen by the user"
+            );
+        });
     })
 }

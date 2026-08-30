@@ -89,27 +89,54 @@ fn hide_title_bar_search_bar_in_vertical_tabs_uses_vertical_tabs_path() {
 #[test]
 fn header_toolbar_chip_selection_default_contains_code_review() {
     let config = HeaderToolbarChipSelection::Default;
-    assert!(config.contains_item(&HeaderToolbarItemKind::CodeReview));
+    assert!(config.contains_item(&HeaderToolbarItemKind::SourceControl));
+}
+
+#[test]
+fn header_toolbar_chip_selection_places_right_sidebar_on_right_by_default() {
+    let config = HeaderToolbarChipSelection::Default;
+    assert!(
+        !config
+            .left_items()
+            .contains(&HeaderToolbarItemKind::RightSidebar)
+    );
+    assert!(
+        config
+            .right_items()
+            .contains(&HeaderToolbarItemKind::RightSidebar)
+    );
+}
+
+#[test]
+fn header_toolbar_item_deserializes_legacy_panel_names() {
+    assert_eq!(
+        serde_json::from_str::<HeaderToolbarItemKind>(r#""ToolsPanel""#).unwrap(),
+        HeaderToolbarItemKind::RightSidebar
+    );
+    assert_eq!(
+        serde_json::from_str::<HeaderToolbarItemKind>(r#""CodeReview""#).unwrap(),
+        HeaderToolbarItemKind::SourceControl
+    );
 }
 
 #[test]
 fn header_toolbar_chip_selection_custom_without_code_review_reports_absent() {
     let config = HeaderToolbarChipSelection::Custom {
         left: vec![HeaderToolbarItemKind::TabsPanel],
-        right: vec![HeaderToolbarItemKind::ToolsPanel],
+        right: vec![HeaderToolbarItemKind::RightSidebar],
     };
-    assert!(!config.contains_item(&HeaderToolbarItemKind::CodeReview));
+    assert!(!config.contains_item(&HeaderToolbarItemKind::SourceControl));
     assert!(config.contains_item(&HeaderToolbarItemKind::TabsPanel));
-    assert!(config.contains_item(&HeaderToolbarItemKind::ToolsPanel));
+    assert!(config.contains_item(&HeaderToolbarItemKind::RightSidebar));
 }
 
 #[test]
 fn header_toolbar_chip_selection_custom_with_code_review_on_left_reports_present() {
     let config = HeaderToolbarChipSelection::Custom {
-        left: vec![HeaderToolbarItemKind::CodeReview],
+        left: vec![HeaderToolbarItemKind::SourceControl],
         right: vec![],
     };
-    assert!(config.contains_item(&HeaderToolbarItemKind::CodeReview));
+    assert!(config.contains_item(&HeaderToolbarItemKind::SourceControl));
 }
 
 #[test]

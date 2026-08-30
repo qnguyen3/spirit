@@ -303,6 +303,7 @@ pub enum LeftPanelDisplayedTab {
     FileTree,
     GlobalSearch,
     WarpDrive,
+    SourceControl,
 }
 
 impl From<ToolPanelView> for LeftPanelDisplayedTab {
@@ -311,6 +312,7 @@ impl From<ToolPanelView> for LeftPanelDisplayedTab {
             ToolPanelView::ProjectExplorer => LeftPanelDisplayedTab::FileTree,
             ToolPanelView::GlobalSearch { .. } => LeftPanelDisplayedTab::GlobalSearch,
             ToolPanelView::WarpDrive => LeftPanelDisplayedTab::WarpDrive,
+            ToolPanelView::SourceControl => LeftPanelDisplayedTab::SourceControl,
         }
     }
 }

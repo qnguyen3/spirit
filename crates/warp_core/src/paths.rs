@@ -28,6 +28,8 @@ use crate::channel::{Channel, ChannelState};
 /// repository workflows would be stored (in "./.warp/workflows").
 pub const WARP_CONFIG_DIR: &str = ".warp";
 
+const SPIRIT_CONFIG_DIR: &str = ".spirit";
+
 /// The name of the folder that stores Warp execution logs and network logs.
 /// This is currently only used on Windows to maintain backwards compatibility.
 pub const WARP_LOGS_DIR: &str = "logs";
@@ -37,7 +39,7 @@ fn base_warp_config_dir_name() -> String {
         // Preview shares the same directory as Stable for backward
         // compatibility — existing users already have config in `.warp`.
         Channel::Stable | Channel::Preview => WARP_CONFIG_DIR.to_owned(),
-        Channel::Oss => format!("{WARP_CONFIG_DIR}-oss"),
+        Channel::Oss => SPIRIT_CONFIG_DIR.to_owned(),
         Channel::Dev => format!("{WARP_CONFIG_DIR}-dev"),
         Channel::Integration => format!("{WARP_CONFIG_DIR}-integration"),
         Channel::Local => format!("{WARP_CONFIG_DIR}-local"),
@@ -101,7 +103,7 @@ fn macos_config_dir_name_for(channel: Channel, data_profile: Option<&str>) -> St
     let base_dir_name = match channel {
         Channel::Stable => WARP_CONFIG_DIR.to_owned(),
         Channel::Preview => format!("{WARP_CONFIG_DIR}-preview"),
-        Channel::Oss => format!("{WARP_CONFIG_DIR}-oss"),
+        Channel::Oss => SPIRIT_CONFIG_DIR.to_owned(),
         Channel::Dev => format!("{WARP_CONFIG_DIR}-dev"),
         Channel::Integration => format!("{WARP_CONFIG_DIR}-integration"),
         Channel::Local => format!("{WARP_CONFIG_DIR}-local"),
