@@ -1308,6 +1308,7 @@ impl View for LeftPanelView {
                 .with_main_axis_size(MainAxisSize::Max)
                 .finish()
         })
+        .with_background(internal_colors::fg_overlay_1(appearance.theme()))
         .finish();
 
         if warpui::platform::is_mobile_device() {
