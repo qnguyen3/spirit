@@ -111,7 +111,7 @@ use self::vertical_tabs::{
 };
 use super::action::{
     InitContent, NewSessionMenuAnchor, TabContextMenuAnchor, VerticalTabsPaneContextMenuTarget,
-    WorkspaceAction,
+    WorkspaceAction, WorktreeSectionMenuKind,
 };
 pub(crate) use super::close_session_confirmation_dialog::OpenDialogSource;
 use super::close_session_confirmation_dialog::{
@@ -845,8 +845,8 @@ pub struct Workspace {
     delete_worktree_dialog: ModalViewState<DeleteWorktreeDialog>,
     pub(crate) collapsed_worktree_sections: HashSet<WorktreeId>,
     pub(crate) worktree_rename_editor: ViewHandle<EditorView>,
-    /// Open worktree section more-options menu; reuses the `tab_right_click_menu` view.
-    show_worktree_section_menu: Option<(WorktreeId, TabContextMenuAnchor)>,
+    /// Open worktree section header menu; reuses the `tab_right_click_menu` view.
+    show_worktree_section_menu: Option<(WorktreeId, TabContextMenuAnchor, WorktreeSectionMenuKind)>,
     close_session_confirmation_dialog: ViewHandle<CloseSessionConfirmationDialog>,
     resource_center_view: ViewHandle<ResourceCenterView>,
     command_search_view: ViewHandle<CommandSearchView>,
@@ -2943,7 +2943,7 @@ impl Workspace {
                     .iter()
                     .enumerate()
                     .for_each(|(tab_index, saved_tab)| {
-                        let custom_title = saved_tab.custom_title.clone();
+                        let custom_title = self.restored_custom_title(saved_tab, ctx);
                         self.add_tab_with_pane_layout(
                             PanesLayout::Snapshot(Box::new(saved_tab.root.clone())),
                             block_lists.clone(),
@@ -6572,14 +6572,23 @@ impl Workspace {
         &mut self,
         worktree_id: WorktreeId,
         anchor: TabContextMenuAnchor,
+        kind: WorktreeSectionMenuKind,
         ctx: &mut ViewContext<Self>,
     ) {
-        if self.show_worktree_section_menu.is_some() {
+        if self
+            .show_worktree_section_menu
+            .is_some_and(|(open_id, _, open_kind)| open_id == worktree_id && open_kind == kind)
+        {
             self.show_worktree_section_menu = None;
             ctx.notify();
             return;
         }
-        let menu_items = self.worktree_section_menu_items(worktree_id, ctx);
+        let menu_items = match kind {
+            WorktreeSectionMenuKind::NewTab => {
+                self.worktree_section_new_tab_menu_items(worktree_id, ctx)
+            }
+            WorktreeSectionMenuKind::Options => self.worktree_section_menu_items(worktree_id, ctx),
+        };
         if menu_items.is_empty() {
             return;
         }
@@ -6589,7 +6598,7 @@ impl Workspace {
         self.show_tab_right_click_menu = None;
         self.hide_move_to_group_sidecar(ctx);
         self.show_tab_group_right_click_menu = None;
-        self.show_worktree_section_menu = Some((worktree_id, anchor));
+        self.show_worktree_section_menu = Some((worktree_id, anchor, kind));
         ctx.focus(&self.tab_right_click_menu);
         ctx.notify();
     }
@@ -10731,36 +10740,52 @@ impl Workspace {
         let picker_locator = AgentPickerPaneManager::handle(ctx)
             .as_ref(ctx)
             .find_pane(ctx.view_id());
+        let picker_worktree_id = picker_locator
+            .and_then(|locator| {
+                self.tabs
+                    .iter()
+                    .position(|tab| tab.pane_group.id() == locator.pane_group_id)
+            })
+            .and_then(|tab_index| self.resolved_worktree_id_of_tab(tab_index, ctx));
 
-        let startup_directory = self.get_new_tab_startup_directory(
-            NewSessionSource::Tab,
-            Some(ctx.window_id()),
-            None,
-            ctx,
-        );
-        self.add_tab_with_pane_layout(
-            PanesLayout::SingleTerminal(Box::new(
-                NewTerminalOptions::default()
-                    .with_initial_directory_opt(startup_directory)
-                    .with_homepage_hidden(),
-            )),
-            Arc::new(HashMap::new()),
-            Some(agent.display_name.to_owned()),
-            ctx,
-        );
-
-        match self
-            .active_tab_pane_group()
-            .as_ref(ctx)
-            .active_session_view(ctx)
-        {
-            Some(terminal_view) => {
-                terminal_view.update(ctx, |terminal_view, ctx| {
-                    terminal_view.execute_command_or_set_pending(agent.command, ctx);
-                });
+        match picker_worktree_id {
+            Some(worktree_id) => {
+                self.add_tab_in_worktree(worktree_id, Some(catalog_index), ctx);
             }
             None => {
-                log::warn!("Agent launcher: could not find terminal view after creating new tab");
+                let startup_directory = self.get_new_tab_startup_directory(
+                    NewSessionSource::Tab,
+                    Some(ctx.window_id()),
+                    None,
+                    ctx,
+                );
+                self.add_tab_with_pane_layout(
+                    PanesLayout::SingleTerminal(Box::new(
+                        NewTerminalOptions::default()
+                            .with_initial_directory_opt(startup_directory)
+                            .with_homepage_hidden(),
+                    )),
+                    Arc::new(HashMap::new()),
+                    None,
+                    ctx,
+                );
+
+                match self
+                    .active_tab_pane_group()
+                    .as_ref(ctx)
+                    .active_session_view(ctx)
+                {
+                    Some(terminal_view) => {
+                        terminal_view.update(ctx, |terminal_view, ctx| {
+                            terminal_view.execute_command_or_set_pending(agent.command, ctx);
+                        });
+                    }
+                    None => {
+                        log::warn!(
+                            "Agent launcher: could not find terminal view after creating new tab"
+                        );
+                    }
+                }
             }
         }
 
@@ -10916,13 +10941,29 @@ impl Workspace {
             .and_then(|tab| tab.worktree_id)
     }
 
-    pub fn set_active_tab_title(&mut self, title: &str, ctx: &mut ViewContext<Self>) {
-        let Some(tab) = self.tabs.get(self.active_tab_index) else {
-            return;
-        };
-        let pane_group = tab.pane_group.clone();
-        pane_group.update(ctx, |pane_group, ctx| pane_group.set_title(title, ctx));
-        self.update_window_title(ctx);
+    /// Clears titles that older builds auto-pinned, so they follow the live terminal again.
+    fn restored_custom_title(&self, saved_tab: &TabSnapshot, ctx: &AppContext) -> Option<String> {
+        let title = saved_tab.custom_title.clone()?;
+        if agent_catalog()
+            .iter()
+            .any(|agent| agent.display_name == title)
+        {
+            return None;
+        }
+        let registry = ProjectRegistryModel::as_ref(ctx);
+        let is_primary_worktree_tab = saved_tab.worktree_id.is_some_and(|worktree_id| {
+            registry
+                .worktree(worktree_id)
+                .is_some_and(|worktree| worktree.is_primary())
+        });
+        let matches_project_name = self
+            .project_id
+            .and_then(|project_id| registry.project(project_id))
+            .is_some_and(|project| project.display_name == title);
+        if is_primary_worktree_tab && matches_project_name {
+            return None;
+        }
+        Some(title)
     }
 
     pub fn bind_active_tab_to_worktree(
@@ -20275,11 +20316,8 @@ impl TypedActionView for Workspace {
             NewTerminalInWorktree { worktree_id } => {
                 self.add_tab_in_worktree(*worktree_id, None, ctx);
             }
-            NewAgentInWorktree {
-                worktree_id,
-                catalog_index,
-            } => {
-                self.add_tab_in_worktree(*worktree_id, Some(*catalog_index), ctx);
+            NewAgentPickerInWorktree { worktree_id } => {
+                self.add_agent_picker_tab_in_worktree(*worktree_id, ctx);
             }
             RenameWorktree { worktree_id } => {
                 self.rename_worktree_inline(*worktree_id, ctx);
@@ -20290,8 +20328,9 @@ impl TypedActionView for Workspace {
             ToggleWorktreeSectionMenu {
                 worktree_id,
                 anchor,
+                kind,
             } => {
-                self.toggle_worktree_section_menu(*worktree_id, *anchor, ctx);
+                self.toggle_worktree_section_menu(*worktree_id, *anchor, *kind, ctx);
             }
         };
         if action.should_save_app_state_on_action() {
@@ -20870,8 +20909,8 @@ impl View for Workspace {
             }
         }
 
-        // Worktree section more-options menu (reuses the `tab_right_click_menu` view).
-        if let Some((worktree_id, anchor)) = self.show_worktree_section_menu {
+        // Worktree section header menus (reuse the `tab_right_click_menu` view).
+        if let Some((worktree_id, anchor, kind)) = self.show_worktree_section_menu {
             let is_vertical = uses_vertical_tabs(app) && self.vertical_tabs_panel_open;
             let positioning = match (is_vertical, anchor) {
                 (true, TabContextMenuAnchor::VerticalTabsKebab) => {
@@ -20883,8 +20922,16 @@ impl View for Workspace {
                     } else {
                         (PositionedElementAnchor::BottomRight, ChildAnchor::TopRight)
                     };
+                    let position_id = match kind {
+                        WorktreeSectionMenuKind::NewTab => {
+                            vertical_tabs::vtab_worktree_plus_position_id(worktree_id)
+                        }
+                        WorktreeSectionMenuKind::Options => {
+                            vertical_tabs::vtab_worktree_kebab_position_id(worktree_id)
+                        }
+                    };
                     Some(OffsetPositioning::offset_from_save_position_element(
-                        vertical_tabs::vtab_worktree_kebab_position_id(worktree_id),
+                        position_id,
                         vec2f(0., 4.),
                         PositionedElementOffsetBounds::WindowByPosition,
                         anchor,

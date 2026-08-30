@@ -8,7 +8,7 @@ fn test_data_dir_path() {
     // ChannelState, by default, is configured for Channel::Oss.
     cfg_if::cfg_if! {
         if #[cfg(target_os = "macos")] {
-            assert_eq!(data_dir(), home_dir.join(".warp-oss"));
+            assert_eq!(data_dir(), home_dir.join(".spirit"));
         } else if #[cfg(any(target_os = "linux", target_os = "freebsd"))] {
             assert_eq!(data_dir(), home_dir.join(".local/share/warp-oss"));
         } else if #[cfg(windows)] {
@@ -25,7 +25,7 @@ fn test_config_local_dir_path() {
     // ChannelState, by default, is configured for Channel::Oss.
     cfg_if::cfg_if! {
         if #[cfg(target_os = "macos")] {
-            assert_eq!(config_local_dir(), home_dir.join(".warp-oss"));
+            assert_eq!(config_local_dir(), home_dir.join(".spirit"));
         } else if #[cfg(any(target_os = "linux", target_os = "freebsd"))] {
             assert_eq!(config_local_dir(), home_dir.join(".config/warp-oss"));
         } else if #[cfg(windows)] {
@@ -55,14 +55,20 @@ fn test_macos_config_dir_name_scopes_to_data_profile() {
         macos_config_dir_name_for(Channel::Stable, Some("myprofile")),
         ".warp-myprofile"
     );
+
+    assert_eq!(macos_config_dir_name_for(Channel::Oss, None), ".spirit");
+    assert_eq!(
+        macos_config_dir_name_for(Channel::Oss, Some("myprofile")),
+        ".spirit-myprofile"
+    );
 }
 
 #[test]
 fn test_warp_home_config_dir_path() {
     let home_dir = home_dir().expect("Should be able to compute home directory");
     let expected_dir_name = match ChannelState::data_profile() {
-        Some(data_profile) => format!(".warp-oss-{data_profile}"),
-        None => ".warp-oss".to_string(),
+        Some(data_profile) => format!(".spirit-{data_profile}"),
+        None => ".spirit".to_string(),
     };
 
     assert_eq!(

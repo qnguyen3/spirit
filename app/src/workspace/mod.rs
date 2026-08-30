@@ -20,7 +20,7 @@ pub mod view;
 
 pub use action::{
     CommandSearchOptions, InitContent, TabContextMenuAnchor, VerticalTabsPaneContextMenuTarget,
-    WorkspaceAction,
+    WorkspaceAction, WorktreeSectionMenuKind,
 };
 pub use active_session::ActiveSession;
 use serde::{Deserialize, Serialize};

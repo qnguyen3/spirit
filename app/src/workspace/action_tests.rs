@@ -1,6 +1,6 @@
 use warpui::EntityId;
 
-use super::{TabContextMenuAnchor, WorkspaceAction};
+use super::{TabContextMenuAnchor, WorkspaceAction, WorktreeSectionMenuKind};
 use crate::pane_group::TerminalPaneId;
 use crate::projects::WorktreeId;
 use crate::workspace::PaneViewLocator;
@@ -89,11 +89,7 @@ fn spawning_tabs_in_a_worktree_saves_workspace_state() {
         WorkspaceAction::NewTerminalInWorktree { worktree_id }.should_save_app_state_on_action()
     );
     assert!(
-        WorkspaceAction::NewAgentInWorktree {
-            worktree_id,
-            catalog_index: 0,
-        }
-        .should_save_app_state_on_action()
+        WorkspaceAction::NewAgentPickerInWorktree { worktree_id }.should_save_app_state_on_action()
     );
 }
 
@@ -109,6 +105,7 @@ fn worktree_section_ui_actions_do_not_save_workspace_state() {
         !WorkspaceAction::ToggleWorktreeSectionMenu {
             worktree_id,
             anchor: TabContextMenuAnchor::VerticalTabsKebab,
+            kind: WorktreeSectionMenuKind::NewTab,
         }
         .should_save_app_state_on_action()
     );

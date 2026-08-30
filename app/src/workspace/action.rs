@@ -61,6 +61,12 @@ pub enum TabContextMenuAnchor {
     VerticalTabsKebab,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorktreeSectionMenuKind {
+    NewTab,
+    Options,
+}
+
 /// Describes how the new-session dropdown menu was opened so the renderer
 /// can pick the right anchor strategy.
 #[derive(Debug, Clone, Copy)]
@@ -632,9 +638,8 @@ pub enum WorkspaceAction {
     NewTerminalInWorktree {
         worktree_id: WorktreeId,
     },
-    NewAgentInWorktree {
+    NewAgentPickerInWorktree {
         worktree_id: WorktreeId,
-        catalog_index: usize,
     },
     RenameWorktree {
         worktree_id: WorktreeId,
@@ -645,6 +650,7 @@ pub enum WorkspaceAction {
     ToggleWorktreeSectionMenu {
         worktree_id: WorktreeId,
         anchor: TabContextMenuAnchor,
+        kind: WorktreeSectionMenuKind,
     },
 }
 
@@ -759,7 +765,7 @@ impl WorkspaceAction {
             | SelectTabConfig(_)
             | ToggleVerticalTabsPanel
             | NewTerminalInWorktree { .. }
-            | NewAgentInWorktree { .. }
+            | NewAgentPickerInWorktree { .. }
             | OpenVerticalTabsPanel => true, // actions that actually change a state of the state of user's
             // workspace would most likely require a save, so that if the app gets
             // restarted, the user can continue working

@@ -5,13 +5,13 @@ use std::sync::Arc;
 use warpui::{AppContext, SingletonEntity, ViewContext, ViewHandle};
 
 use super::Workspace;
-use crate::agent_launcher::catalog;
-use crate::app_state::PaneUuid;
+use crate::agent_launcher::pane_manager::AgentPickerPaneManager;
+use crate::app_state::{LeafContents, LeafSnapshot, PaneNodeSnapshot, PaneUuid};
 use crate::appearance::Appearance;
 use crate::editor::{EditorView, Event as EditorEvent, SingleLineEditorOptions, TextOptions};
 use crate::features::FeatureFlag;
 use crate::modal::{Modal, ModalEvent, ModalViewState};
-use crate::pane_group::{NewTerminalOptions, PanesLayout};
+use crate::pane_group::{AGENT_PICKER_PANE_TITLE, NewTerminalOptions, PanesLayout};
 use crate::projects::create_worktree_modal::{CreateWorktreeModal, CreateWorktreeModalEvent};
 use crate::projects::delete_worktree_dialog::{DeleteWorktreeDialog, DeleteWorktreeEvent};
 use crate::projects::git_ops::{
@@ -194,10 +194,6 @@ impl Workspace {
         let Some(directory) = registry.worktree_directory(worktree_id) else {
             return;
         };
-        let custom_title = agent_catalog_index
-            .and_then(|index| catalog::agent_catalog().get(index))
-            .map(|agent| agent.display_name.to_owned());
-
         self.add_tab_with_pane_layout(
             PanesLayout::SingleTerminal(Box::new(NewTerminalOptions {
                 initial_directory: Some(directory),
@@ -208,7 +204,7 @@ impl Workspace {
                 PaneUuid,
                 Vec<crate::terminal::model::block::SerializedBlock>,
             >::new()),
-            custom_title,
+            None,
             ctx,
         );
         self.bind_active_tab_to_worktree(Some(worktree_id), ctx);
@@ -217,6 +213,39 @@ impl Workspace {
         if let Some(catalog_index) = agent_catalog_index {
             self.launch_agent_in_active_tab(catalog_index, ctx);
         }
+        ctx.notify();
+    }
+
+    pub(crate) fn add_agent_picker_tab_in_worktree(
+        &mut self,
+        worktree_id: WorktreeId,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if ProjectRegistryModel::as_ref(ctx)
+            .worktree(worktree_id)
+            .is_none()
+        {
+            return;
+        }
+        let existing_picker = AgentPickerPaneManager::handle(ctx)
+            .as_ref(ctx)
+            .find_pane(ctx.view_id());
+        match existing_picker {
+            Some(locator) => self.focus_pane(locator, ctx),
+            None => self.add_tab_with_pane_layout(
+                PanesLayout::Snapshot(Box::new(PaneNodeSnapshot::Leaf(LeafSnapshot {
+                    is_focused: true,
+                    custom_vertical_tabs_title: None,
+                    contents: LeafContents::AgentPicker,
+                }))),
+                Arc::new(HashMap::new()),
+                Some(AGENT_PICKER_PANE_TITLE.to_owned()),
+                ctx,
+            ),
+        }
+        self.bind_active_tab_to_worktree(Some(worktree_id), ctx);
+        self.place_active_tab_in_worktree_run(worktree_id, ctx);
+        self.collapsed_worktree_sections.remove(&worktree_id);
         ctx.notify();
     }
 
@@ -325,12 +354,39 @@ impl Workspace {
         }
     }
 
+    pub(crate) fn worktree_section_new_tab_menu_items(
+        &self,
+        worktree_id: WorktreeId,
+        ctx: &AppContext,
+    ) -> Vec<crate::menu::MenuItem<crate::workspace::WorkspaceAction>> {
+        use crate::menu::MenuItemFields;
+        use crate::ui_components::icons;
+        use crate::workspace::WorkspaceAction;
+
+        if ProjectRegistryModel::as_ref(ctx)
+            .worktree(worktree_id)
+            .is_none()
+        {
+            return Vec::new();
+        }
+        vec![
+            MenuItemFields::new("New Agent\u{2026}")
+                .with_on_select_action(WorkspaceAction::NewAgentPickerInWorktree { worktree_id })
+                .with_icon(icons::Icon::Agent)
+                .into_item(),
+            MenuItemFields::new("Terminal")
+                .with_on_select_action(WorkspaceAction::NewTerminalInWorktree { worktree_id })
+                .with_icon(icons::Icon::LayoutAlt01)
+                .into_item(),
+        ]
+    }
+
     pub(crate) fn worktree_section_menu_items(
         &self,
         worktree_id: WorktreeId,
         ctx: &AppContext,
     ) -> Vec<crate::menu::MenuItem<crate::workspace::WorkspaceAction>> {
-        use crate::menu::{MenuItem, MenuItemFields};
+        use crate::menu::MenuItemFields;
         use crate::workspace::WorkspaceAction;
 
         let registry = ProjectRegistryModel::as_ref(ctx);
@@ -340,27 +396,10 @@ impl Workspace {
         let is_linked = !worktree.is_primary();
 
         let mut items = vec![
-            MenuItemFields::new("New Terminal")
-                .with_on_select_action(WorkspaceAction::NewTerminalInWorktree { worktree_id })
-                .into_item(),
-        ];
-        for (catalog_index, definition) in catalog::agent_catalog().iter().enumerate() {
-            items.push(
-                MenuItemFields::new(format!("Launch {}", definition.display_name))
-                    .with_on_select_action(WorkspaceAction::NewAgentInWorktree {
-                        worktree_id,
-                        catalog_index,
-                    })
-                    .with_indent()
-                    .into_item(),
-            );
-        }
-        items.push(MenuItem::Separator);
-        items.push(
             MenuItemFields::new("Reveal Worktree Folder")
                 .with_on_select_action(WorkspaceAction::RevealWorktreeFolder { worktree_id })
                 .into_item(),
-        );
+        ];
         if is_linked {
             items.push(
                 MenuItemFields::new("Rename Worktree")

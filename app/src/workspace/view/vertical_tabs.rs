@@ -83,7 +83,7 @@ use crate::workspace::view::vertical_tabs::telemetry::{
 };
 use crate::workspace::{
     PaneViewLocator, TabBarLocation, TabContextMenuAnchor, VerticalTabsPaneContextMenuTarget,
-    VerticalTabsPaneDropTargetData, Workspace,
+    VerticalTabsPaneDropTargetData, Workspace, WorktreeSectionMenuKind,
 };
 use crate::{FeatureFlag, send_telemetry_from_app_ctx};
 
@@ -142,6 +142,10 @@ pub(crate) fn vtab_group_kebab_position_id(tab_group_id: TabGroupId) -> String {
 
 pub(crate) fn vtab_worktree_kebab_position_id(worktree_id: WorktreeId) -> String {
     format!("vertical_tabs:worktree_kebab:{worktree_id:?}")
+}
+
+pub(crate) fn vtab_worktree_plus_position_id(worktree_id: WorktreeId) -> String {
+    format!("vertical_tabs:worktree_plus:{worktree_id:?}")
 }
 
 /// Save-position id for a tab group's full container rect, used for drop hit-testing.
@@ -2288,6 +2292,7 @@ fn render_worktree_section(
         ctx.dispatch_typed_action(WorkspaceAction::ToggleWorktreeSectionMenu {
             worktree_id,
             anchor: TabContextMenuAnchor::Pointer(position),
+            kind: WorktreeSectionMenuKind::Options,
         });
     })
     .with_defer_events_to_children()
@@ -2359,14 +2364,22 @@ fn render_worktree_section_header(
         .finish();
 
     let action_buttons = if show_action_buttons {
-        let plus_button = render_tab_group_header_icon_button(
-            WarpIcon::Plus,
-            TAB_GROUP_HEADER_ACTION_ICON_SIZE,
-            sub_text_color,
-            internal_colors::fg_overlay_2(theme),
-            mouse_states.plus.clone(),
-            Some(WorkspaceAction::NewTerminalInWorktree { worktree_id }),
-        );
+        let plus_button = SavePosition::new(
+            render_tab_group_header_icon_button(
+                WarpIcon::Plus,
+                TAB_GROUP_HEADER_ACTION_ICON_SIZE,
+                sub_text_color,
+                internal_colors::fg_overlay_2(theme),
+                mouse_states.plus.clone(),
+                Some(WorkspaceAction::ToggleWorktreeSectionMenu {
+                    worktree_id,
+                    anchor: TabContextMenuAnchor::VerticalTabsKebab,
+                    kind: WorktreeSectionMenuKind::NewTab,
+                }),
+            ),
+            &vtab_worktree_plus_position_id(worktree_id),
+        )
+        .finish();
         let kebab_button = SavePosition::new(
             render_tab_group_header_icon_button(
                 WarpIcon::DotsVertical,
@@ -2377,6 +2390,7 @@ fn render_worktree_section_header(
                 Some(WorkspaceAction::ToggleWorktreeSectionMenu {
                     worktree_id,
                     anchor: TabContextMenuAnchor::VerticalTabsKebab,
+                    kind: WorktreeSectionMenuKind::Options,
                 }),
             ),
             &vtab_worktree_kebab_position_id(worktree_id),
@@ -2447,6 +2461,7 @@ fn render_worktree_section_header(
         ctx.dispatch_typed_action(WorkspaceAction::ToggleWorktreeSectionMenu {
             worktree_id,
             anchor: TabContextMenuAnchor::Pointer(position),
+            kind: WorktreeSectionMenuKind::Options,
         });
     });
     hoverable.finish()

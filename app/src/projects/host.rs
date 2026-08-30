@@ -552,16 +552,8 @@ impl ProjectHost {
                 ctx,
             )
         });
-        let display_name = ProjectRegistryModel::handle(ctx).read(ctx, |registry, _| {
-            registry
-                .project(project_id)
-                .map(|project| project.display_name.clone())
-        });
         workspace.update(ctx, |workspace, ctx| {
             workspace.bind_active_tab_to_worktree(primary_worktree_id, ctx);
-            if let Some(display_name) = display_name {
-                workspace.set_active_tab_title(&display_name, ctx);
-            }
             workspace.reconcile_worktrees(ctx);
         });
 
