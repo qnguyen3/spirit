@@ -3,12 +3,14 @@ use std::path::Path;
 
 use chrono::{DateTime, Utc};
 use pathfinder_color::ColorU;
+use pathfinder_geometry::vector::Vector2F;
 use warp_core::ui::theme::color::internal_colors;
 use warpui::elements::{
-    Align, ChildView, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox, Container,
-    CornerRadius, CrossAxisAlignment, DispatchEventResult, Element, Empty, EventHandler, Fill,
-    Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, Padding, ParentElement,
-    Radius, ScrollbarWidth, Shrinkable, Stack, Text,
+    Align, ChildAnchor, ChildView, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox,
+    Container, CornerRadius, CrossAxisAlignment, DispatchEventResult, Element, Empty, EventHandler,
+    Fill, Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning,
+    Padding, ParentAnchor, ParentElement, ParentOffsetBounds, Radius, SavePosition, ScrollbarWidth,
+    Shrinkable, Stack, Text,
 };
 use warpui::keymap::FixedBinding;
 use warpui::platform::Cursor;
@@ -80,7 +82,11 @@ pub enum OverviewAction {
     MoveUp,
     MoveDown,
     Select(usize),
-    ShowCardMenu { index: usize, project_id: ProjectId },
+    ShowCardMenu {
+        index: usize,
+        project_id: ProjectId,
+        position: Vector2F,
+    },
     Open(ProjectId),
     StartRename(ProjectId),
     Remove(ProjectId),
@@ -115,7 +121,8 @@ pub struct WorkspaceOverviewView {
     rename_editor: ViewHandle<EditorView>,
     open_project_ids: Vec<ProjectId>,
     card_menu: ViewHandle<Menu<OverviewAction>>,
-    show_card_menu: bool,
+    card_menu_offset: Option<Vector2F>,
+    view_position_id: String,
 }
 
 impl Entity for WorkspaceOverviewView {
@@ -137,9 +144,11 @@ impl TypedActionView for WorkspaceOverviewView {
                 self.selected_index = *index;
                 self.activate_selected(ctx);
             }
-            OverviewAction::ShowCardMenu { index, project_id } => {
-                self.show_card_menu(*index, *project_id, ctx)
-            }
+            OverviewAction::ShowCardMenu {
+                index,
+                project_id,
+                position,
+            } => self.show_card_menu(*index, *project_id, *position, ctx),
             OverviewAction::Open(project_id) => ctx.emit(OverviewEvent::OpenProject(*project_id)),
             OverviewAction::StartRename(project_id) => self.start_rename(*project_id, ctx),
             OverviewAction::Remove(project_id) => {
@@ -180,7 +189,7 @@ impl WorkspaceOverviewView {
         });
         ctx.subscribe_to_view(&card_menu, |me, _, event, ctx| {
             if let MenuEvent::Close { .. } = event {
-                me.show_card_menu = false;
+                me.card_menu_offset = None;
                 ctx.notify();
             }
         });
@@ -195,7 +204,8 @@ impl WorkspaceOverviewView {
             rename_editor,
             open_project_ids: Vec::new(),
             card_menu,
-            show_card_menu: false,
+            card_menu_offset: None,
+            view_position_id: format!("workspace_overview_view_{}", ctx.view_id()),
         };
         view.rebuild_cards(ctx);
         view
@@ -264,7 +274,13 @@ impl WorkspaceOverviewView {
         }
     }
 
-    fn show_card_menu(&mut self, index: usize, project_id: ProjectId, ctx: &mut ViewContext<Self>) {
+    fn show_card_menu(
+        &mut self,
+        index: usize,
+        project_id: ProjectId,
+        position: Vector2F,
+        ctx: &mut ViewContext<Self>,
+    ) {
         self.selected_index = index;
         let items = vec![
             MenuItemFields::new("Open")
@@ -283,7 +299,11 @@ impl WorkspaceOverviewView {
         ];
         self.card_menu
             .update(ctx, |menu, ctx| menu.set_items(items, ctx));
-        self.show_card_menu = true;
+        let view_origin = ctx
+            .element_position_by_id(&self.view_position_id)
+            .map(|bounds| bounds.origin())
+            .unwrap_or_default();
+        self.card_menu_offset = Some(position - view_origin);
         ctx.focus(&self.card_menu);
         ctx.notify();
     }
@@ -567,8 +587,12 @@ impl WorkspaceOverviewView {
 
         match card {
             CardKind::Project(project_id) => EventHandler::new(card_element)
-                .on_right_mouse_down(move |ctx, _, _, _| {
-                    ctx.dispatch_typed_action(OverviewAction::ShowCardMenu { index, project_id });
+                .on_right_mouse_down(move |ctx, _, position, _| {
+                    ctx.dispatch_typed_action(OverviewAction::ShowCardMenu {
+                        index,
+                        project_id,
+                        position,
+                    });
                     DispatchEventResult::StopPropagation
                 })
                 .finish(),
@@ -647,21 +671,37 @@ impl View for WorkspaceOverviewView {
         .with_width(HEADER_MAX_WIDTH)
         .finish();
 
-        let content = Flex::column()
-            .with_cross_axis_alignment(CrossAxisAlignment::Start)
-            .with_spacing(20.)
-            .with_children([header, scrollable_grid])
-            .finish();
+        let content = ConstrainedBox::new(
+            Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Start)
+                .with_spacing(20.)
+                .with_children([header, scrollable_grid])
+                .finish(),
+        )
+        .with_width(HEADER_MAX_WIDTH)
+        .finish();
 
         let mut stack = Stack::new();
         ParentElement::add_child(
             &mut stack,
-            Container::new(Align::new(content).finish())
-                .with_background(theme.background())
-                .finish(),
+            SavePosition::new(
+                Container::new(Align::new(content).finish())
+                    .with_background(theme.background())
+                    .finish(),
+                &self.view_position_id,
+            )
+            .finish(),
         );
-        if self.show_card_menu {
-            ParentElement::add_child(&mut stack, ChildView::new(&self.card_menu).finish());
+        if let Some(offset) = self.card_menu_offset {
+            stack.add_positioned_child(
+                ChildView::new(&self.card_menu).finish(),
+                OffsetPositioning::offset_from_parent(
+                    offset,
+                    ParentOffsetBounds::WindowByPosition,
+                    ParentAnchor::TopLeft,
+                    ChildAnchor::TopLeft,
+                ),
+            );
         }
         stack.finish()
     }
