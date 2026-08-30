@@ -28,7 +28,10 @@ use crate::persisted_workspace::PersistedWorkspace;
 use crate::root_view::NewWorkspaceSource;
 use crate::server::server_api::ServerTime;
 use crate::view_components::DismissibleToast;
-use crate::workspace::{ToastStack, Workspace, WorkspaceRegistry};
+use crate::workspace::{
+    NotificationOrigin, PaneViewLocator, ToastStack, Workspace, WorkspaceEvent, WorkspaceRegistry,
+};
+use crate::{TelemetryEvent, send_telemetry_from_ctx};
 
 pub const MULTIPLE_SCREENS_FLAG: &str = "ProjectHost_MultipleScreens";
 
@@ -247,6 +250,58 @@ impl View for ProjectHost {
 }
 
 impl ProjectHost {
+    fn subscribe_to_workspace(workspace: &ViewHandle<Workspace>, ctx: &mut ViewContext<Self>) {
+        ctx.subscribe_to_view(workspace, |host, _, event, ctx| {
+            host.handle_workspace_event(event, ctx);
+        });
+    }
+
+    fn handle_workspace_event(&mut self, event: &WorkspaceEvent, ctx: &mut ViewContext<Self>) {
+        match event {
+            WorkspaceEvent::NavigateToNotification {
+                window_id,
+                project_id,
+                locator,
+            } => self.navigate_to_notification(*window_id, *project_id, locator, ctx),
+        }
+    }
+
+    fn navigate_to_notification(
+        &mut self,
+        window_id: WindowId,
+        project_id: Option<ProjectId>,
+        locator: &PaneViewLocator,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if window_id != self.window_id {
+            ctx.windows().show_window_and_focus_app(window_id);
+            if let Some(root_view_id) = ctx.root_view_id(window_id) {
+                ctx.dispatch_action_for_view(
+                    window_id,
+                    root_view_id,
+                    "root_view:handle_notification_click",
+                    &NotificationOrigin {
+                        project_id,
+                        locator: *locator,
+                    },
+                );
+            }
+            return;
+        }
+
+        let Some(index) = self
+            .screens
+            .iter()
+            .position(|screen| screen.project_id == project_id)
+        else {
+            return;
+        };
+        self.activate_screen(index, ctx);
+        self.active_workspace()
+            .update(ctx, |workspace, ctx| workspace.focus_pane(*locator, ctx));
+        send_telemetry_from_ctx!(TelemetryEvent::NotificationClicked, ctx);
+    }
+
     pub fn new(
         global_resource_handles: GlobalResourceHandles,
         server_time: Option<Arc<ServerTime>>,
@@ -268,6 +323,7 @@ impl ProjectHost {
                         ctx,
                     )
                 });
+                Self::subscribe_to_workspace(&workspace, ctx);
                 ProjectScreen {
                     project_id,
                     workspace,
@@ -552,6 +608,7 @@ impl ProjectHost {
                 ctx,
             )
         });
+        Self::subscribe_to_workspace(&workspace, ctx);
         workspace.update(ctx, |workspace, ctx| {
             workspace.bind_active_tab_to_worktree(primary_worktree_id, ctx);
             workspace.reconcile_worktrees(ctx);

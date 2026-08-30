@@ -124,8 +124,8 @@ use super::tab_settings::{
     VerticalTabsDisplayGranularity, WorkspaceDecorationVisibility,
 };
 use super::util::{
-    NotificationOrigin, PaneViewLocator, TabMovement, TerminalSessionFallbackBehavior,
-    WelcomeTipsViewState, WorkspaceMouseStates, WorkspaceState, active_screen_id,
+    PaneViewLocator, TabMovement, TerminalSessionFallbackBehavior, WelcomeTipsViewState,
+    WorkspaceMouseStates, WorkspaceState, active_screen_id,
 };
 use super::{ActiveSession, TabBarDropTargetData, TabBarLocation, WorkspaceRegistry, util};
 use crate::agent_launcher::catalog::agent_catalog;
@@ -932,6 +932,15 @@ pub struct Workspace {
     tab_config_action_sidecar_item: Option<SidecarItemKind>,
     tab_config_action_sidecar_mouse_states: crate::tab_configs::action_sidecar::SidecarMouseStates,
     remove_tab_config_confirmation_dialog: ViewHandle<RemoveTabConfigConfirmationDialog>,
+}
+
+#[derive(Debug, Clone)]
+pub enum WorkspaceEvent {
+    NavigateToNotification {
+        window_id: WindowId,
+        project_id: Option<ProjectId>,
+        locator: PaneViewLocator,
+    },
 }
 
 impl Workspace {
@@ -4675,23 +4684,14 @@ impl Workspace {
                 pane_id,
             } => {
                 self.close_agent_inbox(ctx);
-                let origin = NotificationOrigin {
+                ctx.emit(WorkspaceEvent::NavigateToNotification {
+                    window_id: *window_id,
                     project_id: *project_id,
                     locator: PaneViewLocator {
                         pane_group_id: *pane_group_id,
                         pane_id: *pane_id,
                     },
-                };
-                ctx.windows().show_window_and_focus_app(*window_id);
-                if let Some(root_view_id) = ctx.root_view_id(*window_id) {
-                    ctx.dispatch_action_for_view(
-                        *window_id,
-                        root_view_id,
-                        "root_view:handle_notification_click",
-                        &origin,
-                    );
-                }
-                ctx.notify();
+                });
             }
         }
     }
@@ -18910,7 +18910,7 @@ impl Workspace {
 }
 
 impl Entity for Workspace {
-    type Event = ();
+    type Event = WorkspaceEvent;
 }
 
 impl TypedActionView for Workspace {
