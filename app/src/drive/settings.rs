@@ -25,7 +25,7 @@ define_settings_group!(WarpDriveSettings, settings: [
         surface: settings::SettingSurfaces::GUI,
         private: true,
     },
-    // Controls whether Warp Drive appears in the tools panel, command palette, and command search.
+    // Controls whether Warp Drive appears in the right sidebar, command palette, and command search.
     enable_warp_drive: EnableWarpDrive {
         type: bool,
         default: true,

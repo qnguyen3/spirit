@@ -21,7 +21,7 @@ define_settings_group!(CodeSettings, settings: [
         surface: settings::SettingSurfaces::GUI,
         private: true,
     },
-    // Controls whether the project explorer / file tree appears in the tools panel.
+    // Controls whether the project explorer / file tree appears in the right sidebar.
     show_project_explorer: ShowProjectExplorer {
         type: bool,
         default: true,
@@ -30,9 +30,9 @@ define_settings_group!(CodeSettings, settings: [
         surface: settings::SettingSurfaces::GUI,
         private: false,
         toml_path: "code.editor.show_project_explorer",
-        description: "Whether the project explorer is shown in the tools panel.",
+        description: "Whether the project explorer is shown in the right sidebar.",
     },
-    // Controls whether global file search appears in the tools panel.
+    // Controls whether global file search appears in the right sidebar.
     show_global_search: ShowGlobalSearch {
         type: bool,
         default: true,
@@ -41,7 +41,7 @@ define_settings_group!(CodeSettings, settings: [
         surface: settings::SettingSurfaces::GUI,
         private: false,
         toml_path: "code.editor.show_global_search",
-        description: "Whether global file search is shown in the tools panel.",
+        description: "Whether global file search is shown in the right sidebar.",
     },
     // Controls whether hidden files (dotfiles) are shown in the project explorer.
     show_hidden_files: ShowHiddenFiles {

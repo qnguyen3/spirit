@@ -429,6 +429,7 @@ pub struct RightPanelView {
     #[cfg(feature = "local_fs")]
     code_review_session_env: Option<CodeReviewSessionEnv>,
     panel_position: super::PanelPosition,
+    embedded_in_sidebar: bool,
 }
 
 impl RightPanelView {
@@ -515,7 +516,12 @@ impl RightPanelView {
             #[cfg(feature = "local_fs")]
             code_review_session_env: None,
             panel_position: super::PanelPosition::Right,
+            embedded_in_sidebar: false,
         }
+    }
+
+    pub fn set_embedded_in_sidebar(&mut self, embedded: bool) {
+        self.embedded_in_sidebar = embedded;
     }
 
     pub fn set_panel_position(
@@ -1022,7 +1028,7 @@ impl RightPanelView {
         .finish()
     }
 
-    /// Legacy header layout: "Code review" title + file nav button.
+    /// Legacy header layout: "Source control" title + file nav button.
     fn render_header_legacy(&self, appearance: &Appearance, app: &AppContext) -> Box<dyn Element> {
         let file_navigation_button = {
             let current_code_review_view = self
@@ -1067,10 +1073,14 @@ impl RightPanelView {
 
         let title = Shrinkable::new(
             1.0,
-            Text::new_inline("Code review".to_string(), appearance.ui_font_family(), 12.)
-                .with_style(Properties::default().weight(Weight::Bold))
-                .with_color(sub_text_color.into())
-                .finish(),
+            Text::new_inline(
+                "Source control".to_string(),
+                appearance.ui_font_family(),
+                12.,
+            )
+            .with_style(Properties::default().weight(Weight::Bold))
+            .with_color(sub_text_color.into())
+            .finish(),
         )
         .finish();
 
@@ -1842,7 +1852,7 @@ impl View for RightPanelView {
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
         let panel_content = self.render_panel_content(app);
 
-        if self.is_maximized(app) {
+        if self.is_maximized(app) || self.embedded_in_sidebar {
             return Shrinkable::new(1.0, panel_content).finish();
         }
 

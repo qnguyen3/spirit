@@ -617,15 +617,15 @@ pub fn init(app: &mut AppContext) {
         .with_context_predicate(id!("Workspace") & !id!("Workspace_PaneDragging")),
         EditableBinding::new(
             "workspace:toggle_left_panel",
-            BindingDescription::new("Open Left Panel"),
+            BindingDescription::new("Toggle Right Sidebar"),
             WorkspaceAction::ToggleLeftPanel,
         )
         .with_context_predicate(id!("Workspace"))
         .with_custom_action(CustomAction::ToggleWarpDrive),
         EditableBinding::new(
             TOGGLE_RIGHT_PANEL_BINDING_NAME,
-            BindingDescription::new("Toggle code review")
-                .with_custom_description(bindings::MAC_MENUS_CONTEXT, "Toggle Code Review"),
+            BindingDescription::new("Toggle source control")
+                .with_custom_description(bindings::MAC_MENUS_CONTEXT, "Toggle Source Control"),
             WorkspaceAction::ToggleRightPanel,
         )
         .with_enabled(|| cfg!(feature = "local_fs"))
@@ -644,7 +644,7 @@ pub fn init(app: &mut AppContext) {
         .with_key_binding(cmd_or_ctrl_shift("b")),
         EditableBinding::new(
             LEFT_PANEL_PROJECT_EXPLORER_BINDING_NAME,
-            BindingDescription::new("Left Panel: Project explorer"),
+            BindingDescription::new("Right Sidebar: Project explorer"),
             WorkspaceAction::ToggleProjectExplorer,
         )
         .with_group(bindings::BindingGroup::Navigation.as_str())
@@ -652,7 +652,7 @@ pub fn init(app: &mut AppContext) {
         .with_custom_action(CustomAction::ToggleProjectExplorer),
         EditableBinding::new(
             LEFT_PANEL_GLOBAL_SEARCH_BINDING_NAME,
-            BindingDescription::new("Left Panel: Global search"),
+            BindingDescription::new("Right Sidebar: Global search"),
             WorkspaceAction::ToggleGlobalSearch,
         )
         .with_group(bindings::BindingGroup::Navigation.as_str())
@@ -670,7 +670,7 @@ pub fn init(app: &mut AppContext) {
         .with_linux_or_windows_key_binding("ctrl-shift->"),
         EditableBinding::new(
             LEFT_PANEL_WARP_DRIVE_BINDING_NAME,
-            BindingDescription::new("Left Panel: Warp Drive"),
+            BindingDescription::new("Right Sidebar: Warp Drive"),
             WorkspaceAction::ToggleWarpDrive,
         )
         .with_group(bindings::BindingGroup::Navigation.as_str())

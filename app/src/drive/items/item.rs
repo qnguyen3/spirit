@@ -45,7 +45,7 @@ pub(crate) fn tools_panel_menu_direction(app: &AppContext) -> MenuDirection {
         .clone();
     if config
         .left_items()
-        .contains(&HeaderToolbarItemKind::ToolsPanel)
+        .contains(&HeaderToolbarItemKind::RightSidebar)
     {
         MenuDirection::Right
     } else {

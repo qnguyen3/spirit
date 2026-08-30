@@ -479,16 +479,16 @@ fn test_tools_panel_does_not_suppress_vertical_tab_bar_traffic_light_padding() {
             left: vec![],
             right: vec![
                 HeaderToolbarItemKind::TabsPanel,
-                HeaderToolbarItemKind::ToolsPanel,
-                HeaderToolbarItemKind::CodeReview,
+                HeaderToolbarItemKind::RightSidebar,
+                HeaderToolbarItemKind::SourceControl,
             ],
         },
         HeaderToolbarChipSelection::Custom {
             left: vec![
                 HeaderToolbarItemKind::TabsPanel,
-                HeaderToolbarItemKind::ToolsPanel,
+                HeaderToolbarItemKind::RightSidebar,
             ],
-            right: vec![HeaderToolbarItemKind::CodeReview],
+            right: vec![HeaderToolbarItemKind::SourceControl],
         },
     ] {
         assert_vertical_tabs_tools_panel_preserves_padding(config);

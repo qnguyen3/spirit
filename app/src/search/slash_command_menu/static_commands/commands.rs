@@ -59,7 +59,7 @@ pub const CREATE_DOCKER_SANDBOX: StaticCommand = StaticCommand {
 
 pub const OPEN_CODE_REVIEW: StaticCommand = StaticCommand {
     name: "/open-code-review",
-    description: "Open code review",
+    description: "Open Source control",
     kind: SlashCommandKind::OpenCodeReview,
     icon_path: "bundled/svg/diff.svg",
     availability: Availability::REPOSITORY,

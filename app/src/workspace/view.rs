@@ -2404,25 +2404,28 @@ impl Workspace {
         let working_directories_model =
             ctx.add_model(|_| pane_group::WorkingDirectoriesModel::new());
 
+        let right_panel_view = ctx.add_typed_action_view(|ctx| {
+            let mut view = RightPanelView::new(working_directories_model.clone(), ctx);
+            view.set_embedded_in_sidebar(true);
+            view
+        });
+        ctx.subscribe_to_view(&right_panel_view, |me, _, event, ctx| {
+            me.handle_right_panel_event(event.clone(), ctx);
+        });
+
         let left_panel_views = Self::compute_left_panel_views(ctx);
 
         let left_panel_view = ctx.add_typed_action_view(|ctx| {
             LeftPanelView::new(
                 working_directories_model.clone(),
                 left_panel_views.clone(),
+                right_panel_view.clone(),
                 ctx,
             )
         });
 
         ctx.subscribe_to_view(&left_panel_view, |me, _, event, ctx| {
             me.handle_left_panel_event(event, ctx);
-        });
-
-        let right_panel_view = ctx.add_typed_action_view(|ctx| {
-            RightPanelView::new(working_directories_model.clone(), ctx)
-        });
-        ctx.subscribe_to_view(&right_panel_view, |me, _, event, ctx| {
-            me.handle_right_panel_event(event.clone(), ctx);
         });
 
         ctx.observe(&tips_completed, Workspace::on_tips_model_changed);
@@ -3164,7 +3167,7 @@ impl Workspace {
 
         let resizable = ResizableData::handle(ctx);
         if let Some(modal_sizes) = resizable.as_ref(ctx).get_all_handles(self.window_id)
-            && let Ok(mut handle) = modal_sizes.left_panel_width.lock()
+            && let Ok(mut handle) = modal_sizes.right_panel_width.lock()
         {
             handle.set_size(left_panel_snapshot.width as f32);
         }
@@ -3177,6 +3180,7 @@ impl Workspace {
                     entry_focus: GlobalSearchEntryFocus::Results,
                 },
                 LeftPanelDisplayedTab::WarpDrive => ToolPanelView::WarpDrive,
+                LeftPanelDisplayedTab::SourceControl => ToolPanelView::SourceControl,
             };
             lp.restore_active_view_from_snapshot(active_view, ctx);
             lp.set_active_pane_group(pane_group.clone(), &self.working_directories_model, ctx);
@@ -3206,6 +3210,10 @@ impl Workspace {
         self.right_panel_view.update(ctx, |rp, ctx| {
             rp.set_active_pane_group(pane_group.clone(), &self.working_directories_model, ctx);
             rp.set_maximized(right_panel_snapshot.is_maximized, ctx);
+        });
+        self.open_left_panel(ctx);
+        self.left_panel_view.update(ctx, |sidebar, ctx| {
+            sidebar.restore_active_view_from_snapshot(ToolPanelView::SourceControl, ctx);
         });
 
         ctx.notify();
@@ -3522,7 +3530,7 @@ impl Workspace {
         }
 
         if self.left_panel_view.is_self_or_child_focused(app) {
-            return FocusRegion::LeftPanel;
+            return FocusRegion::RightPanel;
         }
         if self.right_panel_view.is_self_or_child_focused(app) {
             return FocusRegion::RightPanel;
@@ -3535,13 +3543,13 @@ impl Workspace {
         FocusRegion::Other
     }
 
-    fn has_left_region(&self, app: &AppContext) -> bool {
-        self.active_tab_pane_group().as_ref(app).left_panel_open
+    fn has_left_region(&self) -> bool {
+        false
     }
 
     fn has_right_region(&self, app: &AppContext) -> bool {
         let group = self.active_tab_pane_group().as_ref(app);
-        group.right_panel_open || self.current_workspace_state.is_right_panel_open()
+        group.left_panel_open || self.current_workspace_state.is_right_panel_open()
     }
 
     fn focus_next_pane_in_group(&mut self, ctx: &mut ViewContext<Self>) -> bool {
@@ -3564,18 +3572,14 @@ impl Workspace {
         handle.update(ctx, |pane_group, ctx| pane_group.focus_last_pane(ctx))
     }
 
-    fn focus_left_region_entry(&mut self, ctx: &mut ViewContext<Self>) {
-        if self.has_left_region(ctx) {
-            self.left_panel_view.update(ctx, |left_panel, ctx| {
-                left_panel.focus_active_view_on_entry(ctx);
-            });
-        }
-    }
+    fn focus_left_region_entry(&mut self) {}
 
     fn focus_right_region_entry(&mut self, ctx: &mut ViewContext<Self>) {
         let group = self.active_tab_pane_group().as_ref(ctx);
-        if group.right_panel_open {
-            ctx.focus(&self.right_panel_view);
+        if group.left_panel_open {
+            self.left_panel_view.update(ctx, |sidebar, ctx| {
+                sidebar.focus_active_view_on_entry(ctx);
+            });
             return;
         }
         if self.current_workspace_state.is_resource_center_open {
@@ -3589,7 +3593,7 @@ impl Workspace {
         ctx: &mut ViewContext<Self>,
     ) {
         let current_region = self.current_focus_region(ctx);
-        let has_left_panel = self.has_left_region(ctx);
+        let has_left_panel = self.has_left_region();
         let has_right_panel = self.has_right_region(ctx);
 
         let target_region = self.compute_target_focus_region(
@@ -3625,7 +3629,7 @@ impl Workspace {
             // NEXT: Right panel to left panel if open, else first pane
             (FocusRegion::RightPanel, PanePanelDirection::Next) => {
                 if has_left_panel {
-                    self.focus_left_region_entry(ctx);
+                    self.focus_left_region_entry();
                     FocusRegion::LeftPanel
                 } else {
                     self.focus_first_visible_pane_in_group(ctx);
@@ -3643,7 +3647,7 @@ impl Workspace {
                     self.focus_right_region_entry(ctx);
                     FocusRegion::RightPanel
                 } else if has_left_panel {
-                    self.focus_left_region_entry(ctx);
+                    self.focus_left_region_entry();
                     FocusRegion::LeftPanel
                 } else {
                     // No panels, wrap within panes.
@@ -3678,7 +3682,7 @@ impl Workspace {
                 if did_move {
                     FocusRegion::PaneGroup
                 } else if has_left_panel {
-                    self.focus_left_region_entry(ctx);
+                    self.focus_left_region_entry();
                     FocusRegion::LeftPanel
                 } else if has_right_panel {
                     self.focus_right_region_entry(ctx);
@@ -3964,7 +3968,7 @@ impl Workspace {
             .value()
     }
 
-    /// Reconciles the active tab's tools panel open/closed state to match the window-scoped desired state
+    /// Reconciles the active tab's right sidebar open/closed state to match the window-scoped desired state
     /// (syncing left panel open/closed state across tabs).
     fn reconcile_left_panel_open_for_active_tab(&mut self, ctx: &mut ViewContext<Self>) {
         let pane_group = self.active_tab_pane_group().clone();
@@ -4587,12 +4591,8 @@ impl Workspace {
             .header_toolbar_chip_selection
             .clone();
         let left_items = config.left_items();
-        let tools_position = if left_items.contains(&HeaderToolbarItemKind::ToolsPanel) {
-            PanelPosition::Left
-        } else {
-            PanelPosition::Right
-        };
-        let code_review_position = if left_items.contains(&HeaderToolbarItemKind::CodeReview) {
+        let tools_position = PanelPosition::Right;
+        let code_review_position = if left_items.contains(&HeaderToolbarItemKind::SourceControl) {
             PanelPosition::Left
         } else {
             PanelPosition::Right
@@ -5202,6 +5202,12 @@ impl Workspace {
                 self.require_login_modal.update(ctx, |modal, ctx| {
                     modal.start_sign_in(ctx);
                 });
+            }
+            LeftPanelEvent::SourceControlSelected => {
+                let pane_group = self.active_tab_pane_group().clone();
+                if !pane_group.as_ref(ctx).right_panel_open {
+                    self.toggle_right_panel(&pane_group, ctx);
+                }
             }
         }
     }
@@ -7821,7 +7827,7 @@ impl Workspace {
             let resizable_data = ResizableData::handle(ctx);
             if let Some(handle) = resizable_data
                 .as_ref(ctx)
-                .get_handle(window_id, ModalType::LeftPanelWidth)
+                .get_handle(window_id, ModalType::RightPanelWidth)
                 && let Ok(mut state) = handle.lock()
             {
                 // Get the current width from ResizableData - this reflects the most recent tab's width
@@ -7829,12 +7835,12 @@ impl Workspace {
 
                 // Only recompute default if the current width is at the default value
                 // This preserves the width from the most recent tab
-                if current_width == DEFAULT_LEFT_PANEL_WIDTH {
+                if current_width == DEFAULT_RIGHT_PANEL_WIDTH {
                     let has_horizontal_split = active_pane_group
                         .read(ctx, |pane_group, _| pane_group.has_horizontal_split());
-                    let (left_width, _right_width) =
+                    let (_left_width, right_width) =
                         compute_default_panel_widths(ctx, window_id, has_horizontal_split);
-                    state.set_size(left_width);
+                    state.set_size(right_width);
                 }
                 // If current_width is not the default, it means we have a width from a previous tab,
                 // so we don't need to do anything - the width is already preserved
@@ -7968,6 +7974,10 @@ impl Workspace {
         });
 
         if should_open {
+            self.open_left_panel(ctx);
+            self.left_panel_view.update(ctx, |sidebar, ctx| {
+                sidebar.restore_active_view_from_snapshot(ToolPanelView::SourceControl, ctx);
+            });
             #[cfg(feature = "local_fs")]
             {
                 let window_id = ctx.window_id();
@@ -8008,6 +8018,9 @@ impl Workspace {
                 self.setup_code_review_panel(panel_update_params.review_pane_context, ctx);
             }
         } else {
+            if self.left_panel_view.as_ref(ctx).is_source_control_active() {
+                self.close_left_panel(ctx);
+            }
             self.focus_active_tab(ctx);
         }
 
@@ -8019,8 +8032,9 @@ impl Workspace {
         pane_group_handle: &ViewHandle<PaneGroup>,
         ctx: &mut ViewContext<Self>,
     ) {
-        let target_open_state =
-            pane_group_handle.read(ctx, |pane_group, _| !pane_group.right_panel_open);
+        let source_control_visible = pane_group_handle.as_ref(ctx).left_panel_open
+            && self.left_panel_view.as_ref(ctx).is_source_control_active();
+        let target_open_state = !source_control_visible;
 
         // Read repo_path and preferred session from pane group (immutable context).
         let read_result = pane_group_handle.read(ctx, |pane_group, ctx| {
@@ -8067,6 +8081,10 @@ impl Workspace {
         ctx: &mut ViewContext<Self>,
     ) {
         if pane_group_handle.as_ref(ctx).right_panel_open {
+            self.open_left_panel(ctx);
+            self.left_panel_view.update(ctx, |sidebar, ctx| {
+                sidebar.restore_active_view_from_snapshot(ToolPanelView::SourceControl, ctx);
+            });
             if let Some(repo_path) = &context.repo_path {
                 self.right_panel_view.update(ctx, |right_panel, ctx| {
                     right_panel.update_selected_repo(repo_path.clone(), ctx);
@@ -9894,7 +9912,7 @@ impl Workspace {
                 let modal_sizes = resizable_data.as_ref(app).get_all_handles(window_id);
 
                 let left_panel_width = modal_sizes.map(|ms| {
-                    ms.left_panel_width
+                    ms.right_panel_width
                         .lock()
                         .expect("should be able to lock left panel handle")
                         .size()
@@ -10021,7 +10039,7 @@ impl Workspace {
         });
 
         let left_panel_width = modal_sizes.map(|ms| {
-            ms.left_panel_width
+            ms.right_panel_width
                 .lock()
                 .map(|guard| guard.size())
                 .unwrap_or(DEFAULT_LEFT_PANEL_WIDTH)
@@ -15920,9 +15938,10 @@ impl Workspace {
                         ToolPanelView::ProjectExplorer => "Project explorer",
                         ToolPanelView::GlobalSearch { .. } => "Global search",
                         ToolPanelView::WarpDrive => "Warp Drive",
+                        ToolPanelView::SourceControl => "Source control",
                     }
                 } else {
-                    "Tools panel"
+                    "Right Sidebar"
                 };
                 (
                     self.active_tab_pane_group().as_ref(ctx).left_panel_open,
@@ -15973,9 +15992,10 @@ impl Workspace {
                 ToolPanelView::ProjectExplorer => "Project explorer",
                 ToolPanelView::GlobalSearch { .. } => "Global search",
                 ToolPanelView::WarpDrive => "Warp Drive",
+                ToolPanelView::SourceControl => "Source control",
             }
         } else {
-            "Tools panel"
+            "Right Sidebar"
         };
 
         SavePosition::new(
@@ -16013,10 +16033,11 @@ impl Workspace {
         appearance: &Appearance,
         ctx: &AppContext,
     ) -> Box<dyn Element> {
-        let is_active = self.active_tab_pane_group().as_ref(ctx).right_panel_open;
-        let is_enabled = Self::should_enable_file_tree_and_global_search_for_pane_group(
-            self.active_tab_pane_group().as_ref(ctx),
-        );
+        let pane_group = self.active_tab_pane_group().as_ref(ctx);
+        let is_active = pane_group.right_panel_open
+            && pane_group.left_panel_open
+            && self.left_panel_view.as_ref(ctx).is_source_control_active();
+        let is_enabled = Self::should_enable_file_tree_and_global_search_for_pane_group(pane_group);
         let disable = !is_enabled;
 
         let theme = appearance.theme();
@@ -16127,7 +16148,7 @@ impl Workspace {
             button
                 .with_tooltip(self.render_tab_bar_icon_button_tooltip(
                     appearance,
-                    "Code review panel".to_string(),
+                    "Source control".to_string(),
                     keybinding_name_to_display_string("workspace:toggle_right_panel", ctx),
                 ))
                 .build()
@@ -16558,20 +16579,15 @@ impl Workspace {
         if !item.is_available(ctx) {
             return None;
         }
-        let vertical_tabs_active = uses_vertical_tabs(ctx);
         let inner = match item {
             HeaderToolbarItemKind::TabsPanel => self.render_left_toggle_button(appearance, ctx),
-            HeaderToolbarItemKind::ToolsPanel => {
+            HeaderToolbarItemKind::RightSidebar => {
                 if self.left_panel_views.is_empty() {
                     return None;
                 }
-                if vertical_tabs_active {
-                    self.render_tools_panel_button(appearance, ctx)
-                } else {
-                    self.render_left_toggle_button(appearance, ctx)
-                }
+                self.render_tools_panel_button(appearance, ctx)
             }
-            HeaderToolbarItemKind::CodeReview => self.render_right_panel_button(appearance, ctx),
+            HeaderToolbarItemKind::SourceControl => self.render_right_panel_button(appearance, ctx),
         };
         Some(
             Container::new(
@@ -17276,7 +17292,9 @@ impl Workspace {
         let vertical_tabs_active = uses_vertical_tabs(app);
         let pane_group = self.active_tab_pane_group().as_ref(app);
         let is_right_open = pane_group.right_panel_open;
-        let is_right_maximized = is_right_open && pane_group.is_right_panel_maximized;
+        let is_right_maximized = is_right_open
+            && pane_group.is_right_panel_maximized
+            && self.left_panel_view.as_ref(app).is_source_control_active();
 
         let mut main_content = Flex::row();
 
@@ -17288,7 +17306,11 @@ impl Workspace {
                 .header_toolbar_chip_selection
                 .clone();
             let mut prev_panel_added = false;
-            for item in config.left_items() {
+            for item in config
+                .left_items()
+                .into_iter()
+                .filter(|item| item != &HeaderToolbarItemKind::RightSidebar)
+            {
                 Self::add_panel_with_separator(
                     &mut main_content,
                     &mut prev_panel_added,
@@ -17314,6 +17336,22 @@ impl Workspace {
                     app,
                 );
             }
+            if config
+                .left_items()
+                .contains(&HeaderToolbarItemKind::RightSidebar)
+            {
+                Self::add_panel_with_separator(
+                    &mut main_content,
+                    &mut prev_panel_added,
+                    self.render_config_panel(
+                        &HeaderToolbarItemKind::RightSidebar,
+                        pane_group,
+                        &config,
+                        app,
+                    ),
+                    app,
+                );
+            }
 
             if is_right_maximized {
                 Self::add_panel_with_separator(
@@ -17322,12 +17360,12 @@ impl Workspace {
                     self.render_config_panel_maximized(pane_group, &config, app),
                     app,
                 );
-            } else if !config.contains_item(&HeaderToolbarItemKind::CodeReview) {
+            } else if !config.contains_item(&HeaderToolbarItemKind::SourceControl) {
                 Self::add_panel_with_separator(
                     &mut main_content,
                     &mut prev_panel_added,
                     self.render_config_panel(
-                        &HeaderToolbarItemKind::CodeReview,
+                        &HeaderToolbarItemKind::SourceControl,
                         pane_group,
                         &config,
                         app,
@@ -17894,7 +17932,11 @@ impl Workspace {
                 .clone();
             let pane_group = self.active_tab_pane_group().as_ref(app);
 
-            for item in config.left_items() {
+            for item in config
+                .left_items()
+                .into_iter()
+                .filter(|item| item != &HeaderToolbarItemKind::RightSidebar)
+            {
                 Self::add_panel_with_separator(
                     &mut panels_view,
                     &mut prev_panel_added,
@@ -17942,6 +17984,22 @@ impl Workspace {
                     app,
                 );
             }
+            if config
+                .left_items()
+                .contains(&HeaderToolbarItemKind::RightSidebar)
+            {
+                Self::add_panel_with_separator(
+                    &mut panels_view,
+                    &mut prev_panel_added,
+                    self.render_config_panel(
+                        &HeaderToolbarItemKind::RightSidebar,
+                        pane_group,
+                        &config,
+                        app,
+                    ),
+                    app,
+                );
+            }
 
             if pane_group.right_panel_open && pane_group.is_right_panel_maximized {
                 Self::add_panel_with_separator(
@@ -17950,12 +18008,12 @@ impl Workspace {
                     self.render_config_panel_maximized(pane_group, &config, app),
                     app,
                 );
-            } else if !config.contains_item(&HeaderToolbarItemKind::CodeReview) {
+            } else if !config.contains_item(&HeaderToolbarItemKind::SourceControl) {
                 Self::add_panel_with_separator(
                     &mut panels_view,
                     &mut prev_panel_added,
                     self.render_config_panel(
-                        &HeaderToolbarItemKind::CodeReview,
+                        &HeaderToolbarItemKind::SourceControl,
                         pane_group,
                         &config,
                         app,
@@ -18022,21 +18080,19 @@ impl Workspace {
                     .finish(),
                 )
             }
-            HeaderToolbarItemKind::ToolsPanel => {
+            HeaderToolbarItemKind::RightSidebar => {
                 if !pane_group.left_panel_open || warpui::platform::is_mobile_device() {
+                    return None;
+                }
+                if pane_group.right_panel_open
+                    && pane_group.is_right_panel_maximized
+                    && self.left_panel_view.as_ref(app).is_source_control_active()
+                {
                     return None;
                 }
                 Some(ChildView::new(&self.left_panel_view).finish())
             }
-            HeaderToolbarItemKind::CodeReview => {
-                if !pane_group.right_panel_open {
-                    return None;
-                }
-                if pane_group.is_right_panel_maximized {
-                    return None;
-                }
-                Some(ChildView::new(&self.right_panel_view).finish())
-            }
+            HeaderToolbarItemKind::SourceControl => None,
         }
     }
 
@@ -18047,10 +18103,13 @@ impl Workspace {
         _config: &HeaderToolbarChipSelection,
         app: &AppContext,
     ) -> Option<Box<dyn Element>> {
-        if !pane_group.right_panel_open || !pane_group.is_right_panel_maximized {
+        if !pane_group.right_panel_open
+            || !pane_group.is_right_panel_maximized
+            || !self.left_panel_view.as_ref(app).is_source_control_active()
+        {
             return None;
         }
-        if !HeaderToolbarItemKind::CodeReview.is_supported(app) {
+        if !HeaderToolbarItemKind::SourceControl.is_supported(app) {
             return None;
         }
         Some(Shrinkable::new(1.0, ChildView::new(&self.right_panel_view).finish()).finish())
@@ -18687,6 +18746,9 @@ impl Workspace {
         }
         if *WarpDriveSettings::as_ref(ctx).enable_warp_drive {
             views.push(ToolPanelView::WarpDrive);
+        }
+        if cfg!(feature = "local_fs") {
+            views.push(ToolPanelView::SourceControl);
         }
         views
     }
@@ -19458,7 +19520,7 @@ impl TypedActionView for Workspace {
                             ctx
                         );
                     } else if warp_drive_active {
-                        // Tools panel opened with Warp Drive as the active view
+                        // Right sidebar opened with Warp Drive as the active view
                         send_telemetry_from_ctx!(
                             TelemetryEvent::WarpDriveOpened {
                                 source: WarpDriveSource::LeftPanelToolbelt,
@@ -19656,7 +19718,12 @@ impl TypedActionView for Workspace {
             }
             ClosePanel => {
                 if self.left_panel_view.is_self_or_child_focused(ctx) {
-                    self.close_left_panel(ctx);
+                    if self.left_panel_view.as_ref(ctx).is_source_control_active() {
+                        let pane_group_handle = self.active_tab_pane_group().clone();
+                        self.close_right_panel(&pane_group_handle, ctx);
+                    } else {
+                        self.close_left_panel(ctx);
+                    }
                 } else if self.right_panel_view.is_self_or_child_focused(ctx) {
                     let pane_group_handle = self.active_tab_pane_group().clone();
                     self.close_right_panel(&pane_group_handle, ctx);
@@ -20614,8 +20681,8 @@ impl View for Workspace {
                         TAB_BAR_POSITION_ID,
                         vec2f(0., 0.),
                         PositionedElementOffsetBounds::WindowBySize,
-                        PositionedElementAnchor::BottomRight,
-                        ChildAnchor::TopRight,
+                        PositionedElementAnchor::BottomLeft,
+                        ChildAnchor::TopLeft,
                     ),
                 );
 
@@ -20628,8 +20695,8 @@ impl View for Workspace {
                         TAB_BAR_POSITION_ID,
                         vec2f(0., 0.),
                         PositionedElementOffsetBounds::WindowBySize,
-                        PositionedElementAnchor::BottomLeft,
-                        ChildAnchor::TopLeft,
+                        PositionedElementAnchor::BottomRight,
+                        ChildAnchor::TopRight,
                     ),
                 );
             }

@@ -162,7 +162,7 @@ impl View for TerminalViewZeroStateBlock {
                 Message::new(vec![MessageItem::clickable(
                     vec![
                         MessageItem::keystroke(keystroke),
-                        MessageItem::text("open code review"),
+                        MessageItem::text("open Source control"),
                     ],
                     |ctx| {
                         ctx.dispatch_typed_action(WorkspaceAction::ToggleRightPanel);

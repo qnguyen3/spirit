@@ -56,6 +56,7 @@ use crate::workspace::WorkspaceAction;
 use crate::workspace::view::global_search::view::{
     Event as GlobalSearchViewEvent, GlobalSearchEntryFocus, GlobalSearchView,
 };
+use crate::workspace::view::right_panel::RightPanelView;
 use crate::workspace::view::{
     LEFT_PANEL_GLOBAL_SEARCH_BINDING_NAME, LEFT_PANEL_PROJECT_EXPLORER_BINDING_NAME,
     LEFT_PANEL_WARP_DRIVE_BINDING_NAME, OPEN_GLOBAL_SEARCH_BINDING_NAME,
@@ -67,6 +68,7 @@ struct MouseStateHandles {
     project_explorer_button: MouseStateHandle,
     global_search_button: MouseStateHandle,
     warp_drive_button: MouseStateHandle,
+    source_control_button: MouseStateHandle,
     sign_in_button: MouseStateHandle,
 }
 
@@ -75,6 +77,7 @@ pub enum LeftPanelAction {
     ProjectExplorer,
     GlobalSearch { entry_focus: GlobalSearchEntryFocus },
     WarpDrive,
+    SourceControl,
     SignIn,
 }
 
@@ -87,9 +90,9 @@ pub(crate) enum ToolPanelAvailability {
 impl ToolPanelView {
     fn availability(self, app: &AppContext) -> ToolPanelAvailability {
         match self {
-            ToolPanelView::ProjectExplorer | ToolPanelView::GlobalSearch { .. } => {
-                ToolPanelAvailability::Available
-            }
+            ToolPanelView::ProjectExplorer
+            | ToolPanelView::GlobalSearch { .. }
+            | ToolPanelView::SourceControl => ToolPanelAvailability::Available,
             ToolPanelView::WarpDrive => {
                 if WarpDriveSettings::is_warp_drive_available(app) {
                     ToolPanelAvailability::Available
@@ -113,6 +116,7 @@ pub enum LeftPanelEvent {
         line_col: Option<LineAndColumnArg>,
     },
     SignInRequested,
+    SourceControlSelected,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -120,6 +124,7 @@ pub enum ToolPanelView {
     ProjectExplorer,
     GlobalSearch { entry_focus: GlobalSearchEntryFocus },
     WarpDrive,
+    SourceControl,
 }
 
 /// Encapsulates the active view state to enforce that all mutations go through
@@ -177,6 +182,7 @@ pub struct LeftPanelView {
     mouse_state_handles: MouseStateHandles,
     close_button_mouse_state: MouseStateHandle,
     warp_drive_view: ViewHandle<DrivePanel>,
+    source_control_view: ViewHandle<RightPanelView>,
     active_view: active_view_state::ActiveViewState,
     toolbelt_buttons: Vec<ToolbeltButtonConfig>,
     active_pane_group: Option<WeakViewHandle<PaneGroup>>,
@@ -218,7 +224,9 @@ impl LeftPanelView {
                 "Create an account to save and share workflows, notebooks, prompts, and more.",
             ),
             (
-                ToolPanelView::ProjectExplorer | ToolPanelView::GlobalSearch { .. },
+                ToolPanelView::ProjectExplorer
+                | ToolPanelView::GlobalSearch { .. }
+                | ToolPanelView::SourceControl,
                 ToolPanelAvailability::RequiresAccount,
             )
             | (_, ToolPanelAvailability::Available) => {
@@ -282,16 +290,17 @@ impl LeftPanelView {
     pub fn new(
         working_directories_model: ModelHandle<WorkingDirectoriesModel>,
         views: Vec<ToolPanelView>,
+        source_control_view: ViewHandle<RightPanelView>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         let resizable_data_handle = ResizableData::handle(ctx);
         let resizable_state_handle = match resizable_data_handle
             .as_ref(ctx)
-            .get_handle(ctx.window_id(), ModalType::LeftPanelWidth)
+            .get_handle(ctx.window_id(), ModalType::RightPanelWidth)
         {
             Some(handle) => handle,
             None => {
-                report_error!("Couldn't retrieve left panel resizable state handle.");
+                report_error!("Couldn't retrieve right sidebar resizable state handle.");
                 resizable_state_handle(600.0)
             }
         };
@@ -393,11 +402,12 @@ impl LeftPanelView {
             mouse_state_handles: Default::default(),
             close_button_mouse_state: Default::default(),
             warp_drive_view,
+            source_control_view,
             active_view: active_view_state::new(active_view),
             toolbelt_buttons,
             active_pane_group: None,
             working_directories_model,
-            panel_position: super::PanelPosition::Left,
+            panel_position: super::PanelPosition::Right,
         };
         view.update_button_active_states();
 
@@ -504,6 +514,19 @@ impl LeftPanelView {
                     tooltip_keybinding_names,
                 }
             }
+            ToolPanelView::SourceControl => {
+                let tooltip_keybinding_names = vec!["workspace:toggle_right_panel"];
+
+                ToolbeltButtonConfig {
+                    icon: Icon::Diff,
+                    active_icon: None,
+                    tooltip_text: "Source control".to_string(),
+                    action: LeftPanelAction::SourceControl,
+                    render_with_active_state: false,
+                    tooltip_keybinding: toolbelt_tooltip_keybinding(&tooltip_keybinding_names, ctx),
+                    tooltip_keybinding_names,
+                }
+            }
         }
     }
 
@@ -595,6 +618,10 @@ impl LeftPanelView {
 
     pub fn is_file_tree_active(&self) -> bool {
         self.active_view.get() == ToolPanelView::ProjectExplorer
+    }
+
+    pub fn is_source_control_active(&self) -> bool {
+        self.active_view.get() == ToolPanelView::SourceControl
     }
 
     pub fn warp_drive_view(&self) -> &ViewHandle<DrivePanel> {
@@ -763,6 +790,7 @@ impl LeftPanelView {
                     view.reset_focused_index_in_warp_drive(true, ctx);
                 });
             }
+            ToolPanelView::SourceControl => ctx.focus(&self.source_control_view),
         }
     }
 
@@ -882,8 +910,18 @@ impl Entity for LeftPanelView {
 impl LeftPanelView {
     fn close_button(&self, appearance: &Appearance, app: &AppContext) -> Box<dyn Element> {
         let ui_builder = appearance.ui_builder().clone();
-        let tooltip_keybinding =
-            keybinding_name_to_display_string("workspace:toggle_left_panel", app);
+        let (action, binding_name) = if self.is_source_control_active() {
+            (
+                WorkspaceAction::ToggleRightPanel,
+                "workspace:toggle_right_panel",
+            )
+        } else {
+            (
+                WorkspaceAction::ToggleLeftPanel,
+                "workspace:toggle_left_panel",
+            )
+        };
+        let tooltip_keybinding = keybinding_name_to_display_string(binding_name, app);
 
         let tooltip = if let Some(keybinding) = tooltip_keybinding {
             ui_builder
@@ -910,7 +948,7 @@ impl LeftPanelView {
         .with_tooltip(move || tooltip)
         .build()
         .on_click(move |ctx, _, _| {
-            ctx.dispatch_typed_action(WorkspaceAction::ToggleLeftPanel);
+            ctx.dispatch_typed_action(action.clone());
         })
         .with_cursor(Cursor::PointingHand)
         .finish()
@@ -926,6 +964,9 @@ impl LeftPanelView {
                     matches!(self.active_view.get(), ToolPanelView::GlobalSearch { .. })
                 }
                 LeftPanelAction::WarpDrive => self.active_view.get() == ToolPanelView::WarpDrive,
+                LeftPanelAction::SourceControl => {
+                    self.active_view.get() == ToolPanelView::SourceControl
+                }
                 LeftPanelAction::SignIn => false,
             };
         }
@@ -1066,6 +1107,10 @@ impl LeftPanelView {
                     }
                 }
             }
+            LeftPanelAction::SourceControl => {
+                active_view_state::set(self, ToolPanelView::SourceControl, ctx);
+                ctx.emit(LeftPanelEvent::SourceControlSelected);
+            }
             LeftPanelAction::SignIn => {
                 ctx.emit(LeftPanelEvent::SignInRequested);
             }
@@ -1146,6 +1191,7 @@ impl View for LeftPanelView {
                     }
                 }
                 ToolPanelView::WarpDrive => ctx.focus(&self.warp_drive_view),
+                ToolPanelView::SourceControl => ctx.focus(&self.source_control_view),
             }
         }
     }
@@ -1157,6 +1203,7 @@ impl View for LeftPanelView {
             self.mouse_state_handles.project_explorer_button.clone(),
             self.mouse_state_handles.global_search_button.clone(),
             self.mouse_state_handles.warp_drive_button.clone(),
+            self.mouse_state_handles.source_control_button.clone(),
         ];
 
         // If there is only one button in the toolbelt row,
@@ -1217,6 +1264,10 @@ impl View for LeftPanelView {
                         .finish(),
                 )
                 .finish(),
+                ToolPanelView::SourceControl => {
+                    Shrinkable::new(1.0, ChildView::new(&self.source_control_view).finish())
+                        .finish()
+                }
             }
         };
 
@@ -1228,6 +1279,11 @@ impl View for LeftPanelView {
             } else {
                 Flex::row().finish()
             };
+            let header_right = if self.is_source_control_active() {
+                Empty::new().finish()
+            } else {
+                self.close_button(appearance, app)
+            };
 
             let header_row = Container::new(
                 ConstrainedBox::new(
@@ -1236,7 +1292,7 @@ impl View for LeftPanelView {
                         .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
                         .with_cross_axis_alignment(CrossAxisAlignment::Center)
                         .with_child(Shrinkable::new(1.0, header_left).finish())
-                        .with_child(self.close_button(appearance, app))
+                        .with_child(header_right)
                         .finish(),
                 )
                 .with_height(PANE_HEADER_HEIGHT)

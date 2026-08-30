@@ -384,7 +384,7 @@ impl SettingsWidget for AutoOpenCodeReviewPaneCodeWidget {
     ) -> Box<dyn Element> {
         let general_settings = GeneralSettings::as_ref(app);
         render_body_item::<EditorAndCodeReviewPageAction>(
-            "Auto open code review panel".into(),
+            "Auto open Source control".into(),
             None,
             LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
@@ -400,7 +400,7 @@ impl SettingsWidget for AutoOpenCodeReviewPaneCodeWidget {
                     );
                 })
                 .finish(),
-            Some("When this setting is on, the code review panel will open on the first accepted diff of a conversation".into()),
+            Some("When this setting is on, Source control will open on the first accepted diff of a conversation".into()),
         )
     }
 }
@@ -426,7 +426,7 @@ impl SettingsWidget for CodeReviewPanelToggleWidget {
         let tab_settings = TabSettings::as_ref(app);
 
         render_body_item::<EditorAndCodeReviewPageAction>(
-            "Show code review button".into(),
+            "Show source control button".into(),
             None,
             LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
@@ -441,7 +441,7 @@ impl SettingsWidget for CodeReviewPanelToggleWidget {
                 })
                 .finish(),
             Some(
-                "Show a button in the top right of the window to toggle the code review panel."
+                "Show a button in the top right of the window to open Source control in the right sidebar."
                     .into(),
             ),
         )
@@ -469,7 +469,7 @@ impl SettingsWidget for CodeReviewDiffStatsToggleWidget {
         let tab_settings = TabSettings::as_ref(app);
 
         render_body_item::<EditorAndCodeReviewPageAction>(
-            "Show diff stats on code review button".into(),
+            "Show diff stats on source control button".into(),
             None,
             LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
@@ -485,7 +485,7 @@ impl SettingsWidget for CodeReviewDiffStatsToggleWidget {
                     );
                 })
                 .finish(),
-            Some("Show lines added and removed counts on the code review button.".into()),
+            Some("Show lines added and removed counts on the source control button.".into()),
         )
     }
 }
@@ -525,10 +525,7 @@ impl SettingsWidget for ProjectExplorerToggleWidget {
                     ctx.dispatch_typed_action(EditorAndCodeReviewPageAction::ToggleProjectExplorer);
                 })
                 .finish(),
-            Some(
-                "Adds an IDE-style project explorer / file tree to the left side tools panel."
-                    .into(),
-            ),
+            Some("Adds an IDE-style project explorer / file tree to the right sidebar.".into()),
         )
     }
 }
@@ -568,7 +565,7 @@ impl SettingsWidget for GlobalSearchToggleWidget {
                     ctx.dispatch_typed_action(EditorAndCodeReviewPageAction::ToggleGlobalSearch);
                 })
                 .finish(),
-            Some("Adds global file search to the left side tools panel.".into()),
+            Some("Adds global file search to the right sidebar.".into()),
         )
     }
 }
