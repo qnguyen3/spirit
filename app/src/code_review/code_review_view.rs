@@ -246,6 +246,7 @@ const FILE_HEADER_HEIGHT: f32 = 41.;
 /// The gap between editors in the viewported list.
 const EDITOR_GAP: f32 = 12.;
 const FILE_SIDEBAR_PANE_WIDTH_PERCENTAGE: f32 = 0.25;
+const ZERO_STATE_MAX_CONTENT_WIDTH: f32 = 280.;
 /// Vertical gap between the right panel header row and the code review content below it
 /// (sub-header in loaded state, loading text in loading state).
 pub(super) const CONTENT_TOP_MARGIN: f32 = 4.;
@@ -3984,12 +3985,8 @@ impl CodeReviewView {
     fn render_no_changes_state(&self, appearance: &Appearance) -> Box<dyn Element> {
         let theme = appearance.theme();
 
-        let mut main_row = Flex::row()
-            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_main_axis_size(MainAxisSize::Max);
-
         let zero_state_column = Flex::column()
+            .with_main_axis_size(MainAxisSize::Min)
             .with_main_axis_alignment(MainAxisAlignment::Center)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_child(
@@ -4012,6 +4009,7 @@ impl CodeReviewView {
                 Text::new("No open changes", appearance.ui_font_family(), 16.)
                     .with_style(Properties::default().weight(Weight::Semibold))
                     .with_color(theme.main_text_color(theme.surface_2()).into())
+                    .soft_wrap(true)
                     .finish(),
             )
             .with_child(
@@ -4022,22 +4020,20 @@ impl CodeReviewView {
                         14.,
                     )
                     .with_color(theme.sub_text_color(theme.surface_2()).into())
+                    .soft_wrap(true)
                     .finish(),
                 )
                 .with_margin_top(8.)
                 .finish(),
             );
 
-        let zero_state_content = Container::new(zero_state_column.finish()).finish();
-
-        // Add expandable spacers on left and right to center the content and force full width.
-        main_row.add_child(Shrinkable::new(1., Empty::new().finish()).finish());
-        main_row.add_child(zero_state_content);
-        main_row.add_child(Shrinkable::new(1., Empty::new().finish()).finish());
+        let zero_state_content = ConstrainedBox::new(zero_state_column.finish())
+            .with_max_width(ZERO_STATE_MAX_CONTENT_WIDTH)
+            .finish();
 
         Shrinkable::new(
             1.,
-            Container::new(Clipped::new(main_row.finish()).finish())
+            Container::new(Clipped::new(Align::new(zero_state_content).finish()).finish())
                 .with_border(Border::new(1.0).with_border_fill(theme.outline()))
                 .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
                 .with_uniform_padding(16.)
