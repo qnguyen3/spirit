@@ -1,0 +1,549 @@
+#!/bin/bash
+#
+# Build, sign, notarize and staple a distributable macOS release of Spirit
+# using your own Apple Developer ID, independent of `script/macos/bundle`
+# (which is hardwired to Warp's team 2BBY89MBSN and its GCP-hosted secrets).
+#
+# Usage:
+#   script/macos/spirit-release credentials [options]
+#   script/macos/spirit-release [build] [options]
+#
+# Commands:
+#   build         Build, sign, package, notarize and staple. (default)
+#   credentials   Interactively store the notarytool keychain profile. Run
+#                 this once before the first notarized build. Prompts for an
+#                 app-specific password from appleid.apple.com.
+#
+# Options:
+#   -c, --channel <name>        oss | preview | stable | dev | local (default: oss)
+#       --identity <id>         Signing identity name or SHA-1 hash.
+#                               Default: the first "Developer ID Application"
+#                               identity in your keychain.
+#       --team-id <id>          Apple Team ID. Default: parsed from the identity.
+#       --apple-id <email>      Apple ID, for the `credentials` command.
+#       --keychain-profile <n>  notarytool profile name (default: notarytool-profile)
+#       --arch <arch>           aarch64 | x86_64 (default: this machine)
+#       --universal             Build a universal (arm64 + x86_64) binary.
+#       --version <tag>         Version tag, format vN.YYYY.MM.DD.HH.MM.<channel>_NN.
+#                               Default: generated from the current time.
+#       --app-group <id>        Add an App Group entitlement. Must be registered
+#                               in your developer account and prefixed with your
+#                               team ID. Omitted by default.
+#       --dmg-name-suffix <s>   Suffix for the produced dmg filename.
+#       --skip-build            Reuse already-built binaries.
+#       --skip-notarize         Sign and package but do not submit to Apple.
+#       --no-dmg                Produce only the .app.
+#   -o, --open                  Reveal the output directory when finished.
+#
+# Notarization requires a "Developer ID Application" certificate; an "Apple
+# Development" certificate cannot be notarized.
+
+set -euo pipefail
+
+WORKSPACE_ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$WORKSPACE_ROOT_DIR"
+
+# Keep in sync with `.cargo/config.toml`.
+export MACOSX_DEPLOYMENT_TARGET="10.14"
+
+INTEL_TARGET="x86_64-apple-darwin"
+ARM_TARGET="aarch64-apple-darwin"
+CARGO_PROFILE="release-lto"
+
+COMMAND="build"
+CHANNEL="oss"
+SIGNING_IDENTITY=""
+TEAM_ID=""
+APPLE_ID=""
+KEYCHAIN_PROFILE="notarytool-profile"
+TARGET_ARCH=""
+SECOND_TARGET=""
+UNIVERSAL_BINARY=false
+RELEASE_TAG=""
+APP_GROUP=""
+DMG_NAME_SUFFIX=""
+BUILD_BINARY=true
+NOTARIZE=true
+MAKE_DMG=true
+OPEN_AFTER=false
+
+die() {
+  echo "error: $*" >&2
+  exit 1
+}
+
+step() {
+  printf '\n==> %s\n' "$*"
+}
+
+case "${1:-}" in
+  build|credentials)
+    COMMAND="$1"
+    shift
+    ;;
+esac
+
+while (( $# )); do
+  case "$1" in
+    -c|--channel) CHANNEL="${2:?--channel needs a value}"; shift 2 ;;
+    --identity) SIGNING_IDENTITY="${2:?--identity needs a value}"; shift 2 ;;
+    --team-id) TEAM_ID="${2:?--team-id needs a value}"; shift 2 ;;
+    --apple-id) APPLE_ID="${2:?--apple-id needs a value}"; shift 2 ;;
+    --keychain-profile) KEYCHAIN_PROFILE="${2:?--keychain-profile needs a value}"; shift 2 ;;
+    --arch) TARGET_ARCH="${2:?--arch needs a value}"; shift 2 ;;
+    --universal) UNIVERSAL_BINARY=true; shift ;;
+    --version) RELEASE_TAG="${2:?--version needs a value}"; shift 2 ;;
+    --app-group) APP_GROUP="${2:?--app-group needs a value}"; shift 2 ;;
+    --dmg-name-suffix) DMG_NAME_SUFFIX="${2:?--dmg-name-suffix needs a value}"; shift 2 ;;
+    --skip-build) BUILD_BINARY=false; shift ;;
+    --skip-notarize) NOTARIZE=false; shift ;;
+    --no-dmg) MAKE_DMG=false; shift ;;
+    -o|--open) OPEN_AFTER=true; shift ;;
+    -h|--help) sed -n '2,39p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) die "unknown argument: $1" ;;
+  esac
+done
+
+resolve_signing_identity() {
+  local identities
+  identities="$(security find-identity -v -p codesigning 2>/dev/null || true)"
+
+  SIGNING_IDENTITY_NAME=""
+
+  if [[ -n "$SIGNING_IDENTITY" ]]; then
+    grep -Fq "$SIGNING_IDENTITY" <<< "$identities" \
+      || die "no codesigning identity in the keychain matches '$SIGNING_IDENTITY'"
+  else
+    SIGNING_IDENTITY="$(
+      grep 'Developer ID Application' <<< "$identities" | head -1 | awk '{print $2}'
+    )"
+    [[ -n "$SIGNING_IDENTITY" ]] || die \
+      "no 'Developer ID Application' certificate found. Apple only notarizes Developer ID
+       signatures; an 'Apple Development' certificate will not work. Create one at
+       https://developer.apple.com/account/resources/certificates and install it, or pass
+       --identity explicitly."
+  fi
+
+  SIGNING_IDENTITY_NAME="$(
+    grep -F "$SIGNING_IDENTITY" <<< "$identities" | head -1 | sed -E 's/.*"(.*)"$/\1/'
+  )"
+
+  if [[ -z "$TEAM_ID" ]]; then
+    TEAM_ID="$(sed -nE 's/.*\(([A-Z0-9]{10})\)"?$/\1/p' <<< "$SIGNING_IDENTITY_NAME")"
+    [[ -n "$TEAM_ID" ]] || die \
+      "could not parse a team ID out of '$SIGNING_IDENTITY_NAME'; pass --team-id"
+  fi
+}
+
+if [[ "$COMMAND" == "credentials" ]]; then
+  [[ -n "$APPLE_ID" ]] || die "--apple-id is required for the credentials command"
+  # Storing credentials only needs a team ID, so an explicit --team-id lets this
+  # run before a Developer ID certificate has been installed.
+  if [[ -z "$TEAM_ID" ]]; then
+    resolve_signing_identity
+  fi
+
+  step "Storing notarytool credentials as profile '$KEYCHAIN_PROFILE'"
+  echo "Apple ID: $APPLE_ID"
+  echo "Team ID:  $TEAM_ID"
+  echo
+  echo "You will be prompted for an app-specific password (NOT your Apple ID password)."
+  echo "Generate one at https://appleid.apple.com -> Sign-In and Security -> App-Specific Passwords."
+  echo
+
+  xcrun notarytool store-credentials "$KEYCHAIN_PROFILE" \
+    --apple-id "$APPLE_ID" \
+    --team-id "$TEAM_ID"
+
+  step "Verifying the stored profile against Apple"
+  xcrun notarytool history --keychain-profile "$KEYCHAIN_PROFILE" >/dev/null
+  echo "Profile '$KEYCHAIN_PROFILE' is working."
+  exit 0
+fi
+
+FEATURES="release_bundle,extern_plist,gui"
+case "$CHANNEL" in
+  oss)
+    WARP_BIN="warp-oss"
+    APP_NAME="Spirit"
+    BUNDLE_ID="dev.warp.WarpOss"
+    URL_SCHEME="warposs"
+    CLI_COMMAND_NAME="warp-oss"
+    ;;
+  preview)
+    WARP_BIN="preview"
+    APP_NAME="WarpPreview"
+    BUNDLE_ID="dev.warp.Warp-Preview"
+    URL_SCHEME="warppreview"
+    CLI_COMMAND_NAME="oz-preview"
+    FEATURES="$FEATURES,cocoa_sentry,preview_channel,jemalloc_pprof,heap_usage_tracking"
+    ;;
+  stable)
+    WARP_BIN="stable"
+    APP_NAME="Warp"
+    BUNDLE_ID="dev.warp.Warp-Stable"
+    URL_SCHEME="warp"
+    CLI_COMMAND_NAME="oz"
+    FEATURES="$FEATURES,cocoa_sentry,jemalloc_pprof,heap_usage_tracking"
+    ;;
+  dev)
+    WARP_BIN="dev"
+    APP_NAME="WarpDev"
+    BUNDLE_ID="dev.warp.Warp-Dev"
+    URL_SCHEME="warpdev"
+    CLI_COMMAND_NAME="oz-dev"
+    FEATURES="$FEATURES,cocoa_sentry,jemalloc_pprof,heap_usage_tracking,warp_control_cli"
+    export FRAMEWORK_OVERRIDE="dev"
+    export HANDLE_MARKDOWN=1
+    ;;
+  local)
+    WARP_BIN="warp"
+    APP_NAME="WarpLocal"
+    BUNDLE_ID="dev.warp.Warp-Local"
+    URL_SCHEME="warplocal"
+    CLI_COMMAND_NAME="oz-local"
+    FEATURES="$FEATURES,cocoa_sentry"
+    export FRAMEWORK_OVERRIDE="dev"
+    ;;
+  *)
+    die "unknown channel '$CHANNEL' (expected oss, preview, stable, dev or local)"
+    ;;
+esac
+
+case "$TARGET_ARCH" in
+  "")
+    if [[ "$(sysctl -n hw.optional.arm64 2>/dev/null)" == "1" ]]; then
+      HOST_TARGET="$ARM_TARGET"
+    else
+      HOST_TARGET="$INTEL_TARGET"
+    fi
+    ;;
+  aarch64) HOST_TARGET="$ARM_TARGET" ;;
+  x86_64) HOST_TARGET="$INTEL_TARGET" ;;
+  *) die "--arch must be aarch64 or x86_64, got '$TARGET_ARCH'" ;;
+esac
+
+if [[ "$UNIVERSAL_BINARY" == true ]]; then
+  if [[ "$HOST_TARGET" == "$ARM_TARGET" ]]; then
+    SECOND_TARGET="$INTEL_TARGET"
+  else
+    SECOND_TARGET="$ARM_TARGET"
+  fi
+fi
+
+if [[ -z "$RELEASE_TAG" ]]; then
+  RELEASE_TAG="v0.$(date +%Y.%m.%d.%H.%M).${CHANNEL}_01"
+fi
+export GIT_RELEASE_TAG="$RELEASE_TAG"
+
+BUNDLE_DIR="target/$HOST_TARGET/$CARGO_PROFILE/bundle/osx"
+APP_PATH="$BUNDLE_DIR/$APP_NAME.app"
+DOCK_TILE_PLUGIN_DIR="target/$CARGO_PROFILE/WarpDockTilePlugin.docktileplugin"
+OUT_DIR="target/spirit-release/$CHANNEL"
+STAGE_DIR="$OUT_DIR/dmg-stage"
+ENTITLEMENTS_PATH="$OUT_DIR/Entitlements.plist"
+if [[ -n "$DMG_NAME_SUFFIX" ]]; then
+  DMG_NAME="$APP_NAME-$DMG_NAME_SUFFIX.dmg"
+else
+  DMG_NAME="$APP_NAME.dmg"
+fi
+DMG_PATH="$OUT_DIR/$DMG_NAME"
+
+cleanup() {
+  hdiutil info 2>/dev/null | awk -v vol="/Volumes/$APP_NAME" '$0 ~ vol {print $1}' \
+    | while read -r disk; do hdiutil detach "$disk" -force >/dev/null 2>&1 || true; done
+  find "$OUT_DIR" -name 'rw.*.dmg' -type f -delete 2>/dev/null || true
+}
+trap cleanup EXIT
+
+for tool in cargo cargo-bundle create-dmg cargo-about; do
+  command -v "$tool" >/dev/null || die "$tool is not installed"
+done
+xcrun --find notarytool >/dev/null 2>&1 || die "xcrun notarytool is unavailable; install Xcode"
+
+resolve_signing_identity
+
+step "Release configuration"
+cat <<EOF
+  channel:    $CHANNEL
+  app:        $APP_NAME.app ($BUNDLE_ID)
+  binary:     $WARP_BIN
+  profile:    $CARGO_PROFILE
+  target:     $HOST_TARGET${SECOND_TARGET:+ + $SECOND_TARGET (universal)}
+  version:    $RELEASE_TAG
+  identity:   $SIGNING_IDENTITY_NAME
+  team:       $TEAM_ID
+  notarize:   $NOTARIZE$( [[ "$NOTARIZE" == true ]] && echo " (profile $KEYCHAIN_PROFILE)" )
+  output:     $OUT_DIR
+EOF
+
+# Fail before the build rather than after it if the credentials are missing.
+if [[ "$NOTARIZE" == true ]]; then
+  step "Checking notarytool credentials"
+  if ! xcrun notarytool history --keychain-profile "$KEYCHAIN_PROFILE" >/dev/null 2>&1; then
+    die "notarytool profile '$KEYCHAIN_PROFILE' is missing or invalid. Run:
+       script/macos/spirit-release credentials --apple-id <your-apple-id>"
+  fi
+  echo "Profile '$KEYCHAIN_PROFILE' is valid."
+fi
+
+rm -rf "$OUT_DIR"
+mkdir -p "$OUT_DIR"
+rm -rf "$APP_PATH"
+
+step "Building $WARP_BIN for $HOST_TARGET"
+if [[ "$BUILD_BINARY" != true ]]; then
+  export CARGO_BUNDLE_SKIP_BUILD=1
+fi
+if [[ "$UNIVERSAL_BINARY" == true ]]; then
+  rustup target add "$SECOND_TARGET"
+fi
+
+(cd app && cargo bundle \
+  --profile "$CARGO_PROFILE" \
+  --bin "$WARP_BIN" \
+  --target "$HOST_TARGET" \
+  --features "$FEATURES")
+
+[[ -d "$APP_PATH" ]] || die "cargo bundle did not produce $APP_PATH"
+
+if [[ "$UNIVERSAL_BINARY" == true ]]; then
+  if [[ "$BUILD_BINARY" == true ]]; then
+    step "Building $WARP_BIN for $SECOND_TARGET"
+    (cd app && cargo build \
+      --profile "$CARGO_PROFILE" \
+      --bin "$WARP_BIN" \
+      --target "$SECOND_TARGET" \
+      --features "$FEATURES")
+  fi
+
+  step "Merging slices into a universal binary"
+  script/macos/add_framework_rpath \
+    "target/$HOST_TARGET/$CARGO_PROFILE/$WARP_BIN" \
+    "target/$SECOND_TARGET/$CARGO_PROFILE/$WARP_BIN"
+  lipo -create -output "$APP_PATH/Contents/MacOS/$WARP_BIN" \
+    "target/$HOST_TARGET/$CARGO_PROFILE/$WARP_BIN" \
+    "target/$SECOND_TARGET/$CARGO_PROFILE/$WARP_BIN"
+
+  # Rust symlinks each .dSYM to a hash-suffixed directory under target/deps,
+  # and the DWARF file inside is named after that hash rather than the binary.
+  host_dsym="target/$HOST_TARGET/$CARGO_PROFILE/$WARP_BIN.dSYM"
+  second_dsym="target/$SECOND_TARGET/$CARGO_PROFILE/$WARP_BIN.dSYM"
+  if [[ -e "$host_dsym" && -e "$second_dsym" ]]; then
+    host_dwarf="$host_dsym/Contents/Resources/DWARF/$(basename "$(realpath "$host_dsym")" .dSYM)"
+    second_dwarf="$second_dsym/Contents/Resources/DWARF/$(basename "$(realpath "$second_dsym")" .dSYM)"
+    if [[ -e "$host_dwarf" && -e "$second_dwarf" ]]; then
+      lipo -create -output "$OUT_DIR/$WARP_BIN.dSYM" "$host_dwarf" "$second_dwarf"
+    fi
+  fi
+else
+  script/macos/add_framework_rpath "$APP_PATH/Contents/MacOS/$WARP_BIN"
+  if [[ -e "target/$HOST_TARGET/$CARGO_PROFILE/$WARP_BIN.dSYM" ]]; then
+    cp -HR "target/$HOST_TARGET/$CARGO_PROFILE/$WARP_BIN.dSYM" "$OUT_DIR/"
+  fi
+fi
+
+step "Writing Info.plist keys"
+INFO_PLIST="$APP_PATH/Contents/Info.plist"
+WARP_SCHEME_NAME="$URL_SCHEME" WARP_PLIST_PATH="$INFO_PLIST" script/update_plist
+
+plutil -insert NSServices -xml "
+<array>
+  <dict>
+    <key>NSMenuItem</key>
+    <dict><key>default</key><string>New $APP_NAME Tab Here</string></dict>
+    <key>NSMessage</key><string>openTab</string>
+    <key>NSRequiredContext</key>
+    <dict><key>NSTextContent</key><string>FilePath</string></dict>
+    <key>NSSendTypes</key>
+    <array><string>NSFilenamesPboardType</string><string>public.plain-text</string></array>
+  </dict>
+  <dict>
+    <key>NSMenuItem</key>
+    <dict><key>default</key><string>New $APP_NAME Window Here</string></dict>
+    <key>NSMessage</key><string>openWindow</string>
+    <key>NSRequiredContext</key>
+    <dict><key>NSTextContent</key><string>FilePath</string></dict>
+    <key>NSSendTypes</key>
+    <array><string>NSFilenamesPboardType</string><string>public.plain-text</string></array>
+  </dict>
+</array>" "$INFO_PLIST"
+
+plutil -insert SUPPORTS_CHAT_GPT_WORK_WITH_APPS -bool true "$INFO_PLIST"
+plutil -insert LSBackgroundOnly -bool false "$INFO_PLIST"
+plutil -insert SMAuthorizedClients -xml "<array><string>$BUNDLE_ID</string></array>" "$INFO_PLIST"
+
+step "Adding the dock tile plugin"
+[[ -d "$DOCK_TILE_PLUGIN_DIR" ]] || die "dock tile plugin missing at $DOCK_TILE_PLUGIN_DIR"
+mkdir -p "$APP_PATH/Contents/PlugIns"
+cp -R "$DOCK_TILE_PLUGIN_DIR" "$APP_PATH/Contents/PlugIns/"
+plutil -insert NSDockTilePlugIn -string "WarpDockTilePlugin.docktileplugin" "$INFO_PLIST"
+plutil -insert MainAppBundleIdentifier -string "$BUNDLE_ID" \
+  "$APP_PATH/Contents/PlugIns/WarpDockTilePlugin.docktileplugin/Contents/Info.plist"
+
+step "Preparing bundled resources"
+RESOURCES_DIR="$APP_PATH/Contents/Resources"
+SETTINGS_SCHEMA_EXECUTABLE="$APP_PATH/Contents/MacOS/$WARP_BIN" \
+  script/prepare_bundled_resources "$RESOURCES_DIR" "$CHANNEL"
+script/compile_icon "$CHANNEL" "$APP_PATH"
+
+if [[ ",$FEATURES," == *",heap_usage_tracking,"* ]]; then
+  step "Bundling pprof"
+  script/prepare_bundled_pprof "$APP_PATH/Contents/Helpers"
+fi
+
+step "Creating the CLI wrapper"
+mkdir -p "$RESOURCES_DIR/bin"
+cat > "$RESOURCES_DIR/bin/$CLI_COMMAND_NAME" <<EOF
+#!/bin/bash
+script_dir="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+exec -a "\$0" "\$script_dir/../../MacOS/$WARP_BIN" "\$@"
+EOF
+chmod +x "$RESOURCES_DIR/bin/$CLI_COMMAND_NAME"
+
+if [[ ",$FEATURES," == *",warp_control_cli,"* ]]; then
+  if [[ "$CHANNEL" == "stable" ]]; then
+    WARPCTRL_COMMAND_NAME="warpctrl"
+  elif [[ "$CHANNEL" == "oss" ]]; then
+    WARPCTRL_COMMAND_NAME="warpctrl-oss"
+  else
+    WARPCTRL_COMMAND_NAME="warpctrl-$CHANNEL"
+  fi
+  script/macos/create_warpctrl_wrapper \
+    "$RESOURCES_DIR/bin/$WARPCTRL_COMMAND_NAME" \
+    "../../MacOS/$WARP_BIN"
+fi
+
+step "Generating entitlements for team $TEAM_ID"
+cat > "$ENTITLEMENTS_PATH" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+	<key>com.apple.security.device.camera</key>
+	<true/>
+	<key>com.apple.security.personal-information.addressbook</key>
+	<true/>
+	<key>com.apple.security.personal-information.calendars</key>
+	<true/>
+	<key>com.apple.security.personal-information.location</key>
+	<true/>
+	<key>com.apple.security.personal-information.photos-library</key>
+	<true/>
+</dict>
+</plist>
+EOF
+if [[ -n "$APP_GROUP" ]]; then
+  # plutil treats an unescaped dot in a key path as a nesting separator.
+  plutil -insert 'com\.apple\.security\.application-groups' \
+    -xml "<array><string>$APP_GROUP</string></array>" "$ENTITLEMENTS_PATH"
+fi
+
+# Nested code inherits the hardened runtime but not the app's entitlements;
+# only the main executable is entitled.
+sign_nested() {
+  codesign --force --timestamp --options runtime --sign "$SIGNING_IDENTITY" "$1"
+}
+
+step "Signing nested code"
+while IFS= read -r -d '' nested; do
+  echo "  $nested"
+  sign_nested "$nested"
+done < <(
+  find "$APP_PATH/Contents" -depth \
+    \( -name '*.framework' -o -name '*.docktileplugin' -o -name '*.bundle' \
+       -o -name '*.dylib' -o -name '*.so' \) \
+    -print0 2>/dev/null
+)
+if [[ -d "$APP_PATH/Contents/Helpers" ]]; then
+  while IFS= read -r -d '' helper; do
+    echo "  $helper"
+    sign_nested "$helper"
+  done < <(find "$APP_PATH/Contents/Helpers" -type f -perm -111 -print0)
+fi
+
+step "Signing $APP_NAME.app"
+codesign --force --timestamp --options runtime \
+  --entitlements "$ENTITLEMENTS_PATH" \
+  --sign "$SIGNING_IDENTITY" "$APP_PATH"
+
+step "Verifying the signature"
+codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+codesign --display --entitlements - --verbose=4 "$APP_PATH" 2>&1 | sed 's/^/  /'
+
+if [[ "$MAKE_DMG" != true ]]; then
+  cp -R "$APP_PATH" "$OUT_DIR/"
+  step "Done: $OUT_DIR/$APP_NAME.app (not notarized; .app-only build)"
+  if [[ "$OPEN_AFTER" == true ]]; then open "$OUT_DIR"; fi
+  exit 0
+fi
+
+step "Creating $DMG_NAME"
+rm -rf "$STAGE_DIR"
+mkdir -p "$STAGE_DIR"
+cp -R "$APP_PATH" "$STAGE_DIR/"
+create-dmg \
+  --volname "$APP_NAME" \
+  --no-internet-enable \
+  --background app/assets/resources/mac/warp_install_image.png \
+  --icon-size 128 \
+  --window-size 700 500 \
+  --format UDZO \
+  --filesystem APFS \
+  --app-drop-link 550 250 \
+  --icon "$APP_NAME.app" 150 250 \
+  "$DMG_PATH" "$STAGE_DIR"
+rm -rf "$STAGE_DIR"
+
+step "Signing $DMG_NAME"
+codesign --force --timestamp --sign "$SIGNING_IDENTITY" "$DMG_PATH"
+
+if [[ "$NOTARIZE" != true ]]; then
+  cp -R "$APP_PATH" "$OUT_DIR/"
+  step "Done (not notarized)"
+  echo "  $DMG_PATH"
+  if [[ "$OPEN_AFTER" == true ]]; then open "$OUT_DIR"; fi
+  exit 0
+fi
+
+step "Submitting to Apple for notarization"
+submission_json="$OUT_DIR/notarization.json"
+if ! xcrun notarytool submit "$DMG_PATH" \
+  --keychain-profile "$KEYCHAIN_PROFILE" \
+  --wait --timeout 2h \
+  --output-format json > "$submission_json"; then
+  submission_id="$(plutil -extract id raw -o - "$submission_json" 2>/dev/null || true)"
+  if [[ -n "$submission_id" ]]; then
+    echo "Notarization log for $submission_id:" >&2
+    xcrun notarytool log "$submission_id" --keychain-profile "$KEYCHAIN_PROFILE" >&2 || true
+  fi
+  die "notarization failed"
+fi
+
+submission_id="$(plutil -extract id raw -o - "$submission_json")"
+submission_status="$(plutil -extract status raw -o - "$submission_json")"
+echo "Submission $submission_id: $submission_status"
+if [[ "$submission_status" != "Accepted" ]]; then
+  xcrun notarytool log "$submission_id" --keychain-profile "$KEYCHAIN_PROFILE" >&2 || true
+  die "Apple did not accept the submission"
+fi
+
+step "Stapling the notarization ticket"
+xcrun stapler staple "$DMG_PATH"
+xcrun stapler validate "$DMG_PATH"
+spctl --assess --type open --context context:primary-signature -vv "$DMG_PATH"
+
+step "Stapling the .app and copying it alongside the dmg"
+cp -R "$APP_PATH" "$OUT_DIR/"
+xcrun stapler staple "$OUT_DIR/$APP_NAME.app"
+spctl --assess --type execute -vv "$OUT_DIR/$APP_NAME.app"
+
+step "Done"
+echo "  $DMG_PATH"
+echo "  $OUT_DIR/$APP_NAME.app"
+if [[ "$OPEN_AFTER" == true ]]; then open "$OUT_DIR"; fi
+exit 0
