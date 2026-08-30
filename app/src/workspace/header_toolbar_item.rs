@@ -28,6 +28,8 @@ pub enum HeaderToolbarItemKind {
     RightSidebar,
     #[serde(alias = "CodeReview", alias = "code_review")]
     SourceControl,
+    #[serde(alias = "NotificationsMailbox", alias = "notifications_mailbox")]
+    Notifications,
 }
 
 impl HeaderToolbarItemKind {
@@ -36,6 +38,7 @@ impl HeaderToolbarItemKind {
             Self::TabsPanel => "Tabs Panel",
             Self::RightSidebar => "Right Sidebar",
             Self::SourceControl => "Source Control",
+            Self::Notifications => "Notifications",
         }
     }
 
@@ -44,6 +47,7 @@ impl HeaderToolbarItemKind {
             Self::TabsPanel => Icon::Menu,
             Self::RightSidebar => Icon::Tool2,
             Self::SourceControl => Icon::Diff,
+            Self::Notifications => Icon::Inbox,
         }
     }
 
@@ -55,6 +59,7 @@ impl HeaderToolbarItemKind {
             Self::TabsPanel => crate::tab::uses_vertical_tabs(app),
             Self::RightSidebar => true,
             Self::SourceControl => cfg!(feature = "local_fs"),
+            Self::Notifications => true,
         }
     }
 
@@ -66,7 +71,7 @@ impl HeaderToolbarItemKind {
         }
         match self {
             Self::SourceControl => *TabSettings::as_ref(app).show_code_review_button.value(),
-            Self::TabsPanel | Self::RightSidebar => true,
+            Self::TabsPanel | Self::RightSidebar | Self::Notifications => true,
         }
     }
 
@@ -84,11 +89,16 @@ impl HeaderToolbarItemKind {
     }
 
     pub fn default_right() -> Vec<Self> {
-        vec![Self::RightSidebar, Self::SourceControl]
+        vec![Self::Notifications, Self::RightSidebar, Self::SourceControl]
     }
 
     /// All toolbar item variants (availability filtering is done at the call site).
     pub fn all_items() -> Vec<Self> {
-        vec![Self::TabsPanel, Self::RightSidebar, Self::SourceControl]
+        vec![
+            Self::TabsPanel,
+            Self::Notifications,
+            Self::RightSidebar,
+            Self::SourceControl,
+        ]
     }
 }

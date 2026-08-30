@@ -45,6 +45,7 @@ pub(super) struct WorkspaceMouseStates {
     pub(super) title_bar_search_bar: MouseStateHandle,
     pub(super) team_switcher_pill: MouseStateHandle,
     pub(super) workspace_switcher_pill: MouseStateHandle,
+    pub(super) agent_inbox_icon: MouseStateHandle,
     #[cfg(target_family = "wasm")]
     pub(super) warp_logo: MouseStateHandle,
 }
@@ -100,6 +101,7 @@ pub struct WorkspaceState {
     pub is_workflow_modal_open: bool,
     pub is_prompt_editor_open: bool,
     pub is_header_toolbar_editor_open: bool,
+    pub is_agent_inbox_open: bool,
     pub is_import_modal_open: bool,
     pub is_close_session_confirmation_dialog_open: bool,
     pub is_native_quit_modal_open: bool,

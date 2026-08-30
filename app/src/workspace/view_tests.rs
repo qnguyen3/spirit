@@ -116,6 +116,7 @@ pub(crate) fn initialize_app(app: &mut App) {
         )
     });
     app.add_singleton_model(|_| CLIAgentSessionsModel::new());
+    app.add_singleton_model(|_| crate::workspace::AgentInboxModel::default());
     app.add_singleton_model(SessionPermissionsManager::new);
     app.add_singleton_model(|_| SettingsPaneManager::new());
     app.add_singleton_model(|_| ProjectRegistryModel::new(None));

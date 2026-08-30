@@ -1748,6 +1748,7 @@ pub(crate) fn initialize_app(
     });
 
     ctx.add_singleton_model(|_| CLIAgentSessionsModel::new());
+    ctx.add_singleton_model(|_| workspace::AgentInboxModel::default());
     ctx.add_singleton_model(|_| UserProfiles::new(restored_user_profiles));
 
     ctx.add_singleton_model(|_| ObjectActions::new(object_actions));

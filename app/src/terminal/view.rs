@@ -615,6 +615,15 @@ pub struct AgentNotification {
     pub outcome: AgentSignal,
 }
 
+#[derive(Debug, Clone)]
+pub struct AgentInboxEntry {
+    pub terminal_view_id: EntityId,
+    pub task_title: String,
+    pub outcome: AgentSignal,
+    pub agent: CLIAgent,
+    pub is_read: bool,
+}
+
 /// The reason for sending/discovering the notification
 #[derive(Copy, Clone, Debug, Serialize)]
 pub enum NotificationsTrigger {
@@ -1281,6 +1290,7 @@ pub enum Event {
     ShareModalOpened(BlockIndex),
     SendNotification(BlockNotification),
     SendAgentNotification(AgentNotification),
+    RecordAgentNotification(AgentInboxEntry),
     BlockCompleted {
         block: Arc<SerializedBlock>,
         is_local: bool,
@@ -7123,11 +7133,20 @@ impl TerminalView {
         let Some(outcome) = AgentSignal::from_status(status) else {
             return;
         };
-        if !self.is_navigated_away(ctx) {
-            return;
-        }
 
         let task_title = self.agent_task_title(*agent, session_context);
+        let is_navigated_away = self.is_navigated_away(ctx);
+        ctx.emit(Event::RecordAgentNotification(AgentInboxEntry {
+            terminal_view_id: self.view_id,
+            task_title: task_title.clone(),
+            outcome,
+            agent: *agent,
+            is_read: !is_navigated_away,
+        }));
+
+        if !is_navigated_away {
+            return;
+        }
         self.send_agent_desktop_notification_or_show_banner(outcome, task_title, *agent, ctx);
     }
 

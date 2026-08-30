@@ -110,8 +110,8 @@ use crate::terminal::shared_session::{
 };
 use crate::terminal::view::ssh_file_upload::FileUploadId;
 use crate::terminal::view::{
-    AgentNotification, BlockNotification, ExecuteCommandEvent, LeftPanelTargetView, SyncEvent,
-    TerminalViewState,
+    AgentInboxEntry, AgentNotification, BlockNotification, ExecuteCommandEvent,
+    LeftPanelTargetView, SyncEvent, TerminalViewState,
 };
 use crate::terminal::{
     ShareBlockModal, ShareBlockModalEvent, ShellLaunchData, TerminalManager, TerminalModel,
@@ -451,6 +451,10 @@ pub enum Event {
     },
     SendAgentNotification {
         notification: AgentNotification,
+        pane_id: PaneId,
+    },
+    RecordAgentNotification {
+        entry: AgentInboxEntry,
         pane_id: PaneId,
     },
     OpenSettings(SettingsSection),

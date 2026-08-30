@@ -435,6 +435,12 @@ fn handle_terminal_view_event(
                     pane_id,
                 })
             }
+            Event::RecordAgentNotification(entry) => {
+                ctx.emit(pane_group::Event::RecordAgentNotification {
+                    entry: entry.clone(),
+                    pane_id,
+                })
+            }
             Event::PluggableNotification { title, body } => {
                 let message = if let Some(t) = title {
                     format!("{t}: {body}")

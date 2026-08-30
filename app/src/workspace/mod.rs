@@ -1,5 +1,6 @@
 mod action;
 mod active_session;
+pub mod agent_inbox;
 pub mod agent_notification;
 #[cfg(target_os = "macos")]
 pub(crate) mod cli_install;
@@ -24,6 +25,7 @@ pub use action::{
     WorkspaceAction, WorktreeSectionMenuKind,
 };
 pub use active_session::ActiveSession;
+pub use agent_inbox::{AgentInboxModel, AgentInboxView};
 use serde::{Deserialize, Serialize};
 pub use util::{
     NotificationOrigin, PaneViewLocator, TabMovement, active_screen_id, active_terminal_in_window,
@@ -94,6 +96,7 @@ pub fn init(app: &mut AppContext) {
     view::global_search::view::GlobalSearchView::init(app);
     view::right_panel::RightPanelView::init(app);
     header_toolbar_editor::init(app);
+    agent_inbox::AgentInboxView::init(app);
 
     settings_view::init_actions_from_parent_view(app, &id!("Workspace"), |settings_action| {
         WorkspaceAction::DispatchToSettingsTab(settings_action)

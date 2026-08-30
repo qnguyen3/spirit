@@ -124,8 +124,8 @@ use super::tab_settings::{
     VerticalTabsDisplayGranularity, WorkspaceDecorationVisibility,
 };
 use super::util::{
-    PaneViewLocator, TabMovement, TerminalSessionFallbackBehavior, WelcomeTipsViewState,
-    WorkspaceMouseStates, WorkspaceState,
+    NotificationOrigin, PaneViewLocator, TabMovement, TerminalSessionFallbackBehavior,
+    WelcomeTipsViewState, WorkspaceMouseStates, WorkspaceState, active_screen_id,
 };
 use super::{ActiveSession, TabBarDropTargetData, TabBarLocation, WorkspaceRegistry, util};
 use crate::agent_launcher::catalog::agent_catalog;
@@ -313,7 +313,7 @@ use crate::terminal::shared_session::SharedSessionActionSource;
 use crate::terminal::shell::ShellType;
 use crate::terminal::view::ssh_file_upload::FileUploadId;
 use crate::terminal::view::{
-    LeftPanelTargetView, NOTIFICATIONS_TROUBLESHOOT_URL, SyncEvent, SyncInputType,
+    AgentInboxEntry, LeftPanelTargetView, NOTIFICATIONS_TROUBLESHOOT_URL, SyncEvent, SyncInputType,
 };
 use crate::terminal::warpify::settings::WarpifySettings;
 use crate::terminal::{self, BlockListSettings, SizeInfo, TerminalModel, TerminalView};
@@ -367,6 +367,9 @@ use crate::workflows::{
     CloudWorkflow, WorkflowSelectionSource, WorkflowSource, WorkflowType, WorkflowViewMode,
 };
 use crate::workspace::action::CommandSearchOptions;
+use crate::workspace::agent_inbox::{
+    AgentInboxModel, AgentInboxView, AgentInboxViewEvent, InboxItem, InboxItemFields,
+};
 use crate::workspace::agent_notification;
 #[cfg(target_os = "macos")]
 use crate::workspace::cli_install;
@@ -442,6 +445,7 @@ const THEME_CHOOSER_RATIO: f32 = 3.5;
 pub(crate) const TAB_BAR_POSITION_ID: &str = "workspace_view:tab_bar";
 const TEAM_SWITCHER_PILL_POSITION_ID: &str = "workspace_view:team_switcher_pill";
 const WORKSPACE_SWITCHER_PILL_POSITION_ID: &str = "workspace_view:workspace_switcher_pill";
+const AGENT_INBOX_POSITION_ID: &str = "workspace_view:agent_inbox_button";
 const TEAM_SWITCHER_DOT_ALPHA: u8 = 204;
 
 /// Save position for the vertical tabs panel.
@@ -859,6 +863,7 @@ pub struct Workspace {
     workflow_modal: ViewHandle<WorkflowModal>,
     prompt_editor_modal: ViewHandle<PromptEditorModal>,
     header_toolbar_editor_modal: ViewHandle<HeaderToolbarEditorModal>,
+    agent_inbox_view: ViewHandle<AgentInboxView>,
     header_toolbar_context_menu: ViewHandle<Menu<WorkspaceAction>>,
     show_header_toolbar_context_menu: Option<Vector2F>,
     /// Dropdown menu for the title-bar team-switcher pill.
@@ -2617,6 +2622,7 @@ impl Workspace {
             cached_keybindings,
             prompt_editor_modal,
             header_toolbar_editor_modal: Self::build_header_toolbar_editor_modal(ctx),
+            agent_inbox_view: Self::build_agent_inbox_view(ctx),
             header_toolbar_context_menu: Self::build_header_toolbar_context_menu(ctx),
             show_header_toolbar_context_menu: None,
             team_switcher_menu: Self::build_team_switcher_menu(ctx),
@@ -4645,6 +4651,137 @@ impl Workspace {
         self.right_panel_view.update(ctx, |view, ctx| {
             view.set_panel_position(code_review_position, ctx);
         });
+    }
+
+    fn build_agent_inbox_view(ctx: &mut ViewContext<Self>) -> ViewHandle<AgentInboxView> {
+        let view = ctx.add_typed_action_view(AgentInboxView::new);
+        ctx.subscribe_to_view(&view, |me, _, event, ctx| {
+            me.handle_agent_inbox_event(event, ctx);
+        });
+        view
+    }
+
+    fn handle_agent_inbox_event(
+        &mut self,
+        event: &AgentInboxViewEvent,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        match event {
+            AgentInboxViewEvent::Dismissed => self.close_agent_inbox(ctx),
+            AgentInboxViewEvent::NavigateTo {
+                window_id,
+                project_id,
+                pane_group_id,
+                pane_id,
+            } => {
+                self.close_agent_inbox(ctx);
+                let origin = NotificationOrigin {
+                    project_id: *project_id,
+                    locator: PaneViewLocator {
+                        pane_group_id: *pane_group_id,
+                        pane_id: *pane_id,
+                    },
+                };
+                ctx.windows().show_window_and_focus_app(*window_id);
+                if let Some(root_view_id) = ctx.root_view_id(*window_id) {
+                    ctx.dispatch_action_for_view(
+                        *window_id,
+                        root_view_id,
+                        "root_view:handle_notification_click",
+                        &origin,
+                    );
+                }
+                ctx.notify();
+            }
+        }
+    }
+
+    fn toggle_agent_inbox(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.current_workspace_state.is_agent_inbox_open {
+            self.close_agent_inbox(ctx);
+            return;
+        }
+        self.current_workspace_state.is_agent_inbox_open = true;
+        if self.tab_bar_mode(ctx).has_tab_bar() {
+            self.tab_bar_pinned_by_popup = true;
+        }
+        self.agent_inbox_view
+            .update(ctx, |view, ctx| view.reset_for_open(ctx));
+        ctx.focus(&self.agent_inbox_view);
+        ctx.notify();
+    }
+
+    fn close_agent_inbox(&mut self, ctx: &mut ViewContext<Self>) {
+        self.current_workspace_state.is_agent_inbox_open = false;
+        self.tab_bar_pinned_by_popup = false;
+        self.sync_window_button_visibility(ctx);
+        self.focus_active_tab(ctx);
+        ctx.notify();
+    }
+
+    fn record_agent_inbox_item(
+        &mut self,
+        entry: &AgentInboxEntry,
+        pane_group_id: EntityId,
+        pane_id: PaneId,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let fields = InboxItemFields {
+            terminal_view_id: entry.terminal_view_id,
+            window_id: ctx.window_id(),
+            project_id: self.project_id,
+            workspace_name: self.workspace_switcher_label(ctx),
+            task_title: self
+                .renamed_tab_title(pane_group_id, ctx)
+                .unwrap_or_else(|| entry.task_title.clone()),
+            outcome: entry.outcome,
+            agent: entry.agent,
+            pane_group_id,
+            pane_id,
+            is_read: entry.is_read,
+        };
+        AgentInboxModel::handle(ctx).update(ctx, |model, ctx| {
+            model.record(InboxItem::new(fields), ctx);
+        });
+        ctx.notify();
+    }
+
+    fn renamed_tab_title(&self, pane_group_id: EntityId, ctx: &AppContext) -> Option<String> {
+        self.tabs
+            .iter()
+            .find(|tab| tab.pane_group.id() == pane_group_id)
+            .and_then(|tab| tab.pane_group.as_ref(ctx).custom_title(ctx))
+    }
+
+    fn render_agent_inbox_button(
+        &self,
+        appearance: &Appearance,
+        ctx: &AppContext,
+    ) -> Box<dyn Element> {
+        let button = self
+            .render_tab_bar_icon_button(
+                appearance,
+                icons::Icon::Inbox,
+                &self.mouse_states.agent_inbox_icon,
+                WorkspaceAction::ToggleAgentInbox,
+                "Notifications".to_owned(),
+                None,
+                self.current_workspace_state.is_agent_inbox_open,
+                false,
+            )
+            .finish();
+
+        let button = if AgentInboxModel::as_ref(ctx).items().unread_count() > 0 {
+            RedNotificationDot::render_with_offset(
+                button,
+                &RedNotificationDot::default_styles(appearance),
+                (-4., 4.),
+            )
+        } else {
+            button
+        };
+
+        SavePosition::new(button, AGENT_INBOX_POSITION_ID).finish()
     }
 
     fn build_header_toolbar_context_menu(
@@ -12599,16 +12736,17 @@ impl Workspace {
                     ctx,
                 );
             }
+            pane_group::Event::RecordAgentNotification { entry, pane_id } => {
+                let pane_group_id = pane_group.id();
+                self.record_agent_inbox_item(entry, pane_group_id, *pane_id, ctx);
+            }
             pane_group::Event::SendAgentNotification {
                 notification,
                 pane_id,
             } => {
                 let pane_group_id = pane_group.id();
                 let task_title = self
-                    .tabs
-                    .iter()
-                    .find(|tab| tab.pane_group.id() == pane_group_id)
-                    .and_then(|tab| tab.pane_group.as_ref(ctx).custom_title(ctx))
+                    .renamed_tab_title(pane_group_id, ctx)
                     .unwrap_or_else(|| notification.task_title.clone());
                 let content = agent_notification::format_agent_notification(
                     &self.workspace_switcher_label(ctx),
@@ -13772,7 +13910,34 @@ impl Workspace {
     }
 
     /// Update the active session model state.
+    fn mark_active_terminal_notifications_read(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(terminal_view_id) = self
+            .active_tab_pane_group()
+            .as_ref(ctx)
+            .active_session_view(ctx)
+            .map(|terminal| terminal.id())
+        else {
+            return;
+        };
+        if !AgentInboxModel::as_ref(ctx)
+            .items()
+            .has_unread_for_terminal_view(terminal_view_id)
+        {
+            return;
+        }
+        let window_id = self.window_id;
+        if Some(window_id) != ctx.windows().active_window()
+            || active_screen_id(window_id, ctx) != Some(ctx.view_id())
+        {
+            return;
+        }
+        AgentInboxModel::handle(ctx).update(ctx, |model, ctx| {
+            model.mark_terminal_view_read(terminal_view_id, ctx);
+        });
+    }
+
     fn update_active_session(&mut self, ctx: &mut ViewContext<Self>) {
+        self.mark_active_terminal_notifications_read(ctx);
         let pane_group_handle = self.active_tab_pane_group();
         let file_tree_and_global_search_are_enabled = {
             #[cfg(feature = "local_fs")]
@@ -16531,6 +16696,7 @@ impl Workspace {
                 self.render_tools_panel_button(appearance, ctx)
             }
             HeaderToolbarItemKind::SourceControl => self.render_right_panel_button(appearance, ctx),
+            HeaderToolbarItemKind::Notifications => self.render_agent_inbox_button(appearance, ctx),
         };
         Some(
             Container::new(
@@ -18035,7 +18201,7 @@ impl Workspace {
                 }
                 Some(ChildView::new(&self.left_panel_view).finish())
             }
-            HeaderToolbarItemKind::SourceControl => None,
+            HeaderToolbarItemKind::SourceControl | HeaderToolbarItemKind::Notifications => None,
         }
     }
 
@@ -19478,6 +19644,7 @@ impl TypedActionView for Workspace {
                 let pane_group_handle = self.active_tab_pane_group().clone();
                 self.toggle_right_panel(&pane_group_handle, ctx);
             }
+            ToggleAgentInbox => self.toggle_agent_inbox(ctx),
             #[cfg(feature = "local_fs")]
             OpenCodeReviewPanel(locator) => {
                 let pane_group_handle = self
@@ -20696,6 +20863,19 @@ impl View for Workspace {
                     PositionedElementOffsetBounds::WindowByPosition,
                     PositionedElementAnchor::BottomLeft,
                     ChildAnchor::TopLeft,
+                ),
+            );
+        }
+
+        if self.current_workspace_state.is_agent_inbox_open {
+            stack.add_positioned_overlay_child(
+                ChildView::new(&self.agent_inbox_view).finish(),
+                OffsetPositioning::offset_from_save_position_element(
+                    AGENT_INBOX_POSITION_ID,
+                    vec2f(0., 4.),
+                    PositionedElementOffsetBounds::WindowByPosition,
+                    PositionedElementAnchor::BottomRight,
+                    ChildAnchor::TopRight,
                 ),
             );
         }
