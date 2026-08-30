@@ -2,17 +2,13 @@ pub mod new_session_shell;
 pub mod startup_shell;
 pub mod working_directory_config;
 
-use std::collections::HashMap;
-
 use instant::Duration;
 use lazy_static::lazy_static;
 pub use new_session_shell::*;
 use serde::{Deserialize, Serialize};
 pub use startup_shell::*;
 use warp_core::settings::macros::define_settings_group;
-use warp_core::settings::{RespectUserSyncSetting, Setting, SupportedPlatforms, SyncToCloud};
-use warp_errors::report_if_error;
-use warpui::ModelContext;
+use warp_core::settings::{RespectUserSyncSetting, SupportedPlatforms, SyncToCloud};
 pub use working_directory_config::*;
 
 use crate::context_chips::prompt::PromptSelection;
@@ -237,67 +233,7 @@ define_settings_group!(SessionSettings, settings: [
         surface: settings::SettingSurfaces::GUI,
         private: true,
     },
-    // Keys come from `cli_agent_plugin_chip::plugin_chip_key` and must stay in that format.
-    plugin_install_chip_dismissed_map: PluginInstallChipDismissedMap {
-        type: HashMap<String, bool>,
-        default: HashMap::default(),
-        supported_platforms: SupportedPlatforms::DESKTOP,
-        sync_to_cloud: SyncToCloud::Never,
-        surface: settings::SettingSurfaces::GUI,
-        private: true,
-    },
-    // Keys come from `cli_agent_plugin_chip::plugin_chip_key` and must stay in that format.
-    plugin_update_chip_dismissed_for_version_map: PluginUpdateChipDismissedForVersionMap {
-        type: HashMap<String, String>,
-        default: HashMap::default(),
-        supported_platforms: SupportedPlatforms::DESKTOP,
-        sync_to_cloud: SyncToCloud::Never,
-        surface: settings::SettingSurfaces::GUI,
-        private: true,
-    },
 ]);
-
-impl SessionSettings {
-    /// Whether the plugin install chip was dismissed for the given agent/host.
-    pub fn is_plugin_install_chip_dismissed(&self, key: &str) -> bool {
-        self.plugin_install_chip_dismissed_map
-            .get(key)
-            .copied()
-            .unwrap_or(false)
-    }
-
-    /// Mark the plugin install chip as dismissed for the given agent/host.
-    pub fn dismiss_plugin_install_chip(&mut self, key: &str, ctx: &mut ModelContext<Self>) {
-        let mut map = self.plugin_install_chip_dismissed_map.clone();
-        map.insert(key.to_owned(), true);
-        report_if_error!(self.plugin_install_chip_dismissed_map.set_value(map, ctx));
-    }
-
-    /// Returns the minimum plugin version for which the update chip was dismissed for the given
-    /// agent/host, or an empty string if not dismissed.
-    pub fn plugin_update_chip_dismissed_version(&self, key: &str) -> &str {
-        self.plugin_update_chip_dismissed_for_version_map
-            .get(key)
-            .map(String::as_str)
-            .unwrap_or("")
-    }
-
-    /// Record that the user dismissed the update chip for the given agent/host at the specified
-    /// minimum version.
-    pub fn dismiss_plugin_update_chip(
-        &mut self,
-        key: &str,
-        version: String,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let mut map = self.plugin_update_chip_dismissed_for_version_map.clone();
-        map.insert(key.to_owned(), version);
-        report_if_error!(
-            self.plugin_update_chip_dismissed_for_version_map
-                .set_value(map, ctx)
-        );
-    }
-}
 
 settings::macros::implement_setting_for_enum!(
     WorkingDirectoryConfig,

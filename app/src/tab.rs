@@ -1315,8 +1315,7 @@ impl<'a> TabComponent<'a> {
         if matches!(session.agent, CLIAgent::Unknown) {
             return None;
         }
-        let conversation_status = (session.listener.is_some() && session.supports_rich_status())
-            .then(|| session.status.to_conversation_status());
+        let conversation_status = session.status.to_conversation_status();
         Some(Indicator::Agent {
             conversation_status,
         })

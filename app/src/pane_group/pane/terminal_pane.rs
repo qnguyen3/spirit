@@ -429,6 +429,12 @@ fn handle_terminal_view_event(
                     pane_id,
                 })
             }
+            Event::SendAgentNotification(notification) => {
+                ctx.emit(pane_group::Event::SendAgentNotification {
+                    notification: notification.clone(),
+                    pane_id,
+                })
+            }
             Event::PluggableNotification { title, body } => {
                 let message = if let Some(t) = title {
                     format!("{t}: {body}")
@@ -489,10 +495,6 @@ fn handle_terminal_view_event(
             }
             Event::OpenSettings(section) => {
                 ctx.emit(pane_group::Event::OpenSettings(*section));
-            }
-            #[cfg(not(target_family = "wasm"))]
-            Event::OpenPluginInstructionsPane(agent, kind) => {
-                ctx.emit(pane_group::Event::OpenPluginInstructionsPane(*agent, *kind));
             }
             Event::SyncInput(sync_event) => {
                 if crate::workspace::owning_screen_id(ctx.view_id(), ctx.window_id(), ctx)

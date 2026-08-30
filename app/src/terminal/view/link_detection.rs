@@ -360,9 +360,7 @@ impl super::TerminalView {
         ctx: &mut ViewContext<Self>,
     ) {
         // Do not highlight the url while selecting text or blocks, or if the window is not active.
-        if self.terminal_is_selecting(&self.model.lock(), ctx)
-            || self.is_navigated_away_from_window(ctx)
-        {
+        if self.terminal_is_selecting(&self.model.lock(), ctx) || self.is_navigated_away(ctx) {
             if self.highlighted_link.take(&mut self.model.lock()).is_some() {
                 ctx.reset_cursor();
                 ctx.notify();

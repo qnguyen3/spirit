@@ -17,6 +17,12 @@ pub struct PaneViewLocator {
     pub pane_id: PaneId,
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct NotificationOrigin {
+    pub project_id: Option<crate::projects::ProjectId>,
+    pub locator: PaneViewLocator,
+}
+
 #[derive(Default)]
 pub(super) struct WorkspaceMouseStates {
     pub(super) new_tab_button: MouseStateHandle,

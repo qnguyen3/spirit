@@ -29,9 +29,9 @@ fn summarize_status(status: &CLIAgentSessionStatus) -> WorktreeAgentSummary {
         CLIAgentSessionStatus::Blocked { .. } | CLIAgentSessionStatus::Failed { .. } => {
             WorktreeAgentSummary::NeedsAttention
         }
-        CLIAgentSessionStatus::Success | CLIAgentSessionStatus::Cancelled => {
-            WorktreeAgentSummary::None
-        }
+        CLIAgentSessionStatus::Idle
+        | CLIAgentSessionStatus::Success
+        | CLIAgentSessionStatus::Cancelled => WorktreeAgentSummary::None,
     }
 }
 

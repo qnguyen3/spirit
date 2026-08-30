@@ -23,8 +23,7 @@ use crate::terminal::alt_screen::should_intercept_mouse;
 use crate::terminal::block_list_element::{SnackbarPoint, SnackbarTranslationMode};
 use crate::terminal::block_list_viewport::{ClampingMode, ScrollLines};
 use crate::terminal::cli_agent_sessions::event::{
-    CLI_AGENT_NOTIFICATION_SENTINEL, CLIAgentEvent, CLIAgentEventPayload, CLIAgentEventSource,
-    CLIAgentEventType,
+    CLIAgentEvent, CLIAgentEventPayload, CLIAgentEventType,
 };
 use crate::terminal::cli_agent_sessions::{
     CLIAgentInputState, CLIAgentSession, CLIAgentSessionContext, CLIAgentSessionStatus,
@@ -666,12 +665,7 @@ fn register_armable_cli_agent_session(app: &mut App, view_id: EntityId) {
                 session_context: CLIAgentSessionContext::default(),
                 input_state: CLIAgentInputState::Closed,
                 should_auto_toggle_input: false,
-                listener: None,
-                plugin_version: None,
-                remote_host: None,
                 draft_text: None,
-                custom_command_prefix: None,
-                received_rich_notification: true,
             },
             ctx,
         );
@@ -687,7 +681,6 @@ fn register_armable_cli_agent_session(app: &mut App, view_id: EntityId) {
                 cwd: None,
                 project: None,
                 payload: CLIAgentEventPayload::default(),
-                source: CLIAgentEventSource::RichPlugin,
             },
             ctx,
         );
@@ -3593,12 +3586,7 @@ fn drag_drop_image_in_cli_agent_long_running_command_pastes_via_clipboard() {
                         session_context: CLIAgentSessionContext::default(),
                         input_state: CLIAgentInputState::Closed,
                         should_auto_toggle_input: false,
-                        listener: None,
-                        remote_host: None,
-                        plugin_version: None,
                         draft_text: None,
-                        custom_command_prefix: None,
-                        received_rich_notification: false,
                     },
                     ctx,
                 );
@@ -3671,12 +3659,7 @@ fn paste_raw_image_clipboard_in_cli_agent_sends_correct_bytes() {
                             session_context: CLIAgentSessionContext::default(),
                             input_state: CLIAgentInputState::Closed,
                             should_auto_toggle_input: false,
-                            listener: None,
-                            remote_host: None,
-                            plugin_version: None,
                             draft_text: None,
-                            custom_command_prefix: None,
-                            received_rich_notification: false,
                         },
                         ctx,
                     );
@@ -3959,41 +3942,13 @@ fn set_amp_session(view: &mut TerminalView, ctx: &mut ViewContext<TerminalView>)
                 session_context: CLIAgentSessionContext::default(),
                 input_state: CLIAgentInputState::Closed,
                 should_auto_toggle_input: false,
-                listener: None,
-                remote_host: None,
-                plugin_version: None,
                 draft_text: None,
-                custom_command_prefix: None,
-                received_rich_notification: false,
             },
             ctx,
         );
     });
 }
 
-#[test]
-fn cli_agent_session_start_registers_listener_without_auto_toggle() {
-    App::test((), |mut app| async move {
-        initialize_app_for_terminal_view(&mut app);
-
-        let terminal = add_window_with_terminal(&mut app, None);
-        terminal.update(&mut app, |view, ctx| {
-            view.handle_cli_agent_notification(
-                Some(CLI_AGENT_NOTIFICATION_SENTINEL),
-                r#"{"v":1,"agent":"claude","event":"session_start"}"#,
-                ctx,
-            );
-        });
-
-        terminal.read(&app, |view, ctx| {
-            let session = CLIAgentSessionsModel::as_ref(ctx)
-                .session(view.view_id)
-                .expect("CLI agent session should be registered");
-            assert!(session.listener.is_some());
-            assert!(!session.should_auto_toggle_input);
-        });
-    });
-}
 #[test]
 fn active_cli_agent_recognizes_detected_cli_agent_session() {
     App::test((), |mut app| async move {
@@ -4168,12 +4123,7 @@ fn start_cli_agent_session(app: &mut App, terminal: &ViewHandle<TerminalView>, a
                     session_context: CLIAgentSessionContext::default(),
                     input_state: CLIAgentInputState::Closed,
                     should_auto_toggle_input: false,
-                    listener: None,
-                    plugin_version: None,
-                    remote_host: None,
                     draft_text: None,
-                    custom_command_prefix: None,
-                    received_rich_notification: false,
                 },
                 ctx,
             );

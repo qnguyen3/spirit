@@ -1,6 +1,6 @@
 use warp_core::cli_agent_protocol::CLIAgentNotification;
 
-use super::{CLIAgentEvent, CLIAgentEventPayload, CLIAgentEventSource, CLIAgentEventType};
+use super::{CLIAgentEvent, CLIAgentEventPayload, CLIAgentEventType};
 use crate::terminal::CLIAgent;
 
 /// Resolves a CLI agent from the `"agent"` string in a CLI agent event.
@@ -55,6 +55,5 @@ pub(super) fn parse(body: &str) -> Option<CLIAgentEvent> {
             plugin_version: raw.plugin_version,
             error_type: raw.error_type,
         },
-        source: CLIAgentEventSource::RichPlugin,
     })
 }

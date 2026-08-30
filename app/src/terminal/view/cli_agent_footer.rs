@@ -38,7 +38,6 @@ use crate::settings_view::{SettingsSection, cli_agent_settings_widget_id};
 use crate::terminal::CLIAgent;
 use crate::terminal::cli_agent_sessions::{CLIAgentSessionsModel, CLIAgentSessionsModelEvent};
 use crate::terminal::input::MenuPositioningProvider;
-use crate::terminal::input::cli_agent_plugin_chip::{CliAgentPluginChip, CliAgentPluginChipEvent};
 use crate::terminal::input::voice_input::VoiceInputButton;
 use crate::terminal::model::TerminalModel;
 use crate::terminal::model_events::ModelEventDispatcher;
@@ -72,7 +71,6 @@ pub struct CliAgentFooter {
     terminal_view_id: EntityId,
     terminal_model: Arc<FairMutex<TerminalModel>>,
     prompt: ModelHandle<PromptType>,
-    plugin_chip: ViewHandle<CliAgentPluginChip>,
     file_attach_button: ViewHandle<ActionButton>,
     voice_input_button: ViewHandle<VoiceInputButton>,
     file_explorer_button: ViewHandle<ActionButton>,
@@ -100,11 +98,6 @@ pub enum CliAgentFooterEvent {
     ToggleRichInput,
     OpenCodeReview,
     TryExecuteChipCommand(PromptChipShellCommand),
-    #[cfg(not(target_family = "wasm"))]
-    OpenPluginInstructionsPane(
-        CLIAgent,
-        crate::terminal::cli_agent_sessions::plugin_manager::PluginModalKind,
-    ),
 }
 
 impl CliAgentFooter {
@@ -118,18 +111,6 @@ impl CliAgentFooter {
     ) -> Self {
         let button_size = ButtonSize::AgentInputButton;
         let is_shared_session_viewer = terminal_model.lock().shared_session_status().is_viewer();
-
-        let plugin_chip = ctx.add_typed_action_view(|ctx| {
-            CliAgentPluginChip::new(terminal_view_id, terminal_model.clone(), ctx)
-        });
-        ctx.subscribe_to_view(&plugin_chip, |_, _, event, ctx| match event {
-            #[cfg(not(target_family = "wasm"))]
-            CliAgentPluginChipEvent::OpenInstructionsPane(agent, kind) => {
-                ctx.emit(CliAgentFooterEvent::OpenPluginInstructionsPane(
-                    *agent, *kind,
-                ));
-            }
-        });
 
         let file_attach_button = ctx.add_typed_action_view(|_| {
             ActionButton::new("", AgentInputButtonTheme)
@@ -215,7 +196,6 @@ impl CliAgentFooter {
             terminal_view_id,
             terminal_model,
             prompt,
-            plugin_chip,
             file_attach_button,
             voice_input_button,
             file_explorer_button,
@@ -300,7 +280,6 @@ impl CliAgentFooter {
 
     fn notify_and_notify_children(&mut self, ctx: &mut ViewContext<Self>) {
         ctx.notify();
-        self.plugin_chip.update(ctx, |_, ctx| ctx.notify());
         self.file_attach_button.update(ctx, |_, ctx| ctx.notify());
         self.voice_input_button.update(ctx, |_, ctx| ctx.notify());
         self.file_explorer_button.update(ctx, |_, ctx| ctx.notify());
@@ -537,7 +516,6 @@ impl View for CliAgentFooter {
         if let Some(brand_icon) = self.render_brand_icon(app) {
             left_buttons.add_child(brand_icon);
         }
-        left_buttons.add_child(ChildView::new(&self.plugin_chip).finish());
         left_buttons.add_child(ChildView::new(&self.file_attach_button).finish());
         left_buttons.add_child(ChildView::new(&self.voice_input_button).finish());
         left_buttons.add_children(
@@ -721,10 +699,6 @@ impl TerminalView {
                 self.input.update(ctx, |input, ctx| {
                     input.execute_prompt_chip_command(&command, ctx);
                 });
-            }
-            #[cfg(not(target_family = "wasm"))]
-            CliAgentFooterEvent::OpenPluginInstructionsPane(agent, kind) => {
-                ctx.emit(Event::OpenPluginInstructionsPane(*agent, *kind));
             }
         }
     }

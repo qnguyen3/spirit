@@ -1,5 +1,6 @@
 mod action;
 mod active_session;
+pub mod agent_notification;
 #[cfg(target_os = "macos")]
 pub(crate) mod cli_install;
 mod close_session_confirmation_dialog;
@@ -25,7 +26,8 @@ pub use action::{
 pub use active_session::ActiveSession;
 use serde::{Deserialize, Serialize};
 pub use util::{
-    PaneViewLocator, TabMovement, active_screen_id, active_terminal_in_window, owning_screen_id,
+    NotificationOrigin, PaneViewLocator, TabMovement, active_screen_id, active_terminal_in_window,
+    owning_screen_id,
 };
 pub use view::{
     NEW_SESSION_MENU_BUTTON_POSITION_ID, NEW_TAB_BUTTON_POSITION_ID, PANEL_HEADER_HEIGHT,
@@ -169,26 +171,12 @@ pub fn init(app: &mut AppContext) {
         #[cfg(debug_assertions)]
         {
             // Debug actions for build plan migration modal (command palette only)
-            app.register_editable_bindings([
-                EditableBinding::new(
-                    "workspace:install_opencode_warp_plugin",
-                    "[Debug] Install OpenCode Warp plugin",
-                    WorkspaceAction::InstallOpenCodeWarpPlugin,
-                )
-                .with_context_predicate(id!("Workspace")),
-                EditableBinding::new(
-                    "workspace:use_local_opencode_warp_plugin",
-                    "[Debug] Use local OpenCode Warp plugin (testing only)",
-                    WorkspaceAction::UseLocalOpenCodeWarpPlugin,
-                )
-                .with_context_predicate(id!("Workspace")),
-                EditableBinding::new(
-                    "workspace:open_session_config_modal",
-                    "[Debug] Open Session Config Modal",
-                    WorkspaceAction::ShowSessionConfigModal,
-                )
-                .with_context_predicate(id!("Workspace")),
-            ]);
+            app.register_editable_bindings([EditableBinding::new(
+                "workspace:open_session_config_modal",
+                "[Debug] Open Session Config Modal",
+                WorkspaceAction::ShowSessionConfigModal,
+            )
+            .with_context_predicate(id!("Workspace"))]);
         }
     }
 

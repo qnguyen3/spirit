@@ -109,7 +109,6 @@ pub enum RichContentMetadata {
         bootstrap_success_block_handle: ViewHandle<WarpifySuccessBlock>,
     },
     TerminalViewZeroState,
-    PluginInstructionsBlock,
 }
 
 impl TerminalView {

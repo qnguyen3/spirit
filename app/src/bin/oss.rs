@@ -12,7 +12,7 @@ fn main() -> Result<()> {
         Channel::Oss,
         ChannelConfig {
             app_id: AppId::new("dev", "warp", "WarpOss"),
-            logfile_name: "warp-oss.log".into(),
+            logfile_name: "spirit-ade.log".into(),
             server_config: WarpServerConfig::production(),
             oz_config: OzConfig::production(),
             telemetry_config: None,

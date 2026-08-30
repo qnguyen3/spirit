@@ -253,7 +253,9 @@ use crate::vim_registers::VimRegisters;
 use crate::warp_managed_paths_watcher::{WarpManagedPathsWatcher, ensure_warp_watch_roots_exist};
 use crate::workflows::aliases::WorkflowAliases;
 use crate::workflows::local_workflows::LocalWorkflows;
-use crate::workspace::{ActiveSession, PaneViewLocator, ToastStack, Workspace, WorkspaceAction};
+use crate::workspace::{
+    ActiveSession, NotificationOrigin, PaneViewLocator, ToastStack, Workspace, WorkspaceAction,
+};
 use crate::workspaces::team_tester::TeamTesterStatus;
 use crate::workspaces::update_manager::TeamUpdateManager;
 use crate::workspaces::user_profiles::UserProfiles;
@@ -2169,6 +2171,7 @@ pub(crate) fn app_callbacks(
                     serde_json::from_str(notification_data);
                 if let Ok(NotificationContext::BlockOrigin {
                     window_id,
+                    project_id,
                     pane_group_id,
                     pane_id,
                 }) = context
@@ -2182,9 +2185,12 @@ pub(crate) fn app_callbacks(
                             window_id,
                             &[root_view_id],
                             "root_view:handle_notification_click",
-                            &PaneViewLocator {
-                                pane_group_id,
-                                pane_id,
+                            &NotificationOrigin {
+                                project_id,
+                                locator: PaneViewLocator {
+                                    pane_group_id,
+                                    pane_id,
+                                },
                             },
                             log::Level::Info,
                         );

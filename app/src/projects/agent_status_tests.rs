@@ -46,3 +46,11 @@ fn statuses_map_to_summaries() {
         WorktreeAgentSummary::None
     );
 }
+
+#[test]
+fn a_detected_but_unused_agent_does_not_report_as_working() {
+    assert_eq!(
+        summarize_status(&CLIAgentSessionStatus::Idle),
+        WorktreeAgentSummary::None
+    );
+}

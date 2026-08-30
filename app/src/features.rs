@@ -297,8 +297,6 @@ fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::AgentHarness,
         #[cfg(feature = "hoa_notifications")]
         FeatureFlag::HOANotifications,
-        #[cfg(feature = "open_code_notifications")]
-        FeatureFlag::OpenCodeNotifications,
         #[cfg(feature = "cli_agent_rich_input")]
         FeatureFlag::CLIAgentRichInput,
         #[cfg(feature = "warpify_footer")]
@@ -311,10 +309,6 @@ fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::SkipFirebaseAnonymousUser,
         #[cfg(feature = "git_operations_in_code_review")]
         FeatureFlag::GitOperationsInCodeReview,
-        #[cfg(feature = "codex_notifications")]
-        FeatureFlag::CodexNotifications,
-        #[cfg(feature = "codex_plugin")]
-        FeatureFlag::CodexPlugin,
         #[cfg(feature = "trim_trailing_blank_lines")]
         FeatureFlag::TrimTrailingBlankLines,
         #[cfg(feature = "cloud_mode_setup_v2")]

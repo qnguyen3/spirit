@@ -95,7 +95,9 @@ use crate::view_components::DismissibleToast;
 use crate::window_settings::WindowSettings;
 use crate::workspace::tab_settings::TabSettings;
 use crate::workspace::view::OnboardingTutorial;
-use crate::workspace::{PaneViewLocator, Workspace, WorkspaceAction, WorkspaceRegistry};
+use crate::workspace::{
+    NotificationOrigin, PaneViewLocator, Workspace, WorkspaceAction, WorkspaceRegistry,
+};
 use crate::workspaces::team_tester::TeamTesterStatus;
 use crate::workspaces::update_manager::TeamUpdateManager;
 use crate::workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent};
@@ -2654,11 +2656,17 @@ impl RootView {
 
     fn handle_notification_click(
         &mut self,
-        pane_view_locator: &PaneViewLocator,
+        origin: &NotificationOrigin,
         ctx: &mut ViewContext<Self>,
     ) -> bool {
-        // Focus the pane that the notification originated from.
-        self.focus_pane(pane_view_locator, ctx);
+        // `focus_pane` only searches the visible workspace, so a notification
+        // from a background one finds nothing unless its screen comes up first.
+        if let Some(project_id) = origin.project_id
+            && let Some(host) = self.project_host_view().cloned()
+        {
+            host.update(ctx, |host, ctx| host.open_project(project_id, ctx));
+        }
+        self.focus_pane(&origin.locator, ctx);
         send_telemetry_from_ctx!(TelemetryEvent::NotificationClicked, ctx);
         true
     }

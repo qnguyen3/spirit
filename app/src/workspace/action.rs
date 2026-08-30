@@ -555,12 +555,6 @@ pub enum WorkspaceAction {
     ToggleGlobalSearch,
     ToggleHiddenFiles,
     OpenGlobalSearch,
-    /// Install the opencode-warp plugin from GitHub into the global opencode config.
-    #[cfg(debug_assertions)]
-    InstallOpenCodeWarpPlugin,
-    /// Use a local checkout of the opencode-warp plugin (for testing/development).
-    #[cfg(debug_assertions)]
-    UseLocalOpenCodeWarpPlugin,
     /// Take a process sample of the app (equivalent to Activity Monitor > Sample Process).
     #[cfg(target_os = "macos")]
     SampleProcess,
@@ -936,8 +930,6 @@ impl WorkspaceAction {
             | RenameWorktree { .. }
             | ToggleWorktreeSectionCollapsed { .. }
             | ToggleWorktreeSectionMenu { .. } => false,
-            #[cfg(debug_assertions)]
-            InstallOpenCodeWarpPlugin | UseLocalOpenCodeWarpPlugin => false,
             #[cfg(not(target_family = "wasm"))]
             ViewLogs => false,
             #[cfg(target_os = "macos")]

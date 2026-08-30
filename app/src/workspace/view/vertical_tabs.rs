@@ -1079,9 +1079,8 @@ fn summary_conversation_status_for_terminal(
 ) -> Option<ConversationStatus> {
     let cli_agent_session = CLIAgentSessionsModel::as_ref(app).session(terminal_view.id());
     cli_agent_session
-        .filter(|s| s.supports_rich_status())
         .filter(|s| !matches!(s.agent, CLIAgent::Unknown))
-        .map(|session| session.status.to_conversation_status())
+        .and_then(|session| session.status.to_conversation_status())
 }
 
 fn coalesce_summary_branch_entries(
@@ -4614,16 +4613,11 @@ fn preferred_cli_agent_tab_title(
 
 fn terminal_agent_text(terminal_view: &TerminalView, app: &AppContext) -> TerminalAgentText {
     let cli_agent_session = CLIAgentSessionsModel::as_ref(app).session(terminal_view.id());
-    let is_plugin_backed = cli_agent_session.is_some_and(|session| session.listener.is_some());
 
     let mut agent_text = TerminalAgentText {
         cli_agent: cli_agent_session.map(|session| session.agent),
         ..Default::default()
     };
-
-    if cli_agent_session.is_some() && !is_plugin_backed {
-        return agent_text;
-    }
 
     if let Some(session) = cli_agent_session {
         agent_text.cli_agent_title = session.session_context.title_like_text();
@@ -7126,9 +7120,7 @@ fn render_terminal_detail_section(
     let cli_agent_title =
         preferred_cli_agent_tab_title(&agent_text, agent_tab_text_preference(app));
     let kind_label = terminal_kind_badge_label(agent_text.cli_agent);
-    let status = cli_agent_session
-        .filter(|s| s.supports_rich_status())
-        .map(|session| session.status.to_conversation_status());
+    let status = cli_agent_session.and_then(|session| session.status.to_conversation_status());
 
     let title_text = terminal_view.terminal_title_from_shell();
     let primary_line = terminal_primary_line_data(

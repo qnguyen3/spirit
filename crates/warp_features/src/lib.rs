@@ -452,22 +452,6 @@ pub enum FeatureFlag {
     /// Enables the upgraded CLI agent session tracking and notifications infrastructure.
     HOANotifications,
 
-    /// Enables the install/update chip for the OpenCode Warp plugin.
-    /// Requires HOANotifications to also be enabled.
-    OpenCodeNotifications,
-
-    /// Enables the install/update chip for the Codex Warp notification plugin.
-    /// Requires HOANotifications to also be enabled.
-    CodexNotifications,
-
-    /// Enables the Codex Warp plugin marketplace integration.
-    /// When disabled, Codex uses native OSC9 notifications.
-    CodexPlugin,
-
-    /// Enables the install/update chip for the Gemini CLI Warp extension.
-    /// Requires HOANotifications to also be enabled.
-    GeminiNotifications,
-
     /// When enabled, the "Skip for now" login flow does not create a Firebase
     /// anonymous user. The user remains fully logged out (no credentials) and
     /// login-gated features are disabled until they sign in.
@@ -614,7 +598,6 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     // End manually enabled Code features.
     FeatureFlag::EditableMarkdownMermaid,
     FeatureFlag::CodeReviewScrollPreservation,
-    FeatureFlag::GeminiNotifications,
     FeatureFlag::LocalDockerSandbox,
     #[cfg(not(windows))]
     FeatureFlag::SshRemoteServer,

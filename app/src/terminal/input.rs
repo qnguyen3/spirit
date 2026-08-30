@@ -1,7 +1,6 @@
 pub mod buffer_model;
 mod classic;
 mod cli_agent;
-pub mod cli_agent_plugin_chip;
 mod common;
 pub mod decorations;
 pub mod inline_history;
@@ -163,9 +162,7 @@ use crate::settings_view::{SettingsSection, flags};
 use crate::suggestions::ignored_suggestions_model::{
     IgnoredSuggestionsModel, IgnoredSuggestionsModelEvent, SuggestionType,
 };
-use crate::terminal::CLIAgent;
 #[cfg(not(target_family = "wasm"))]
-use crate::terminal::cli_agent_sessions::plugin_manager::PluginModalKind;
 use crate::terminal::cli_agent_sessions::{
     CLIAgentInputState, CLIAgentSessionsModel, CLIAgentSessionsModelEvent,
 };
@@ -685,9 +682,6 @@ pub enum Event {
         message: String,
         flavor: ToastFlavor,
     },
-    RegisterPluginListener(CLIAgent),
-    #[cfg(not(target_family = "wasm"))]
-    OpenPluginInstructionsPane(CLIAgent, PluginModalKind),
     OpenShareSessionModal,
     StartRemoteControl,
     /// Close the CLI agent rich input composer.

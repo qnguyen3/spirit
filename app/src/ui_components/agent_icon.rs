@@ -22,9 +22,7 @@ pub(crate) fn terminal_view_agent_icon_variant(
     if matches!(session.agent, CLIAgent::Unknown) {
         return None;
     }
-    let status: Option<ConversationStatus> = (session.listener.is_some()
-        && session.supports_rich_status())
-    .then(|| session.status.to_conversation_status());
+    let status: Option<ConversationStatus> = session.status.to_conversation_status();
     Some(IconWithStatusVariant::CLIAgent {
         agent: session.agent,
         status,

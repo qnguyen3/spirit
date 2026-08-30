@@ -1,27 +1,31 @@
 pub mod event;
-pub mod listener;
-#[cfg(not(target_family = "wasm"))]
-pub(crate) mod plugin_manager;
+pub mod signal;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::time::Duration;
 
-use event::{CLIAgentEvent, CLIAgentEventSource, CLIAgentEventType};
+use event::{CLIAgentEvent, CLIAgentEventType};
+use instant::Instant;
 use warpui::r#async::SpawnedFutureHandle;
-use warpui::{Entity, EntityId, ModelContext, ModelHandle, SingletonEntity};
+use warpui::{Entity, EntityId, ModelContext, SingletonEntity};
 
-use self::listener::CLIAgentSessionListener;
+use self::signal::AgentSignal;
 use super::CLIAgent;
 use crate::ui_components::status_icons::ConversationStatus;
 
 /// How long to wait, after observing a synthesized Ctrl-C write to a working
-/// CLI agent session's PTY, for further plugin activity before concluding the
+/// CLI agent session's PTY, for further agent activity before concluding the
 /// interrupt silently cancelled the session. See `observe_ctrl_c_write`.
 pub const CTRL_C_CANCEL_WINDOW: Duration = Duration::from_secs(2);
+
+/// A bell and an OSC 777 body can both describe the same finished turn, so
+/// notifications within this window of the last one are dropped.
+pub const NOTIFY_COOLDOWN: Duration = Duration::from_secs(3);
 
 /// Status of a tracked CLI agent session.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CLIAgentSessionStatus {
+    Idle,
     InProgress,
     Success,
     Failed {
@@ -39,15 +43,16 @@ pub enum CLIAgentSessionStatus {
 }
 
 impl CLIAgentSessionStatus {
-    pub fn to_conversation_status(&self) -> ConversationStatus {
+    pub fn to_conversation_status(&self) -> Option<ConversationStatus> {
         match self {
-            CLIAgentSessionStatus::InProgress => ConversationStatus::InProgress,
-            CLIAgentSessionStatus::Success => ConversationStatus::Success,
-            CLIAgentSessionStatus::Failed { .. } => ConversationStatus::Error,
-            CLIAgentSessionStatus::Blocked { message } => ConversationStatus::Blocked {
+            CLIAgentSessionStatus::Idle => None,
+            CLIAgentSessionStatus::InProgress => Some(ConversationStatus::InProgress),
+            CLIAgentSessionStatus::Success => Some(ConversationStatus::Success),
+            CLIAgentSessionStatus::Failed { .. } => Some(ConversationStatus::Error),
+            CLIAgentSessionStatus::Blocked { message } => Some(ConversationStatus::Blocked {
                 blocked_action: message.clone().unwrap_or_default(),
-            },
-            CLIAgentSessionStatus::Cancelled => ConversationStatus::Cancelled,
+            }),
+            CLIAgentSessionStatus::Cancelled => Some(ConversationStatus::Cancelled),
         }
     }
 }
@@ -107,48 +112,12 @@ pub struct CLIAgentSession {
     pub input_state: CLIAgentInputState,
     /// Whether status-driven auto-toggle is enabled for this session.
     pub should_auto_toggle_input: bool,
-    /// Event listener for plugin-backed sessions or Codex OSC9 fallback.
-    /// `None` for non-Codex sessions created by command detection alone.
-    /// Dropping this handle cleans up the listener's PTY event subscription.
-    pub listener: Option<ModelHandle<CLIAgentSessionListener>>,
-    /// The plugin version reported by structured plugin events.
-    /// `None` if the plugin predates version reporting or Codex is using OSC9 fallback.
-    pub plugin_version: Option<String>,
-    /// `None` when the session is local.
-    /// `Some("user@hostname")` when running over SSH (warpified or legacy).
-    /// Used as a key for per-host plugin install failure tracking.
-    pub remote_host: Option<String>,
     /// Draft text saved from the rich input composer when it was closed.
     /// Restored into the editor when the composer is reopened.
     pub draft_text: Option<String>,
-    /// When the session was detected via a custom toolbar command pattern,
-    /// the first word of the command (the binary/alias the user typed).
-    /// Used to customize plugin instructions and force manual install mode.
-    pub custom_command_prefix: Option<String>,
-    /// Set once the session has received any structured OSC 777 (rich)
-    /// notification. Codex's OSC 9 fallback never sets it, so this is the
-    /// single source of truth for whether the session is plugin-backed.
-    pub received_rich_notification: bool,
 }
 
 impl CLIAgentSession {
-    /// Remote sessions cannot have their plugin auto-installed: the plugin files live on the
-    /// far side of the SSH connection. Retained for agent-launcher plugin integration.
-    #[allow(dead_code)]
-    pub fn is_remote(&self) -> bool {
-        self.remote_host.is_some()
-    }
-
-    /// Whether the session surfaces trustworthy fine-grained status
-    /// (in-progress / blocked / success). True only after receiving a rich OSC
-    /// 777 notification. Codex's OSC 9 fallback emits only opaque `Stop`
-    /// notifications and never sets `received_rich_notification`, so it does
-    /// not qualify. Synthetic listener registration also does not qualify until
-    /// an actual rich notification arrives.
-    pub fn supports_rich_status(&self) -> bool {
-        self.received_rich_notification
-    }
-
     /// Clears state populated by `PermissionRequest`. Called whenever the
     /// session leaves the permission flow (the user replied, a blocking tool
     /// completed, a new prompt is submitted, or the session ends successfully)
@@ -228,10 +197,7 @@ impl CLIAgentSession {
             // IdlePrompt means the agent is sitting at its prompt waiting for input.
             // This should not affect status — otherwise it would override Success after a Stop event.
             CLIAgentEventType::IdlePrompt => return None,
-            CLIAgentEventType::SessionStart => {
-                self.plugin_version = event.payload.plugin_version.clone();
-                return None;
-            }
+            CLIAgentEventType::SessionStart => return None,
             CLIAgentEventType::Unknown(_) => return None,
         };
 
@@ -318,16 +284,10 @@ struct CtrlCCancelState {
     armed_token: Option<u64>,
 }
 
-/// Singleton model that tracks pane-scoped CLI agent state and plugin-enriched session context.
+/// Singleton model that tracks pane-scoped CLI agent state and session context.
 pub struct CLIAgentSessionsModel {
     sessions: HashMap<EntityId, CLIAgentSession>,
-    /// Tracks (agent, remote_host) pairs where an auto plugin operation (install or update) has failed.
-    /// Shared across all views so failure in one tab is reflected everywhere.
-    ///
-    /// Retained with the plugin managers for agent-launcher integration; the chip that consumed
-    /// it lived in the removed agent footer, so nothing reads it yet.
-    #[allow(dead_code)]
-    plugin_auto_failures: HashSet<(CLIAgent, Option<String>)>,
+    last_notified_at: HashMap<EntityId, Instant>,
     /// Ctrl-C pending-cancel state, keyed by terminal view. See `observe_ctrl_c_write`.
     ctrl_c_cancel_state: HashMap<EntityId, CtrlCCancelState>,
     /// Source of `CtrlCCancelState::armed_token` values. Monotonically increasing;
@@ -345,7 +305,7 @@ impl CLIAgentSessionsModel {
     pub fn new() -> Self {
         Self {
             sessions: HashMap::new(),
-            plugin_auto_failures: HashSet::new(),
+            last_notified_at: HashMap::new(),
             ctrl_c_cancel_state: HashMap::new(),
             next_ctrl_c_token: 0,
         }
@@ -362,77 +322,12 @@ impl CLIAgentSessionsModel {
             .is_some_and(|s| matches!(s.input_state, CLIAgentInputState::Open))
     }
 
-    /// Registers a plugin-backed listener on the session for this terminal.
-    ///
-    /// If a session for the same agent already exists (e.g. created earlier by
-    /// command detection), it is upgraded with the listener and plugin context.
-    /// Otherwise a new session is created.
-    ///
-    /// The optional `cwd` / `project` / `session_id` fields supply initial
-    /// context when available (e.g. from a `SessionStart` event). Passing
-    /// `None` for all three is fine — happens when the plugin is installed
-    /// mid-session and there is no start event to extract context from.
-    #[allow(clippy::too_many_arguments)]
-    pub fn register_listener(
-        &mut self,
-        terminal_view_id: EntityId,
-        agent: CLIAgent,
-        cwd: Option<String>,
-        project: Option<String>,
-        session_id: Option<String>,
-        plugin_version: Option<String>,
-        remote_host: Option<String>,
-        should_auto_toggle_input: bool,
-        listener: ModelHandle<CLIAgentSessionListener>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        if let Some(session) = self
-            .sessions
-            .get_mut(&terminal_view_id)
-            .filter(|s| s.agent == agent)
-        {
-            // Upgrade existing session with plugin context.
-            session.status = CLIAgentSessionStatus::InProgress;
-            session.listener = Some(listener);
-            session.plugin_version = plugin_version;
-            session.remote_host = remote_host;
-            session.should_auto_toggle_input = should_auto_toggle_input;
-            session.session_context.cwd = cwd.or(session.session_context.cwd.take());
-            session.session_context.project = project.or(session.session_context.project.take());
-            session.session_context.session_id =
-                session_id.or(session.session_context.session_id.take());
-            return;
-        }
-
-        self.set_session(
-            terminal_view_id,
-            CLIAgentSession {
-                agent,
-                status: CLIAgentSessionStatus::InProgress,
-                session_context: CLIAgentSessionContext {
-                    cwd,
-                    project,
-                    session_id,
-                    ..Default::default()
-                },
-                input_state: CLIAgentInputState::Closed,
-                should_auto_toggle_input,
-                listener: Some(listener),
-                plugin_version,
-                remote_host,
-                draft_text: None,
-                custom_command_prefix: None,
-                received_rich_notification: false,
-            },
-            ctx,
-        );
-    }
-
     pub fn remove_session(&mut self, terminal_view_id: EntityId, ctx: &mut ModelContext<Self>) {
         // Closed before the session disappears so subscribers can restore the input.
         self.close_input(terminal_view_id, false, ctx);
         self.abort_pending_cancel(terminal_view_id);
         self.ctrl_c_cancel_state.remove(&terminal_view_id);
+        self.last_notified_at.remove(&terminal_view_id);
         if let Some(session) = self.sessions.remove(&terminal_view_id) {
             ctx.emit(CLIAgentSessionsModelEvent::Ended {
                 terminal_view_id,
@@ -442,8 +337,6 @@ impl CLIAgentSessionsModel {
     }
 
     /// Updates the session's status and context from a parsed CLI agent event.
-    /// Rich plugin events latch `received_rich_notification` so rich-status
-    /// surfaces stay consistent even if the first event was not SessionStart.
     pub fn update_from_event(
         &mut self,
         terminal_view_id: EntityId,
@@ -454,7 +347,7 @@ impl CLIAgentSessionsModel {
             return;
         }
 
-        // Any plugin event other than `IdlePrompt` is evidence the CLI agent
+        // Any agent event other than `IdlePrompt` is evidence the CLI agent
         // process is still alive — an interrupt produces silence instead.
         // Disarm a pending Ctrl-C cancellation window so this event's own
         // status transition drives the session. `IdlePrompt` is excluded:
@@ -480,10 +373,6 @@ impl CLIAgentSessionsModel {
             .get_mut(&terminal_view_id)
             .expect("session presence checked above");
 
-        if event.source == CLIAgentEventSource::RichPlugin {
-            session.received_rich_notification = true;
-        }
-
         let event_type = &event.event;
         if let Some(new_status) = session.apply_event(event) {
             let agent = session.agent;
@@ -506,6 +395,66 @@ impl CLIAgentSessionsModel {
                 agent: session.agent,
             });
         }
+    }
+
+    pub fn apply_signal(
+        &mut self,
+        terminal_view_id: EntityId,
+        signal: AgentSignal,
+        message: Option<String>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let Some(session) = self.sessions.get_mut(&terminal_view_id) else {
+            return;
+        };
+
+        // A repeat of a finished status must still emit: the next turn can start
+        // without a carriage return to observe, and skipping it here would
+        // silently drop that turn's notification.
+        let new_status = signal.into_status(message);
+        if signal == AgentSignal::Working && session.status == new_status {
+            return;
+        }
+        session.status = new_status.clone();
+        let agent = session.agent;
+        let session_context = Box::new(session.session_context.clone());
+
+        self.abort_pending_cancel(terminal_view_id);
+        ctx.emit(CLIAgentSessionsModelEvent::StatusChanged {
+            terminal_view_id,
+            agent,
+            status: new_status,
+            session_context,
+        });
+    }
+
+    /// Bells and OSC bodies only ever describe a turn *ending*, so without this
+    /// a session that reached `Success` would never leave it.
+    pub fn observe_prompt_submit_write(
+        &mut self,
+        terminal_view_id: EntityId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if !self.sessions.contains_key(&terminal_view_id) {
+            return;
+        }
+        self.ctrl_c_cancel_state
+            .entry(terminal_view_id)
+            .or_default()
+            .has_seen_prompt_submit = true;
+        self.apply_signal(terminal_view_id, AgentSignal::Working, None, ctx);
+    }
+
+    pub fn claim_notification_slot(&mut self, terminal_view_id: EntityId) -> bool {
+        let now = Instant::now();
+        let is_due = self
+            .last_notified_at
+            .get(&terminal_view_id)
+            .is_none_or(|last| now.duration_since(*last) >= NOTIFY_COOLDOWN);
+        if is_due {
+            self.last_notified_at.insert(terminal_view_id, now);
+        }
+        is_due
     }
 
     /// Observes a Ctrl-C byte (`0x03`) written to this session's PTY.
@@ -541,11 +490,10 @@ impl CLIAgentSessionsModel {
         let can_arm = matches!(
             session.status,
             CLIAgentSessionStatus::InProgress | CLIAgentSessionStatus::Blocked { .. }
-        ) && session.supports_rich_status()
-            && self
-                .ctrl_c_cancel_state
-                .get(&terminal_view_id)
-                .is_some_and(|state| state.has_seen_prompt_submit);
+        ) && self
+            .ctrl_c_cancel_state
+            .get(&terminal_view_id)
+            .is_some_and(|state| state.has_seen_prompt_submit);
         if !can_arm {
             return;
         }
@@ -742,6 +690,7 @@ impl CLIAgentSessionsModel {
         // arm, and any pending window belonged to the session being replaced.
         self.abort_pending_cancel(terminal_view_id);
         self.ctrl_c_cancel_state.remove(&terminal_view_id);
+        self.last_notified_at.remove(&terminal_view_id);
         if let Some(old) = self.sessions.insert(terminal_view_id, session) {
             ctx.emit(CLIAgentSessionsModelEvent::Ended {
                 terminal_view_id,
@@ -753,21 +702,6 @@ impl CLIAgentSessionsModel {
             terminal_view_id,
             agent,
         });
-    }
-
-    /// Records that an auto plugin operation (install or update) failed for the given agent/host.
-    /// `remote_host` is `None` for local sessions, `Some("user@hostname")` for remote.
-    #[cfg(not(target_family = "wasm"))]
-    #[allow(dead_code)]
-    pub fn record_plugin_auto_failure(&mut self, agent: CLIAgent, remote_host: Option<String>) {
-        self.plugin_auto_failures.insert((agent, remote_host));
-    }
-
-    /// Whether an auto plugin operation has previously failed for this agent on this host.
-    #[allow(dead_code)]
-    pub fn has_plugin_auto_failed(&self, agent: CLIAgent, remote_host: &Option<String>) -> bool {
-        self.plugin_auto_failures
-            .contains(&(agent, remote_host.clone()))
     }
 }
 

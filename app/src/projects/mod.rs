@@ -17,6 +17,7 @@ use anyhow::{Result, anyhow};
 use futures::FutureExt;
 use futures::future::BoxFuture;
 use persistence::model::{Project as ProjectRow, ProjectWorktree as WorktreeRow};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use warpui::AppContext;
 
@@ -55,7 +56,7 @@ pub fn error_summary(err: &anyhow::Error) -> String {
     summary
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ProjectId(pub Uuid);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

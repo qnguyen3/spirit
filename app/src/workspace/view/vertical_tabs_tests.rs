@@ -669,7 +669,7 @@ fn terminal_primary_line_prefers_cli_agent_display_title() {
 }
 
 #[test]
-fn terminal_primary_line_falls_through_to_terminal_title_when_cli_agent_has_no_plugin_data() {
+fn terminal_primary_line_falls_through_to_terminal_title_without_agent_conversation_text() {
     let line = terminal_primary_line_data(
         false,
         None,

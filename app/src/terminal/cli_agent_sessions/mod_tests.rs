@@ -3,9 +3,8 @@ use std::time::Duration;
 use warpui::r#async::Timer;
 use warpui::{App, EntityId};
 
-use super::event::{
-    CLIAgentEvent, CLIAgentEventPayload, CLIAgentEventSource, CLIAgentEventType, parse_event,
-};
+use super::event::{CLIAgentEvent, CLIAgentEventPayload, CLIAgentEventType, parse_event};
+use super::signal::AgentSignal;
 use super::{
     CLIAgentInputState, CLIAgentSession, CLIAgentSessionContext, CLIAgentSessionStatus,
     CLIAgentSessionsModel,
@@ -265,16 +264,10 @@ fn apply_event_preserves_input_session() {
         session_context: CLIAgentSessionContext::default(),
         input_state,
         should_auto_toggle_input: false,
-        listener: None,
-        remote_host: None,
-        plugin_version: None,
         draft_text: None,
-        custom_command_prefix: None,
-        received_rich_notification: false,
     };
 
     let event = CLIAgentEvent {
-        source: CLIAgentEventSource::RichPlugin,
         v: 1,
         agent: CLIAgent::Claude,
         event: CLIAgentEventType::PermissionRequest,
@@ -290,204 +283,6 @@ fn apply_event_preserves_input_session() {
     session.apply_event(&event);
 
     assert_eq!(session.input_state, input_state);
-}
-
-#[test]
-fn is_remote_returns_true_when_remote_host_is_set() {
-    let session = CLIAgentSession {
-        agent: CLIAgent::Claude,
-        status: CLIAgentSessionStatus::InProgress,
-        session_context: CLIAgentSessionContext::default(),
-        input_state: CLIAgentInputState::Closed,
-        should_auto_toggle_input: false,
-        listener: None,
-        plugin_version: None,
-        draft_text: None,
-        remote_host: Some("user@devbox".to_owned()),
-        custom_command_prefix: None,
-        received_rich_notification: false,
-    };
-    assert!(session.is_remote());
-}
-
-#[test]
-fn is_remote_returns_false_when_remote_host_is_none() {
-    let session = CLIAgentSession {
-        agent: CLIAgent::Claude,
-        status: CLIAgentSessionStatus::InProgress,
-        session_context: CLIAgentSessionContext::default(),
-        input_state: CLIAgentInputState::Closed,
-        should_auto_toggle_input: false,
-        listener: None,
-        remote_host: None,
-        plugin_version: None,
-        draft_text: None,
-        custom_command_prefix: None,
-        received_rich_notification: false,
-    };
-    assert!(!session.is_remote());
-}
-
-#[test]
-fn local_failure_is_shared_across_local_sessions() {
-    let mut model = CLIAgentSessionsModel::new();
-
-    model.record_plugin_auto_failure(CLIAgent::Claude, None);
-
-    assert!(model.has_plugin_auto_failed(CLIAgent::Claude, &None));
-}
-
-#[test]
-fn local_failure_does_not_affect_remote_host() {
-    let mut model = CLIAgentSessionsModel::new();
-
-    model.record_plugin_auto_failure(CLIAgent::Claude, None);
-
-    let remote = Some("user@devbox".to_owned());
-    assert!(!model.has_plugin_auto_failed(CLIAgent::Claude, &remote));
-}
-
-#[test]
-fn remote_failure_does_not_affect_local() {
-    let mut model = CLIAgentSessionsModel::new();
-
-    model.record_plugin_auto_failure(CLIAgent::Claude, Some("user@devbox".to_owned()));
-
-    assert!(!model.has_plugin_auto_failed(CLIAgent::Claude, &None));
-}
-
-#[test]
-fn remote_failures_are_independent_per_host() {
-    let mut model = CLIAgentSessionsModel::new();
-
-    let host_a = Some("user@host-a".to_owned());
-    let host_b = Some("user@host-b".to_owned());
-
-    model.record_plugin_auto_failure(CLIAgent::Claude, host_a.clone());
-
-    assert!(model.has_plugin_auto_failed(CLIAgent::Claude, &host_a));
-    assert!(!model.has_plugin_auto_failed(CLIAgent::Claude, &host_b));
-}
-
-#[test]
-fn failure_tracking_is_independent_per_agent() {
-    let mut model = CLIAgentSessionsModel::new();
-
-    model.record_plugin_auto_failure(CLIAgent::Claude, None);
-
-    assert!(model.has_plugin_auto_failed(CLIAgent::Claude, &None));
-    assert!(!model.has_plugin_auto_failed(CLIAgent::Gemini, &None));
-}
-
-#[test]
-fn session_start_sets_plugin_version() {
-    let mut session = CLIAgentSession {
-        agent: CLIAgent::Claude,
-        status: CLIAgentSessionStatus::InProgress,
-        session_context: CLIAgentSessionContext::default(),
-        input_state: CLIAgentInputState::Closed,
-        should_auto_toggle_input: false,
-        listener: None,
-        plugin_version: None,
-        draft_text: None,
-        remote_host: None,
-        custom_command_prefix: None,
-        received_rich_notification: false,
-    };
-
-    let event = CLIAgentEvent {
-        source: CLIAgentEventSource::RichPlugin,
-        v: 1,
-        agent: CLIAgent::Claude,
-        event: CLIAgentEventType::SessionStart,
-        session_id: Some("abc".to_owned()),
-        cwd: Some("/tmp".to_owned()),
-        project: Some("proj".to_owned()),
-        payload: CLIAgentEventPayload {
-            plugin_version: Some("1.5.0".to_owned()),
-            ..Default::default()
-        },
-    };
-
-    session.apply_event(&event);
-    assert_eq!(session.plugin_version.as_deref(), Some("1.5.0"));
-}
-
-#[test]
-fn session_start_without_plugin_version_leaves_none() {
-    let mut session = CLIAgentSession {
-        agent: CLIAgent::Claude,
-        status: CLIAgentSessionStatus::InProgress,
-        session_context: CLIAgentSessionContext::default(),
-        input_state: CLIAgentInputState::Closed,
-        should_auto_toggle_input: false,
-        listener: None,
-        plugin_version: None,
-        draft_text: None,
-        remote_host: None,
-        custom_command_prefix: None,
-        received_rich_notification: false,
-    };
-
-    let event = CLIAgentEvent {
-        source: CLIAgentEventSource::RichPlugin,
-        v: 1,
-        agent: CLIAgent::Claude,
-        event: CLIAgentEventType::SessionStart,
-        session_id: Some("abc".to_owned()),
-        cwd: None,
-        project: None,
-        payload: CLIAgentEventPayload::default(),
-    };
-
-    session.apply_event(&event);
-    assert_eq!(session.plugin_version, None);
-}
-
-#[test]
-fn codex_session_not_rich_until_rich_notification() {
-    // Codex's OSC 9 fallback never sets `received_rich_notification`, so the
-    // session must not claim rich status even when a fallback listener exists.
-    let mut session = CLIAgentSession {
-        agent: CLIAgent::Codex,
-        status: CLIAgentSessionStatus::InProgress,
-        session_context: CLIAgentSessionContext::default(),
-        input_state: CLIAgentInputState::Closed,
-        should_auto_toggle_input: false,
-        listener: None,
-        plugin_version: None,
-        remote_host: None,
-        draft_text: None,
-        custom_command_prefix: None,
-        received_rich_notification: false,
-    };
-    assert!(!session.supports_rich_status());
-
-    // A structured OSC 777 notification latches the flag -> rich status.
-    session.received_rich_notification = true;
-    assert!(session.supports_rich_status());
-}
-
-#[test]
-fn non_codex_session_rich_after_rich_notification() {
-    let mut session = CLIAgentSession {
-        agent: CLIAgent::Claude,
-        status: CLIAgentSessionStatus::InProgress,
-        session_context: CLIAgentSessionContext::default(),
-        input_state: CLIAgentInputState::Closed,
-        should_auto_toggle_input: false,
-        listener: None,
-        plugin_version: None,
-        remote_host: None,
-        draft_text: None,
-        custom_command_prefix: None,
-        received_rich_notification: false,
-    };
-    // No listener and no rich notification yet.
-    assert!(!session.supports_rich_status());
-
-    session.received_rich_notification = true;
-    assert!(session.supports_rich_status());
 }
 
 /// Constructs a session with permission-scoped state already populated, as if
@@ -507,12 +302,7 @@ fn blocked_claude_session_with_permission_state() -> CLIAgentSession {
         },
         input_state: CLIAgentInputState::Closed,
         should_auto_toggle_input: false,
-        listener: None,
-        plugin_version: None,
         draft_text: None,
-        remote_host: None,
-        custom_command_prefix: None,
-        received_rich_notification: false,
     }
 }
 
@@ -524,7 +314,6 @@ fn stop_clears_permission_scoped_state() {
     let mut session = blocked_claude_session_with_permission_state();
 
     let event = CLIAgentEvent {
-        source: CLIAgentEventSource::RichPlugin,
         v: 1,
         agent: CLIAgent::Claude,
         event: CLIAgentEventType::Stop,
@@ -562,7 +351,6 @@ fn permission_replied_clears_permission_scoped_state() {
     let mut session = blocked_claude_session_with_permission_state();
 
     let event = CLIAgentEvent {
-        source: CLIAgentEventSource::RichPlugin,
         v: 1,
         agent: CLIAgent::Claude,
         event: CLIAgentEventType::PermissionReplied,
@@ -590,7 +378,6 @@ fn prompt_submit_clears_permission_scoped_state() {
     session.session_context.response = Some("stale response".to_owned());
 
     let event = CLIAgentEvent {
-        source: CLIAgentEventSource::RichPlugin,
         v: 1,
         agent: CLIAgent::Claude,
         event: CLIAgentEventType::PromptSubmit,
@@ -626,7 +413,6 @@ fn tool_complete_clears_permission_scoped_state() {
     let mut session = blocked_claude_session_with_permission_state();
 
     let event = CLIAgentEvent {
-        source: CLIAgentEventSource::RichPlugin,
         v: 1,
         agent: CLIAgent::Claude,
         event: CLIAgentEventType::ToolComplete,
@@ -654,16 +440,10 @@ fn permission_request_still_populates_summary_and_tool_fields() {
         session_context: CLIAgentSessionContext::default(),
         input_state: CLIAgentInputState::Closed,
         should_auto_toggle_input: false,
-        listener: None,
-        plugin_version: None,
         draft_text: None,
-        remote_host: None,
-        custom_command_prefix: None,
-        received_rich_notification: false,
     };
 
     let event = CLIAgentEvent {
-        source: CLIAgentEventSource::RichPlugin,
         v: 1,
         agent: CLIAgent::Claude,
         event: CLIAgentEventType::PermissionRequest,
@@ -704,28 +484,19 @@ const TEST_WINDOW: Duration = Duration::from_millis(200);
 /// Extra margin added when waiting for `TEST_WINDOW` to lapse.
 const TEST_WINDOW_BUFFER: Duration = Duration::from_millis(150);
 
-fn cli_agent_session(
-    status: CLIAgentSessionStatus,
-    received_rich_notification: bool,
-) -> CLIAgentSession {
+fn cli_agent_session(status: CLIAgentSessionStatus) -> CLIAgentSession {
     CLIAgentSession {
         agent: CLIAgent::Claude,
         status,
         session_context: CLIAgentSessionContext::default(),
         input_state: CLIAgentInputState::Closed,
         should_auto_toggle_input: false,
-        listener: None,
-        plugin_version: None,
-        remote_host: None,
         draft_text: None,
-        custom_command_prefix: None,
-        received_rich_notification,
     }
 }
 
-fn plugin_event(source: CLIAgentEventSource, event: CLIAgentEventType) -> CLIAgentEvent {
+fn rich_event(event: CLIAgentEventType) -> CLIAgentEvent {
     CLIAgentEvent {
-        source,
         v: 1,
         agent: CLIAgent::Claude,
         event,
@@ -736,10 +507,6 @@ fn plugin_event(source: CLIAgentEventSource, event: CLIAgentEventType) -> CLIAge
     }
 }
 
-fn rich_event(event: CLIAgentEventType) -> CLIAgentEvent {
-    plugin_event(CLIAgentEventSource::RichPlugin, event)
-}
-
 #[test]
 fn ctrl_c_does_not_arm_on_optimistic_in_progress_before_prompt_submit() {
     App::test((), |mut app| async move {
@@ -748,7 +515,7 @@ fn ctrl_c_does_not_arm_on_optimistic_in_progress_before_prompt_submit() {
         model.update(&mut app, |m, ctx| {
             m.set_session(
                 view_id,
-                cli_agent_session(CLIAgentSessionStatus::InProgress, true),
+                cli_agent_session(CLIAgentSessionStatus::InProgress),
                 ctx,
             );
         });
@@ -773,7 +540,7 @@ fn ctrl_c_arms_when_in_progress_rich_and_prompt_submitted() {
         model.update(&mut app, |m, ctx| {
             m.set_session(
                 view_id,
-                cli_agent_session(CLIAgentSessionStatus::InProgress, true),
+                cli_agent_session(CLIAgentSessionStatus::InProgress),
                 ctx,
             );
         });
@@ -799,7 +566,7 @@ fn ctrl_c_arms_when_blocked_rich_and_prompt_submitted() {
         model.update(&mut app, |m, ctx| {
             m.set_session(
                 view_id,
-                cli_agent_session(CLIAgentSessionStatus::InProgress, true),
+                cli_agent_session(CLIAgentSessionStatus::InProgress),
                 ctx,
             );
         });
@@ -832,7 +599,7 @@ fn ctrl_c_does_not_arm_when_status_is_success() {
         model.update(&mut app, |m, ctx| {
             m.set_session(
                 view_id,
-                cli_agent_session(CLIAgentSessionStatus::InProgress, true),
+                cli_agent_session(CLIAgentSessionStatus::InProgress),
                 ctx,
             );
         });
@@ -854,43 +621,6 @@ fn ctrl_c_does_not_arm_when_status_is_success() {
 }
 
 #[test]
-fn ctrl_c_does_not_arm_for_codex_osc9_fallback_session() {
-    App::test((), |mut app| async move {
-        let model = app.add_singleton_model(|_| CLIAgentSessionsModel::new());
-        let view_id = EntityId::new();
-        model.update(&mut app, |m, ctx| {
-            m.set_session(
-                view_id,
-                cli_agent_session(CLIAgentSessionStatus::InProgress, false),
-                ctx,
-            );
-        });
-        // Codex's OSC 9 fallback never latches `received_rich_notification`,
-        // even though `has_seen_prompt_submit` is still tracked.
-        model.update(&mut app, |m, ctx| {
-            m.update_from_event(
-                view_id,
-                &plugin_event(
-                    CLIAgentEventSource::CodexOsc9Fallback,
-                    CLIAgentEventType::PromptSubmit,
-                ),
-                ctx,
-            );
-        });
-
-        model.update(&mut app, |m, ctx| {
-            m.observe_ctrl_c_write_with_window(view_id, TEST_WINDOW, ctx);
-        });
-
-        assert!(
-            !model.read(&app, |m, _| m
-                .has_pending_or_resolved_ctrl_c_cancel(view_id)),
-            "a Codex OSC 9 fallback session must never arm the Ctrl-C cancel window"
-        );
-    });
-}
-
-#[test]
 fn window_lapse_transitions_session_to_cancelled() {
     App::test((), |mut app| async move {
         let model = app.add_singleton_model(|_| CLIAgentSessionsModel::new());
@@ -898,7 +628,7 @@ fn window_lapse_transitions_session_to_cancelled() {
         model.update(&mut app, |m, ctx| {
             m.set_session(
                 view_id,
-                cli_agent_session(CLIAgentSessionStatus::InProgress, true),
+                cli_agent_session(CLIAgentSessionStatus::InProgress),
                 ctx,
             );
         });
@@ -931,7 +661,7 @@ fn assert_event_disarms_pending_cancel(disarming_event: CLIAgentEvent) {
         model.update(&mut app, |m, ctx| {
             m.set_session(
                 view_id,
-                cli_agent_session(CLIAgentSessionStatus::InProgress, true),
+                cli_agent_session(CLIAgentSessionStatus::InProgress),
                 ctx,
             );
         });
@@ -1011,7 +741,7 @@ fn idle_prompt_does_not_disarm_pending_cancel() {
         model.update(&mut app, |m, ctx| {
             m.set_session(
                 view_id,
-                cli_agent_session(CLIAgentSessionStatus::InProgress, true),
+                cli_agent_session(CLIAgentSessionStatus::InProgress),
                 ctx,
             );
         });
@@ -1055,7 +785,7 @@ fn late_stop_after_cancelled_flips_status_to_success() {
         model.update(&mut app, |m, ctx| {
             m.set_session(
                 view_id,
-                cli_agent_session(CLIAgentSessionStatus::InProgress, true),
+                cli_agent_session(CLIAgentSessionStatus::InProgress),
                 ctx,
             );
         });
@@ -1096,7 +826,7 @@ fn prompt_submit_after_cancelled_returns_session_to_in_progress() {
         model.update(&mut app, |m, ctx| {
             m.set_session(
                 view_id,
-                cli_agent_session(CLIAgentSessionStatus::InProgress, true),
+                cli_agent_session(CLIAgentSessionStatus::InProgress),
                 ctx,
             );
         });
@@ -1141,7 +871,7 @@ fn stale_timer_callback_after_disarming_event_does_not_overwrite_newer_status() 
         model.update(&mut app, |m, ctx| {
             m.set_session(
                 view_id,
-                cli_agent_session(CLIAgentSessionStatus::InProgress, true),
+                cli_agent_session(CLIAgentSessionStatus::InProgress),
                 ctx,
             );
         });
@@ -1197,7 +927,7 @@ fn remove_session_clears_pending_cancel_state() {
         model.update(&mut app, |m, ctx| {
             m.set_session(
                 view_id,
-                cli_agent_session(CLIAgentSessionStatus::InProgress, true),
+                cli_agent_session(CLIAgentSessionStatus::InProgress),
                 ctx,
             );
         });
@@ -1236,7 +966,7 @@ fn second_ctrl_c_while_armed_reuses_the_existing_window() {
         model.update(&mut app, |m, ctx| {
             m.set_session(
                 view_id,
-                cli_agent_session(CLIAgentSessionStatus::InProgress, true),
+                cli_agent_session(CLIAgentSessionStatus::InProgress),
                 ctx,
             );
         });
@@ -1264,5 +994,64 @@ fn second_ctrl_c_while_armed_reuses_the_existing_window() {
                 "a second Ctrl-C while armed must reuse the existing window, not reset it"
             );
         });
+    });
+}
+
+#[test]
+fn a_new_session_reports_no_conversation_status() {
+    assert_eq!(CLIAgentSessionStatus::Idle.to_conversation_status(), None);
+    assert!(
+        CLIAgentSessionStatus::InProgress
+            .to_conversation_status()
+            .is_some()
+    );
+}
+
+#[test]
+fn a_generic_signal_moves_the_session_and_notifies_once_per_cooldown() {
+    App::test((), |mut app| async move {
+        let model = app.add_singleton_model(|_| CLIAgentSessionsModel::new());
+        let view_id = EntityId::new();
+        model.update(&mut app, |m, ctx| {
+            m.set_session(view_id, cli_agent_session(CLIAgentSessionStatus::Idle), ctx);
+        });
+
+        model.update(&mut app, |m, ctx| {
+            m.apply_signal(view_id, AgentSignal::Done, None, ctx);
+        });
+        assert_eq!(
+            model.read(&app, |m, _| m.session(view_id).unwrap().status.clone()),
+            CLIAgentSessionStatus::Success
+        );
+
+        assert!(model.update(&mut app, |m, _| m.claim_notification_slot(view_id)));
+        assert!(
+            !model.update(&mut app, |m, _| m.claim_notification_slot(view_id)),
+            "a second signal describing the same turn must not notify again"
+        );
+    });
+}
+
+#[test]
+fn a_carriage_return_returns_a_finished_session_to_in_progress() {
+    App::test((), |mut app| async move {
+        let model = app.add_singleton_model(|_| CLIAgentSessionsModel::new());
+        let view_id = EntityId::new();
+        model.update(&mut app, |m, ctx| {
+            m.set_session(
+                view_id,
+                cli_agent_session(CLIAgentSessionStatus::Success),
+                ctx,
+            );
+        });
+
+        model.update(&mut app, |m, ctx| {
+            m.observe_prompt_submit_write(view_id, ctx);
+        });
+
+        assert_eq!(
+            model.read(&app, |m, _| m.session(view_id).unwrap().status.clone()),
+            CLIAgentSessionStatus::InProgress
+        );
     });
 }

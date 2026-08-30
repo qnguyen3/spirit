@@ -13,8 +13,6 @@ use warp_util::standardized_path::StandardizedPath;
 mod link_detection;
 mod open_in_warp;
 mod pane_impl;
-#[cfg(not(target_family = "wasm"))]
-pub(crate) mod plugin_instructions_block;
 pub mod rich_content;
 mod shared_session;
 mod shell_terminated_banner;
@@ -245,12 +243,9 @@ use crate::terminal::block_list_viewport::{
 };
 use crate::terminal::bootstrap::init_subshell_command;
 use crate::terminal::cli_agent_sessions::event::{
-    CLI_AGENT_NOTIFICATION_SENTINEL, CLIAgentEvent, CLIAgentEventPayload, CLIAgentEventSource,
-    CLIAgentEventType, parse_event,
+    CLI_AGENT_NOTIFICATION_SENTINEL, CLIAgentEventType, parse_event,
 };
-use crate::terminal::cli_agent_sessions::listener::{CLIAgentSessionListener, is_agent_supported};
-#[cfg(not(target_family = "wasm"))]
-use crate::terminal::cli_agent_sessions::plugin_manager::{PluginModalKind, plugin_manager_for};
+use crate::terminal::cli_agent_sessions::signal::{AgentSignal, classify_generic_notification};
 use crate::terminal::cli_agent_sessions::{
     CLIAgentInputState, CLIAgentSession, CLIAgentSessionContext, CLIAgentSessionStatus,
     CLIAgentSessionsModel, CLIAgentSessionsModelEvent,
@@ -610,6 +605,14 @@ pub struct NotificationsErrorBanner {
 pub struct BlockNotification {
     pub title: String,
     pub body: String,
+}
+
+/// Left unphrased because the workspace name leads the notification and only
+/// `Workspace` knows it.
+#[derive(Debug, Clone)]
+pub struct AgentNotification {
+    pub task_title: String,
+    pub outcome: AgentSignal,
 }
 
 /// The reason for sending/discovering the notification
@@ -1277,6 +1280,7 @@ pub enum Event {
     BlockListCleared,
     ShareModalOpened(BlockIndex),
     SendNotification(BlockNotification),
+    SendAgentNotification(AgentNotification),
     BlockCompleted {
         block: Arc<SerializedBlock>,
         is_local: bool,
@@ -1525,8 +1529,6 @@ pub enum Event {
         force_open: bool,
     },
     SlowBootstrap,
-    #[cfg(not(target_family = "wasm"))]
-    OpenPluginInstructionsPane(CLIAgent, PluginModalKind),
     ShowToast {
         message: String,
         flavor: ToastFlavor,
@@ -3645,19 +3647,6 @@ impl TerminalView {
         &self.sessions
     }
 
-    /// Returns `None` for local sessions, `Some("user@hostname")` for remote.
-    /// Used to key per-host plugin install failure tracking.
-    fn active_session_remote_host<C: ModelAsRef>(&self, ctx: &C) -> Option<String> {
-        self.active_block_session_id().and_then(|session_id| {
-            let session = self.sessions.as_ref(ctx).get(session_id)?;
-            if session.is_local() {
-                None
-            } else {
-                Some(format!("{}@{}", session.user(), session.hostname()))
-            }
-        })
-    }
-
     /// Returns whether a specific session is local, treating shared-session
     /// viewers and conversation transcript viewers as non-local even when
     /// their session hasn't been joined yet.
@@ -4345,11 +4334,23 @@ impl TerminalView {
 
         let bytes = data.into();
         let bytes_vec = bytes.to_vec();
+        self.observe_agent_prompt_submit(&bytes_vec, ctx);
         self.clear_selected_blocks(ctx);
         self.update_scroll_position_locking(ScrollPositionUpdate::AfterWriteUserBytesToPty, ctx);
         self.write_to_pty(bytes, ctx);
         self.emit_non_editor_typed_event(bytes_vec, ctx);
         true
+    }
+
+    /// Observation only: the bytes are forwarded unchanged either way.
+    fn observe_agent_prompt_submit(&mut self, bytes: &[u8], ctx: &mut ViewContext<Self>) {
+        if !bytes.contains(&escape_sequences::C0::CR) {
+            return;
+        }
+        let terminal_view_id = self.view_id;
+        CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions, ctx| {
+            sessions.observe_prompt_submit_write(terminal_view_id, ctx);
+        });
     }
 
     /// Write to the PTY if the session has finished bootstrapping and
@@ -5687,6 +5688,7 @@ impl TerminalView {
                 {
                     log::warn!("Unable to play bell: {e:#}");
                 }
+                self.handle_agent_bell(ctx);
                 // TODO(vorporeal): Remove this once we have a visual bell
                 // indicator in terminal tabs.
                 ctx.request_user_attention();
@@ -5946,24 +5948,17 @@ impl TerminalView {
                                                 .session(view_id)
                                                 .is_some_and(|s| s.agent == agent) =>
                                         {
-                                            let remote_host = me.active_session_remote_host(ctx);
                                             let should_auto_toggle_input = false;
                                             sessions_model.set_session(
                                                 view_id,
                                                 CLIAgentSession {
                                                     agent,
-                                                    status: CLIAgentSessionStatus::InProgress,
+                                                    status: CLIAgentSessionStatus::Idle,
                                                     session_context:
                                                         CLIAgentSessionContext::default(),
                                                     input_state: CLIAgentInputState::Closed,
                                                     should_auto_toggle_input,
-                                                    listener: None,
-                                                    plugin_version: None,
-                                                    remote_host,
                                                     draft_text: None,
-                                                    custom_command_prefix: custom_command_prefix
-                                                        .clone(),
-                                                    received_rich_notification: false,
                                                 },
                                                 ctx,
                                             );
@@ -5971,16 +5966,6 @@ impl TerminalView {
                                         _ => {}
                                     },
                                 );
-
-                                // Codex doesn't use the sentinel-based plugin protocol,
-                                // so create the listener proactively on command detection
-                                // (rather than waiting for a SessionStart event).
-                                if matches!(detection, Some((CLIAgent::Codex, _))) {
-                                    me.register_cli_agent_listener_without_session_start_event(
-                                        CLIAgent::Codex,
-                                        ctx,
-                                    );
-                                }
                             },
                         );
                     }
@@ -6641,26 +6626,27 @@ impl TerminalView {
                 });
             }
             ModelEvent::PluggableNotification { title, body } => {
-                // Intercept structured CLI agent notifications (e.g. from Claude Code plugin).
-                // The listener's own subscription handles subsequent events; we just
-                // suppress the raw JSON from becoming a toast/desktop notification.
+                // The sentinel body is raw JSON and must never reach the user.
                 if title.as_deref() == Some(CLI_AGENT_NOTIFICATION_SENTINEL) {
                     self.handle_cli_agent_notification(title.as_deref(), body, ctx);
                     return;
                 }
 
-                // Suppress OSC 9 notifications when a Codex listener is active.
-                // The listener's subscription handles these via CodexSessionHandler.
-                if title.is_none() {
-                    let has_codex_listener = CLIAgentSessionsModel::as_ref(ctx)
-                        .session(self.view_id)
-                        .is_some_and(|s| s.agent == CLIAgent::Codex && s.listener.is_some());
-                    if has_codex_listener {
-                        return;
+                // For an agent pane this is the turn-completion signal, and the
+                // desktop notification is sent from the resulting status change.
+                // The toast still applies, since that fires only when in view.
+                if self.has_active_cli_agent_session(ctx) {
+                    self.handle_generic_agent_notification(body, ctx);
+                    if !self.is_navigated_away(ctx) {
+                        ctx.emit(Event::PluggableNotification {
+                            title: title.clone(),
+                            body: body.clone(),
+                        });
                     }
+                    return;
                 }
 
-                if self.is_navigated_away_from_window(ctx) {
+                if self.is_navigated_away(ctx) {
                     let notification_title =
                         title.clone().unwrap_or_else(|| "Notification".to_string());
                     let notification = BlockNotification {
@@ -7014,9 +7000,6 @@ impl TerminalView {
         ctx.notify();
     }
 
-    /// Handles an OSC 777 event with the `warp://cli-agent` sentinel title.
-    /// On `session_start`, creates a `CLIAgentSessionListener` that subscribes
-    /// to subsequent events from this terminal's PTY.
     fn handle_cli_agent_notification(
         &mut self,
         title: Option<&str>,
@@ -7027,23 +7010,12 @@ impl TerminalView {
             return;
         };
 
-        if !is_agent_supported(&notification.agent) {
-            return;
-        }
-
-        if notification.agent == CLIAgent::Codex && !FeatureFlag::CodexPlugin.is_enabled() {
-            return;
-        }
-
-        if !self.register_cli_agent_listener_from_event(&notification, ctx) {
-            return;
-        }
-
+        let is_session_start = notification.event == CLIAgentEventType::SessionStart;
         CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions_model, ctx| {
             sessions_model.update_from_event(self.view_id, &notification, ctx);
         });
 
-        if notification.event == CLIAgentEventType::SessionStart {
+        if is_session_start {
             send_telemetry_from_ctx!(
                 TelemetryEvent::CLIAgentPluginDetected {
                     cli_agent: notification.agent.into(),
@@ -7053,81 +7025,24 @@ impl TerminalView {
         }
     }
 
-    fn register_cli_agent_listener_from_event(
-        &mut self,
-        notification: &CLIAgentEvent,
-        ctx: &mut ViewContext<Self>,
-    ) -> bool {
-        if !is_agent_supported(&notification.agent) {
-            return false;
+    fn handle_generic_agent_notification(&mut self, body: &str, ctx: &mut ViewContext<Self>) {
+        if !self.has_active_cli_agent_session(ctx) {
+            return;
         }
-        let has_listener = CLIAgentSessionsModel::as_ref(ctx)
-            .session(self.view_id)
-            .is_some_and(|s| s.listener.is_some());
-        if has_listener {
-            return false;
-        }
-
-        let model_events_handle = self.model_events_handle.clone();
-        let view_id = self.view_id;
-        let agent = notification.agent;
-        let listener = ctx.add_model(|ctx| {
-            CLIAgentSessionListener::new(view_id, agent, &model_events_handle, ctx)
-        });
-        let remote_host = self.active_session_remote_host(ctx);
-        let should_auto_toggle_input = false;
-        // Seed context from the event that caused registration before the
-        // listener subscribes to future events.
+        let signal = classify_generic_notification(body);
+        let message = Some(body.to_owned()).filter(|body| !body.is_empty());
         CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions_model, ctx| {
-            sessions_model.register_listener(
-                view_id,
-                agent,
-                notification.cwd.clone(),
-                notification.project.clone(),
-                notification.session_id.clone(),
-                notification.payload.plugin_version.clone(),
-                remote_host,
-                should_auto_toggle_input,
-                listener,
-                ctx,
-            );
+            sessions_model.apply_signal(self.view_id, signal, message, ctx);
         });
-        true
     }
 
-    /// Creates and registers a listener for flows without a `SessionStart` event.
-    fn register_cli_agent_listener_without_session_start_event(
-        &mut self,
-        agent: CLIAgent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        #[cfg(not(target_family = "wasm"))]
-        let plugin_version = if matches!(agent, CLIAgent::Codex) {
-            // We use the lack of a plugin version for codex to differentiate between
-            // OSC 9 notification fallback and real plugin.
-            None
-        } else {
-            // No SessionStart event in this path (mid-session install/update).
-            // Assume the just-installed plugin meets the minimum version for this agent
-            // so the update chip doesn't flash before the user runs /reload-plugins.
-            plugin_manager_for(agent).map(|m| m.minimum_plugin_version().to_owned())
-        };
-        #[cfg(target_family = "wasm")]
-        let plugin_version = None;
-        let notification = CLIAgentEvent {
-            source: CLIAgentEventSource::RichPlugin,
-            v: 1,
-            agent,
-            event: CLIAgentEventType::SessionStart,
-            session_id: None,
-            cwd: None,
-            project: None,
-            payload: CLIAgentEventPayload {
-                plugin_version,
-                ..Default::default()
-            },
-        };
-        self.register_cli_agent_listener_from_event(&notification, ctx);
+    fn handle_agent_bell(&mut self, ctx: &mut ViewContext<Self>) {
+        if !self.has_active_cli_agent_session(ctx) {
+            return;
+        }
+        CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions_model, ctx| {
+            sessions_model.apply_signal(self.view_id, AgentSignal::Done, None, ctx);
+        });
     }
 
     /// Handles CLI agent session status changes from the singleton model.
@@ -7205,40 +7120,29 @@ impl TerminalView {
             return;
         }
 
-        // Desktop notifications — only when navigated away and not in-progress.
-        if !self.is_navigated_away_from_window(ctx)
-            || matches!(status, CLIAgentSessionStatus::InProgress)
-        {
+        let Some(outcome) = AgentSignal::from_status(status) else {
+            return;
+        };
+        if !self.is_navigated_away(ctx) {
             return;
         }
 
-        let title = session_context
-            .query
-            .as_deref()
-            .filter(|q| !q.is_empty())
-            .or(session_context.summary.as_deref().filter(|s| !s.is_empty()))
-            .unwrap_or(agent.command_prefix())
-            .to_owned();
-        let description = if let CLIAgentSessionStatus::Blocked { message } = status {
-            message.clone().unwrap_or_default()
-        } else {
-            session_context.response.clone().unwrap_or_default()
-        };
+        let task_title = self.agent_task_title(*agent, session_context);
+        self.send_agent_desktop_notification_or_show_banner(outcome, task_title, *agent, ctx);
+    }
 
-        let trigger = if matches!(status, CLIAgentSessionStatus::Blocked { .. }) {
-            NotificationsTrigger::NeedsAttention
-        } else if matches!(status, CLIAgentSessionStatus::Failed { .. }) {
-            NotificationsTrigger::AgentTaskCompleted(false)
-        } else {
-            NotificationsTrigger::AgentTaskCompleted(true)
-        };
-        self.send_agent_desktop_notification_or_show_banner(
-            trigger,
-            title,
-            description,
-            Some(NotificationAgentVariant::CLIAgent((*agent).into())),
-            ctx,
-        );
+    fn agent_task_title(
+        &self,
+        agent: CLIAgent,
+        session_context: &CLIAgentSessionContext,
+    ) -> String {
+        session_context
+            .display_title()
+            .or_else(|| {
+                let title = self.terminal_title_from_shell();
+                (!title.trim().is_empty()).then_some(title)
+            })
+            .unwrap_or_else(|| agent.display_name().to_owned())
     }
 
     /// Handles the initialization of a session within this terminal pane.
@@ -7363,18 +7267,10 @@ impl TerminalView {
             && !is_onboarded
             && !is_anonymous_or_logged_out;
 
-        let has_plugin_instructions_block = self.rich_content_views.iter().any(|rc| {
-            matches!(
-                rc.metadata(),
-                Some(RichContentMetadata::PluginInstructionsBlock)
-            )
-        });
-
         if TerminalSettings::as_ref(ctx).should_show_zero_state_block()
             && !self.model.lock().block_list().is_restored_session()
             && !should_show_onboarding
             && !is_subshell_or_ssh
-            && !has_plugin_instructions_block
         {
             let agent_view_zero_state = ctx.add_typed_action_view(|ctx| {
                 TerminalViewZeroStateBlock::new(&self.model_events_handle, ctx)
@@ -7731,21 +7627,6 @@ impl TerminalView {
     }
 
     #[cfg(not(target_family = "wasm"))]
-    pub(crate) fn remove_plugin_instructions_block(
-        &mut self,
-        block_handle: ViewHandle<plugin_instructions_block::PluginInstructionsBlock>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        let block_id = block_handle.id();
-        self.rich_content_views
-            .retain(|rich_content| rich_content.view_id() != block_id);
-        self.model
-            .lock()
-            .block_list_mut()
-            .remove_rich_content(block_id);
-        ctx.notify();
-    }
-
     /// Generates command corrections, if applicable.
     fn maybe_generate_command_suggestions(
         &mut self,
@@ -7933,7 +7814,7 @@ impl TerminalView {
                     // if the banner is not yet open, but there is some trigger,
                     // we were likely waiting on the block to finish so insert it now
                     self.insert_notifications_discovery_banner(trigger, ctx);
-                } else if self.is_navigated_away_from_window(ctx)
+                } else if self.is_navigated_away(ctx)
                     && block_duration >= *DEFAULT_THRESHOLD_FOR_LONG_RUNNING_NOTIFICATION
                 {
                     // otherwise, if the user is navigated away when the block completes
@@ -7951,7 +7832,7 @@ impl TerminalView {
                     .banner_type
                 {
                     self.insert_notifications_error_banner(ctx);
-                } else if self.is_navigated_away_from_window(ctx)
+                } else if self.is_navigated_away(ctx)
                     && notification_settings.is_long_running_enabled
                     && block_duration >= notification_settings.long_running_threshold
                 {
@@ -7994,47 +7875,59 @@ impl TerminalView {
     /// for a CLI agent status change.
     fn send_agent_desktop_notification_or_show_banner(
         &mut self,
-        trigger: NotificationsTrigger,
-        title: String,
-        description: String,
-        agent_variant: Option<NotificationAgentVariant>,
+        outcome: AgentSignal,
+        task_title: String,
+        agent: CLIAgent,
         ctx: &mut ViewContext<Self>,
     ) {
         let notification_settings = SessionSettings::as_ref(ctx).notifications.value().clone();
+        let trigger = if outcome.is_success() {
+            NotificationsTrigger::AgentTaskCompleted(true)
+        } else if outcome == AgentSignal::Failed {
+            NotificationsTrigger::AgentTaskCompleted(false)
+        } else {
+            NotificationsTrigger::NeedsAttention
+        };
 
         match notification_settings.mode {
             NotificationsMode::Unset => {
-                if let NotificationsDiscoveryBanner::Triggered(trigger) =
-                    self.inline_banners_state.notifications_discovery_banner
+                let banner_trigger = match self.inline_banners_state.notifications_discovery_banner
                 {
-                    // if the banner is not yet open, but there is some trigger,
-                    // we were likely waiting on the block to finish so insert it now
-                    self.insert_notifications_discovery_banner(trigger, ctx);
-                } else {
-                    // otherwise, insert a discovery banner for the current trigger
-                    self.insert_notifications_discovery_banner(trigger, ctx);
-                }
+                    NotificationsDiscoveryBanner::Triggered(pending) => pending,
+                    _ => trigger,
+                };
+                self.insert_notifications_discovery_banner(banner_trigger, ctx);
             }
             NotificationsMode::Enabled => {
-                let success = matches!(trigger, NotificationsTrigger::AgentTaskCompleted(true));
-                if success {
+                if outcome.is_success() {
                     if !notification_settings.is_agent_task_completed_enabled {
                         return;
                     }
                 } else if !notification_settings.is_needs_attention_enabled {
                     return;
                 }
-                let notification_content = trigger.create_notification_content(title, description);
-                ctx.emit(Event::SendNotification(notification_content));
+
+                let terminal_view_id = self.view_id;
+                let is_due = CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions, _| {
+                    sessions.claim_notification_slot(terminal_view_id)
+                });
+                if !is_due {
+                    return;
+                }
+
+                ctx.emit(Event::SendAgentNotification(AgentNotification {
+                    task_title,
+                    outcome,
+                }));
                 send_telemetry_from_ctx!(
                     TelemetryEvent::NotificationSent {
                         trigger,
-                        agent_variant,
+                        agent_variant: Some(NotificationAgentVariant::CLIAgent(agent.into())),
                     },
                     ctx
                 );
             }
-            _ => {}
+            NotificationsMode::Dismissed | NotificationsMode::Disabled => {}
         }
     }
 
@@ -11708,9 +11601,15 @@ impl TerminalView {
         ctx.notify();
     }
 
-    fn is_navigated_away_from_window(&self, ctx: &mut ViewContext<Self>) -> bool {
-        let active_window = ctx.windows().active_window();
-        Some(ctx.window_id()) != active_window
+    /// A window hosts several full-screen workspace screens with one visible, so
+    /// an unfocused window is not the only way to be navigated away from a pane.
+    fn is_navigated_away(&self, ctx: &mut ViewContext<Self>) -> bool {
+        let window_id = ctx.window_id();
+        if Some(window_id) != ctx.windows().active_window() {
+            return true;
+        }
+        crate::workspace::owning_screen_id(self.view_id, window_id, ctx)
+            != crate::workspace::active_screen_id(window_id, ctx)
     }
 
     fn is_block_active_and_running(&self, model: &TerminalModel, block_index: BlockIndex) -> bool {
@@ -11913,13 +11812,6 @@ impl TerminalView {
                     message: message.clone(),
                     flavor: *flavor,
                 });
-            }
-            InputEvent::RegisterPluginListener(agent) => {
-                self.register_cli_agent_listener_without_session_start_event(*agent, ctx);
-            }
-            #[cfg(not(target_family = "wasm"))]
-            InputEvent::OpenPluginInstructionsPane(agent, kind) => {
-                ctx.emit(Event::OpenPluginInstructionsPane(*agent, *kind));
             }
             InputEvent::OpenShareSessionModal => {
                 self.open_share_session_modal(SharedSessionActionSource::FooterChip, ctx);
@@ -15152,13 +15044,13 @@ impl TerminalSurface for TerminalView {
         // Only send the notification if the user is navigated away from the window
         // when the password prompt appears. If they are present, don't poll again
         // since we would then send a notification for something the user already knows.
-        let is_navigated_away_from_window = self.is_navigated_away_from_window(ctx);
+        let is_navigated_away = self.is_navigated_away(ctx);
         let notification_settings = SessionSettings::as_ref(ctx).notifications.value().clone();
         let password_notification_setting_on =
             matches!(notification_settings.mode, NotificationsMode::Unset)
                 || (matches!(notification_settings.mode, NotificationsMode::Enabled)
                     && notification_settings.is_needs_attention_enabled);
-        if is_navigated_away_from_window
+        if is_navigated_away
             && password_notification_setting_on
             && let Some(block_index) = block_index
         {

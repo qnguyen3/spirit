@@ -505,9 +505,7 @@ impl TerminalView {
     }
 
     fn selected_cli_agent_title_for_chrome(&self, ctx: &AppContext) -> Option<String> {
-        let session = CLIAgentSessionsModel::as_ref(ctx)
-            .session(self.view_id)
-            .filter(|session| session.listener.is_some())?;
+        let session = CLIAgentSessionsModel::as_ref(ctx).session(self.view_id)?;
 
         if *TabSettings::as_ref(ctx).use_latest_user_prompt_as_conversation_title_in_tab_names {
             session.session_context.display_title()

@@ -88,7 +88,6 @@ use crate::settings_view::SettingsSection;
 use crate::shell_indicator::ShellIndicatorType;
 use crate::terminal::available_shells::{AvailableShell, AvailableShells};
 #[cfg(not(target_family = "wasm"))]
-use crate::terminal::cli_agent_sessions::plugin_manager::PluginModalKind;
 use crate::terminal::general_settings::{GeneralSettings, GeneralSettingsChangedEvent};
 #[cfg(feature = "local_tty")]
 use crate::terminal::local_tty::TerminalManager as LocalTtyTerminalManager;
@@ -111,7 +110,8 @@ use crate::terminal::shared_session::{
 };
 use crate::terminal::view::ssh_file_upload::FileUploadId;
 use crate::terminal::view::{
-    BlockNotification, ExecuteCommandEvent, LeftPanelTargetView, SyncEvent, TerminalViewState,
+    AgentNotification, BlockNotification, ExecuteCommandEvent, LeftPanelTargetView, SyncEvent,
+    TerminalViewState,
 };
 use crate::terminal::{
     ShareBlockModal, ShareBlockModalEvent, ShellLaunchData, TerminalManager, TerminalModel,
@@ -449,6 +449,10 @@ pub enum Event {
         notification: BlockNotification,
         pane_id: PaneId,
     },
+    SendAgentNotification {
+        notification: AgentNotification,
+        pane_id: PaneId,
+    },
     OpenSettings(SettingsSection),
     /// Pass input sync event up from underlying TerminalViews
     /// to the Workspace to sync throughout the window.
@@ -653,8 +657,6 @@ pub enum Event {
     OpenLspLogs {
         log_path: PathBuf,
     },
-    #[cfg(not(target_family = "wasm"))]
-    OpenPluginInstructionsPane(crate::terminal::CLIAgent, PluginModalKind),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
