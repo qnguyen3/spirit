@@ -208,7 +208,6 @@ fn test_loading_all_spaces_after_switching_from_offline() {
                     metadata: WorkspacesMetadataResponse {
                         workspaces: vec![],
                         joinable_teams: vec![],
-                        experiments: None,
                         user_purchase_policy: None,
                     },
                     pricing_info: None,
@@ -225,7 +224,6 @@ fn test_loading_all_spaces_after_switching_from_offline() {
                     metadata: WorkspacesMetadataResponse {
                         workspaces: vec![workspace.clone()],
                         joinable_teams: vec![],
-                        experiments: None,
                         user_purchase_policy: None,
                     },
                     pricing_info: None,
@@ -1804,7 +1802,6 @@ fn test_remove_user_from_team_success_emits_success_event_and_refreshes_members(
                     metadata: WorkspacesMetadataResponse {
                         workspaces: vec![updated_workspace.clone()],
                         joinable_teams: vec![],
-                        experiments: None,
                         user_purchase_policy: None,
                     },
                     pricing_info: None,

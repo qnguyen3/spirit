@@ -25,7 +25,6 @@ use crate::server::ids::ServerId;
 use crate::server::retry_strategies::{
     OUT_OF_BAND_REQUEST_RETRY_STRATEGY, PERIODIC_POLL, PERIODIC_POLL_RETRY_STRATEGY,
 };
-use crate::server::server_api::ServerApiProvider;
 use crate::server::server_api::team::TeamClient;
 
 pub enum TeamUpdateManagerEvent {
@@ -122,7 +121,6 @@ impl TeamUpdateManager {
                 metadata: WorkspacesMetadataResponse {
                     workspaces: vec![],
                     joinable_teams: vec![],
-                    experiments: None,
                     user_purchase_policy: None,
                 },
                 pricing_info: None,
@@ -468,7 +466,6 @@ impl TeamUpdateManager {
             Ok(user_workspaces_access) => {
                 let workspaces = user_workspaces_access.workspaces;
                 let joinable_teams = user_workspaces_access.joinable_teams;
-                let experiments = user_workspaces_access.experiments;
                 let user_purchase_policy = user_workspaces_access.user_purchase_policy;
 
                 UserWorkspaces::handle(ctx).update(ctx, |user_workspaces, ctx| {
@@ -487,12 +484,6 @@ impl TeamUpdateManager {
                     };
                 } else if let Some(workspace_uid) = workspaces.first().map(|w| w.uid) {
                     self.set_current_workspace_uid(workspace_uid, ctx);
-                }
-
-                if let Some(experiments) = experiments {
-                    ServerApiProvider::handle(ctx).update(ctx, |provider, ctx| {
-                        provider.handle_experiments_fetched(experiments, ctx);
-                    });
                 }
 
                 // Update sqlite

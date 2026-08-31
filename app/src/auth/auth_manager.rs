@@ -27,11 +27,11 @@ use crate::autoupdate::AutoupdateState;
 use crate::persistence::ModelEvent;
 use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::graphql::get_user_facing_error_message;
+use crate::server::server_api::ServerApi;
 use crate::server::server_api::auth::{
     AnonymousUserCreationError, AuthClient, FetchUserResult, MintCustomTokenError,
     UserAuthenticationError,
 };
-use crate::server::server_api::{ServerApi, ServerApiProvider};
 use crate::server::telemetry::AnonymousUserSignupEntrypoint;
 use crate::settings::PrivacySettings;
 use crate::settings::cloud_preferences_syncer::CloudPreferencesSyncer;
@@ -288,18 +288,11 @@ impl AuthManager {
                     credentials,
                     from_refresh,
                 } = fetch_user_result;
-                let UserProperties {
-                    user,
-                    server_experiments,
-                } = user_output.into();
+                let UserProperties { user } = user_output.into();
 
                 self.complete_authentication(user.clone(), credentials, ctx);
 
                 self.set_needs_reauth(false, ctx);
-
-                ServerApiProvider::handle(ctx).update(ctx, |provider, ctx| {
-                    provider.handle_experiments_fetched(server_experiments, ctx);
-                });
 
                 SettingsInitializer::handle(ctx).update(ctx, |initializer, ctx| {
                     initializer.handle_user_fetched(self.auth_state.clone(), ctx);

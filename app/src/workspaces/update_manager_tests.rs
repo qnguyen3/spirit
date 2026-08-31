@@ -10,6 +10,7 @@ use crate::cloud_object::model::persistence::CloudModel;
 use crate::cloud_object::{Owner, Revision, ServerMetadata, ServerPermissions, ServerWorkflow};
 use crate::server::cloud_objects::update_manager::InitialLoadResponse;
 use crate::server::ids::SyncId;
+use crate::server::server_api::ServerApiProvider;
 use crate::server::server_api::team::MockTeamClient;
 use crate::server::server_api::workspace::{MockWorkspaceClient, WorkspaceClient};
 use crate::server::sync_queue::SyncQueue;
@@ -94,7 +95,6 @@ fn test_leaving_team_removes_objects() {
                 metadata: WorkspacesMetadataResponse {
                     workspaces: vec![],
                     joinable_teams: vec![],
-                    experiments: None,
                     user_purchase_policy: None,
                 },
                 pricing_info: None,
@@ -163,7 +163,6 @@ fn test_leaving_team_removes_objects() {
                     metadata: WorkspacesMetadataResponse {
                         workspaces: vec![],
                         joinable_teams: vec![],
-                        experiments: None,
                         user_purchase_policy: None,
                     },
                     pricing_info: None,
@@ -224,7 +223,6 @@ fn test_poll_path_apply_refreshes_user_purchase_policy() {
         let response_with_policy = WorkspacesMetadataResponse {
             workspaces: vec![],
             joinable_teams: vec![],
-            experiments: None,
             user_purchase_policy: Some(PurchaseAddOnCreditsPolicy {
                 enabled: false,
                 premium_enabled: true,
@@ -248,7 +246,6 @@ fn test_poll_path_apply_refreshes_user_purchase_policy() {
         let response_without_policy = WorkspacesMetadataResponse {
             workspaces: vec![],
             joinable_teams: vec![],
-            experiments: None,
             user_purchase_policy: None,
         };
         team_update_manager.update(&mut app, |manager, ctx| {

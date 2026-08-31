@@ -58,9 +58,7 @@ use super::workspace::{
     Workspace, WorkspaceMember, WorkspaceMemberUsageInfo, WorkspaceSettings, WorkspaceSizePolicy,
 };
 use crate::auth::UserUid;
-use crate::convert_to_server_experiment;
 use crate::server::cloud_objects::listener::ObjectUpdateMessage;
-use crate::server::experiments::ServerExperiment;
 use crate::server::graphql::schema::object_action_history_from_gql;
 use crate::server::ids::ServerId;
 use crate::workspaces::workspace::{
@@ -1068,10 +1066,6 @@ impl From<GqlUser> for WorkspacesMetadataResponse {
             .map(|gql_joinable_team| gql_joinable_team.into())
             .collect();
 
-        let experiments = gql_user
-            .experiments
-            .and_then(|experiments| convert_to_server_experiment!(experiments));
-
         // A teamless user's only workspace is the placeholder filtered out
         // above, so the user-level policy is the only place their add-on
         // credits purchase policy — gating and premium pricing alike —
@@ -1086,7 +1080,6 @@ impl From<GqlUser> for WorkspacesMetadataResponse {
         WorkspacesMetadataResponse {
             workspaces,
             joinable_teams,
-            experiments,
             user_purchase_policy,
         }
     }
