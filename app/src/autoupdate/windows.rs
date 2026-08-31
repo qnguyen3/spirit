@@ -113,16 +113,8 @@ fn parse_forcekill_exit_code(contents_lowercase: &[u8]) -> Option<i32> {
     parse_exit_code_after_marker(contents_lowercase, FAILED_MARKER)
 }
 
-/// Parses the PowerShell exit code from an Inno Setup log containing a
-/// "minidump-server cleanup failed" line. Returns `None` if no such line is
-/// found or the exit code cannot be parsed.
-fn parse_minidump_cleanup_exit_code(contents_lowercase: &[u8]) -> Option<i32> {
-    const FAILED_MARKER: &[u8] = b"minidump-server cleanup failed";
-    parse_exit_code_after_marker(contents_lowercase, FAILED_MARKER)
-}
-
 /// Checks the autoupdate log file from a previous update attempt.
-/// Sends telemetry for specific known issues, and sends a Sentry event if errors are found.
+/// Sends telemetry for specific known issues.
 /// The log file is renamed after processing to avoid duplicate reports on subsequent launches.
 pub(super) fn check_and_report_update_errors(ctx: &mut AppContext) {
     let log_path = match autoupdate_log_file() {
@@ -185,15 +177,6 @@ pub(super) fn check_and_report_update_errors(ctx: &mut AppContext) {
     {
         crate::send_telemetry_sync_from_app_ctx!(
             TelemetryEvent::AutoupdateForcekillFailed { exit_code },
-            ctx
-        );
-    }
-
-    // Fired when the PowerShell cleanup of the orphaned minidump server process
-    // returned a non-zero exit code.
-    if let Some(exit_code) = parse_minidump_cleanup_exit_code(&contents_lowercase) {
-        crate::send_telemetry_sync_from_app_ctx!(
-            TelemetryEvent::AutoupdateMinidumpCleanupFailed { exit_code },
             ctx
         );
     }

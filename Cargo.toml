@@ -5,9 +5,7 @@ members = [
 ]
 resolver = "2"
 
-# Include all members except serve-wasm (since it's a helper helper for serving
-# wasm binaries and not something we want to regularly compile or run
-# tests against) and integration (since it is only used for testing).
+# Include all members except integration (since it is only used for testing).
 default-members = [
   "app",
   "crates/channel_versions",
@@ -29,7 +27,6 @@ publish = false
 
 [workspace.dependencies]
 # Local workspace crates. This lets us reference them in other crates without specifying a path.
-app-installation-detection = { path = "crates/app-installation-detection" }
 asset_cache = { path = "crates/asset_cache" }
 asset_macro = { path = "crates/asset_macro" }
 channel_versions = { path = "crates/channel_versions", default-features = false }
@@ -277,6 +274,7 @@ tracing = "0.1.40"
 tracing-futures = "0.2.5"
 tracing-opentelemetry = { version = "0.33.0", default-features = false }
 tracing-subscriber = { version = "0.3.22", default-features = false, features = [
+  "env-filter",
   "registry",
   "std",
 ] }

@@ -27,10 +27,6 @@ on:
         description: Build macOS artifacts.
         type: boolean
         default: true
-      build_web:
-        description: Build web artifacts.
-        type: boolean
-        default: true
       should_publish:
         description: Publish this release
         type: boolean
@@ -50,10 +46,6 @@ on:
         default: true
       build_macos:
         description: Build macOS artifacts.
-        type: boolean
-        default: true
-      build_web:
-        description: Build web artifacts.
         type: boolean
         default: true
 
@@ -1392,174 +1384,6 @@ jobs:
             ${{ steps.bundle_app.outputs.packages_dir }}
             oz-${{ steps.get-config.outputs.channel }}-linux-aarch64.tar.gz
 
-  release_web:
-    name: Build Release (Web)
-    runs-on: namespace-profile-ubuntu-22-04
-    needs: prepare_release
-    if: ${{ inputs.build_web != false }}
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-
-      - uses: ./.github/actions/prepare_environment
-        with:
-          target_os: wasm
-          is_self_hosted: false
-          ref: ${{ needs.prepare_release.outputs.release_branch }}
-          ssh_key: ${{ secrets.WARP_CHANNEL_CONFIG_ACCESS_SSH_KEY }}
-
-      - name: Get channel configuration
-        id: get-config
-        uses: ./.github/actions/get_channel_config/
-        with:
-          config_file: ${{ env.CONFIG_FILE }}
-          channel: ${{ inputs.channel }}
-
-      - name: Bundle app
-        id: bundle_app
-        run: |
-          script/wasm/bundle --channel $CHANNEL
-        shell: bash
-        env:
-          CHANNEL: ${{ steps.get-config.outputs.channel }}
-          GIT_RELEASE_TAG: ${{ needs.prepare_release.outputs.release_tag }}
-
-      - name: Brotli compress app bundle
-        run: |
-          # The brotli binary won't let us compress in-place, so we need to rename back to the
-          # original afterwards.
-          brotli --rm "${{ steps.bundle_app.outputs.packages_dir }}"/*
-          for file in "${{ steps.bundle_app.outputs.packages_dir }}"/*.br; do
-              mv -- "$file" "${file%.br}"
-          done
-        shell: bash
-
-      - name: Add packages to GitHub release assets
-        if: ${{ needs.prepare_release.outputs.should_publish == 'true' }}
-        id: upload_github_assets
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
-        with:
-          tag_name: ${{ needs.prepare_release.outputs.release_tag }}
-          files: ${{ steps.bundle_app.outputs.packages_dir }}/*
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
-        if: ${{ needs.prepare_release.outputs.should_publish == 'true' }}
-        with:
-          credentials_json: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
-
-      - name: Upload packages to Google Cloud Storage
-        if: ${{ needs.prepare_release.outputs.should_publish == 'true' }}
-        uses: google-github-actions/upload-cloud-storage@6397bd7208e18d13ba2619ee21b9873edc94427a # v3.0.0
-        with:
-          path: ${{ steps.bundle_app.outputs.packages_dir }}
-          # Only upload the files from within `packages_dir`, don't include the
-          # (parent) folder itself.
-          gzip: false
-          parent: false
-          destination: ${{ steps.get-config.outputs.web_gcs_bucket_prefix }}-releases/${{ steps.get-config.outputs.channel }}/${{ needs.prepare_release.outputs.release_tag }}
-          process_gcloudignore: false
-          # IMPORTANT: both the key and value of the cache-control header must be all lowercase;
-          # uppercase values will not be respected by Cloud CDN and using "Cache-Control" will be
-          # ignored by the upload-cloud-storage action.
-          headers: |-
-            cache-control: ${{ steps.get-config.outputs.gcs_cache_control_value }}
-            content-encoding: br
-
-      - name: Upload assets to Google Cloud Storage
-        if: ${{ needs.prepare_release.outputs.should_publish == 'true' }}
-        uses: google-github-actions/upload-cloud-storage@6397bd7208e18d13ba2619ee21b9873edc94427a # v3.0.0
-        with:
-          path: ${{ steps.bundle_app.outputs.assets_dir }}
-          parent: false
-          # All asset filenames contain the file hash for cashing purposes, so we store them all in
-          # one directory so they can be cached across releases.
-          destination: ${{ steps.get-config.outputs.web_gcs_bucket_prefix }}-static-assets/
-          process_gcloudignore: false
-          # IMPORTANT: both the key and value of the cache-control header must be all lowercase;
-          # uppercase values will not be respected by Cloud CDN and using "Cache-Control" will be
-          # ignored by the upload-cloud-storage action.
-          # These assets are all stored under cache busting names, so we want to cache them
-          # effectively forever. There's no defined maximum for the max-age directive, but a similar
-          # directive suggests a maximum of one year, so that's what's chosen here.
-          headers: |-
-            cache-control: private, max-age=31536000, immutable
-
-      - name: Upload web bundle as workflow artifact
-        if: ${{ needs.prepare_release.outputs.should_publish != 'true' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: release-web-${{ steps.get-config.outputs.channel }}
-          path: ${{ steps.bundle_app.outputs.packages_dir }}
-
-    runs-on: ${{ matrix.runner }}
-    needs: prepare_release
-    if: ${{ inputs.build_windows != false }}
-    timeout-minutes: 150
-    strategy:
-      matrix:
-        include:
-          - arch: x64
-            runner: windows-latest-large
-          - arch: arm64
-            runner: windows-arm-latest-large
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-
-      - uses: ./.github/actions/prepare_environment
-        with:
-          target_os: windows
-          cache_key: ${{ matrix.arch }}
-          is_self_hosted: false
-          ref: ${{ needs.prepare_release.outputs.release_branch }}
-          install_release_deps: true
-          ssh_key: ${{ secrets.WARP_CHANNEL_CONFIG_ACCESS_SSH_KEY }}
-
-      - name: Get channel configuration
-        id: get-config
-        uses: ./.github/actions/get_channel_config/
-        with:
-          config_file: ${{ env.CONFIG_FILE }}
-          channel: ${{ inputs.channel }}
-
-      - name: Build binary
-        id: build_binary
-        run: script/bundle -Channel $CHANNEL -skip_build_installer --arch ${{ matrix.arch }}
-        shell: bash
-        env:
-          CHANNEL: ${{ steps.get-config.outputs.channel }}
-          GIT_RELEASE_TAG: ${{ needs.prepare_release.outputs.release_tag }}
-
-      - name: Generate canonical Windows settings schema
-        if: ${{ matrix.arch == 'x64' }}
-        shell: pwsh
-        run: |
-          $Process = Start-Process `
-            -FilePath "${{ steps.build_binary.outputs.binary_path }}" `
-            -ArgumentList @('dump-settings-schema', "${{ runner.temp }}\settings_schema.json") `
-            -NoNewWindow `
-            -PassThru `
-            -Wait
-          if ($Process.ExitCode -ne 0) { throw "Failed to generate the Windows settings schema: exit code $($Process.ExitCode)." }
-
-      - name: Archive canonical Windows settings schema
-        if: ${{ matrix.arch == 'x64' }}
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: settings-schema-windows-${{ steps.get-config.outputs.channel }}
-          retention-days: 1
-          path: ${{ runner.temp }}\settings_schema.json
-
-      - name: Archive Windows binary build
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: windows-binary-${{ matrix.arch }}-${{ steps.get-config.outputs.channel }}
-          retention-days: 1
-          path: |
-            ${{ steps.build_binary.outputs.binary_path }}
-            ${{ steps.build_binary.outputs.pdb_file_path }}
-            app/assets/windows/${{ matrix.arch }}
-
   release_windows:
     name: Bundle Release (Windows ${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
@@ -1701,7 +1525,7 @@ jobs:
   # downstream jobs don't each need their own copy of the same "which
   # platforms actually matter, and did they succeed" logic. A platform whose
   # build was deliberately disabled via a workflow input (build_macos,
-  # build_linux, build_windows, build_web, or web-on-preview) is excluded
+  # build_linux, or build_windows) is excluded
   # entirely, rather than being treated as a failure. Anything else that
   # isn't a plain `success` -- a genuine failure, a cancellation, or a job
   # skipped because one of ITS OWN dependencies failed (e.g. a build-only
@@ -1719,7 +1543,6 @@ jobs:
       - release_linux_x86
       - release_linux_arm
       - release_linux_cli_x86
-      - release_web
       - release_windows
     if: always()
     outputs:
@@ -1739,7 +1562,6 @@ jobs:
           BUILD_MACOS: ${{ inputs.build_macos }}
           BUILD_LINUX: ${{ inputs.build_linux }}
           BUILD_WINDOWS: ${{ inputs.build_windows }}
-          BUILD_WEB: ${{ inputs.build_web }}
           CHANNEL: ${{ inputs.channel }}
           MACOS_SINGLE_ARCH_RESULT: ${{ needs.release_macos_single_arch.result }}
           MACOS_UNIVERSAL_RESULT: ${{ needs.release_macos_universal.result }}
@@ -1747,7 +1569,6 @@ jobs:
           LINUX_X86_RESULT: ${{ needs.release_linux_x86.result }}
           LINUX_ARM_RESULT: ${{ needs.release_linux_arm.result }}
           LINUX_CLI_X86_RESULT: ${{ needs.release_linux_cli_x86.result }}
-          WEB_RESULT: ${{ needs.release_web.result }}
           WINDOWS_RESULT: ${{ needs.release_windows.result }}
         run: |
           FAILED=()
@@ -1774,16 +1595,12 @@ jobs:
           [[ "$BUILD_LINUX" == "false" ]] && LINUX_DISABLED=true
           WINDOWS_DISABLED=false
           [[ "$BUILD_WINDOWS" == "false" ]] && WINDOWS_DISABLED=true
-          WEB_DISABLED=false
-          [[ "$BUILD_WEB" == "false" || "$CHANNEL" == "preview" ]] && WEB_DISABLED=true
-
           check "MacOS Single Arch" "$MACOS_SINGLE_ARCH_RESULT" "$MACOS_DISABLED"
           check "MacOS Universal" "$MACOS_UNIVERSAL_RESULT" "$MACOS_DISABLED"
           check "MacOS CLI" "$MACOS_CLI_RESULT" "$MACOS_DISABLED"
           check "Linux x86_64" "$LINUX_X86_RESULT" "$LINUX_DISABLED"
           check "Linux ARM64" "$LINUX_ARM_RESULT" "$LINUX_DISABLED"
           check "Linux CLI x86_64" "$LINUX_CLI_X86_RESULT" "$LINUX_DISABLED"
-          check "WASM" "$WEB_RESULT" "$WEB_DISABLED"
           check "Windows" "$WINDOWS_RESULT" "$WINDOWS_DISABLED"
 
           if (( ${#FAILED[@]} )); then

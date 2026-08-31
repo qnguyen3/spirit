@@ -288,7 +288,6 @@ winit = { workspace = true }
 wgpu.workspace = true
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
-app-installation-detection.workspace = true
 async-io.workspace = true
 axum.workspace = true
 cloud_object_persistence.workspace = true
