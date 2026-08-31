@@ -322,7 +322,6 @@ use crate::themes::theme_chooser::{ThemeChooser, ThemeChooserEvent, ThemeChooser
 use crate::themes::theme_creator_modal::{ThemeCreatorModal, ThemeCreatorModalEvent};
 use crate::themes::theme_deletion_modal::{ThemeDeletionModal, ThemeDeletionModalEvent};
 use crate::tips::{TipsEvent, TipsView};
-use crate::ui_components::avatar::{Avatar, AvatarContent, StatusElementTypes};
 #[cfg(target_family = "wasm")]
 use crate::ui_components::blended_colors;
 use crate::ui_components::buttons::{combo_inner_button, icon_button_with_color};
@@ -495,8 +494,6 @@ const SESSION_CONFIG_TAB_CONFIG_CHIP_WIDTH: f32 = 206.;
 const SHOW_SETTINGS_KEYBINDING_NAME: &str = "workspace:show_settings";
 pub const TOGGLE_COMMAND_PALETTE_KEYBINDING_NAME: &str = "workspace:toggle_command_palette";
 
-const USER_AVATAR_BUTTON_POSITION_ID: &str = "workspace:user_avatar_button";
-
 // these won't have to be public after we deprecate the code mode v1 project explorer which is defined in terminal
 pub(crate) const TOGGLE_PROJECT_EXPLORER_BINDING_NAME: &str = "workspace:toggle_project_explorer";
 pub(crate) const TOGGLE_WARP_DRIVE_BINDING_NAME: &str = "workspace:toggle_warp_drive";
@@ -541,9 +538,6 @@ pub const NEW_SESSION_MENU_BUTTON_POSITION_ID: &str = "new_session_menu_button";
 
 // The max length of the window title (matching conversation title truncation).
 const MAX_WINDOW_TITLE_LENGTH: usize = 80;
-
-/// The default display name used for the user if they have no associated display name.
-pub const DEFAULT_USER_DISPLAY_NAME: &str = "User";
 
 lazy_static! {
     static ref OPENING_WARP_DRIVE_ON_START_UP: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
@@ -16715,7 +16709,7 @@ impl Workspace {
     }
 
     /// Adds the configurable right-side toolbar items plus the fixed controls
-    /// (update pill, offline indicator, avatar, etc.) that are not configurable.
+    /// (update pill, offline indicator, settings, etc.) that are not configurable.
     fn add_configurable_right_side_tab_bar_controls(
         &self,
         target: &mut Flex,
@@ -16755,28 +16749,23 @@ impl Workspace {
             }
         }
 
-        if FeatureFlag::AvatarInTabBar.is_enabled() {
+        let resource_center_closed = !self.current_workspace_state.is_resource_center_open;
+        if !FeatureFlag::AvatarInTabBar.is_enabled()
+            && resource_center_closed
+            && ContextFlag::WarpEssentials.is_enabled()
+        {
             target.add_child(
-                Container::new(self.render_avatar_button(appearance, ctx))
-                    .with_margin_left(TAB_BAR_PADDING_LEFT)
-                    .finish(),
-            );
-        } else {
-            let resource_center_closed = !self.current_workspace_state.is_resource_center_open;
-            if resource_center_closed && ContextFlag::WarpEssentials.is_enabled() {
-                target.add_child(
-                    Container::new(self.render_resource_center_button(appearance, ctx))
-                        .with_margin_left(TAB_BAR_PADDING_LEFT)
-                        .finish(),
-                );
-            }
-
-            target.add_child(
-                Container::new(self.render_settings_button(appearance))
+                Container::new(self.render_resource_center_button(appearance, ctx))
                     .with_margin_left(TAB_BAR_PADDING_LEFT)
                     .finish(),
             );
         }
+
+        target.add_child(
+            Container::new(self.render_settings_button(appearance))
+                .with_margin_left(TAB_BAR_PADDING_LEFT)
+                .finish(),
+        );
 
         let zoom_factor = WindowSettings::as_ref(ctx).zoom_level.as_zoom_factor();
         let traffic_light_data = traffic_light_data(ctx, self.window_id);
@@ -17033,101 +17022,6 @@ impl Workspace {
             ret.finish()
         })
         .finish()
-    }
-
-    fn render_avatar_button(&self, appearance: &Appearance, ctx: &AppContext) -> Box<dyn Element> {
-        let is_anonymous = self.auth_state.is_anonymous_or_logged_out();
-        let display_name = self
-            .auth_state
-            .username_for_display()
-            .unwrap_or(DEFAULT_USER_DISPLAY_NAME.to_owned());
-
-        let avatar_content = if self.auth_state.is_anonymous_or_logged_out() {
-            AvatarContent::Icon(icons::Icon::Gear)
-        } else {
-            self.auth_state
-                .user_photo_url()
-                .map(|url| AvatarContent::Image {
-                    url,
-                    display_name: display_name.clone(),
-                })
-                .unwrap_or(AvatarContent::DisplayName(display_name.clone()))
-        };
-
-        let mut avatar = Avatar::new(
-            avatar_content,
-            UiComponentStyles {
-                width: Some(20.),
-                height: Some(20.),
-                border_radius: Some(CornerRadius::with_all(Radius::Percentage(50.))),
-                font_family_id: Some(appearance.ui_font_family()),
-                font_weight: Some(Weight::Bold),
-                background: Some(appearance.theme().accent().into()),
-                font_size: Some(12.),
-                font_color: Some(ColorU::black()),
-                ..Default::default()
-            },
-        );
-
-        // Render the subtle autoupdate UI if autoupdate is ready and there is no incoming prominent update version.
-        let autoupdate_stage = autoupdate::get_update_state(ctx);
-        if FeatureFlag::AutoupdateUIRevamp.is_enabled()
-            && autoupdate_stage.ready_for_update()
-            && autoupdate_stage
-                .available_new_version()
-                .map(|version| {
-                    !is_incoming_version_past_current(version.last_prominent_update.as_deref())
-                })
-                .unwrap_or(false)
-        {
-            avatar = avatar.with_status_element(
-                StatusElementTypes::Circle,
-                RedNotificationDot::default_styles(appearance),
-            );
-        }
-
-        let button = Hoverable::new(self.mouse_states.avatar_icon.clone(), |state| {
-            let mut stack = Stack::new();
-            let mut container = Container::new(avatar.build().finish())
-                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
-                .with_uniform_padding(2.);
-
-            if state.is_mouse_over_element() {
-                if !state.is_clicked() {
-                    container = container.with_background(appearance.theme().surface_2());
-                }
-                // On hover, show tooltip of user's display name (if it exists)
-                if !self.is_user_menu_open && !is_anonymous {
-                    stack.add_positioned_overlay_child(
-                        appearance
-                            .ui_builder()
-                            .tool_tip(display_name.clone())
-                            .with_style(UiComponentStyles {
-                                background: Some(appearance.theme().tooltip_background().into()),
-                                font_color: Some(appearance.theme().background().into_solid()),
-                                ..Default::default()
-                            })
-                            .build()
-                            .finish(),
-                        OffsetPositioning::offset_from_parent(
-                            vec2f(0., 4.),
-                            ParentOffsetBounds::WindowByPosition,
-                            ParentAnchor::BottomMiddle,
-                            ChildAnchor::TopMiddle,
-                        ),
-                    );
-                }
-            }
-            stack.add_child(container.finish());
-            stack.finish()
-        })
-        .on_click(move |ctx, _, _| {
-            ctx.dispatch_typed_action(WorkspaceAction::ToggleUserMenu);
-        })
-        .with_cursor(Cursor::PointingHand)
-        .finish();
-
-        SavePosition::new(Align::new(button).finish(), USER_AVATAR_BUTTON_POSITION_ID).finish()
     }
 
     fn render_resource_center_button(

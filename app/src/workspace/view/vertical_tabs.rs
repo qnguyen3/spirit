@@ -731,6 +731,7 @@ pub(super) struct VerticalTabsPanelState {
     new_worktree_hover_state: MouseStateHandle,
     pub(super) search_query: String,
     settings_button_mouse_state: MouseStateHandle,
+    settings_tab_mouse_state: MouseStateHandle,
     panes_segment_mouse_state: MouseStateHandle,
     tabs_segment_mouse_state: MouseStateHandle,
     focused_session_option_mouse_state: MouseStateHandle,
@@ -771,6 +772,7 @@ impl Default for VerticalTabsPanelState {
             new_worktree_hover_state: Default::default(),
             search_query: String::new(),
             settings_button_mouse_state: Default::default(),
+            settings_tab_mouse_state: Default::default(),
             panes_segment_mouse_state: Default::default(),
             tabs_segment_mouse_state: Default::default(),
             focused_session_option_mouse_state: Default::default(),
@@ -1702,6 +1704,85 @@ fn render_new_tab_button(
     .finish()
 }
 
+fn is_settings_tab(tab: &TabData, app: &AppContext) -> bool {
+    let visible_pane_ids = tab.pane_group.as_ref(app).visible_pane_ids();
+    !visible_pane_ids.is_empty()
+        && visible_pane_ids
+            .iter()
+            .all(|pane_id| pane_id.pane_type() == IPaneType::Settings)
+}
+
+fn render_settings_tab_row(
+    state: &VerticalTabsPanelState,
+    workspace: &Workspace,
+    app: &AppContext,
+) -> Box<dyn Element> {
+    let appearance = Appearance::as_ref(app);
+    let theme = appearance.theme();
+    let font_family = appearance.ui_font_family();
+    let main_text = theme.main_text_color(theme.background());
+    let is_selected = workspace
+        .tabs
+        .get(workspace.active_tab_index)
+        .is_some_and(|tab| is_settings_tab(tab, app));
+
+    let row = Hoverable::new(state.settings_tab_mouse_state.clone(), move |hover_state| {
+        let content = Flex::row()
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(ICON_WITH_STATUS_GAP)
+            .with_child(render_pane_icon_with_status(
+                IconWithStatusVariant::Neutral {
+                    icon: WarpIcon::Gear,
+                    icon_color: main_text,
+                },
+                theme,
+            ))
+            .with_child(
+                Shrinkable::new(
+                    1.,
+                    Text::new_inline("Settings", font_family, 12.)
+                        .with_clip(ClipConfig::ellipsis())
+                        .with_color(main_text.into())
+                        .finish(),
+                )
+                .finish(),
+            )
+            .finish();
+
+        let mut container = Container::new(content)
+            .with_padding(Padding::uniform(8.))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(ROW_CORNER_RADIUS)));
+        if let Some(background) = pane_row_background(
+            None,
+            is_selected,
+            false,
+            hover_state.is_hovered(),
+            false,
+            theme,
+        ) {
+            container = container.with_background(background);
+        }
+        container
+            .with_border(Border::all(1.).with_border_fill(if is_selected {
+                internal_colors::fg_overlay_3(theme).into()
+            } else {
+                ElementFill::None
+            }))
+            .finish()
+    })
+    .on_click(|ctx, _, _| {
+        ctx.dispatch_typed_action(WorkspaceAction::ShowSettings);
+    })
+    .with_cursor(Cursor::PointingHand)
+    .finish();
+
+    Container::new(row)
+        .with_border(Border::top(1.).with_border_fill(theme.outline()))
+        .with_padding(Padding::uniform(8.))
+        .finish()
+}
+
 fn render_vertical_tabs_panel(
     state: &VerticalTabsPanelState,
     workspace: &Workspace,
@@ -1732,6 +1813,7 @@ fn render_vertical_tabs_panel(
             app,
         ))
         .with_child(Shrinkable::new(1., scrollable_groups).finish())
+        .with_child(render_settings_tab_row(state, workspace, app))
         .finish();
 
     // Catch-all drop target so a pane dragged into any gap not covered by a
@@ -1829,6 +1911,7 @@ fn render_groups(
             .tabs
             .iter()
             .enumerate()
+            .filter(|(_, tab)| !is_settings_tab(tab, app))
             .map(|(tab_index, _)| (tab_index, None))
             .collect()
     } else {
@@ -1837,6 +1920,7 @@ fn render_groups(
             .tabs
             .iter()
             .enumerate()
+            .filter(|(_, tab)| !is_settings_tab(tab, app))
             .filter_map(|(tab_index, tab)| {
                 let pane_group = tab.pane_group.as_ref(app);
                 let visible_pane_ids = pane_group.visible_pane_ids();
@@ -1941,7 +2025,13 @@ fn render_groups(
 
     if visible_tabs.is_empty() {
         if query.is_empty() {
-            return Empty::new().finish();
+            return Container::new(
+                Text::new_inline("No tabs open", appearance.ui_font_family(), 12.)
+                    .with_color(theme.sub_text_color(theme.background()).into())
+                    .finish(),
+            )
+            .with_padding(Padding::uniform(12.))
+            .finish();
         } else {
             return Container::new(
                 Text::new_inline(
