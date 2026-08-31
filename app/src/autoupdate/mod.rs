@@ -28,7 +28,6 @@ pub use self::changelog::get_current_changelog;
 use self::channel_versions::fetch_channel_versions;
 use crate::channel::Channel;
 use crate::features::FeatureFlag;
-use crate::server::server_api::ServerApi;
 use crate::server::telemetry::TelemetryEvent;
 use crate::workspace::Workspace;
 use crate::{ChannelState, send_telemetry_from_ctx, send_telemetry_sync_from_app_ctx};
@@ -107,7 +106,7 @@ pub struct AutoupdateState {
     /// RequestTypes have different behavior and side-effects, so it's important not to skip any
     /// but to queue them instead.
     request_queue: VecDeque<RequestType>,
-    server_api: Arc<ServerApi>,
+    http_client: Arc<http_client::Client>,
     /// Whether the polling loop has been explicitly started. Requests are silently queued but not
     /// executed until `start_polling` is called. This ensures no version-check requests are made
     /// before onboarding completes.
@@ -115,9 +114,9 @@ pub struct AutoupdateState {
 }
 
 impl AutoupdateState {
-    pub fn new(server_api: Arc<ServerApi>) -> Self {
+    pub fn new(http_client: Arc<http_client::Client>) -> Self {
         Self {
-            server_api,
+            http_client,
             last_successful_daily_update_check: None,
             stage: AutoupdateStage::default(),
             downloaded_update: None,
@@ -126,8 +125,8 @@ impl AutoupdateState {
         }
     }
 
-    pub fn register(ctx: &mut AppContext, server_api: Arc<ServerApi>) {
-        ctx.add_singleton_model(move |_ctx| Self::new(server_api));
+    pub fn register(ctx: &mut AppContext, http_client: Arc<http_client::Client>) {
+        ctx.add_singleton_model(move |_ctx| Self::new(http_client));
     }
 
     /// Start the autoupdate polling loop. Idempotent: subsequent calls are no-ops.
@@ -262,13 +261,13 @@ impl AutoupdateState {
         self.stage = AutoupdateStage::CheckingForUpdate;
         ctx.notify();
 
-        let server_api = self.server_api.clone();
+        let http_client = self.http_client.clone();
         ctx.spawn(
             async move {
                 let update_id = new_update_id();
                 let channel = ChannelState::channel();
                 log::info!("Checking for update on channel {channel}. Update id is {update_id}");
-                let version = fetch_version(&channel, is_daily, &update_id, server_api)
+                let version = fetch_version(&channel, &update_id, &http_client)
                     .await
                     .context("Error checking for new version");
                 report_if_error!(version);
@@ -478,7 +477,7 @@ impl AutoupdateState {
                 new_version.clone(),
                 update_id.clone(),
                 last_successful_update_id,
-                self.server_api.clone(),
+                self.http_client.clone(),
             ),
             move |autoupdate_state, download_ready, ctx| {
                 autoupdate_state.on_download_update_complete(
@@ -769,11 +768,10 @@ fn new_update_id() -> String {
 /// Fetch the current version on the given channel.
 async fn fetch_version(
     channel: &Channel,
-    is_daily: bool,
     update_id: &str,
-    server_api: Arc<ServerApi>,
+    client: &http_client::Client,
 ) -> Result<VersionInfo> {
-    let versions = fetch_channel_versions(update_id, server_api.clone(), false, is_daily).await?;
+    let versions = fetch_channel_versions(update_id, client).await?;
 
     let channel_version = match channel {
         Channel::Stable => versions.stable,
@@ -803,7 +801,7 @@ async fn download_update(
     update_id: String,
     #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
     last_successful_update_id: Option<String>,
-    server_api: Arc<ServerApi>,
+    client: Arc<http_client::Client>,
 ) -> Result<DownloadReady> {
     if ChannelState::app_version().is_none() {
         log::info!("No tag set, not performing autoupdate.");
@@ -812,11 +810,11 @@ async fn download_update(
 
     cfg_if::cfg_if! {
         if #[cfg(target_os = "macos")] {
-            mac::download_update_and_cleanup(&version_info, &update_id, last_successful_update_id.as_deref(), server_api.http_client()).await
+            mac::download_update_and_cleanup(&version_info, &update_id, last_successful_update_id.as_deref(), &client).await
         } else if #[cfg(target_os = "linux")] {
-            linux::download_update_and_cleanup(&version_info, &update_id, server_api.http_client()).await
+            linux::download_update_and_cleanup(&version_info, &update_id, &client).await
         } else if #[cfg(windows)] {
-            windows::download_update_and_cleanup(&version_info, &update_id, server_api.http_client()).await
+            windows::download_update_and_cleanup(&version_info, &update_id, &client).await
         } else {
             Err(anyhow::anyhow!("Not implemented"))
         }

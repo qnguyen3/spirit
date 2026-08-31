@@ -74,7 +74,7 @@ fn initialize_app(app: &mut App) {
             ctx,
         )
     });
-    app.add_singleton_model(|ctx| ChangelogModel::new(ServerApiProvider::as_ref(ctx).get()));
+    app.add_singleton_model(|_| ChangelogModel::new(std::sync::Arc::new(http_client::Client::new_for_test())));
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
     app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
     app.add_singleton_model(AuthManager::new_for_test);

@@ -1677,7 +1677,7 @@ pub(crate) fn initialize_app(
     ctx.add_singleton_model(|_| DisplayCount(display_count));
 
     ctx.add_singleton_model(|_| RelaunchModel::new());
-    ctx.add_singleton_model(|_| ChangelogModel::new(server_api.clone()));
+    ctx.add_singleton_model(|_| ChangelogModel::new(Arc::new(http_client::Client::new())));
     ctx.add_singleton_model(|_| GitHubAuthNotifier::new());
     ctx.add_singleton_model(|_| NetworkStatus::new());
     ctx.add_singleton_model(|_| SystemStats::new());
@@ -1894,7 +1894,7 @@ pub(crate) fn initialize_app(
     ctx.add_singleton_model(EnvVarCollectionManager::new);
     ctx.add_singleton_model(WorkflowManager::new);
 
-    AutoupdateState::register(ctx, server_api.clone());
+    AutoupdateState::register(ctx, Arc::new(http_client::Client::new()));
 
     ctx.add_singleton_model(LocalWorkflows::new);
 
