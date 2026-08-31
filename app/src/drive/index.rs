@@ -3348,9 +3348,7 @@ impl DriveIndex {
             CloudViewModel::as_ref(ctx).object_space(&cloud_object_type_and_id.uid(), ctx)
         {
             match space {
-                Space::Team { team_uid: _ } => match cloud_object_type_and_id {
-                    _ => (),
-                },
+                Space::Team { .. } => (),
                 Space::Personal => match cloud_object_type_and_id {
                     CloudObjectTypeAndId::Notebook(_) => {
                         if has_feature_gated_anonymous_user_reached_notebook_limit(ctx) {

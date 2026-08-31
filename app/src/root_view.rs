@@ -1932,13 +1932,12 @@ impl RootView {
         let onboarding_view = ctx.add_typed_action_view(move |ctx| {
             let auth_state = current_onboarding_auth_state(ctx);
 
-            let view = AgentOnboardingView::new(
+            AgentOnboardingView::new(
                 themes.clone(),
                 false, // Always use unskippable onboarding.
                 auth_state,
                 ctx,
-            );
-            view
+            )
         });
         // Subscribe to workspace changes to update autonomy enforcement state and auth/billing
         // state (e.g. a free→paid upgrade reflected by the workspace/billing metadata poll).
