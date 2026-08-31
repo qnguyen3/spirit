@@ -23,7 +23,6 @@ use crate::auth::{AuthStateProvider, UserUid};
 use crate::channel::ChannelState;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::cloud_object::{CloudObjectEventEntrypoint, ObjectType, Owner, Space};
-use crate::pricing::PricingInfoModel;
 use crate::server::ids::ServerId;
 use crate::server::server_api::team::TeamClient;
 use crate::server::server_api::workspace::{PurchaseAddonCreditsOutcome, WorkspaceClient};
@@ -758,12 +757,6 @@ impl UserWorkspaces {
     ) {
         match result {
             Ok(response) => {
-                if let Some(pricing_info) = response.pricing_info {
-                    PricingInfoModel::handle(ctx).update(ctx, |model, ctx| {
-                        model.update_pricing_info(pricing_info, ctx);
-                    });
-                }
-
                 let workspaces = response.metadata.workspaces;
                 let joinable_teams = response.metadata.joinable_teams;
 

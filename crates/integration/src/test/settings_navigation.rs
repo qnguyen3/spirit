@@ -19,6 +19,9 @@ use super::{Builder, new_builder};
 /// Label of the umbrella that groups the agent subpages.
 const AGENTS_UMBRELLA: &str = "Agents";
 
+/// Label of the umbrella that groups the cloud-platform subpages.
+const CLOUD_PLATFORM_UMBRELLA: &str = "Cloud platform";
+
 // ---------------------------------------------------------------------------
 // Mouse navigation
 // ---------------------------------------------------------------------------
@@ -83,14 +86,14 @@ pub fn test_settings_keyboard_navigation_down_into_collapsed_umbrella() -> Build
 pub fn test_settings_keyboard_navigation_up_into_collapsed_umbrella() -> Builder {
     new_builder()
         .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
-        // Billing and usage sits directly below the Agents umbrella.
-        .with_step(open_settings_page(SettingsSection::BillingAndUsage))
-        .with_step(assert_umbrella_expanded(AGENTS_UMBRELLA, false))
+        // Teams sits directly below the Cloud platform umbrella.
+        .with_step(open_settings_page(SettingsSection::Teams))
+        .with_step(assert_umbrella_expanded(CLOUD_PLATFORM_UMBRELLA, false))
         .with_step(press_settings_nav_up())
         .with_step(assert_settings_section(
-            SettingsSection::ThirdPartyCLIAgents,
+            SettingsSection::WarpCloudAgentAPIKeys,
         ))
-        .with_step(assert_umbrella_expanded(AGENTS_UMBRELLA, true))
+        .with_step(assert_umbrella_expanded(CLOUD_PLATFORM_UMBRELLA, true))
 }
 
 /// Collapsing an umbrella while one of its subpages is selected keeps arrow
@@ -109,7 +112,9 @@ pub fn test_settings_keyboard_navigation_after_manual_collapse() -> Builder {
         ))
         // Down should continue past the umbrella, not restart from the top.
         .with_step(press_settings_nav_down())
-        .with_step(assert_settings_section(SettingsSection::BillingAndUsage))
+        .with_step(assert_settings_section(
+            SettingsSection::EditorAndCodeReview,
+        ))
 }
 
 // ---------------------------------------------------------------------------

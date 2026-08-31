@@ -31,7 +31,6 @@ use warpui::{Action, AppContext, SingletonEntity, ViewContext, ViewHandle};
 use super::SettingsSection;
 use super::about_page::AboutPageView;
 use super::appearance_page::AppearanceSettingsPageView;
-use super::billing_and_usage_dispatch::BillingAndUsageDispatchView;
 use super::cli_agents_page::CLIAgentsPageView;
 use super::code_editor_review_page::EditorAndCodeReviewPageView;
 use super::environments_page::EnvironmentsPageView;
@@ -39,7 +38,6 @@ use super::features_page::FeaturesPageView;
 use super::keybindings::KeybindingsView;
 use super::main_page::MainSettingsPageView;
 use super::privacy_page::PrivacyPageView;
-use super::referrals_page::ReferralsPageView;
 use super::scripting_page::ScriptingSettingsPageView;
 use super::show_blocks_view::ShowBlocksView;
 use super::teams_page::TeamsPageView;
@@ -112,11 +110,9 @@ pub enum SettingsPageViewHandle {
     WarpCloudAgentAPIKeys(ViewHandle<super::platform_page::PlatformPageView>),
     Privacy(ViewHandle<PrivacyPageView>),
     Warpify(ViewHandle<WarpifyPageView>),
-    Referrals(ViewHandle<ReferralsPageView>),
     Scripting(ViewHandle<ScriptingSettingsPageView>),
     CLIAgents(ViewHandle<CLIAgentsPageView>),
     CloudEnvironments(ViewHandle<EnvironmentsPageView>),
-    BillingAndUsage(ViewHandle<BillingAndUsageDispatchView>),
     WarpDrive(ViewHandle<WarpDriveSettingsPageView>),
 }
 
@@ -135,11 +131,9 @@ impl SettingsPageViewHandle {
             WarpCloudAgentAPIKeys(view_handle) => ChildView::new(view_handle).finish(),
             Privacy(view_handle) => ChildView::new(view_handle).finish(),
             Warpify(view_handle) => ChildView::new(view_handle).finish(),
-            Referrals(view_handle) => ChildView::new(view_handle).finish(),
             Scripting(view_handle) => ChildView::new(view_handle).finish(),
             CLIAgents(view_handle) => ChildView::new(view_handle).finish(),
             CloudEnvironments(view_handle) => ChildView::new(view_handle).finish(),
-            BillingAndUsage(view_handle) => ChildView::new(view_handle).finish(),
             WarpDrive(view_handle) => ChildView::new(view_handle).finish(),
         }
     }

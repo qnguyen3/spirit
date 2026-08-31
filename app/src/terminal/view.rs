@@ -15362,7 +15362,6 @@ impl TypedActionView for TerminalView {
             | RunNativeShellCompletions { .. }
             | OpenTeamSettingsPage
             | ToggleCodeReviewPane { .. }
-            | OpenBillingAndUsagePane
             | OpenAddPromptPane
             | AddProjectAtCurrentDirectory
             | OpenEnvironmentManagementPane
@@ -15732,9 +15731,6 @@ impl TypedActionView for TerminalView {
                         path: Some(current_dir),
                     });
                 }
-            }
-            OpenBillingAndUsagePane => {
-                ctx.emit(Event::OpenSettings(SettingsSection::BillingAndUsage));
             }
             OpenAddPromptPane => ctx.emit(Event::OpenAddPromptPane {
                 initial_content: None,

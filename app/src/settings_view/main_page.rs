@@ -6,7 +6,6 @@ use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use warp_core::channel::ChannelState;
 use warp_core::context_flag::ContextFlag;
-use warp_core::features::FeatureFlag;
 use warp_core::ui::icons::Icon;
 use warp_errors::{report_error, report_if_error};
 #[cfg(not(target_family = "wasm"))]
@@ -51,7 +50,6 @@ use crate::workspaces::workspace::CustomerType;
 use crate::{TelemetryEvent, send_telemetry_from_ctx};
 
 const PHOTO_SIZE: f32 = 40.;
-const REFERRAL_CTA: &str = "Earn rewards by sharing Warp with friends & colleagues";
 const REGULAR_TEXT_FONT_SIZE: f32 = 12.;
 const VERTICAL_MARGIN: f32 = 24.;
 const LOG_OUT_TEXT: &str = "Log out";
@@ -283,8 +281,6 @@ impl MainSettingsPageView {
         ];
 
         widgets.push(Box::new(SettingsSyncWidget::default()));
-
-        widgets.push(Box::new(EarnRewardsWidget::default()));
 
         #[cfg(not(target_family = "wasm"))]
         if IapManager::as_ref(ctx).is_enabled() {
@@ -621,9 +617,7 @@ impl AccountWidget {
             )
             .with_cross_axis_alignment(CrossAxisAlignment::Start);
 
-        if !FeatureFlag::UsageBasedPricing.is_enabled() {
-            row.add_child(Align::new(plan_info.finish()).right().finish());
-        }
+        row.add_child(Align::new(plan_info.finish()).right().finish());
 
         row.finish()
     }
@@ -742,85 +736,6 @@ impl SettingsWidget for SettingsSyncWidget {
                 .finish(),
             None,
         ))
-        .with_margin_top(VERTICAL_MARGIN)
-        .finish()
-    }
-}
-
-#[derive(Default)]
-struct EarnRewardsWidget {
-    refer_link_mouse_handle: MouseStateHandle,
-}
-
-impl EarnRewardsWidget {
-    fn render_row(
-        &self,
-        appearance: &Appearance,
-        label: &str,
-        right_child: Box<dyn Element>,
-    ) -> Box<dyn Element> {
-        Flex::row()
-            .with_cross_axis_alignment(CrossAxisAlignment::Start)
-            .with_child(
-                Shrinkable::new(
-                    1.0,
-                    Align::new(
-                        Text::new_inline(
-                            label.to_string(),
-                            appearance.ui_font_family(),
-                            REGULAR_TEXT_FONT_SIZE,
-                        )
-                        .with_color(appearance.theme().active_ui_text_color().into())
-                        .finish(),
-                    )
-                    .left()
-                    .finish(),
-                )
-                .finish(),
-            )
-            .with_child(right_child)
-            .finish()
-    }
-}
-
-impl SettingsWidget for EarnRewardsWidget {
-    type View = MainSettingsPageView;
-
-    fn search_terms(&self) -> &str {
-        "earn rewards referral share friends"
-    }
-
-    fn should_render(&self, app: &AppContext) -> bool {
-        !AuthStateProvider::as_ref(app)
-            .get()
-            .is_anonymous_or_logged_out()
-    }
-
-    fn render(
-        &self,
-        _view: &Self::View,
-        appearance: &Appearance,
-        _app: &AppContext,
-    ) -> Box<dyn Element> {
-        Container::new(
-            self.render_row(
-                appearance,
-                REFERRAL_CTA,
-                appearance
-                    .ui_builder()
-                    .link(
-                        "Refer a friend".into(),
-                        None,
-                        Some(Box::new(move |ctx| {
-                            ctx.dispatch_typed_action(WorkspaceAction::ShowReferralSettingsPage);
-                        })),
-                        self.refer_link_mouse_handle.clone(),
-                    )
-                    .soft_wrap(false)
-                    .build()
-                    .finish(),
-            ),
-        )
         .with_margin_top(VERTICAL_MARGIN)
         .finish()
     }

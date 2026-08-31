@@ -64,7 +64,6 @@ use crate::launch_configs::launch_config;
 use crate::notebooks::manager::NotebookSource;
 use crate::pane_group::{NewTerminalOptions, PanesLayout};
 use crate::persistence::ModelEvent;
-use crate::pricing::{PricingInfoModel, PricingInfoModelEvent};
 use crate::projects::host::ProjectHost;
 use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::ids::{ServerId, SyncId};
@@ -152,12 +151,6 @@ fn current_onboarding_auth_state(ctx: &AppContext) -> OnboardingAuthState {
     } else {
         OnboardingAuthState::FreeUser
     }
-}
-
-fn onboarding_pricing_promotion_message(ctx: &AppContext) -> Option<String> {
-    PricingInfoModel::as_ref(ctx)
-        .promotion_message()
-        .map(str::to_owned)
 }
 
 /// Re-reads the account state onboarding decides on once the user has been out
@@ -1939,28 +1932,14 @@ impl RootView {
         let onboarding_view = ctx.add_typed_action_view(move |ctx| {
             let auth_state = current_onboarding_auth_state(ctx);
 
-            let mut view = AgentOnboardingView::new(
+            let view = AgentOnboardingView::new(
                 themes.clone(),
                 false, // Always use unskippable onboarding.
                 auth_state,
                 ctx,
             );
-            view.set_pricing_promotion_message(onboarding_pricing_promotion_message(ctx), ctx);
             view
         });
-        // Keep the offer slide's promotion in sync with server pricing.
-        let onboarding_view_for_pricing = onboarding_view.clone();
-        ctx.subscribe_to_model(
-            &PricingInfoModel::handle(ctx),
-            move |_, _pricing, event, ctx| {
-                let PricingInfoModelEvent::PricingInfoUpdated = event;
-                let promotion_message = onboarding_pricing_promotion_message(ctx);
-                onboarding_view_for_pricing.update(ctx, |onboarding_view, ctx| {
-                    onboarding_view.set_pricing_promotion_message(promotion_message, ctx);
-                });
-            },
-        );
-
         // Subscribe to workspace changes to update autonomy enforcement state and auth/billing
         // state (e.g. a free→paid upgrade reflected by the workspace/billing metadata poll).
         let onboarding_view_for_workspaces = onboarding_view.clone();
@@ -2947,16 +2926,6 @@ impl RootView {
                 &WorkspaceAction::ShowSettingsPage(*section),
             );
             ctx.windows().show_window_and_focus_app(window_id);
-            return true;
-        }
-
-        // A checkout confirmation that predates the unified success hand-off
-        // still returns the user through the Billing & Usage deeplink. Landing
-        // it mid-onboarding would interrupt the flow, so onboarding takes it as
-        // the purchase succeeding and moves on instead.
-        if *section == SettingsSection::BillingAndUsage
-            && self.notify_onboarding_checkout_succeeded(ctx)
-        {
             return true;
         }
 

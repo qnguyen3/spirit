@@ -257,7 +257,6 @@ pub enum TerminalAction {
     },
     AddProjectAtCurrentDirectory,
     OpenAddPromptPane,
-    OpenBillingAndUsagePane,
     PickRepoToOpen,
     OpenFilesPalette {
         source: PaletteSource,
@@ -463,7 +462,6 @@ impl fmt::Debug for TerminalAction {
             ToggleCodeReviewPane { .. } => write!(f, "ToggleCodeReviewPane"),
             AddProjectAtCurrentDirectory => write!(f, "AddProjectAtCurrentDirectory"),
             OpenAddPromptPane => write!(f, "OpenAddPromptPane"),
-            OpenBillingAndUsagePane => write!(f, "OpenBillingAndUsagePane"),
             PickRepoToOpen => write!(f, "PickRepoToOpen"),
             OpenFilesPalette { .. } => write!(f, "OpenFilesPalette"),
             DismissCodeToolbeltTooltip => write!(f, "DismissCodeToolbeltTooltip"),

@@ -143,9 +143,6 @@ use crate::autoupdate::{
     AutoupdateState, AutoupdateStateEvent, RelaunchModel, is_incoming_version_past_current,
 };
 use crate::banner::BannerState;
-use crate::billing::shared_objects_creation_denied_modal::{
-    SharedObjectsCreationDeniedModal, SharedObjectsCreationDeniedModalEvent,
-};
 use crate::changelog_model::{ChangelogModel, ChangelogRequestType, Event as ChangelogEvent};
 use crate::channel::ChannelState;
 use crate::cloud_object::model::persistence::CloudModel;
@@ -212,13 +209,11 @@ use crate::prompt::editor_modal::{
     OpenSource as PromptEditorOpenSource,
 };
 use crate::quit_warning::UnsavedStateSummary;
-use crate::referral_theme_status::ReferralThemeEvent;
 use crate::remote_server::manager::RemoteServerManager;
 use crate::resource_center::{
     ResourceCenterEvent, ResourceCenterPage, ResourceCenterView, Tip, TipAction, TipsCompleted,
     mark_feature_used_and_write_to_user_defaults, skip_tips_and_write_to_user_defaults,
 };
-use crate::reward_view::{RewardEvent, RewardKind, RewardView};
 use crate::root_view::{NewWorkspaceSource, OpenLaunchConfigArg, quake_mode_window_id};
 use crate::search::command_palette::view::{
     Event as CommandPaletteEvent, NavigationMode, View as CommandPalette,
@@ -240,7 +235,7 @@ use crate::server::server_api::{ServerApi, ServerApiProvider, ServerTime};
 use crate::server::telemetry::{
     AddTabWithShellSource, AnonymousUserSignupEntrypoint, CloseTarget, EnvVarTelemetryMetadata,
     FileTreeSource, LaunchConfigUiLocation, NotificationsTurnedOnSource, PaletteSource,
-    SharingDialogSource, TabRenameEvent, TierLimitHitEvent, WarpDriveSource,
+    SharingDialogSource, TabRenameEvent, WarpDriveSource,
 };
 use crate::session_management::{SessionNavigationData, SessionSource, TabNavigationData};
 use crate::settings::cloud_preferences::CloudPreferencesSettings;
@@ -818,8 +813,6 @@ pub struct Workspace {
     import_modal: ViewHandle<ImportModal>,
     theme_chooser_view: ViewHandle<ThemeChooser>,
     previous_theme: Option<ThemeKind>,
-    reward_modal: ViewHandle<Modal<RewardView>>,
-    reward_modal_pending: Option<RewardKind>,
     pub(crate) current_workspace_state: WorkspaceState,
     previous_workspace_state: Option<WorkspaceState>,
     welcome_tips_view_state: WelcomeTipsViewState,
@@ -873,7 +866,6 @@ pub struct Workspace {
     tab_bar_pinned_by_popup: bool,
     user_menu: ViewHandle<Menu<WorkspaceAction>>,
     native_modal: ViewHandle<NativeModal>,
-    shared_objects_creation_denied_modal: ViewHandle<SharedObjectsCreationDeniedModal>,
     shown_staging_banner_count: u32,
 
     // When user's open WEB for the first time, we ask them to select a preference of
@@ -1395,38 +1387,6 @@ impl Workspace {
         modal
     }
 
-    fn build_reward_modal(ctx: &mut ViewContext<Self>) -> ViewHandle<Modal<RewardView>> {
-        let reward_view = ctx.add_typed_action_view(|_| RewardView::new());
-        ctx.subscribe_to_view(&reward_view, |me, _, event, ctx| {
-            me.handle_reward_view_event(event, ctx);
-        });
-        let modal = ctx.add_typed_action_view(|ctx| {
-            Modal::new(Some(String::new()), reward_view, ctx)
-                .with_modal_style(UiComponentStyles {
-                    width: Some(316.),
-                    height: Some(389.),
-                    ..Default::default()
-                })
-                .with_body_style(UiComponentStyles {
-                    height: Some(319.),
-                    padding: Some(Coords {
-                        // Default padding values except for the top, which is too much for the
-                        // reward modal
-                        top: 0.,
-                        bottom: 28.,
-                        left: 28.,
-                        right: 28.,
-                    }),
-                    ..Default::default()
-                })
-                .with_dismiss_on_click()
-        });
-        ctx.subscribe_to_view(&modal, |me, _, event, ctx| {
-            me.handle_reward_modal_event(event, ctx);
-        });
-        modal
-    }
-
     fn build_welcome_tips(
         tips_completed: ModelHandle<TipsCompleted>,
         ctx: &mut ViewContext<Self>,
@@ -1466,17 +1426,12 @@ impl Workspace {
     }
 
     fn build_settings_views(
-        global_resource_handles: GlobalResourceHandles,
+        _global_resource_handles: GlobalResourceHandles,
         tips_completed: ModelHandle<TipsCompleted>,
         ctx: &mut ViewContext<Self>,
     ) -> (ViewHandle<SettingsView>, ViewHandle<ThemeChooser>) {
-        let theme_chooser_view = ctx.add_typed_action_view(|ctx| {
-            ThemeChooser::new(
-                global_resource_handles.referral_theme_status,
-                ctx,
-                tips_completed,
-            )
-        });
+        let theme_chooser_view =
+            ctx.add_typed_action_view(|ctx| ThemeChooser::new(ctx, tips_completed));
 
         ctx.subscribe_to_view(&theme_chooser_view, |me, _, event, ctx| {
             me.handle_theme_chooser_event(event, ctx);
@@ -2272,7 +2227,6 @@ impl Workspace {
             model_event_sender,
             tips_completed,
             user_default_shell_unsupported_banner_model_handle,
-            referral_theme_status,
             settings_file_error,
         } = global_resource_handles.clone();
 
@@ -2337,16 +2291,6 @@ impl Workspace {
             }
         });
 
-        ctx.subscribe_to_model(&referral_theme_status, |me, _, event, ctx| {
-            me.handle_referral_theme_status_event(event, ctx);
-        });
-
-        let referrals_client = ServerApiProvider::as_ref(ctx).get_referrals_client();
-        // On startup, check if the user has earned a referral theme by referring other users
-        referral_theme_status.update(ctx, |model, ctx| {
-            model.query_referral_status(referrals_client, ctx);
-        });
-
         let bindings_notifier = KeybindingChangedNotifier::handle(ctx);
         ctx.subscribe_to_model(&bindings_notifier, |me, _, event, ctx| {
             me.handle_keybinding_changed(event, ctx);
@@ -2369,7 +2313,6 @@ impl Workspace {
             me.handle_changelog_event(event, ctx);
         });
 
-        let reward_modal = Self::build_reward_modal(ctx);
         let (welcome_tips_view, welcome_tips_view_state) =
             Self::build_welcome_tips(tips_completed.clone(), ctx);
         let (settings_pane, theme_chooser_view) =
@@ -2528,25 +2471,6 @@ impl Workspace {
 
         let native_modal = Self::build_native_modal_view(ctx);
 
-        let shared_objects_creation_denied_modal =
-            ctx.add_typed_action_view(|ctx| SharedObjectsCreationDeniedModal::new(None, ctx));
-        ctx.subscribe_to_view(
-            &shared_objects_creation_denied_modal,
-            |me, _, event, ctx| match event {
-                SharedObjectsCreationDeniedModalEvent::Close => {
-                    me.current_workspace_state
-                        .is_shared_objects_creation_denied_modal_open = false;
-                    ctx.notify();
-                }
-                SharedObjectsCreationDeniedModalEvent::TeamSettings => {
-                    me.show_settings_with_section(Some(SettingsSection::Teams), ctx);
-                    me.current_workspace_state
-                        .is_shared_objects_creation_denied_modal_open = false;
-                    ctx.notify();
-                }
-            },
-        );
-
         let mut ws = Self {
             screen_id: ctx.view_id(),
             project_id,
@@ -2584,8 +2508,6 @@ impl Workspace {
             previous_theme: None,
             settings_pane,
             theme_chooser_view,
-            reward_modal,
-            reward_modal_pending: None,
             current_workspace_state: Default::default(),
             previous_workspace_state: None,
             model_event_sender,
@@ -2632,7 +2554,6 @@ impl Workspace {
             tab_bar_pinned_by_popup: false,
             user_menu,
             native_modal,
-            shared_objects_creation_denied_modal,
             file_upload_sessions: Default::default(),
             left_panel_open: false,
             vertical_tabs_panel_open: false,
@@ -4547,27 +4468,6 @@ impl Workspace {
         }
     }
 
-    /// Handle the close event from the reward modal
-    fn handle_reward_modal_event(&mut self, event: &ModalEvent, ctx: &mut ViewContext<Self>) {
-        match event {
-            ModalEvent::Close => {
-                self.current_workspace_state.is_reward_modal_open = false;
-                self.focus_active_tab(ctx);
-                ctx.notify();
-            }
-        }
-    }
-
-    /// Handle the call-to-action event from the reward modal view
-    fn handle_reward_view_event(&mut self, event: &RewardEvent, ctx: &mut ViewContext<Self>) {
-        match event {
-            RewardEvent::OpenThemePicker => {
-                self.current_workspace_state.is_reward_modal_open = false;
-                self.show_theme_chooser_for_active_theme(ctx);
-            }
-        }
-    }
-
     fn handle_prompt_editor_modal_event(
         &mut self,
         event: &PromptEditorModalEvent,
@@ -5438,25 +5338,6 @@ impl Workspace {
         }
         #[cfg(not(feature = "local_fs"))]
         let _ = (event, ctx);
-    }
-
-    /// Show the referral reward modal page, informing the user they have earned a theme reward
-    fn show_reward_modal(&mut self, kind: RewardKind, ctx: &mut ViewContext<Self>) {
-        // For certain context, like landing on a shared session, we don't want to show the reward modal
-        // or side panel.
-        if !ContextFlag::ShowRewardModal.is_enabled() {
-            return;
-        }
-        self.reward_modal.update(ctx, |modal, modal_ctx| {
-            modal.body().update(modal_ctx, |view, view_ctx| {
-                view.update_reward_kind(kind, view_ctx);
-            });
-        });
-
-        ctx.focus(&self.reward_modal);
-        self.reward_modal_pending = None;
-        self.current_workspace_state.is_reward_modal_open = true;
-        ctx.notify();
     }
 
     fn join_slack(&mut self, ctx: &mut ViewContext<Self>) {
@@ -8422,34 +8303,6 @@ impl Workspace {
                     .into_item(),
             );
         }
-
-        // Check if the user is on any paid plan to determine whether to show "Billing and Usage" or "Upgrade"
-        let is_on_paid_plan = UserWorkspaces::as_ref(app)
-            .current_workspace()
-            .map(|workspace| workspace.billing_metadata.is_user_on_paid_plan())
-            .unwrap_or(false);
-
-        if is_on_paid_plan {
-            items.push(
-                MenuItemFields::new("Billing and usage")
-                    .with_on_select_action(WorkspaceAction::ShowSettingsPage(
-                        SettingsSection::BillingAndUsage,
-                    ))
-                    .into_item(),
-            );
-        } else {
-            items.push(
-                MenuItemFields::new("Upgrade")
-                    .with_on_select_action(WorkspaceAction::ShowUpgrade)
-                    .into_item(),
-            );
-        }
-
-        items.push(
-            MenuItemFields::new("Invite a friend")
-                .with_on_select_action(WorkspaceAction::ShowReferralSettingsPage)
-                .into_item(),
-        );
 
         if !self.auth_state.is_anonymous_or_logged_out() {
             items.push(
@@ -12403,8 +12256,7 @@ impl Workspace {
     }
 
     fn handle_changelog_event(&mut self, event: &ChangelogEvent, ctx: &mut ViewContext<Self>) {
-        // For certain contexts, like shared sessions, we do not want to force open the side panel
-        // or display the reward modal.
+        // For certain contexts, like shared sessions, we do not want to force open the side panel.
         if !ContextFlag::ForceSidePanelOpen.is_enabled() {
             return;
         }
@@ -12447,12 +12299,8 @@ impl Workspace {
             ChangelogEvent::ImageRequestComplete => false,
         } && show_changelog_setting;
 
-        match (
-            should_show_changelog,
-            request_type,
-            self.reward_modal_pending,
-        ) {
-            (true, Some(ChangelogRequestType::WindowLaunch), _) => {
+        match (should_show_changelog, request_type) {
+            (true, Some(ChangelogRequestType::WindowLaunch)) => {
                 if let Some(version) = ChannelState::app_version() {
                     Settings::mark_changelog_shown(version, ctx);
                     if FeatureFlag::AvatarInTabBar.is_enabled() {
@@ -12486,7 +12334,7 @@ impl Workspace {
                     }
                 }
             }
-            (_, Some(ChangelogRequestType::UserAction), _) => {
+            (_, Some(ChangelogRequestType::UserAction)) => {
                 if !self.current_workspace_state.is_resource_center_open
                     && !self.current_workspace_state.is_ai_assistant_panel_open
                 {
@@ -12494,11 +12342,6 @@ impl Workspace {
                     self.update_resource_center_action_target(ctx);
                     ctx.notify();
                 }
-            }
-            (false, _, Some(kind)) => {
-                // We shouldn't show the changelog modal, but we have a pending reward modal, so we
-                // should show that now that we know the changelog won't be shown
-                self.show_reward_modal(kind, ctx);
             }
             _ => {}
         }
@@ -14120,9 +13963,6 @@ impl Workspace {
             DrivePanelEvent::FocusWarpDrive => {
                 ctx.focus(&self.left_panel_view);
             }
-            DrivePanelEvent::OpenSharedObjectsCreationDeniedModal(object_type, team_uid) => {
-                self.open_shared_objects_creation_denied_modal(*object_type, *team_uid, ctx)
-            }
         }
     }
 
@@ -15100,32 +14940,6 @@ impl Workspace {
         });
     }
 
-    /// Handle an event from the referral theme status model, showing the reward modal if necessary
-    fn handle_referral_theme_status_event(
-        &mut self,
-        event: &ReferralThemeEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        // A referral theme was activated, so we need to show the reward modal
-        // If the changelog modal is currently shown or pending, then we delay showing the
-        // reward modal until after that is completed / closed.
-
-        // Also: We overwrite the pending reward modal kind, so that only one is ever shown
-        // This could, in theory, lead to a user activating both in the same login and only
-        // seeing one modal, however that is low impact since it the modal still takes them to
-        // the theme picker, which will show both themes anyway.
-        let kind = match event {
-            ReferralThemeEvent::SentReferralThemeActivated => RewardKind::SentReferralTheme,
-            ReferralThemeEvent::ReceivedReferralThemeActivated => RewardKind::ReceivedReferralTheme,
-        };
-
-        if self.is_changelog_open_or_pending(ctx) {
-            self.reward_modal_pending = Some(kind);
-        } else {
-            self.show_reward_modal(kind, ctx);
-        }
-    }
-
     /// This listens for changes to keybindings and keeps the cached versions up-to-date in our
     /// tooltips.
     fn handle_keybinding_changed(
@@ -15196,14 +15010,6 @@ impl Workspace {
                 }
             }
         };
-    }
-
-    /// Determines if the changelog is currently being shown or if the changelog request is
-    /// in-flight
-    ///
-    fn is_changelog_open_or_pending(&self, ctx: &mut ViewContext<Self>) -> bool {
-        self.current_workspace_state.is_resource_center_open
-            || self.changelog_model.as_ref(ctx).is_check_pending()
     }
 
     pub fn focus_active_tab(&mut self, ctx: &mut ViewContext<Self>) {
@@ -15284,52 +15090,6 @@ impl Workspace {
         ctx.notify();
     }
 
-    fn open_shared_objects_creation_denied_modal(
-        &mut self,
-        object_type: DriveObjectType,
-        team_uid: ServerId,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        let team = UserWorkspaces::as_ref(ctx).team_from_uid(team_uid);
-        if let Some(team) = team {
-            let current_user_email = self.auth_state.user_email().unwrap_or_default();
-            let has_admin_permissions = team.has_admin_permissions(&current_user_email);
-            let team_uid = team.uid;
-            let is_delinquent_due_to_payment_issue =
-                team.billing_metadata.is_delinquent_due_to_payment_issue();
-            let customer_type = team.billing_metadata.customer_type;
-
-            // Send telemetry event only if the team is not delinquent. If the team is
-            // delinquent, then they haven't technically hit any tier limits are just in a
-            // restricted state.
-            if !is_delinquent_due_to_payment_issue {
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::TierLimitHit(TierLimitHitEvent {
-                        team_uid: team.uid,
-                        feature: object_type.to_string(),
-                    }),
-                    ctx
-                );
-            }
-
-            self.current_workspace_state
-                .is_shared_objects_creation_denied_modal_open = true;
-            self.shared_objects_creation_denied_modal
-                .update(ctx, |modal, ctx| {
-                    modal.update_modal_state(
-                        team_uid,
-                        object_type,
-                        has_admin_permissions,
-                        is_delinquent_due_to_payment_issue,
-                        customer_type,
-                        ctx,
-                    );
-                });
-            ctx.focus(&self.shared_objects_creation_denied_modal);
-            ctx.notify();
-        }
-    }
-
     /// Opens the workflow modal in the provided space and folder with no existing content (i.e. a new workflow modal).
     fn open_workflow_modal(
         &mut self,
@@ -15344,18 +15104,7 @@ impl Workspace {
         // - open_workflow_modal_with_temporary
         // - open_workflow_modal_with_command
         let owner = match space {
-            Space::Team { team_uid } => {
-                if !UserWorkspaces::has_capacity_for_shared_workflows(team_uid, ctx, 1) {
-                    self.open_shared_objects_creation_denied_modal(
-                        DriveObjectType::Workflow,
-                        team_uid,
-                        ctx,
-                    );
-                    return;
-                }
-
-                Owner::Team { team_uid }
-            }
+            Space::Team { team_uid } => Owner::Team { team_uid },
             Space::Shared => {
                 // TODO(ben): Use an owner-or-folder API, so we can check on creating an object in
                 // the folder.
@@ -19252,22 +19001,6 @@ impl TypedActionView for Workspace {
                 mode: palette_mode,
                 source,
             } => self.toggle_palette(*palette_mode, *source, ctx),
-            ShowUpgrade => {
-                send_telemetry_from_ctx!(TelemetryEvent::UserMenuUpgradeClicked, ctx);
-
-                let auth_state = AuthStateProvider::as_ref(ctx).get();
-                let upgrade_url = if let Some(team_uid) = self.team_uid(ctx) {
-                    UserWorkspaces::upgrade_link_for_team(team_uid)
-                } else {
-                    let user_id = auth_state.user_id().unwrap_or_default();
-                    UserWorkspaces::upgrade_link(user_id)
-                };
-
-                ctx.open_url(&upgrade_url);
-            }
-            ShowReferralSettingsPage => {
-                self.show_settings_with_section(Some(SettingsSection::Referrals), ctx);
-            }
             JoinSlack => self.join_slack(ctx),
             ViewUserDocs => self.view_user_docs(ctx),
             ViewLatestChangelog => self.view_latest_changelog(ctx),
@@ -21210,17 +20943,6 @@ impl View for Workspace {
 
         if self.current_workspace_state.is_theme_deletion_modal_open {
             stack.add_child(ChildView::new(&self.theme_deletion_modal).finish());
-        }
-
-        if self
-            .current_workspace_state
-            .is_shared_objects_creation_denied_modal_open
-        {
-            stack.add_child(ChildView::new(&self.shared_objects_creation_denied_modal).finish());
-        }
-
-        if self.current_workspace_state.is_reward_modal_open {
-            stack.add_child(Clipped::new(ChildView::new(&self.reward_modal).finish()).finish());
         }
 
         if self.launch_config_save_modal.is_open() {

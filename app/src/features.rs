@@ -152,7 +152,6 @@ fn enabled_features() -> HashSet<FeatureFlag> {
         #[cfg(feature = "shared_block_title_generation")]
         FeatureFlag::SharedBlockTitleGeneration,
         #[cfg(feature = "usage_based_pricing")]
-        FeatureFlag::UsageBasedPricing,
         #[cfg(feature = "cross_repo_context")]
         FeatureFlag::CrossRepoContext,
         #[cfg(feature = "codebase_index_persistence")]
@@ -300,7 +299,6 @@ fn enabled_features() -> HashSet<FeatureFlag> {
         #[cfg(feature = "solo_user_byok")]
         FeatureFlag::SoloUserByok,
         #[cfg(feature = "billing_and_usage_page_v2")]
-        FeatureFlag::BillingAndUsagePageV2,
         #[cfg(feature = "skip_firebase_anonymous_user")]
         FeatureFlag::SkipFirebaseAnonymousUser,
         #[cfg(feature = "git_operations_in_code_review")]
@@ -314,7 +312,6 @@ fn enabled_features() -> HashSet<FeatureFlag> {
         #[cfg(feature = "remote_code_review")]
         FeatureFlag::RemoteCodeReview,
         #[cfg(feature = "supergrok")]
-        FeatureFlag::SuperGrok,
         #[cfg(feature = "osc_hyperlinks")]
         FeatureFlag::OscHyperlinks,
         #[cfg(feature = "terminal_lifecycle_recovery")]

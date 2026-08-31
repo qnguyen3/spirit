@@ -89,7 +89,6 @@ pub struct WorkspaceState {
     pub is_theme_deletion_modal_open: bool,
     pub is_changelog_modal_open: bool,
     pub is_tab_being_dragged: bool,
-    pub is_reward_modal_open: bool,
     pub is_launch_config_save_modal_open: bool,
     pub is_resource_center_open: bool,
     pub is_command_search_open: bool,
@@ -104,7 +103,6 @@ pub struct WorkspaceState {
     pub is_import_modal_open: bool,
     pub is_close_session_confirmation_dialog_open: bool,
     pub is_native_quit_modal_open: bool,
-    pub is_shared_objects_creation_denied_modal_open: bool,
     pub is_tab_config_params_modal_open: bool,
     pub is_session_config_modal_open: bool,
     pub is_new_worktree_modal_open: bool,
@@ -133,13 +131,11 @@ impl WorkspaceState {
             || self.pane_being_renamed.is_some()
             || self.tab_group_being_renamed.is_some()
             || self.worktree_being_renamed.is_some()
-            || self.is_reward_modal_open
             || self.is_launch_config_save_modal_open
             || self.is_command_search_open
             || self.is_prompt_editor_open
             || self.is_header_toolbar_editor_open
             || self.is_import_modal_open
-            || self.is_shared_objects_creation_denied_modal_open
             || self.is_tab_config_params_modal_open
             || self.is_session_config_modal_open
             || self.is_new_worktree_modal_open
@@ -163,14 +159,12 @@ impl WorkspaceState {
         self.pane_being_renamed = None;
         self.tab_group_being_renamed = None;
         self.worktree_being_renamed = None;
-        self.is_reward_modal_open = false;
         self.is_launch_config_save_modal_open = false;
         self.is_command_search_open = false;
         self.is_workflow_modal_open = false;
         self.is_prompt_editor_open = false;
         self.is_header_toolbar_editor_open = false;
         self.is_import_modal_open = false;
-        self.is_shared_objects_creation_denied_modal_open = false;
         self.is_auth_override_modal_open = false;
         self.is_require_login_modal_open = false;
         self.is_tab_config_params_modal_open = false;
