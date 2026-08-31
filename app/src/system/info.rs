@@ -167,7 +167,7 @@ impl SystemInfo {
     }
 
     /// Checks for excessive memory usage.  This may send a telemetry event
-    /// and trigger a Sentry heap profile dump if excessive usage is detected.
+    /// if excessive usage is detected.
     ///
     /// The threshold check uses `memory_footprint` (which includes swapped
     /// and compressed pages) so we actually detect high memory situations.
@@ -176,7 +176,7 @@ impl SystemInfo {
     ///
     /// A crossing of the threshold is only reported once it's confirmed still excessive on the next
     /// poll tick, rather than on the tick that first observed it, so a short-lived spike that's
-    /// freed moments later is skipped instead of producing a worthless Sentry event and heap
+    /// freed moments later is skipped instead of producing a worthless heap
     /// profile.  A skip does not consume `has_emitted_memory_warning_event`, so an early transient
     /// spike doesn't silence the process for the rest of its lifetime.
     fn check_for_excessive_memory_usage(
@@ -219,17 +219,6 @@ impl SystemInfo {
 
         // Collect a detailed memory breakdown for diagnostics.
         let memory_breakdown = memory_footprint::memory_breakdown();
-
-        // If we're tracking heap usage and detect excessive memory usage,
-        // dump and upload the current heap profiling data.
-        #[cfg(feature = "heap_usage_tracking")]
-        {
-            let breakdown_for_sentry = memory_breakdown.clone();
-            ctx.spawn(
-                crate::profiling::dump_jemalloc_heap_profile(breakdown_for_sentry),
-                |_, _, _| {},
-            );
-        }
 
         // Send a telemetry event indicating that memory usage is extreme.
         // Report RSS here to keep Rudderstack dashboards consistent.

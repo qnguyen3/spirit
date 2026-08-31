@@ -63,7 +63,9 @@ pub fn initialize_app_for_terminal_view(app: &mut App) {
             ctx,
         )
     });
-    app.add_singleton_model(|_| ChangelogModel::new(std::sync::Arc::new(http_client::Client::new_for_test())));
+    app.add_singleton_model(|_| {
+        ChangelogModel::new(std::sync::Arc::new(http_client::Client::new_for_test()))
+    });
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| SystemStats::new());
     app.add_singleton_model(|_| Prompt::mock());

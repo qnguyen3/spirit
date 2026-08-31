@@ -175,7 +175,9 @@ pub fn initialize_app(app: &mut App) {
 
     // Initialize any global models required by the Input view.
     app.add_singleton_model(|_| ServerApiProvider::new_for_test());
-    app.add_singleton_model(|_| ChangelogModel::new(std::sync::Arc::new(http_client::Client::new_for_test())));
+    app.add_singleton_model(|_| {
+        ChangelogModel::new(std::sync::Arc::new(http_client::Client::new_for_test()))
+    });
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| SystemStats::new());
     app.add_singleton_model(|_| Prompt::mock());

@@ -130,8 +130,6 @@ pub trait AuthClient: Send + Sync {
 
     async fn set_is_telemetry_enabled(&self, value: bool) -> Result<()>;
 
-    async fn set_is_crash_reporting_enabled(&self, value: bool) -> Result<()>;
-
     async fn set_is_cloud_conversation_storage_enabled(&self, value: bool) -> Result<()>;
 
     /// Sends a request to update the user's settings on the server with values in the given input.
@@ -352,17 +350,6 @@ impl AuthClient for AuthClientImpl {
                 ..Default::default()
             },
             "failed to set telemetry enabled",
-        )
-        .await
-    }
-
-    async fn set_is_crash_reporting_enabled(&self, value: bool) -> Result<()> {
-        self.update_settings(
-            UpdateUserSettingsInput {
-                crash_reporting_enabled: Some(value),
-                ..Default::default()
-            },
-            "failed to set crash reporting enabled",
         )
         .await
     }

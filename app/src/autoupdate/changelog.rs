@@ -11,9 +11,7 @@ use super::channel_versions::fetch_channel_versions;
 use super::release_assets_directory_url;
 use crate::channel::{Channel, ChannelState};
 
-pub async fn get_current_changelog(
-    client: Arc<http_client::Client>,
-) -> Result<Option<Changelog>> {
+pub async fn get_current_changelog(client: Arc<http_client::Client>) -> Result<Option<Changelog>> {
     let rand: String = {
         let mut rng = thread_rng();
         iter::repeat(())
@@ -37,8 +35,7 @@ pub async fn get_current_changelog(
         };
     }
 
-    let versions: ChannelVersions =
-        fetch_channel_versions(rand.as_str(), &client).await?;
+    let versions: ChannelVersions = fetch_channel_versions(rand.as_str(), &client).await?;
 
     let res = versions.changelogs.and_then(|changelogs| {
         match channel {
