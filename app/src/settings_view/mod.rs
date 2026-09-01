@@ -15,7 +15,6 @@ use settings_page::{
     HEADER_PADDING, MatchData, SettingsPage, SettingsPageEvent, SettingsPageMeta,
     SettingsPageViewHandle,
 };
-use teams_page::{TeamsPageView, TeamsPageViewEvent};
 use warp_core::channel::ChannelState;
 use warp_core::context_flag::ContextFlag;
 use warp_core::features::FeatureFlag;
@@ -54,13 +53,10 @@ use crate::ui_components::icons;
 use crate::util::bindings::{BindingGroup, CustomAction, keybinding_name_to_display_string};
 use crate::view_components::ToastFlavor;
 use crate::workspace::WorkspaceAction;
-use crate::workspaces::workspace::{BillingMetadata, CustomerType};
 
 mod about_page;
-mod admin_actions;
 mod appearance_page;
 mod cli_agents_page;
-mod cloud_action_confirmation_dialog;
 mod code_editor_review_page;
 mod directory_color_add_picker;
 pub(crate) mod features;
@@ -69,15 +65,11 @@ pub mod keybindings;
 mod main_page;
 mod nav;
 pub mod pane_manager;
-mod platform;
-mod platform_page;
 mod privacy;
 mod privacy_page;
 mod scripting_page;
 mod settings_file_footer;
 pub(crate) mod settings_page;
-mod teams_page;
-mod transfer_ownership_confirmation_modal;
 pub mod warpify_page;
 
 #[cfg(not(target_family = "wasm"))]
@@ -88,7 +80,6 @@ pub use settings_page::{
     AdditionalInfo, InputListItem, ToggleState, render_body_item_label, render_info_icon,
     render_input_list, render_separator,
 };
-pub use teams_page::{OpenTeamsSettingsModalArgs, TeamsInviteOption};
 
 /// Original sidebar width used when the settings-file footer is not
 /// enabled. Preserved for Preview/Stable until `FeatureFlag::SettingsFile`
@@ -122,27 +113,6 @@ const POSITION_ID: &str = "settings_pane";
 struct PlanHeaderPresentation {
     badge_label: Option<String>,
     show_personal_upgrade: bool,
-}
-
-fn plan_header_presentation(
-    billing_metadata: Option<&BillingMetadata>,
-    has_team: bool,
-    is_anonymous: bool,
-) -> PlanHeaderPresentation {
-    let badge_label = if is_anonymous || billing_metadata.is_none() {
-        Some("Free".to_string())
-    } else {
-        billing_metadata
-            .filter(|billing_metadata| billing_metadata.customer_type != CustomerType::Unknown)
-            .map(|billing_metadata| billing_metadata.customer_type.to_display_string())
-    };
-
-    PlanHeaderPresentation {
-        badge_label,
-        show_personal_upgrade: is_anonymous
-            || (!has_team
-                && billing_metadata.is_none_or(BillingMetadata::can_upgrade_to_build_plan)),
-    }
 }
 
 /// Saved-position id for the settings search input.
@@ -968,11 +938,7 @@ macro_rules! update_page {
             SettingsPageViewHandle::Appearance(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Features(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Keybindings(handle) => $ctx.update_view(handle, $update),
-            SettingsPageViewHandle::Teams(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Warpify(handle) => $ctx.update_view(handle, $update),
-            SettingsPageViewHandle::WarpCloudAgentAPIKeys(handle) => {
-                $ctx.update_view(handle, $update)
-            }
             SettingsPageViewHandle::Privacy(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Scripting(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::CLIAgents(handle) => $ctx.update_view(handle, $update),
@@ -1048,19 +1014,6 @@ impl SettingsView {
         // Code umbrella pages
         let editor_review_page_handle = ctx.add_typed_action_view(EditorAndCodeReviewPageView::new);
 
-        // Teams page, adding unconditionally, as `should_render` later on decides whether it
-        // should be shown to the user or not
-        let teams_page_handle = ctx.add_typed_action_view(TeamsPageView::new);
-        ctx.subscribe_to_view(&teams_page_handle, |_, _, event, ctx| match event {
-            TeamsPageViewEvent::TeamsChanged => ctx.notify(),
-            TeamsPageViewEvent::ShowToast { message, flavor } => {
-                ctx.emit(SettingsViewEvent::ShowToast {
-                    message: message.clone(),
-                    flavor: *flavor,
-                })
-            }
-        });
-
         let warpify_page_handle = ctx.add_typed_action_view(WarpifyPageView::new);
         ctx.subscribe_to_view(&warpify_page_handle, |me, _, event, ctx| {
             me.handle_warpify_page_event(event, ctx);
@@ -1077,13 +1030,6 @@ impl SettingsView {
         } else {
             None
         };
-
-        // Warp Drive page
-
-        let platform_page_handle = ctx.add_typed_action_view(platform_page::PlatformPageView::new);
-        ctx.subscribe_to_view(&platform_page_handle, |me, _, event, ctx| {
-            me.handle_platform_page_event(event, ctx);
-        });
 
         let font_family = Appearance::as_ref(ctx).ui_font_family();
         let search_editor = ctx.add_typed_action_view(|ctx| {
@@ -1117,11 +1063,9 @@ impl SettingsView {
             SettingsPage::new(main_page_handle),
             SettingsPage::new(cli_agents_page_handle),
             SettingsPage::new(editor_review_page_handle),
-            SettingsPage::new(teams_page_handle),
             SettingsPage::new(appearance_page_handle),
             SettingsPage::new(features_page_handle),
             SettingsPage::new(keybindings_handle),
-            SettingsPage::new(platform_page_handle),
             SettingsPage::new(warpify_page_handle),
         ];
 
@@ -1146,11 +1090,6 @@ impl SettingsView {
                 "Code",
                 vec![SettingsSection::EditorAndCodeReview],
             )),
-            SettingsNavItem::Umbrella(SettingsUmbrella::new(
-                "Cloud platform",
-                vec![SettingsSection::WarpCloudAgentAPIKeys],
-            )),
-            SettingsNavItem::Page(SettingsSection::Teams),
             SettingsNavItem::Page(SettingsSection::Appearance),
             SettingsNavItem::Page(SettingsSection::Features),
             SettingsNavItem::Page(SettingsSection::Keybindings),
@@ -1520,23 +1459,6 @@ impl SettingsView {
         }
     }
 
-    fn handle_platform_page_event(
-        &mut self,
-        event: &platform_page::PlatformPageViewEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            platform_page::PlatformPageViewEvent::ShowCreateApiKeyModal => {
-                // Modal rendering is handled in get_modal_content_for_page
-                ctx.notify();
-            }
-            platform_page::PlatformPageViewEvent::HideCreateApiKeyModal => {
-                // Modal rendering is handled in get_modal_content_for_page
-                ctx.notify();
-            }
-        }
-    }
-
     pub fn search_for_keybinding(&mut self, keybinding_name: &str, ctx: &mut ViewContext<Self>) {
         self.set_and_refresh_current_page(SettingsSection::Keybindings, ctx);
 
@@ -1639,32 +1561,15 @@ impl SettingsView {
     fn should_render_page(&self, settings_page: &SettingsPage, app: &AppContext) -> bool {
         match &settings_page.view_handle {
             SettingsPageViewHandle::Main(v) => v.as_ref(app).should_render(app),
-            SettingsPageViewHandle::Teams(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Keybindings(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Features(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Appearance(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::About(v) => v.as_ref(app).should_render(app),
-            SettingsPageViewHandle::WarpCloudAgentAPIKeys(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Privacy(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Warpify(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Scripting(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::CLIAgents(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::EditorAndCodeReview(v) => v.as_ref(app).should_render(app),
-        }
-    }
-
-    /// Open the invite section of the teams page, optionally with an email to invite.
-    pub fn open_teams_page_email_invite(
-        &mut self,
-        email: Option<&String>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if let Some(team_page) = self.settings_page(SettingsSection::Teams)
-            && let SettingsPageViewHandle::Teams(view) = &team_page.view_handle
-        {
-            view.update(ctx, |view, ctx| {
-                view.open_team_members(email, ctx);
-            })
         }
     }
 
@@ -1774,9 +1679,6 @@ impl SettingsView {
                 SettingsPageViewHandle::Keybindings(view_handle) => {
                     view_handle.update(ctx, |view, ctx| view.on_tab_pressed(ctx));
                 }
-                SettingsPageViewHandle::Teams(view_handle) => {
-                    view_handle.update(ctx, |view, ctx| view.on_tab_pressed(ctx));
-                }
                 _ => (),
             };
         }
@@ -1832,9 +1734,6 @@ impl SettingsView {
     ) -> Option<Box<dyn Element>> {
         match page_handle {
             SettingsPageViewHandle::Privacy(view) => {
-                view.read(app, |view, _| view.get_modal_content())
-            }
-            SettingsPageViewHandle::WarpCloudAgentAPIKeys(view) => {
                 view.read(app, |view, _| view.get_modal_content())
             }
             _ => None,

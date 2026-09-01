@@ -319,7 +319,6 @@ use crate::view_components::find::{Event as FindEvent, Find, FindDirection, Find
 use crate::view_components::{DismissibleToast, ToastFlavor};
 use crate::workspace::sync_inputs::SyncedInputState;
 use crate::workspace::{CommandSearchOptions, ToastStack, WorkspaceAction};
-use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::{ActiveSession as WindowActiveSession, safe_warn};
 
 lazy_static! {
@@ -4780,53 +4779,7 @@ impl TerminalView {
             return true;
         }
 
-        // If there's a command present, check it against the remote-session command patterns
-        // configured by the user's organization.
-        let Some(command) = command else {
-            return false;
-        };
-
-        let user_workspaces = UserWorkspaces::as_ref(app);
-        let scope = user_workspaces.team_context(&self.view_handle, app);
-        let remote_session_regex_list = user_workspaces.get_remote_session_regex_list(&scope);
-
-        // Almost nobody has org patterns at all, so there is nothing further to check.
-        if remote_session_regex_list.is_empty() {
-            return false;
-        }
-
-        // First check if the command matches any of the regexes in the list.
-        if remote_session_regex_list
-            .iter()
-            .any(|regex| regex.is_match(command))
-        {
-            return true;
-        }
-
-        // Then check if there's an alias for the top level command that matches the regex.
-        let Some(session_id) = session_id else {
-            return false;
-        };
-        let Some(session) = self.sessions.as_ref(app).get(session_id) else {
-            return false;
-        };
-        let escape_char = session.shell_family().escape_char();
-        let Some(top_level_command) =
-            warp_completer::parsers::simple::top_level_command(command, escape_char)
-        else {
-            return false;
-        };
-        let Some(alias) = session.alias_value(top_level_command.as_str()) else {
-            return false;
-        };
-
-        if remote_session_regex_list
-            .iter()
-            .any(|regex| regex.is_match(alias))
-        {
-            return true;
-        }
-
+        let _ = command;
         false
     }
 

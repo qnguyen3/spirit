@@ -554,12 +554,6 @@ pub enum WorkspaceAction {
     /// Opens (or focuses) the in-app network log pane as a right-split of the
     /// active pane group. Gated on `ContextFlag::NetworkLogConsole`.
     OpenNetworkLogPane,
-    /// Opens or focuses a window scoped to the specified team.
-    OpenNewWindowForTeam {
-        team_uid: ServerId,
-    },
-    /// Shows (toggles) the team-switcher dropdown menu in the title bar.
-    ShowTeamSwitcherMenu,
     ShowWorkspaceSwitcherMenu,
     ShowCreateWorktreeModal {
         agent_catalog_index: Option<usize>,
@@ -810,8 +804,6 @@ impl WorkspaceAction {
             | TabConfigSidecarRemoveConfig { .. }
             | OpenSettingsFile
             | OpenNetworkLogPane
-            | OpenNewWindowForTeam { .. }
-            | ShowTeamSwitcherMenu
             | ShowWorkspaceSwitcherMenu
             | ShowCreateWorktreeModal { .. }
             | OpenWorktreeTab { .. }

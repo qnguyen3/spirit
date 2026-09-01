@@ -24,11 +24,9 @@ use crate::code_review::comments::AttachedReviewCommentTarget;
 use crate::skills::SkillProvider;
 use crate::ui_components::icons::Icon;
 use crate::util::color::CLAUDE_ORANGE;
-use crate::workspaces::user_workspaces::UserWorkspaces;
 
 /// UID for the Uber team.
 /// See https://warp.metabaseapp.com/dashboard/1454?team_id=46347
-const UBER_TEAM_UID: &str = "BdVbYjy9LRZcZrYBemSfAF";
 
 /// Gemini brand blue color
 pub(crate) const GEMINI_BLUE: ColorU = ColorU {
@@ -418,17 +416,8 @@ impl CLIAgent {
     /// internal wrapper around Claude) and the user is on the Uber team.
     /// We special-case this so Uber employees get the toolbar without needing
     /// to configure anything.
-    fn is_aifx_agent_run_claude(resolved_command: &str, ctx: &AppContext) -> bool {
+    fn is_aifx_agent_run_claude(resolved_command: &str, _ctx: &AppContext) -> bool {
         resolved_command.starts_with("aifx agent run claude")
-            && Self::is_on_uber_team(UserWorkspaces::as_ref(ctx))
-    }
-
-    fn is_on_uber_team(user_workspaces: &UserWorkspaces) -> bool {
-        user_workspaces
-            .workspaces()
-            .iter()
-            .flat_map(|workspace| workspace.teams.iter())
-            .any(|team| team.uid.uid() == UBER_TEAM_UID)
     }
 }
 

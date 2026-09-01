@@ -17,12 +17,11 @@ use warpui::platform::TerminationMode;
 use warpui::{AppContext, SingletonEntity as _, TypedActionView, WindowId};
 
 use self::docker::open_docker_container;
-use crate::auth::github_auth_notifier::GitHubAuthNotifier;
 use crate::features::FeatureFlag;
 use crate::launch_configs::launch_config::LaunchConfig;
 use crate::root_view::{OpenLaunchConfigArg, open_new_window_get_handles};
 use crate::settings_view::{
-    OpenTeamsSettingsModalArgs, SettingsSection, settings_widget_deeplink_target,
+    SettingsSection, settings_widget_deeplink_target,
 };
 use crate::tab_configs::TabConfig;
 use crate::user_config::{load_launch_configs, load_tab_configs, tab_configs_dir};
@@ -68,7 +67,6 @@ pub fn url_reports_checkout_success(url: &Url) -> bool {
 #[derive(Debug, PartialEq, Eq)]
 pub enum UriHost {
     Auth,
-    Team,
     /// A host prefix for all actions (e.g.: new tab, new window).
     Action,
     /// A host prefix for all actions that involve launch configurations
@@ -93,7 +91,6 @@ impl FromStr for UriHost {
     fn from_str(s: &str) -> Result<Self> {
         match s {
             "auth" => Ok(Self::Auth),
-            "team" => Ok(Self::Team),
             "action" => Ok(Self::Action),
             "launch" => Ok(Self::Launch),
             "settings" => Ok(Self::Settings),
@@ -130,28 +127,6 @@ impl UriHost {
                             log::Level::Info,
                         );
                     });
-            }
-            UriHost::Team => {
-                match url.path_segments().into_iter().flatten().last() {
-                    // If the last segment of the URL is "settings", open the team settings page.
-                    Some("settings") => {
-                        open_window_with_action(
-                            primary_window_id,
-                            "root_view:open_team_settings_page",
-                            ctx,
-                        );
-                    }
-                    // Otherwise default to previous behavior.
-                    _ => {
-                        // TODO: Parse URL to ensure the user is logged into the right account
-                        // Shows the user the settings view of their newly joined team within the app.
-                        open_window_with_action(
-                            primary_window_id,
-                            "root_view:handle_team_intent_link_action",
-                            ctx,
-                        );
-                    }
-                };
             }
             UriHost::Action => {
                 match Action::parse(url) {
@@ -212,23 +187,6 @@ impl UriHost {
                     .map(|s| s.to_string());
 
                 match settings_sub_page.as_deref() {
-                    Some("teams") => {
-                        let invite_email = query_string.get("invite").map(|s| s.to_string());
-                        let args = OpenTeamsSettingsModalArgs { invite_email };
-                        dispatch_action_in_new_or_existing_window(
-                            primary_window_id,
-                            "root_view:open_team_settings_with_email_invite_in_existing_window",
-                            "root_view:open_team_settings_with_email_invite_in_new_window",
-                            &args,
-                            ctx,
-                        );
-                    }
-                    Some("environments") => {
-                        // Notify that GitHub auth completed so views can refresh
-                        GitHubAuthNotifier::handle(ctx).update(ctx, |notifier, ctx| {
-                            notifier.notify_auth_completed(ctx);
-                        });
-                    }
                     // No special sub-page: route the bare host, the `q` (search) and
                     // `widget` (scroll-to) query params, and the simple section
                     // sub-pages (e.g. billing_and_usage, platform, appearance,
@@ -354,7 +312,7 @@ impl UriHost {
             Self::Auth => W::ShowPrimaryWindow(WindowActivationFallbackBehavior::NewWindow {
                 replace_existing: true,
             }),
-            Self::Team | Self::Settings => W::default(),
+            Self::Settings => W::default(),
             // These URLs always open new windows.
             Self::Launch | Self::Home => W::Nothing,
             // This will actually be handled by [`Action::window_behavior_hint`].
@@ -1183,7 +1141,6 @@ fn validate_custom_uri(url: &Url) -> Result<UriHost> {
     let host_allows_arbitrary_path = match host {
         UriHost::Action
         | UriHost::Launch
-        | UriHost::Team
         | UriHost::Settings
         | UriHost::Linear
         | UriHost::TabConfig

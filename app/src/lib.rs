@@ -77,8 +77,6 @@ mod vim_registers;
 mod voltron;
 mod warp_managed_paths_watcher;
 mod window_settings;
-mod word_block_editor;
-mod workspaces;
 
 pub mod appearance;
 pub mod channel;
@@ -175,7 +173,6 @@ use workspace::sync_inputs::SyncedInputState;
 
 use self::features::FeatureFlag;
 use crate::app_state::AppState;
-use crate::auth::github_auth_notifier::GitHubAuthNotifier;
 use crate::autoupdate::{AutoupdateState, RelaunchModel};
 use crate::changelog_model::ChangelogModel;
 use crate::code::global_buffer_model::GlobalBufferModel;
@@ -215,10 +212,6 @@ use crate::workflows::local_workflows::LocalWorkflows;
 use crate::workspace::{
     ActiveSession, NotificationOrigin, PaneViewLocator, ToastStack, Workspace, WorkspaceAction,
 };
-use crate::workspaces::team_tester::TeamTesterStatus;
-use crate::workspaces::update_manager::TeamUpdateManager;
-use crate::workspaces::user_profiles::UserProfiles;
-use crate::workspaces::user_workspaces::UserWorkspaces;
 
 /// Our embedded application assets.
 pub static ASSETS: warp_assets::Assets = warp_assets::Assets;
@@ -1126,12 +1119,8 @@ pub(crate) fn initialize_app(
     });
 
     let (
-        cached_workspaces,
-        current_workspace_uid,
         app_state,
         command_history,
-        restored_user_profiles,
-        _time_of_next_force_object_refresh,
         persisted_workspaces,
         workspace_language_servers,
         persisted_projects,
@@ -1140,12 +1129,8 @@ pub(crate) fn initialize_app(
     ) = sqlite_data
         .map(|sqlite_data| {
             (
-                sqlite_data.workspaces,
-                sqlite_data.current_workspace_uid,
                 sqlite_data.app_state,
                 sqlite_data.command_history,
-                sqlite_data.user_profiles,
-                sqlite_data.time_of_next_force_object_refresh,
                 sqlite_data.codebase_indices,
                 sqlite_data.workspace_language_servers,
                 sqlite_data.projects,
@@ -1155,10 +1140,6 @@ pub(crate) fn initialize_app(
         })
         .unwrap_or_else(|| {
             (
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
                 Default::default(),
                 Default::default(),
                 Default::default(),
@@ -1177,15 +1158,6 @@ pub(crate) fn initialize_app(
             "[Remote codebase indexing] Restored daemon codebase index metadata: metadata_count={codebase_index_count}"
         );
     }
-
-    ctx.add_singleton_model(|ctx| {
-        UserWorkspaces::new(
-            server_api_provider.as_ref(ctx).get_team_client(),
-            server_api_provider.as_ref(ctx).get_workspace_client(),
-            cached_workspaces,
-            current_workspace_uid,
-        )
-    });
 
     if let LaunchMode::App { .. } = launch_mode {
         autoupdate::check_and_report_update_errors(ctx);
@@ -1453,7 +1425,6 @@ pub(crate) fn initialize_app(
 
     ctx.add_singleton_model(|_| RelaunchModel::new());
     ctx.add_singleton_model(|_| ChangelogModel::new(Arc::new(http_client::Client::new())));
-    ctx.add_singleton_model(|_| GitHubAuthNotifier::new());
     ctx.add_singleton_model(|_| NetworkStatus::new());
     ctx.add_singleton_model(|_| SystemStats::new());
     ctx.add_singleton_model(|_| KeybindingChangedNotifier::new());
@@ -1474,22 +1445,10 @@ pub(crate) fn initialize_app(
 
     ctx.add_singleton_model(|_| CLIAgentSessionsModel::new());
     ctx.add_singleton_model(|_| workspace::AgentInboxModel::default());
-    ctx.add_singleton_model(|_| UserProfiles::new(restored_user_profiles));
 
     ctx.add_singleton_model(|_| AudibleBell::new());
 
     // This model has to be registered after the user workspaces model because it relies on it,
-    // and before the UpdateManager models because they rely on the TeamTester model.
-    ctx.add_singleton_model(TeamTesterStatus::new);
-
-    ctx.add_singleton_model(|ctx| {
-        TeamUpdateManager::new(
-            server_api_provider.as_ref(ctx).get_team_client(),
-            persistence_writer.sender(),
-            ctx,
-        )
-    });
-
     // LogManager must be registered before any subsystem (e.g. LSP) that creates file-based loggers.
     ctx.add_singleton_model(|_| simple_logger::manager::LogManager::new());
 

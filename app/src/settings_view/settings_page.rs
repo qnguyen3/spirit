@@ -36,7 +36,6 @@ use super::keybindings::KeybindingsView;
 use super::main_page::MainSettingsPageView;
 use super::privacy_page::PrivacyPageView;
 use super::scripting_page::ScriptingSettingsPageView;
-use super::teams_page::TeamsPageView;
 use super::warpify_page::WarpifyPageView;
 use crate::appearance::Appearance;
 use crate::themes::theme::Fill;
@@ -99,8 +98,6 @@ pub enum SettingsPageViewHandle {
     Keybindings(ViewHandle<KeybindingsView>),
     About(ViewHandle<AboutPageView>),
     EditorAndCodeReview(ViewHandle<EditorAndCodeReviewPageView>),
-    Teams(ViewHandle<TeamsPageView>),
-    WarpCloudAgentAPIKeys(ViewHandle<super::platform_page::PlatformPageView>),
     Privacy(ViewHandle<PrivacyPageView>),
     Warpify(ViewHandle<WarpifyPageView>),
     Scripting(ViewHandle<ScriptingSettingsPageView>),
@@ -117,8 +114,6 @@ impl SettingsPageViewHandle {
             Keybindings(view_handle) => ChildView::new(view_handle).finish(),
             About(view_handle) => ChildView::new(view_handle).finish(),
             EditorAndCodeReview(view_handle) => ChildView::new(view_handle).finish(),
-            Teams(view_handle) => ChildView::new(view_handle).finish(),
-            WarpCloudAgentAPIKeys(view_handle) => ChildView::new(view_handle).finish(),
             Privacy(view_handle) => ChildView::new(view_handle).finish(),
             Warpify(view_handle) => ChildView::new(view_handle).finish(),
             Scripting(view_handle) => ChildView::new(view_handle).finish(),

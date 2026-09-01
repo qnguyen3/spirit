@@ -48,8 +48,6 @@ use crate::ui_components::buttons::icon_button;
 use crate::ui_components::icons::Icon;
 use crate::util::links::PRIVACY_POLICY_URL;
 use crate::view_components::{Dropdown, DropdownItem};
-use crate::workspaces::user_workspaces::UserWorkspaces;
-use crate::workspaces::workspace::AdminEnablementSetting;
 
 const FONT_SIZE: f32 = 12.;
 
@@ -95,7 +93,6 @@ pub struct PrivacyPageView {
     /// Modal state
     add_regex_modal_state: AddRegexModalViewState,
     /// Active tab for secret redaction settings
-    active_secret_redaction_tab: SecretRedactionTab,
     /// Dropdown for selecting secret redaction display mode
     secret_redaction_display_dropdown: ViewHandle<Dropdown<PrivacyPageAction>>,
 }
@@ -192,7 +189,6 @@ impl PrivacyPageView {
             add_regex_modal_state: AddRegexModalViewState::new(ModalViewState::new(
                 add_regex_modal_view,
             )),
-            active_secret_redaction_tab: SecretRedactionTab::Personal,
             secret_redaction_display_dropdown: secret_display_dropdown,
         };
 
@@ -204,7 +200,6 @@ impl PrivacyPageView {
     fn build_page() -> PageType<Self> {
         let mut widgets: Vec<Box<dyn SettingsWidget<View = Self>>> = vec![
             Box::new(SecretRedactionWidget::default()),
-            Box::new(CloudConversationStorageWidget::default()),
         ];
         if ContextFlag::NetworkLogConsole.is_enabled() {
             widgets.push(Box::new(NetworkLogWidget::default()));
@@ -457,13 +452,6 @@ pub enum PrivacyPageAction {
     AddAllRecommendedRegexes,
     ShowAddRegexModal,
     AddRecommendedRegex(usize),
-    SwitchSecretRedactionTab(SecretRedactionTab),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum SecretRedactionTab {
-    Personal,
-    Enterprise,
 }
 
 impl TypedActionView for PrivacyPageView {
@@ -479,18 +467,10 @@ impl TypedActionView for PrivacyPageView {
 
                 let privacy_settings_handle = PrivacySettings::handle(ctx);
                 ctx.update_model(&privacy_settings_handle, |privacy_settings, ctx| {
-                    let workspaces = UserWorkspaces::as_ref(ctx);
-                    let enterprise_regex_list =
-                        workspaces.get_enterprise_secret_redaction_regex_list();
-                    let current_patterns: Vec<&str> = enterprise_regex_list
+                    let current_patterns: Vec<&str> = privacy_settings
+                        .user_secret_regex_list
                         .iter()
-                        .map(|s| s.pattern.as_str())
-                        .chain(
-                            privacy_settings
-                                .user_secret_regex_list
-                                .iter()
-                                .map(|r| r.pattern().as_str()),
-                        )
+                        .map(|r| r.pattern().as_str())
                         .collect();
 
                     let recommended_regexes: Vec<_> =
@@ -556,10 +536,6 @@ impl TypedActionView for PrivacyPageView {
             PrivacyPageAction::ShowAddRegexModal => {
                 self.show_add_regex_modal(ctx);
             }
-            PrivacyPageAction::SwitchSecretRedactionTab(tab) => {
-                self.active_secret_redaction_tab = *tab;
-                ctx.notify();
-            }
         }
     }
 }
@@ -610,148 +586,6 @@ impl SecretRedactionWidget {
                 .borrow_mut()
                 .push(Default::default());
         }
-    }
-
-    fn render_tab(
-        &self,
-        label: String,
-        count: usize,
-        tab_type: SecretRedactionTab,
-        is_active: bool,
-        mouse_state: MouseStateHandle,
-        appearance: &Appearance,
-    ) -> Box<dyn Element> {
-        let theme = appearance.theme();
-        let (background_fill, text_color, count_color) = if is_active {
-            (
-                Some(theme.surface_overlay_1()),
-                theme.active_ui_text_color().into(),
-                theme.sub_text_color(theme.surface_2()).into(),
-            )
-        } else {
-            (
-                None,
-                theme.sub_text_color(theme.background()).into(),
-                theme
-                    .sub_text_color(theme.background())
-                    .with_opacity(56)
-                    .into(),
-            )
-        };
-
-        let hover_background = if !is_active {
-            Some(appearance.theme().surface_overlay_2())
-        } else {
-            None
-        };
-
-        Hoverable::new(mouse_state, move |mouse_state| {
-            let is_hovered = mouse_state.is_hovered();
-
-            let tab_content = Flex::row()
-                .with_child(
-                    Text::new_inline(label.clone(), appearance.ui_font_family(), FONT_SIZE)
-                        .with_color(text_color)
-                        .finish(),
-                )
-                .with_child(
-                    Container::new(
-                        Text::new_inline(
-                            format!(" {count}"),
-                            appearance.ui_font_family(),
-                            FONT_SIZE,
-                        )
-                        .with_color(count_color)
-                        .finish(),
-                    )
-                    .finish(),
-                )
-                .finish();
-
-            let mut container = Container::new(tab_content)
-                .with_vertical_padding(9.)
-                .with_horizontal_padding(12.)
-                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)));
-
-            // Apply background based on hover state
-            if is_hovered && !is_active {
-                if let Some(hover_bg) = hover_background {
-                    container = container.with_background(hover_bg);
-                }
-            } else if let Some(bg) = background_fill {
-                container = container.with_background(bg);
-            }
-
-            container.finish()
-        })
-        .on_click(move |ctx, _, _| {
-            ctx.dispatch_typed_action(PrivacyPageAction::SwitchSecretRedactionTab(tab_type));
-        })
-        .with_cursor(Cursor::PointingHand)
-        .finish()
-    }
-
-    /// Renders the tab bar for switching between Personal and Enterprise views
-    fn render_tab_bar(
-        &self,
-        appearance: &Appearance,
-        privacy_settings: &PrivacySettings,
-        active_tab: SecretRedactionTab,
-        view: &PrivacyPageView,
-        app: &AppContext,
-    ) -> Box<dyn Element> {
-        if !privacy_settings.is_enterprise_secret_redaction_enabled() {
-            return Empty::new().finish();
-        }
-
-        let workspaces = UserWorkspaces::as_ref(app);
-        let enterprise_regex_list = workspaces.get_enterprise_secret_redaction_regex_list();
-        let enterprise_count = enterprise_regex_list.len();
-
-        // Count personal regexes excluding pending removals
-        let personal_count = privacy_settings
-            .user_secret_regex_list
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| !view.pending_regex_removals.contains(i))
-            .count();
-
-        let personal_tab = self.render_tab(
-            "Personal".to_string(),
-            personal_count,
-            SecretRedactionTab::Personal,
-            active_tab == SecretRedactionTab::Personal,
-            self.personal_tab_mouse_state.clone(),
-            appearance,
-        );
-
-        let is_enterprise_tab_active = active_tab == SecretRedactionTab::Enterprise;
-
-        let enterprise_tab = self.render_tab(
-            "Enterprise".to_string(),
-            enterprise_count,
-            SecretRedactionTab::Enterprise,
-            is_enterprise_tab_active,
-            self.enterprise_tab_mouse_state.clone(),
-            appearance,
-        );
-
-        let mut row = Flex::row()
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_child(personal_tab)
-            .with_child(enterprise_tab);
-
-        if is_enterprise_tab_active {
-            row.add_child(Shrinkable::new(1., Empty::new().finish()).finish());
-            row.add_child(self.render_info(
-                "Enterprise secret redaction cannot be modified.".to_string(),
-                appearance,
-            ));
-        }
-
-        Container::new(row.finish())
-            .with_margin_bottom(16.)
-            .finish()
     }
 
     /// Renders a section title with consistent styling
@@ -850,45 +684,6 @@ impl SecretRedactionWidget {
         }
     }
 
-    /// Renders the enterprise tab content (regexes with title support)
-    fn render_enterprise_content(
-        &self,
-        appearance: &Appearance,
-        app: &AppContext,
-    ) -> Box<dyn Element> {
-        let workspaces = UserWorkspaces::as_ref(app);
-        let enterprise_regex_list = workspaces.get_enterprise_secret_redaction_regex_list();
-        let ui_builder = appearance.ui_builder();
-        let description_text_color = description_text_color(appearance.theme()).into_solid();
-
-        if enterprise_regex_list.is_empty() {
-            return ui_builder
-                .paragraph("No enterprise regexes have been configured by your organization.")
-                .with_style(UiComponentStyles {
-                    font_color: Some(description_text_color),
-                    ..Default::default()
-                })
-                .build()
-                .finish();
-        }
-
-        let mut column = Flex::column();
-
-        for enterprise_regex in enterprise_regex_list {
-            let content = self.render_regex_content(&enterprise_regex, appearance);
-            let item = self.render_regex_item(
-                Flex::row()
-                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                    .with_child(Expanded::new(1., content).finish())
-                    .finish(),
-                appearance,
-            );
-            column.add_child(item);
-        }
-
-        column.finish()
-    }
-
     /// Renders the personal tab content (user regexes + recommended regexes)
     fn render_personal_content(
         &self,
@@ -898,7 +693,6 @@ impl SecretRedactionWidget {
     ) -> Box<dyn Element> {
         let privacy_settings = PrivacySettings::as_ref(app);
         let ui_builder = appearance.ui_builder();
-        let workspaces = UserWorkspaces::as_ref(app);
 
         let mut column = Flex::column();
 
@@ -933,17 +727,10 @@ impl SecretRedactionWidget {
         }
 
         // Get a list of regexes that are recommended but not currently in use
-        let enterprise_regex_list_with_titles =
-            workspaces.get_enterprise_secret_redaction_regex_list();
-        let current_patterns: Vec<&str> = enterprise_regex_list_with_titles
+        let current_patterns: Vec<&str> = privacy_settings
+            .user_secret_regex_list
             .iter()
-            .map(|r| r.pattern.as_str())
-            .chain(
-                privacy_settings
-                    .user_secret_regex_list
-                    .iter()
-                    .map(|r| r.pattern().as_str()),
-            )
+            .map(|r| r.pattern().as_str())
             .collect();
 
         let recommended_regexes: Vec<_> =
@@ -1117,7 +904,6 @@ impl SettingsWidget for SecretRedactionWidget {
         let privacy_settings = PrivacySettings::as_ref(app);
         let description_text_color = description_text_color(appearance.theme()).into_solid();
         let ui_builder = appearance.ui_builder();
-        let is_enterprise_enabled = privacy_settings.is_enterprise_secret_redaction_enabled();
 
         let secret_redaction_title_row = Container::new(
             Flex::row()
@@ -1125,23 +911,16 @@ impl SettingsWidget for SecretRedactionWidget {
                     Shrinkable::new(1.0, render_sub_header(appearance, SAFE_MODE_TITLE)).finish(),
                 )
                 .with_child(
-                    Container::new({
-                        if is_enterprise_enabled {
-                            self.render_info(
-                                "Enabled by your organization.".to_string(),
-                                appearance,
-                            )
-                        } else {
-                            ui_builder
-                                .switch(self.switch_state.clone())
-                                .check(*safe_mode_settings.safe_mode_enabled.value())
-                                .build()
-                                .on_click(move |ctx, _, _| {
-                                    ctx.dispatch_typed_action(PrivacyPageAction::ToggleSafeMode)
-                                })
-                                .finish()
-                        }
-                    })
+                    Container::new(
+                        ui_builder
+                            .switch(self.switch_state.clone())
+                            .check(*safe_mode_settings.safe_mode_enabled.value())
+                            .build()
+                            .on_click(move |ctx, _, _| {
+                                ctx.dispatch_typed_action(PrivacyPageAction::ToggleSafeMode)
+                            })
+                            .finish(),
+                    )
                     .with_padding_right(TOGGLE_BUTTON_RIGHT_PADDING)
                     .finish(),
                 )
@@ -1270,138 +1049,11 @@ impl SettingsWidget for SecretRedactionWidget {
                     .finish(),
             );
 
-            let workspaces = UserWorkspaces::as_ref(app);
-            let enterprise_regex_list = workspaces.get_enterprise_secret_redaction_regex_list();
-
-            if is_enterprise_enabled && !enterprise_regex_list.is_empty() {
-                column.add_child(self.render_tab_bar(
-                    appearance,
-                    privacy_settings,
-                    view.active_secret_redaction_tab,
-                    view,
-                    app,
-                ));
-            }
-
-            let tab_content = if is_enterprise_enabled && !enterprise_regex_list.is_empty() {
-                match view.active_secret_redaction_tab {
-                    SecretRedactionTab::Personal => {
-                        self.render_personal_content(view, appearance, app)
-                    }
-                    SecretRedactionTab::Enterprise => {
-                        self.render_enterprise_content(appearance, app)
-                    }
-                }
-            } else {
-                self.render_personal_content(view, appearance, app)
-            };
-
-            column.add_child(tab_content);
+            column.add_child(self.render_personal_content(view, appearance, app));
             column.add_child(self.horizontal_divider(appearance));
         }
 
         Container::new(column.finish()).finish()
-    }
-}
-
-#[derive(Default)]
-struct CloudConversationStorageWidget {
-    switch_state: SwitchStateHandle,
-}
-
-impl SettingsWidget for CloudConversationStorageWidget {
-    type View = PrivacyPageView;
-
-    fn search_terms(&self) -> &str {
-        "sync cloud conversation store storage ai agent"
-    }
-
-    fn should_render(&self, _app: &AppContext) -> bool {
-        FeatureFlag::CloudConversations.is_enabled()
-    }
-
-    fn render(
-        &self,
-        _view: &Self::View,
-        appearance: &Appearance,
-        app: &AppContext,
-    ) -> Box<dyn Element> {
-        let ui_builder = appearance.ui_builder();
-        let privacy_settings = PrivacySettings::as_ref(app);
-        let org_setting =
-            UserWorkspaces::as_ref(app).get_cloud_conversation_storage_enablement_setting();
-
-        let (toggle_state, is_checked) = match org_setting {
-            AdminEnablementSetting::Enable => (ToggleState::Disabled, true),
-            AdminEnablementSetting::Disable => (ToggleState::Disabled, false),
-            AdminEnablementSetting::RespectUserSetting => (
-                ToggleState::Enabled,
-                privacy_settings.is_cloud_conversation_storage_enabled,
-            ),
-        };
-
-        let switch = ui_builder
-            .switch(self.switch_state.clone())
-            .check(is_checked);
-        let switch = if matches!(toggle_state, ToggleState::Enabled) {
-            switch
-                .build()
-                .on_click(move |ctx, _, _| {
-                    ctx.dispatch_typed_action(PrivacyPageAction::ToggleCloudConversationStorage)
-                })
-                .finish()
-        } else {
-            switch
-                .with_tooltip(TooltipConfig {
-                    text: "This setting is managed by your organization.".to_string(),
-                    styles: ui_builder.default_tool_tip_styles(),
-                })
-                .disable()
-                .build()
-                .finish()
-        };
-
-        Flex::column()
-            .with_child(render_body_item::<PrivacyPageAction>(
-                "Store AI conversations in the cloud".into(),
-                None,
-                toggle_state,
-                appearance,
-                switch,
-                None,
-            ))
-            .with_child(
-                ui_builder
-                    .paragraph(
-                        if is_checked {
-                            "Agent conversations can be shared with others and are retained \
-                            when you log in on different devices. This data is only stored \
-                            for product functionality, and Warp will not use it for analytics."
-                        } else {
-                            "Agent conversations are only stored locally on your machine, are \
-                            lost upon logout, and cannot be shared. Note: conversation data \
-                            for ambient agents are still stored in the cloud."
-                        }
-                        .to_owned(),
-                    )
-                    .with_style(UiComponentStyles {
-                        font_color: Some(
-                            appearance
-                                .theme()
-                                .sub_text_color(appearance.theme().surface_2())
-                                .into_solid(),
-                        ),
-                        margin: Some(
-                            Coords::default()
-                                .top(styles::DESCRIPTION_NEGATIVE_MARGIN_OFFSET)
-                                .bottom(styles::DESCRIPTION_MARGIN_BOTTOM),
-                        ),
-                        ..Default::default()
-                    })
-                    .build()
-                    .finish(),
-            )
-            .finish()
     }
 }
 

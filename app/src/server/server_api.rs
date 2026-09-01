@@ -1,7 +1,5 @@
 pub mod auth;
 pub mod managed_secrets;
-pub mod team;
-pub mod workspace;
 
 use std::ops::Deref;
 use std::sync::Arc;
@@ -16,7 +14,6 @@ use instant::Instant;
 use parking_lot::Mutex;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
-use team::TeamClient;
 use url::Url;
 use warp_core::context_flag::ContextFlag;
 use warp_errors::report_error;
@@ -29,7 +26,6 @@ use warp_server_client::iap::{IapManager, IapState};
 use warp_server_client::network_logging::NetworkLogModel;
 use warpui::r#async::BoxFuture;
 use warpui::{Entity, ModelContext, SingletonEntity};
-use workspace::WorkspaceClient;
 
 use crate::ChannelState;
 use crate::auth::auth_manager::AuthManager;
@@ -483,14 +479,6 @@ impl ServerApiProvider {
 
     pub fn get_auth_client(&self) -> Arc<dyn AuthClient> {
         self.auth_client.clone()
-    }
-
-    pub fn get_workspace_client(&self) -> Arc<dyn WorkspaceClient> {
-        self.server_api.clone()
-    }
-
-    pub fn get_team_client(&self) -> Arc<dyn TeamClient> {
-        self.server_api.clone()
     }
 
     pub fn get_managed_secrets_client(&self) -> Arc<dyn ManagedSecretsClient> {

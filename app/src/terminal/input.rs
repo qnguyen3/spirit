@@ -192,7 +192,6 @@ use crate::workflows::local_workflows::LocalWorkflows;
 use crate::workflows::{self, WorkflowSelectionSource, WorkflowType};
 use crate::workspace::sync_inputs::SyncedInputState;
 use crate::workspace::{CommandSearchOptions, InitContent, ToastStack, WorkspaceAction};
-use crate::workspaces::user_workspaces::UserWorkspaces;
 #[allow(unused_imports)]
 use crate::{ServerApiProvider, cmd_or_ctrl_shift};
 
@@ -1602,13 +1601,10 @@ impl Input {
             },
         );
 
-        let slash_command_team_context_resolver =
-            UserWorkspaces::team_context_resolver(ctx.handle());
         let slash_command_data_source = ctx.add_model(|ctx| {
             let args = slash_commands::GuiDataSourceArgs {
                 active_session: active_session.clone(),
                 terminal_view_id,
-                team_context_resolver: slash_command_team_context_resolver.clone(),
             };
             GuiSlashCommandDataSource::new(args, ctx)
         });

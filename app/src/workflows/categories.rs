@@ -35,7 +35,6 @@ use crate::user_config::{WarpConfig, WarpConfigUpdateEvent};
 use crate::util::bindings::CustomAction;
 use crate::voltron::{VoltronFeatureViewMeta, VoltronMetadata};
 use crate::workflows::WorkflowType;
-use crate::workspaces::user_workspaces::UserWorkspaces;
 
 const SCROLLBAR_WIDTH: ScrollbarWidth = ScrollbarWidth::Auto;
 const DESCRIPTION_MARGIN: f32 = 24.;
@@ -389,12 +388,6 @@ impl CategoriesView {
                     .map(Arc::new),
             ),
         );
-
-        // Notify if there were changes to the team workflows, so we can reload
-        let user_workspaces = UserWorkspaces::handle(ctx);
-        ctx.observe(&user_workspaces, |_, _, ctx| {
-            ctx.notify();
-        });
 
         ctx.subscribe_to_model(&WarpConfig::handle(ctx), |me, _, event, ctx| {
             if let WarpConfigUpdateEvent::LocalUserWorkflows = event {

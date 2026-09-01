@@ -35,7 +35,6 @@ use crate::settings::PrivacySettings;
 use crate::terminal::general_settings::GeneralSettings;
 #[cfg(target_family = "wasm")]
 use crate::uri::browser_url_handler::{parse_current_url, update_browser_url};
-use crate::workspaces::team_tester::TeamTesterStatus;
 use crate::{GlobalResourceHandlesProvider, persistence};
 
 #[derive(Debug)]
@@ -285,13 +284,6 @@ impl AuthManager {
 
                 self.set_needs_reauth(false, ctx);
 
-                // Now that we have a user, start polling for team and cloud object information.
-                // The polling loop's first tick fires immediately, so there is no need for a
-                // separate out-of-band refresh here.
-                TeamTesterStatus::handle(ctx).update(ctx, |model, ctx| {
-                    model.initiate_data_pollers(false, ctx);
-                });
-
                 if !user.is_user_anonymous() {
                     GeneralSettings::handle(ctx).update(ctx, |settings, ctx| {
                         report_if_error!(
@@ -307,19 +299,6 @@ impl AuthManager {
                 // Reconstruct the database if it was removed.
                 // Do nothing if the database was not removed.
                 persistence::reconstruct(&global_resource_handles.model_event_sender);
-                if let Some(model_event_sender) = &global_resource_handles.model_event_sender
-                    && let Err(e) =
-                        model_event_sender.send(ModelEvent::UpsertCurrentUserInformation {
-                            user_information: PersistedCurrentUserInformation {
-                                email: self.auth_state.user_email().unwrap_or_default(),
-                            },
-                        })
-                {
-                    report_error!(
-                        anyhow::Error::new(e)
-                            .context("Error persisting user information to database")
-                    );
-                };
 
                 // Fetch the user's privacy settings from the server if any or update the server settings.
                 let privacy_settings_handle = PrivacySettings::handle(ctx);
@@ -705,11 +684,6 @@ impl AuthManager {
 
         self.persist(ctx);
     }
-}
-
-#[derive(Clone, Debug)]
-pub struct PersistedCurrentUserInformation {
-    pub email: String,
 }
 
 impl Entity for AuthManager {

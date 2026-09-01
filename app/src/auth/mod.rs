@@ -4,7 +4,6 @@ pub mod auth_override_warning_modal;
 mod auth_view_body;
 pub mod auth_view_modal;
 mod auth_view_shared_helpers;
-pub mod github_auth_notifier;
 mod login_error_modal;
 mod login_failure_notification;
 pub mod login_slide;
@@ -33,7 +32,6 @@ use crate::session_management::{RunningSessionSummary, SessionNavigationData};
 use crate::settings::PrivacySettings;
 use crate::terminal::general_settings::GeneralSettings;
 use crate::workspace::{Workspace, WorkspaceAction};
-use crate::workspaces::update_manager::TeamUpdateManager;
 use crate::{
     GlobalResourceHandlesProvider, focus_running_window_and_show_native_modal, persistence,
 };
@@ -196,10 +194,6 @@ pub fn log_out(app: &mut AppContext) {
 
     AuthManager::handle(app).update(app, |auth_manager, ctx| {
         auth_manager.log_out(ctx);
-    });
-    // Stop the workspace metadata polling loop that was started on login.
-    TeamUpdateManager::handle(app).update(app, |manager, _| {
-        manager.stop_polling_for_workspace_metadata_updates();
     });
     remove_cloud_persisted_settings(app);
 

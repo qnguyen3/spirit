@@ -39,7 +39,6 @@ use warpui::{AppContext, Entity, SingletonEntity};
 
 use self::model::{Project as ProjectRow, ProjectWorktree as WorktreeRow};
 use crate::app_state::AppState;
-use crate::auth::auth_manager::PersistedCurrentUserInformation;
 use crate::persisted_workspace::EnablementState;
 use crate::projects::{Project, Worktree};
 use crate::server::ids::SyncId;
@@ -48,8 +47,6 @@ use crate::terminal::history::PersistedCommand;
 use crate::terminal::model::block::SerializedBlock;
 use crate::terminal::model::session::SessionId;
 use crate::workspace_metadata::WorkspaceMetadata as CodeWorkspaceMetadata;
-use crate::workspaces::user_profiles::UserProfileWithUID;
-use crate::workspaces::workspace::{Workspace as WorkspaceMetadata, WorkspaceUid};
 
 #[derive(Clone)]
 pub enum PersistenceScope {
@@ -104,10 +101,6 @@ impl PersistedDataScope {
         matches!(self, PersistedDataScope::Full)
     }
 
-    /// User profiles used to identify cloud-object creators.
-    fn user_profiles(self) -> bool {
-        self != PersistedDataScope::CodebaseIndicesOnly
-    }
 }
 
 /// Initializes the persistence "subsystem".
@@ -237,11 +230,7 @@ pub struct PersistedData {
     /// [`PersistedDataScope`] excludes it entirely (the daemon).
     pub app_state: Option<AppState>,
 
-    pub workspaces: Vec<WorkspaceMetadata>,
-    pub current_workspace_uid: Option<WorkspaceUid>,
     pub command_history: Vec<PersistedCommand>,
-    pub user_profiles: Vec<UserProfileWithUID>,
-    pub time_of_next_force_object_refresh: Option<DateTime<Utc>>,
     pub codebase_indices: Vec<CodeWorkspaceMetadata>,
     pub workspace_language_servers: HashMap<PathBuf, HashMap<LSPServerType, EnablementState>>,
     pub projects: Vec<Project>,
@@ -285,27 +274,11 @@ pub enum ModelEvent {
     SaveBlock(BlockCompleted),
     DeleteBlocks(Vec<u8>),
     Snapshot(AppState),
-    UpsertWorkspace {
-        workspace: Box<WorkspaceMetadata>,
-    },
-    UpsertWorkspaces {
-        workspaces: Vec<WorkspaceMetadata>,
-    },
-    SetCurrentWorkspace {
-        workspace_uid: WorkspaceUid,
-    },
     InsertCommand {
         metadata: StartedCommandMetadata,
     },
     UpdateFinishedCommand {
         metadata: FinishedCommandMetadata,
-    },
-    UpsertUserProfiles {
-        profiles: Vec<UserProfileWithUID>,
-    },
-    ClearUserProfiles,
-    RecordTimeOfNextRefresh {
-        timestamp: DateTime<Utc>,
     },
     // `PauseAndRemoveDatabase` and `ReconstructAndResume` are used to pause and resume the writer thread.
     // These are employed as part of Logout v0 to ensure that the writer thread
@@ -315,9 +288,6 @@ pub enum ModelEvent {
     ReconstructAndResume,
     /// Close the SQLite writer thread when the app is about to quit.
     Terminate,
-    UpsertCurrentUserInformation {
-        user_information: PersistedCurrentUserInformation,
-    },
     UpsertCodebaseIndexMetadata {
         index_metadata: Box<CodeWorkspaceMetadata>,
     },

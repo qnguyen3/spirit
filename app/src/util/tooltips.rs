@@ -192,10 +192,7 @@ where
             | TooltipRedaction::SecretWillNotBeSentToLLMMessaging { .. }
     );
 
-    // If enterprise secret redaction is enabled, add additional messaging and padding to the tooltip.
-    let is_enterprise_secret_redaction_enabled =
-        is_secret && PrivacySettings::as_ref(app).is_enterprise_secret_redaction_enabled();
-    let tooltip_element = if is_enterprise_secret_redaction_enabled {
+    let tooltip_element = if false {
         let tooltip_column = Flex::column()
             .with_child(tooltip.finish())
             .with_child(
