@@ -1,5 +1,3 @@
-use std::cell::RefCell;
-use std::collections::HashMap;
 use std::fmt::Display;
 
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
@@ -575,7 +573,6 @@ impl SettingsWidget for SubshellsWidget {
 struct SSHWidget {
     enable_ssh_warpification_switch_state: SwitchStateHandle,
     reuse_control_master_switch_state: SwitchStateHandle,
-    local_only_icon_tooltip_states: RefCell<HashMap<String, MouseStateHandle>>,
 }
 
 impl SettingsWidget for SSHWidget {

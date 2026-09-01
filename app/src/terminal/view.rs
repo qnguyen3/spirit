@@ -144,7 +144,6 @@ use super::{CLIAgent, GridType, cli_agent, should_right_click_paste};
 use crate::appearance::{Appearance, AppearanceEvent};
 use crate::auth::AuthStateProvider;
 use crate::auth::auth_manager::AuthManager;
-use crate::auth::auth_state::AuthState;
 use crate::auth::auth_view_modal::AuthViewVariant;
 use crate::autoupdate::{self, AutoupdateStage, get_update_state};
 use crate::banner::{
@@ -230,10 +229,6 @@ use crate::terminal::input::{
 };
 use crate::terminal::ligature_settings::{LigatureSettings, should_use_ligature_rendering};
 use crate::terminal::links::should_directly_open_link;
-#[cfg(feature = "local_tty")]
-use crate::terminal::local_tty::get_shell_starter;
-#[cfg(feature = "local_tty")]
-use crate::terminal::local_tty::shell::ShellStarter;
 #[cfg(feature = "local_tty")]
 #[cfg(all(windows, feature = "local_tty"))]
 use crate::terminal::local_tty::windows::get_user_and_system_env_variable;
@@ -1611,7 +1606,6 @@ pub struct TerminalView {
 
     mouse_states: TerminalViewMouseStates,
 
-    auth_state: Arc<AuthState>,
 
     /// A sender used to handle messages for whenever the entire terminal view
     /// changes size.  Note that this size contains not just the content element
@@ -2500,7 +2494,6 @@ impl TerminalView {
             mouse_states: Default::default(),
             open_grid_link_tool_tip: None,
             open_rich_content_link_tool_tip: None,
-            auth_state: AuthStateProvider::as_ref(ctx).get().clone(),
             find_bar,
             resize_tx,
             find_link_tx,
@@ -13043,58 +13036,6 @@ impl TerminalView {
 
         self.input.update(ctx, |input, ctx| {
             input.replace_buffer_content(command, ctx);
-        });
-    }
-
-    fn reset_focus_after_rich_block(&mut self, ctx: &mut ViewContext<Self>) {
-        self.redetermine_terminal_focus(ctx);
-        self.input.update(ctx, |input, ctx| {
-            input.editor().update(ctx, |editor, ctx| {
-                editor.clear_autosuggestion(ctx);
-            });
-        });
-    }
-
-    #[allow(unused_variables)]
-    fn get_shell_starter_local(&self, ctx: &mut ViewContext<Self>) -> Option<(String, ShellType)> {
-        #[cfg(feature = "local_tty")]
-        {
-            // TODO(CORE-2300): This appears to be used for invoking env vars.
-            // Before we close out CORE-2300, we should evaluate if we need to add
-            // shell info here.
-            let shell_starter = get_shell_starter(None, &self.auth_state, ctx)?;
-            let shell_path = match &shell_starter {
-                ShellStarter::Direct(direct_shell_starter)
-                | ShellStarter::MSYS2(direct_shell_starter) => direct_shell_starter
-                    .shell_path()
-                    .to_string_lossy()
-                    .to_string(),
-                ShellStarter::DockerSandbox(docker_shell_starter) => docker_shell_starter
-                    .direct
-                    .shell_path()
-                    .to_string_lossy()
-                    .to_string(),
-                ShellStarter::Wsl(wsl_shell_starter) => wsl_shell_starter.shell_path(),
-            };
-            Some((shell_path, shell_starter.shell_type()))
-        }
-
-        #[cfg(not(feature = "local_tty"))]
-        None
-    }
-
-    fn set_and_execute_subshell_command(
-        &mut self,
-        shell_command: &str,
-        shell_type: ShellType,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        // Attempt to auto warpify the subshell when bootstrapped
-        self.pending_auto_bootstrap_shell_type = Some(shell_type);
-
-        self.input.update(ctx, |input, ctx| {
-            input.set_pending_command(shell_command, ctx);
-            input.execute_pending_command(ctx);
         });
     }
 

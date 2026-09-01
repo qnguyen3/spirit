@@ -110,7 +110,6 @@ struct ButtonMouseStates {
     close: MouseStateHandle,
     collapse: MouseStateHandle,
     view_context: MouseStateHandle,
-    edit_cloud_workflow: MouseStateHandle,
     reset_command: MouseStateHandle,
 }
 

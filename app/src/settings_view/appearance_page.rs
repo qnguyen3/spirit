@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -507,7 +506,6 @@ pub enum AppearancePageAction {
 pub struct AppearanceSettingsPageView {
     page: PageType<Self>,
     window_id: WindowId,
-    local_only_icon_tooltip_states: RefCell<HashMap<String, MouseStateHandle>>,
     font_size_editor: ViewHandle<EditorView>,
     line_height_editor: ViewHandle<EditorView>,
     notebook_font_size_editor: ViewHandle<EditorView>,
@@ -1230,7 +1228,6 @@ impl AppearanceSettingsPageView {
         AppearanceSettingsPageView {
             page: Self::build_page(ctx),
             window_id: ctx.window_id(),
-            local_only_icon_tooltip_states: Default::default(),
             notebook_font_size_editor,
             font_size_editor,
             line_height_editor,

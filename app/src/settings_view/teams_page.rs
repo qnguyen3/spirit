@@ -3859,56 +3859,6 @@ impl TeamsWidget {
         .finish()
     }
 
-    fn render_plan_usage_header(&self, text: String, appearance: &Appearance) -> Box<dyn Element> {
-        Align::new(
-            appearance
-                .ui_builder()
-                .span(text)
-                .with_style(UiComponentStyles {
-                    font_family_id: Some(appearance.ui_font_family()),
-                    font_weight: Some(Weight::Light),
-                    font_color: Some(
-                        appearance
-                            .theme()
-                            .active_ui_text_color()
-                            .with_opacity(40)
-                            .into(),
-                    ),
-                    font_size: Some(13.),
-                    ..Default::default()
-                })
-                .build()
-                .finish(),
-        )
-        .left()
-        .finish()
-    }
-
-    fn render_plan_usage_text(&self, text: String, appearance: &Appearance) -> Box<dyn Element> {
-        Align::new(
-            appearance
-                .ui_builder()
-                .span(text)
-                .with_style(UiComponentStyles {
-                    font_family_id: Some(appearance.ui_font_family()),
-                    font_weight: Some(Weight::Light),
-                    font_color: Some(
-                        appearance
-                            .theme()
-                            .active_ui_text_color()
-                            .with_opacity(60)
-                            .into(),
-                    ),
-                    font_size: Some(20.),
-                    ..Default::default()
-                })
-                .build()
-                .finish(),
-        )
-        .left()
-        .finish()
-    }
-
     fn render_sub_text(
         &self,
         text: String,

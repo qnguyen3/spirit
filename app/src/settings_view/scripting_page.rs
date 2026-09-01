@@ -1,6 +1,4 @@
 //! Settings UI for local scripting and Warp control permissions.
-use std::cell::RefCell;
-use std::collections::HashMap;
 
 use settings::Setting as _;
 #[cfg(target_os = "macos")]
@@ -36,7 +34,6 @@ pub enum ScriptingSettingsPageAction {
 
 pub struct ScriptingSettingsPageView {
     page: PageType<Self>,
-    local_only_icon_tooltip_states: RefCell<HashMap<String, MouseStateHandle>>,
     local_control_mode_dropdown: ViewHandle<Dropdown<ScriptingSettingsPageAction>>,
     #[cfg(target_os = "macos")]
     warpctrl_installing: bool,
@@ -72,7 +69,6 @@ impl ScriptingSettingsPageView {
 
         Self {
             page: PageType::new_uncategorized(widgets, Some(PageTitle::new("Scripting"))),
-            local_only_icon_tooltip_states: RefCell::new(HashMap::new()),
             local_control_mode_dropdown,
             #[cfg(target_os = "macos")]
             warpctrl_installing: false,

@@ -163,10 +163,6 @@ where
         self.style_override = Some(style);
     }
 
-    pub fn set_orientation(&mut self, orientation: FilterableDropdownOrientation) {
-        self.orientation = orientation;
-    }
-
     pub fn add_items(&mut self, items: Vec<DropdownItem<A>>, ctx: &mut ViewContext<Self>) {
         self.items.extend(items.iter().map(|item| item.into()));
         self.set_filtered_items(ctx);
@@ -193,11 +189,6 @@ where
             self.selected_item = None;
             ctx.notify();
         }
-    }
-
-    /// The number of items in the dropdown.
-    pub fn len(&self) -> usize {
-        self.items.len()
     }
 
     #[expect(dead_code)]

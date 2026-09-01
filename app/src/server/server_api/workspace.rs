@@ -1,6 +1,6 @@
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
-use cynic::{MutationBuilder, QueryBuilder};
+use cynic::{MutationBuilder};
 #[cfg(test)]
 use mockall::{automock, predicate::*};
 use warp_graphql::mutations::stripe_billing_portal::{

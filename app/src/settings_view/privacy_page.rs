@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::LazyLock;
 use std::time::Duration;
 
@@ -88,7 +88,6 @@ pub fn data_management_url(custom_token: Option<&str>) -> String {
 
 pub struct PrivacyPageView {
     page: PageType<Self>,
-    local_only_icon_tooltip_states: RefCell<HashMap<String, MouseStateHandle>>,
     /// This needs to mirror the length of PrivacySettings::user_secret_regex_list.
     added_user_secret_regex_list_button_handles: Vec<MouseStateHandle>,
     /// Set of indices for regex items that are pending removal
@@ -189,7 +188,6 @@ impl PrivacyPageView {
 
         let mut privacy_page_view = Self {
             page: Self::build_page(),
-            local_only_icon_tooltip_states: Default::default(),
             added_user_secret_regex_list_button_handles: Default::default(),
             pending_regex_removals: Default::default(),
             pending_timer: None,

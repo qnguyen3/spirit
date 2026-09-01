@@ -7,7 +7,6 @@ use warp_core::features::FeatureFlag;
 use warpui::elements::{Container, Flex, MouseStateHandle, ParentElement, Shrinkable, Wrap};
 use warpui::{
     AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
-    WindowId,
 };
 
 use crate::appearance::Appearance;
@@ -19,7 +18,6 @@ pub struct ZeroState {
     filter_chip_to_mouse_state_handle: HashMap<QueryFilter, MouseStateHandle>,
     items: ModelHandle<Items>,
     // Store the window this view belongs to so we don't rely on the global active window
-    window_id: WindowId,
 }
 
 #[derive(Debug)]
@@ -43,7 +41,6 @@ impl ZeroState {
                 .collect(),
 
             items: results_model,
-            window_id: ctx.window_id(),
         }
     }
 
