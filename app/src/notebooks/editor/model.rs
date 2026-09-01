@@ -2121,7 +2121,6 @@ impl ChildModels {
         // - If a block were unstyled, its anchors may still be valid, but it won't be in the new
         //   outline, so the existing model handle will be dropped at the end of the method.
         let mut to_add = vec![];
-        let mut new_embedded_item = vec![];
         let mut reset_selection = vec![];
 
         for outline in content.as_ref(ctx).outline_blocks() {
@@ -2154,7 +2153,7 @@ impl ChildModels {
         // mutable borrow of `content`, while the `outline_blocks` iterator already immutably
         // borrows it.
         self.models
-            .reserve(to_add.len() + new_embedded_item.len() + reset_selection.len());
+            .reserve(to_add.len() + reset_selection.len());
 
         for (model_start, model) in reset_selection {
             model.set_selected(false, ctx);

@@ -33,7 +33,7 @@ pub struct WorkflowSearchItem {
 }
 
 impl WorkflowSearchItem {
-    fn workflow_data(&self) -> Cow<'_, Workflow> {
+    fn workflow_data(&self) -> &Workflow {
         match &self.identity {
             WorkflowIdentity::Local(workflow_type) => workflow_type.as_workflow(),
         }

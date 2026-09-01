@@ -18,10 +18,6 @@ lazy_static! {
     static ref SAMPLE_QUERY_TO_FILTER: HashMap<&'static str, QueryFilter> = HashMap::from([
         ("history: git checkout", QueryFilter::History),
         ("workflows: run dev server", QueryFilter::Workflows),
-        (
-            "notebooks: deploy production server",
-            QueryFilter::Notebooks
-        ),
     ]);
 }
 

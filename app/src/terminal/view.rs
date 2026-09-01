@@ -977,7 +977,6 @@ pub enum ContextMenuAction {
     },
     CopyRprompt,
     EditPrompt,
-    OpenWorkflowModal,
 }
 
 #[derive(Clone)]
@@ -987,7 +986,6 @@ pub enum InputContextMenuAction {
     SelectAll,
     Paste,
     ShowCommandSearch,
-    SaveAsWorkflow,
     ToggleInputHintText,
 }
 
@@ -1013,7 +1011,6 @@ impl fmt::Debug for ContextMenuAction {
             // CopyUrl's debug output is limited, since the URLs come from command output
             CopyUrl { .. } => f.write_str("CopyUrl"),
             EditPrompt => f.write_str("EditPrompt"),
-            OpenWorkflowModal => f.write_str("OpenWorkflowModal"),
             CopyBlockFilteredOutputs => f.write_str("CopyBlockFilteredOutput"),
         }
     }
@@ -1030,7 +1027,6 @@ impl fmt::Debug for InputContextMenuAction {
             SelectAll => f.write_str("SelectAll"),
             Paste => f.write_str("Paste"),
             ShowCommandSearch => f.write_str("CommandSearch"),
-            SaveAsWorkflow => f.write_str("SaveAsWorkflow"),
             ToggleInputHintText => f.write_str("ToggleInputHintText"),
         }
     }
@@ -1105,10 +1101,8 @@ pub struct ExecuteCommandEvent {
     pub command: String,
     pub session_id: SessionId,
 
-    /// If the command was executed from a [`CloudWorkflow`], pass its ID here.
-    pub workflow_id: Option<SyncId>,
-    /// If the command was executed from a [`CloudWorkflow`] or WorkflowType::Local, store the
-    /// templated command here.
+    /// If the command was executed from a `WorkflowType::Local`, store the templated command
+    /// here.
     pub workflow_command: Option<String>,
 
     /// `true` if the executed command should be added to session history.
@@ -1153,13 +1147,6 @@ pub enum Event {
     /// inside this pane group.
     TerminalViewStateChanged,
     ShowCommandSearch(CommandSearchOptions),
-    // Tell the pane group to open the workflow modal.
-    OpenWorkflowModalWithCommand(String),
-    // Tell the pane group to open the workflow modal with an existing cloud workflow.
-    OpenWorkflowModalWithCloudWorkflow(SyncId),
-    // Tell the pane group to open the workflow modal with an unsaved workflow.
-    OpenWorkflowModalWithTemporary(Box<Workflow>),
-    OpenWarpDriveObjectInPane(ObjectUid),
     OpenPromptEditor,
     AuthSecretDeleteConfirmationDialogToggled {
         is_open: bool,
@@ -2572,7 +2559,6 @@ impl TerminalView {
             onboarding_prompt_block: None,
             settings_import_onboarding_block: None,
             pending_auto_bootstrap_shell_type: None,
-            env_vars: Vec::new(),
             show_snackbar: true,
             hover_near_snackbar_area: false,
             window_id,
@@ -3448,10 +3434,6 @@ impl TerminalView {
             return false;
         }
 
-        if self.active_env_var_collection_block(app).is_some() {
-            return false;
-        }
-
         // Hide the input box while the SSH remote-server choice block is shown.
         // User must choose to install or skip before any shell input is possible.
         if self.active_ssh_remote_server_choice_block().is_some() {
@@ -3484,10 +3466,6 @@ impl TerminalView {
         }
 
         true
-    }
-
-    pub fn has_active_env_var_block(&self, app: &AppContext) -> bool {
-        self.active_env_var_collection_block(app).is_some()
     }
 
     /// Shuts down the pty and event loop, terminating the shell process.
@@ -5218,38 +5196,6 @@ impl TerminalView {
                 self.find_model.update(ctx, |find_model, ctx| {
                     find_model.notify_block_completed(completed_block_index, ctx);
                 });
-
-                if !matches!(block_completed_event.block_type, BlockType::BootstrapHidden)
-                    && let Some(env_var_block) = self.active_env_var_collection_block(ctx)
-                {
-                    let output_truncated =
-                        if let BlockType::User(completed) = &block_completed_event.block_type {
-                            Some(
-                                completed
-                                    .output_truncated
-                                    .get_with(|compute| {
-                                        let model = self.model.lock();
-                                        compute(model.block_list())
-                                    })
-                                    .to_owned(),
-                            )
-                        } else {
-                            None
-                        };
-                    env_var_block.update(ctx, move |block, ctx| {
-                        if block.is_running() {
-                            match output_truncated {
-                                // If we have a non-empty response we assume it's an error. We are
-                                // relying on this because we don't get a non-zero exit code for the
-                                // `export` function
-                                Some(output) if !output.is_empty() => {
-                                    block.on_failed(Some(output), ctx)
-                                }
-                                _ => block.on_succeeded(ctx),
-                            }
-                        }
-                    });
-                }
 
                 // If this block ran a possible subshell command, and it exited before the 1s timer
                 // completed, abort showing the banner.
@@ -8657,13 +8603,6 @@ impl TerminalView {
         );
     }
 
-    fn open_workflow_modal(&mut self, ctx: &mut ViewContext<Self>) {
-        let selected_block_contents =
-            self.selected_block_contents_as_string(BlockEntity::Command, " &&\n", ctx);
-
-        self.open_workflow_modal_with_command(selected_block_contents, ctx);
-    }
-
     fn open_block_filter_editor(
         &mut self,
         block_index: BlockIndex,
@@ -8700,32 +8639,6 @@ impl TerminalView {
         self.block_filter_editor.update(ctx, |block_filter, ctx| {
             block_filter.reset(ctx);
         });
-        ctx.notify();
-    }
-
-    fn open_workflow_modal_from_block(
-        &mut self,
-        block_index: BlockIndex,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        // Make the block for which we're showing the modal the only selected block.
-        self.reset_selection_to_single_block(block_index, ctx);
-        self.scroll_to_if_not_visible(block_index, ctx);
-
-        // Set the command in the modal to the command of the block.
-        if let Some(block) = self.model.lock().block_list().block_at(block_index) {
-            ctx.emit(Event::OpenWorkflowModalWithCommand(
-                block.command_to_string(),
-            ))
-        }
-    }
-
-    pub fn open_workflow_modal_with_existing(
-        &mut self,
-        workflow_id: SyncId,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        ctx.emit(Event::OpenWorkflowModalWithCloudWorkflow(workflow_id));
         ctx.notify();
     }
 
@@ -9676,22 +9589,6 @@ impl TerminalView {
         ctx.emit(Event::ShowCommandSearch(Default::default()))
     }
 
-    fn save_as_workflow_from_input(&mut self, ctx: &mut ViewContext<Self>) {
-        let (all_current_input_text, selected_input_text) = self.input.read(ctx, |input, ctx| {
-            input.editor().read(ctx, |editor, ctx| {
-                (editor.buffer_text(ctx), editor.selected_text(ctx))
-            })
-        });
-
-        let command = if selected_input_text.is_empty() {
-            all_current_input_text
-        } else {
-            selected_input_text
-        };
-
-        self.open_workflow_modal_with_command(command, ctx);
-    }
-
     fn toggle_input_hint_text(&mut self, ctx: &mut ViewContext<Self>) {
         let _new_val = InputSettings::handle(ctx).update(ctx, |input_settings, ctx| {
             report_if_error!(input_settings.show_hint_text.toggle_and_save_value(ctx));
@@ -9699,10 +9596,6 @@ impl TerminalView {
         });
 
         // Send the same telemetry event that we do from the features page to make data analysis easier.
-    }
-
-    fn open_workflow_modal_with_command(&mut self, command: String, ctx: &mut ViewContext<Self>) {
-        ctx.emit(Event::OpenWorkflowModalWithCommand(command));
     }
 
     fn copy_prompt(
@@ -10324,13 +10217,7 @@ impl TerminalView {
                     ctx.focus(&ssh_choice_view);
                 }
                 _ => {
-                    if let Some(env_var_collection_block_handle) =
-                        self.active_env_var_collection_block(ctx)
-                    {
-                        ctx.focus(env_var_collection_block_handle);
-                    } else {
-                        self.focus_input_box(ctx);
-                    }
+                    self.focus_input_box(ctx);
                 }
             }
         }
@@ -12932,7 +12819,6 @@ impl TerminalView {
             CopyPrompt { position, part } => self.copy_prompt(position, part, ctx),
             CopyRprompt => self.copy_rprompt(ctx),
             EditPrompt => self.edit_prompt(ctx),
-            OpenWorkflowModal => self.open_workflow_modal(ctx),
             CopyBlockFilteredOutputs => self.context_menu_copy_filtered_block_outputs(ctx),
         }
     }
@@ -12950,7 +12836,6 @@ impl TerminalView {
             SelectAll => self.select_all_text_from_input(ctx),
             Paste => self.paste_in_input(ctx),
             ShowCommandSearch => self.command_search_from_input(ctx),
-            SaveAsWorkflow => self.save_as_workflow_from_input(ctx),
             ToggleInputHintText => self.toggle_input_hint_text(ctx),
         }
         self.close_context_menu(ctx, false);
@@ -13187,14 +13072,6 @@ impl TerminalView {
                 editor.clear_autosuggestion(ctx);
             });
         });
-    }
-
-    pub fn cancel_env_var_block(&mut self, ctx: &mut ViewContext<Self>) {
-        if let Some(block) = self.active_env_var_collection_block(ctx) {
-            block.update(ctx, |view, ctx| {
-                view.cancel(ctx);
-            });
-        }
     }
 
     #[allow(unused_variables)]
@@ -13847,9 +13724,6 @@ impl TypedActionView for TerminalView {
             | InputContextMenuItem(_)
             | NotificationsDiscoveryBanner(_)
             | NotificationsErrorBanner(_)
-            | OpenWorkflowModal
-            | OpenWorkflowModalForBlock(_)
-            | OpenWorkflowModalWithCloudWorkflow(_)
             | ToggleSnackbarInActivePane
             | HyperlinkClick { .. }
             | AttemptLoginGatedFeature
@@ -14081,13 +13955,6 @@ impl TypedActionView for TerminalView {
                     *layout,
                     ctx,
                 );
-            }
-            OpenWorkflowModal => self.open_workflow_modal(ctx),
-            OpenWorkflowModalForBlock(block_index) => {
-                self.open_workflow_modal_from_block(*block_index, ctx)
-            }
-            OpenWorkflowModalWithCloudWorkflow(workflow_id) => {
-                self.open_workflow_modal_with_existing(*workflow_id, ctx)
             }
             OpenBlockListContextMenu => self.open_block_list_context_menu_via_keybinding(ctx),
             TriggerSubshellBootstrap => self.trigger_subshell_bootstrap(None, false, ctx),

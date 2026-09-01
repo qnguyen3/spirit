@@ -129,12 +129,8 @@ impl Display for IPaneType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             IPaneType::Terminal => write!(f, "Terminal"),
-            IPaneType::Notebook => write!(f, "Notebook"),
             IPaneType::File => write!(f, "File"),
             IPaneType::Code => write!(f, "Code"),
-            IPaneType::EnvVarCollection => write!(f, "Environment Variable Collection"),
-            IPaneType::EnvironmentManagement => write!(f, "Environment Management"),
-            IPaneType::Workflow => write!(f, "Workflow"),
             IPaneType::Settings => write!(f, "Settings"),
             IPaneType::GetStarted => write!(f, "GetStarted"),
             IPaneType::AgentPicker => write!(f, "Agent Picker"),
@@ -266,28 +262,12 @@ impl PaneId {
         matches!(self.0.pane_type, IPaneType::Terminal)
     }
 
-    pub fn is_notebook_pane(&self) -> bool {
-        matches!(self.0.pane_type, IPaneType::Notebook)
-    }
-
     pub fn is_code_pane(&self) -> bool {
         matches!(self.0.pane_type, IPaneType::Code)
     }
 
     pub fn is_file_pane(&self) -> bool {
         matches!(self.0.pane_type, IPaneType::File)
-    }
-
-    pub fn is_environment_management_pane(&self) -> bool {
-        matches!(self.0.pane_type, IPaneType::EnvironmentManagement)
-    }
-
-    /// Returns true if this pane contains a Warp Drive object (notebook, workflow, etc.).
-    pub fn is_warp_drive_object_pane(&self) -> bool {
-        matches!(
-            self.0.pane_type,
-            IPaneType::Notebook | IPaneType::Workflow | IPaneType::EnvVarCollection
-        )
     }
 
     /// Renders the child view backing this pane.

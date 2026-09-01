@@ -198,8 +198,6 @@ impl LeafContents {
             LeafContents::Terminal(_)
             | LeafContents::Notebook(_)
             | LeafContents::Code(_)
-            | LeafContents::EnvVarCollection(_)
-            | LeafContents::Workflow(_)
             | LeafContents::Settings(_)
             | LeafContents::CodeReview(_)
             | LeafContents::GetStarted => true,
@@ -261,7 +259,6 @@ pub enum CodeReviewPaneSnapshot {
 pub enum LeftPanelDisplayedTab {
     FileTree,
     GlobalSearch,
-    WarpDrive,
     SourceControl,
 }
 
@@ -270,7 +267,6 @@ impl From<ToolPanelView> for LeftPanelDisplayedTab {
         match view {
             ToolPanelView::ProjectExplorer => LeftPanelDisplayedTab::FileTree,
             ToolPanelView::GlobalSearch { .. } => LeftPanelDisplayedTab::GlobalSearch,
-            ToolPanelView::WarpDrive => LeftPanelDisplayedTab::WarpDrive,
             ToolPanelView::SourceControl => LeftPanelDisplayedTab::SourceControl,
         }
     }

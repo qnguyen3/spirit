@@ -1126,14 +1126,12 @@ pub(crate) fn initialize_app(
     });
 
     let (
-        cloud_objects,
         cached_workspaces,
         current_workspace_uid,
         app_state,
         command_history,
         restored_user_profiles,
         time_of_next_force_object_refresh,
-        object_actions,
         persisted_workspaces,
         workspace_language_servers,
         persisted_projects,
@@ -1142,14 +1140,12 @@ pub(crate) fn initialize_app(
     ) = sqlite_data
         .map(|sqlite_data| {
             (
-                sqlite_data.cloud_objects,
                 sqlite_data.workspaces,
                 sqlite_data.current_workspace_uid,
                 sqlite_data.app_state,
                 sqlite_data.command_history,
                 sqlite_data.user_profiles,
                 sqlite_data.time_of_next_force_object_refresh,
-                sqlite_data.object_actions,
                 sqlite_data.codebase_indices,
                 sqlite_data.workspace_language_servers,
                 sqlite_data.projects,
@@ -1159,8 +1155,6 @@ pub(crate) fn initialize_app(
         })
         .unwrap_or_else(|| {
             (
-                Default::default(),
-                Default::default(),
                 Default::default(),
                 Default::default(),
                 Default::default(),

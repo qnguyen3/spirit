@@ -101,7 +101,6 @@ impl FromStr for UriHost {
             "team" => Ok(Self::Team),
             "action" => Ok(Self::Action),
             "launch" => Ok(Self::Launch),
-            "drive" => Ok(Self::Drive),
             "settings" => Ok(Self::Settings),
             "home" => Ok(Self::Home),
             "linear" => Ok(Self::Linear),
@@ -234,20 +233,6 @@ impl UriHost {
                         GitHubAuthNotifier::handle(ctx).update(ctx, |notifier, ctx| {
                             notifier.notify_auth_completed(ctx);
                         });
-
-                        // Open settings page unless auth was initiated from cloud setup
-                        // (cloud setup users should stay on their current page)
-                        let source = query_string.get("source").map(|s| s.as_ref());
-                        let skip_settings = source == Some(CLOUD_SETUP_SOURCE);
-                        if !skip_settings {
-                            dispatch_action_in_new_or_existing_window(
-                                primary_window_id,
-                                "root_view:open_settings_page_in_existing_window",
-                                "root_view:open_settings_page_in_new_window",
-                                &SettingsSection::CloudEnvironments,
-                                ctx,
-                            );
-                        }
                     }
                     // No special sub-page: route the bare host, the `q` (search) and
                     // `widget` (scroll-to) query params, and the simple section
@@ -374,7 +359,7 @@ impl UriHost {
             Self::Auth => W::ShowPrimaryWindow(WindowActivationFallbackBehavior::NewWindow {
                 replace_existing: true,
             }),
-            Self::Team | Self::Drive | Self::Settings => W::default(),
+            Self::Team | Self::Settings => W::default(),
             // These URLs always open new windows.
             Self::Launch | Self::Home => W::Nothing,
             // This will actually be handled by [`Action::window_behavior_hint`].

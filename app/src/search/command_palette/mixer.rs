@@ -20,9 +20,6 @@ pub enum CommandPaletteItemAction {
     AcceptBinding {
         binding: Arc<CommandBinding>,
     },
-    ExecuteWorkflow {
-        id: SyncId,
-    },
     /// Navigate to the session identified by `pane_view`.
     NavigateToSession {
         pane_view_locator: PaneViewLocator,
@@ -64,11 +61,6 @@ impl CommandPaletteItemAction {
             CommandPaletteItemAction::AcceptBinding { binding } => ItemSummary::Action {
                 binding_id: binding.id,
             },
-            CommandPaletteItemAction::OpenNotebook { id } => ItemSummary::Notebook { id: *id },
-            CommandPaletteItemAction::ExecuteWorkflow { id } => ItemSummary::Workflow { id: *id },
-            CommandPaletteItemAction::InvokeEnvironmentVariables { id } => {
-                ItemSummary::EnvVarCollection { id: *id }
-            }
             CommandPaletteItemAction::NavigateToSession {
                 pane_view_locator, ..
             } => ItemSummary::Session {
@@ -124,15 +116,6 @@ pub enum ItemSummary {
     Action {
         binding_id: BindingId,
     },
-    Workflow {
-        id: SyncId,
-    },
-    EnvVarCollection {
-        id: SyncId,
-    },
-    Notebook {
-        id: SyncId,
-    },
     Session {
         pane_view_locator: PaneViewLocator,
     },
@@ -145,8 +128,6 @@ pub enum ItemSummary {
     /// Dummy enum variant for launch configurations until we support showing them in recent section
     /// of the zero state
     LaunchConfiguration,
-    /// Dummy enum variant for cloud objects that aren't supported yet in command palette
-    CloudObject,
     File {
         path: String,
         project_directory: String,

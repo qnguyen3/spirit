@@ -980,9 +980,7 @@ fn save_pane_state(
         LeafContents::Settings(_) => SETTINGS_PANE_KIND,
         LeafContents::CodeReview(_) => CODE_REVIEW_PANE_KIND,
         LeafContents::GetStarted => GET_STARTED_PANE_KIND,
-        LeafContents::EnvironmentManagement(_)
-        | LeafContents::NetworkLog
-        | LeafContents::AgentPicker => {
+        LeafContents::NetworkLog | LeafContents::AgentPicker => {
             // These pane types are filtered out before this function is
             // called; see `LeafContents::is_persisted` and the skip in
             // `save_app_state`. Reaching this arm would mean a `pane_nodes`
@@ -1072,9 +1070,6 @@ fn save_pane_state(
                     .values(tab_row)
                     .execute(conn)?;
             }
-        }
-        LeafContents::EnvironmentManagement(_) => {
-            // Unreachable: filtered by `is_persisted` in `save_app_state`.
         }
         LeafContents::Settings(settings_pane_snapshot) => {
             let current_page = match settings_pane_snapshot {
@@ -1919,13 +1914,11 @@ fn read_sqlite_data(
     if matches!(data_scope, PersistedDataScope::CodebaseIndicesOnly) {
         return Ok(PersistedData {
             app_state: None,
-            cloud_objects: Default::default(),
             workspaces: Default::default(),
             current_workspace_uid: None,
             command_history: Default::default(),
             user_profiles: Default::default(),
             time_of_next_force_object_refresh: None,
-            object_actions: Default::default(),
             codebase_indices: get_all_codebase_index_metadata(conn)?,
             workspace_language_servers: Default::default(),
             projects: Default::default(),
