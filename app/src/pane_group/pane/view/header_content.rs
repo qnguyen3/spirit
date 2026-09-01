@@ -12,7 +12,7 @@ use warpui::{AppContext, Element};
 ///
 /// This provides read-only access to appearance and configuration,
 /// plus a helper for creating draggable spacer elements.
-pub struct HeaderRenderContext<'a> {
+pub struct HeaderRenderContext {
     /// Shared draggable state for the header.
     pub draggable_state: DraggableState,
     /// Mouse state for the pane close button (owned by PaneHeader).

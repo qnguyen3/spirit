@@ -7,7 +7,6 @@ use std::sync::mpsc::SyncSender;
 use parking_lot::FairMutex;
 #[cfg(not(any(test, feature = "integration_tests")))]
 use warp_core::execution_mode::AppExecutionMode;
-use warp_errors::report_error;
 use warpui::{AppContext, ModelHandle, SingletonEntity, ViewHandle, WindowId};
 
 use super::terminal_manager::{TerminalManager, TerminalSurfaceInit, TerminalSurfaceResult};
@@ -124,6 +123,8 @@ pub(crate) fn create_terminal_view_surface(
 }
 
 impl TerminalManager<TerminalView> {
+    /// Returns the PTY process id, for integration tests.
+    #[cfg(feature = "integration_tests")]
     pub fn pid(&self) -> Option<u32> {
         self.pid
     }

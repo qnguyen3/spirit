@@ -949,7 +949,7 @@ pub trait BackingView: View {
     ///   is responsible for calling `PaneHeader::render_pane_header_draggable()` on appropriate elements
     fn render_header_content(
         &self,
-        ctx: &view::HeaderRenderContext<'_>,
+        ctx: &view::HeaderRenderContext,
         app: &AppContext,
     ) -> view::HeaderContent;
 

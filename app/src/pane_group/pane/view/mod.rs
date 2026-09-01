@@ -21,7 +21,6 @@ use crate::pane_group::{Direction, SplitPaneState, TabBarHoverIndex};
 use crate::settings::{PaneSettings, PaneSettingsChangedEvent};
 use crate::util::bindings::CustomAction;
 
-const HAS_SHARED_OBJECT_CONTEXT_KEY: &str = "PaneView_HasSharedObject";
 
 /// Max width applied to the pane header while the pane renders as a floating drag preview.
 /// During a pane drag the pane is laid out with unbounded constraints; `MainAxisSize::Min`
@@ -49,6 +48,17 @@ pub enum PaneViewEvent {
     PaneDraggedOutsideTabBarOrPaneGroup,
     PaneDragEnded,
     PaneHeaderClicked,
+}
+
+#[derive(Debug, Clone)]
+pub enum PaneAction {}
+
+impl<P: BackingView> TypedActionView for PaneView<P> {
+    type Action = PaneAction;
+
+    fn handle_action(&mut self, action: &Self::Action, _ctx: &mut ViewContext<Self>) {
+        match *action {}
+    }
 }
 
 impl<P: BackingView> Entity for PaneView<P> {
@@ -210,8 +220,7 @@ impl<P: BackingView> PaneView<P> {
         match event {
             PaneConfigurationEvent::ShowAccentBorderUpdated
             | PaneConfigurationEvent::DimEvenIfFocusedUpdated => ctx.notify(),
-            PaneConfigurationEvent::RefreshPaneHeaderOverflowMenuItems
-            | PaneConfigurationEvent::SharedSessionLinkChanged => {
+            PaneConfigurationEvent::RefreshPaneHeaderOverflowMenuItems => {
                 let child = self.child(ctx);
                 let items = child.read(ctx, |view, ctx| view.pane_header_overflow_menu_items(ctx));
                 self.header.update(ctx, |header, ctx| {
@@ -400,14 +409,6 @@ impl<P: BackingView> View for PaneView<P> {
             &self.pane_id.position_id(),
         )
         .finish()
-    }
-
-    fn keymap_context(&self, ctx: &AppContext) -> warpui::keymap::Context {
-        let mut keymap_context = Self::default_keymap_context();
-        if self.header.as_ref(ctx).is_sharing_dialog_enabled(ctx) {
-            keymap_context.set.insert(HAS_SHARED_OBJECT_CONTEXT_KEY);
-        }
-        keymap_context
     }
 
     fn child_view_ids(&self, app: &AppContext) -> Vec<EntityId> {

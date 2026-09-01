@@ -97,8 +97,6 @@ impl CliAgentFooter {
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         let button_size = ButtonSize::AgentInputButton;
-        let is_shared_session_viewer = terminal_model.lock().shared_session_status().is_viewer();
-
         let file_attach_button = ctx.add_typed_action_view(|_| {
             ActionButton::new("", AgentInputButtonTheme)
                 .with_icon(Icon::Plus)
@@ -196,7 +194,6 @@ impl CliAgentFooter {
                 session_context: None,
                 current_repo_path: None,
                 model_events,
-                is_shared_session_viewer,
             },
         }
     }

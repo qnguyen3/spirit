@@ -172,19 +172,6 @@ pub enum SizeUpdateReason {
     /// sizes that drive terminal size may have changed.
     AfterLayout,
 
-    /// The shared session sharer's size changed.
-    /// This is only applicable for shared session viewers.
-    ///
-    /// The resultant [`SizeUpdate`] will use the larger of the
-    /// sharer's and viewer's size.
-    SharerSizeChanged { num_rows: usize, num_cols: usize },
-
-    /// A viewer reported its terminal size to the sharer.
-    /// This is only applicable for shared session sharers.
-    ///
-    /// The resultant [`SizeUpdate`] will use the viewer's reported
-    /// size directly (floored at 1 row and 1 column).
-    ViewerSizeReported { num_rows: usize, num_cols: usize },
 }
 
 /// Encapsulates info for updating the size of the terminal.
@@ -267,17 +254,9 @@ impl SizeUpdate {
         self.natural_rows
     }
 
-    /// The pane-computed natural columns before shared session adjustments.
+    /// The pane-computed natural columns.
     pub fn natural_cols(&self) -> usize {
         self.natural_cols
-    }
-
-    /// Returns true if this resize was caused by a sharer size change.
-    pub fn is_sharer_size_change(&self) -> bool {
-        matches!(
-            self.update_reason,
-            SizeUpdateReason::SharerSizeChanged { .. }
-        )
     }
 }
 
