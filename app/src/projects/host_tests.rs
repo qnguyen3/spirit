@@ -61,7 +61,6 @@ fn three_screen_snapshot() -> WindowSnapshot {
         quake_mode: false,
         universal_search_width: None,
         voltron_width: None,
-        warp_drive_index_width: None,
         left_panel_open: false,
         vertical_tabs_panel_open: false,
         left_panel_width: None,

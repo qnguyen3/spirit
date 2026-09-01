@@ -25,7 +25,7 @@ use std::fmt::Write;
 use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
 use std::process;
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{Arc, mpsc};
 use std::time::Duration;
 #[cfg(target_os = "macos")]
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -477,7 +477,6 @@ pub const NEW_SESSION_MENU_BUTTON_POSITION_ID: &str = "new_session_menu_button";
 const MAX_WINDOW_TITLE_LENGTH: usize = 80;
 
 lazy_static! {
-    static ref OPENING_WARP_DRIVE_ON_START_UP: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
     static ref PANEL_CORNER_RADIUS: CornerRadius = CornerRadius::with_all(Radius::Pixels(8.));
     static ref PANEL_HEADER_CORNER_RADIUS: CornerRadius =
         CornerRadius::with_top(Radius::Pixels(8.));
@@ -8872,13 +8871,6 @@ impl Workspace {
                 .size()
         });
 
-        let warp_drive_index_width = modal_sizes.map(|ms| {
-            ms.warp_drive_index_width
-                .lock()
-                .expect("should be able to lock warp drive resizable state handle")
-                .size()
-        });
-
         let left_panel_width = modal_sizes.map(|ms| {
             ms.right_panel_width
                 .lock()
@@ -8902,7 +8894,6 @@ impl Workspace {
             quake_mode,
             universal_search_width,
             voltron_width,
-            warp_drive_index_width,
             left_panel_open: self.left_panel_open,
             vertical_tabs_panel_open: self.vertical_tabs_panel_open,
             left_panel_width,
@@ -10821,16 +10812,10 @@ impl Workspace {
                 ..
             } => match ChannelState::app_version() {
                 Some(version) => {
-                    let opening_warp_drive_on_start_up = OPENING_WARP_DRIVE_ON_START_UP
-                        .lock()
-                        .expect("Should be able to access OPENING_WARP_DRIVE_ON_START_UP");
-
                     request_type = Some(ChangelogRequestType::WindowLaunch);
                     // Do not show changelog on quake mode window or if it has already been shown
-                    // or if we are opening Warp Drive on start up
                     quake_mode_window_id() != Some(ctx.window_id())
                         && !Settings::has_changelog_been_shown(version, ctx)
-                        && !*opening_warp_drive_on_start_up
                 }
                 None => false,
             },
