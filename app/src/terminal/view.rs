@@ -10049,12 +10049,9 @@ impl TerminalView {
         // Clear all selected text within rich content block view sub-hierarchies,
         // except for the rich content block with a matching view ID.
         for rich_content in self.rich_content_views.iter() {
-            match rich_content.metadata() {
-                Some(RichContentMetadata::WarpifySuccessBlock { .. }) => {
-                    // TODO(Simon): We should be checking for WarpifySuccessBlocks here as well.
-                    // The `WarpifySuccessBlock` implements a `SelectableArea`.
-                }
-                _ => {}
+            if let Some(RichContentMetadata::WarpifySuccessBlock { .. }) = rich_content.metadata() {
+                // TODO(Simon): We should be checking for WarpifySuccessBlocks here as well.
+                // The `WarpifySuccessBlock` implements a `SelectableArea`.
             }
         }
 

@@ -652,7 +652,9 @@ pub fn render_dropdown_item_label(
                 .into(),
         )
         .finish();
-    let label = if let Some(secondary_text) = secondary_text {
+    
+
+    (if let Some(secondary_text) = secondary_text {
         let warp_theme = appearance.theme();
         let secondary_text_child = appearance
             .ui_builder()
@@ -679,9 +681,7 @@ pub fn render_dropdown_item_label(
             .finish()
     } else {
         label
-    };
-
-    label
+    }) as _
 }
 
 pub(crate) fn render_dropdown_item<T: DropdownItemAction>(

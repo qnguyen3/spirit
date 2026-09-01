@@ -975,7 +975,7 @@ impl CategoriesView {
                                 is_workflows_list_focused,
                             );
                             let workflow = render_workflow(
-                                &workflow.as_workflow(),
+                                workflow.as_workflow(),
                                 appearance,
                                 selection_state,
                                 workflow_match_type,

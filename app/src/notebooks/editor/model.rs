@@ -2124,28 +2124,25 @@ impl ChildModels {
         let mut reset_selection = vec![];
 
         for outline in content.as_ref(ctx).outline_blocks() {
-            match outline.block_type {
-                BlockType::Text(BufferBlockStyle::CodeBlock { .. }) => {
-                    match existing_models.remove(&(outline.start, outline.end)) {
-                        Some(existing_model)
-                            if existing_model.as_any().is::<ModelHandle<NotebookCommand>>() =>
-                        {
-                            log::trace!(
-                                "Reusing existing NotebookCommand model at {}..{}",
-                                outline.start,
-                                outline.end
-                            );
+            if let BlockType::Text(BufferBlockStyle::CodeBlock { .. }) = outline.block_type {
+                match existing_models.remove(&(outline.start, outline.end)) {
+                    Some(existing_model)
+                        if existing_model.as_any().is::<ModelHandle<NotebookCommand>>() =>
+                    {
+                        log::trace!(
+                            "Reusing existing NotebookCommand model at {}..{}",
+                            outline.start,
+                            outline.end
+                        );
 
-                            if !existing_model.selectable(ctx) && existing_model.selected(ctx) {
-                                reset_selection.push((outline.start, existing_model));
-                            } else {
-                                self.models.insert(outline.start, existing_model);
-                            }
+                        if !existing_model.selectable(ctx) && existing_model.selected(ctx) {
+                            reset_selection.push((outline.start, existing_model));
+                        } else {
+                            self.models.insert(outline.start, existing_model);
                         }
-                        _ => to_add.push(outline),
                     }
+                    _ => to_add.push(outline),
                 }
-                _ => (),
             }
         }
 

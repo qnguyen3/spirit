@@ -126,7 +126,7 @@ impl WorkflowsMoreInfoView {
             command_with_replaced_arguments,
             argument_index_to_char_range_map,
             ..
-        } = compute_workflow_display_data(&workflow.as_workflow());
+        } = compute_workflow_display_data(workflow.as_workflow());
 
         Self {
             workflow,
@@ -482,9 +482,7 @@ impl WorkflowsMoreInfoView {
 
         let mut row_content = Flex::row();
 
-        match &self.workflow {
-            _ => row_content.add_children([collapse_button, close_button]),
-        };
+        row_content.add_children([collapse_button, close_button]);
 
         let workflow_info = Flex::column()
             .with_children([

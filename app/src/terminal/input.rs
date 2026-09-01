@@ -2625,7 +2625,7 @@ impl Input {
         // if let Some(history_command) = history_command {
         if let Some(display_data) = compute_workflow_display_data_for_history_command(
             history_command,
-            &workflow_type.as_workflow(),
+            workflow_type.as_workflow(),
         ) {
             CommandMatchesWorkflowTemplate::Yes(display_data)
         } else {
@@ -2681,11 +2681,11 @@ impl Input {
             None => {
                 let data = if let Some(arguments_to_override) = argument_overrides {
                     compute_workflow_display_data_with_overrides(
-                        &workflow_type.as_workflow(),
+                        workflow_type.as_workflow(),
                         arguments_to_override,
                     )
                 } else {
-                    compute_workflow_display_data(&workflow_type.as_workflow())
+                    compute_workflow_display_data(workflow_type.as_workflow())
                 };
                 (data.command_with_replaced_arguments.clone(), Some(data))
             }

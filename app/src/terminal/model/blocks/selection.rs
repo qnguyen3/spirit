@@ -1059,8 +1059,8 @@ impl BlockList {
 
                 let mut selected_texts = vec![];
                 for view_id in ids {
-                    if let Some(active_window_id) = app.windows().active_window() {
-                        if let Some(ssh_block) =
+                    if let Some(active_window_id) = app.windows().active_window()
+                        && let Some(ssh_block) =
                             app.view_with_id::<WarpifySuccessBlock>(active_window_id, view_id)
                         {
                             let warpify_success_block = app.view(&ssh_block);
@@ -1068,7 +1068,6 @@ impl BlockList {
                                 selected_texts.push(selected_text);
                             }
                         }
-                    }
                 }
 
                 // TODO: If `selected_texts` is empty, should we return `None` instead of `Some("")`?
