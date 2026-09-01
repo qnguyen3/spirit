@@ -453,7 +453,6 @@ impl TabData {
         for section_items in [
             self.pin_menu_items(index),
             self.tab_group_menu_items(index, tab_groups, is_only_member_of_group),
-            self.session_sharing_menu_items(index, ctx),
             self.copy_metadata_menu_items(pane_name_target, ctx),
             self.modify_tab_menu_items(index, can_move_left, can_move_right, pane_name_target, ctx),
             self.close_tab_menu_items(index, tabs_len, ctx),
@@ -473,16 +472,6 @@ impl TabData {
             }
             menu_items.extend(section_items);
         }
-        menu_items
-    }
-
-    fn session_sharing_menu_items(
-        &self,
-        _index: usize,
-        _ctx: &AppContext,
-    ) -> Vec<MenuItem<WorkspaceAction>> {
-        let menu_items = vec![];
-
         menu_items
     }
 

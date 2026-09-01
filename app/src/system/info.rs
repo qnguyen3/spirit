@@ -111,8 +111,6 @@ impl SystemInfo {
     ///
     /// The threshold check uses `memory_footprint` (which includes swapped
     /// and compressed pages) so we actually detect high memory situations.
-    /// The Rudderstack telemetry event still reports `rss` so existing
-    /// dashboards are unaffected.
     ///
     /// A crossing of the threshold is only reported once it's confirmed still excessive on the next
     /// poll tick, rather than on the tick that first observed it, so a short-lived spike that's

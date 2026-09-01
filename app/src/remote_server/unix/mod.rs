@@ -71,22 +71,9 @@ pub(crate) fn launch_daemon(identity_key: &str, ctx: &mut warpui::AppContext) {
     listener.set_nonblocking(true).ok();
     log::info!("Daemon bound to {}", socket_path.display());
 
-    // Flush the accumulated IntervalTimer data as telemetry now that the
-    // daemon is ready to accept connections. The timer was created in
-    // `run_internal` and carries intervals from the full startup path
-    // (logging, SQLite, singleton models, etc.).
-    //
-    // All telemetry dependencies are ready at this point:
-    // `AppTelemetryContextProvider` is registered during `initialize_app`
-    // (before `launch` calls us),
-    // and `TelemetryCollector` is already running its periodic flush.
-    // The flush sends directly to Rudderstack using a baked-in write
-    // key — no user auth token is required.
-    let _timing_data =
-        warp_core::interval_timer::IntervalTimer::handle(ctx).update(ctx, |timer, _| {
-            timer.mark_interval_end("DAEMON_SOCKET_BOUND");
-            timer.compute_stats()
-        });
+    warp_core::interval_timer::IntervalTimer::handle(ctx).update(ctx, |timer, _| {
+        timer.mark_interval_end("DAEMON_SOCKET_BOUND");
+    });
 
     let _ = std::fs::write(&pid_path, std::process::id().to_string());
 
