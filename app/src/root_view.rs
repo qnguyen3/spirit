@@ -8,8 +8,7 @@ use cfg_if::cfg_if;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use onboarding::{
-    AgentOnboardingEvent, AgentOnboardingView, OfferVariant, OnboardingAuthState, OnboardingEvent,
-    SelectedSettings,
+    AgentOnboardingEvent, AgentOnboardingView, OfferVariant, OnboardingAuthState, SelectedSettings,
 };
 use parking_lot::Mutex;
 use pathfinder_geometry::rect::RectF;
@@ -69,7 +68,6 @@ use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::ids::{ServerId, SyncId};
 use crate::server::server_api::auth::UserAuthenticationError;
 use crate::server::server_api::{ServerApi, ServerApiProvider, ServerTime};
-use crate::server::telemetry::{LaunchConfigUiLocation, TelemetryEvent};
 use crate::settings::cloud_preferences_syncer::{
     CloudPreferencesSyncer, CloudPreferencesSyncerEvent,
 };
@@ -102,7 +100,6 @@ use crate::workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent};
 use crate::workspaces::workspace::FtueAccountClass;
 use crate::{
     ChannelState, GlobalResourceHandles, GlobalResourceHandlesProvider, UpdateQuakeModeEventArg,
-    send_telemetry_from_app_ctx, send_telemetry_from_ctx,
 };
 
 const WINDOW_TITLE: &str = "Warp";
@@ -239,7 +236,6 @@ pub struct OpenFromRestoredArg {
 
 pub struct OpenLaunchConfigArg {
     pub launch_config: launch_config::LaunchConfig,
-    pub ui_location: LaunchConfigUiLocation,
 
     /// Tries to open the launch config into the active window, if any.
     ///
@@ -544,14 +540,6 @@ fn open_launch_config(arg: &OpenLaunchConfigArg, ctx: &mut AppContext) {
             );
         }
     }
-
-    send_telemetry_from_app_ctx!(
-        TelemetryEvent::OpenLaunchConfig {
-            ui_location: crate::server::telemetry::LaunchConfigUiLocation::Uri,
-            open_in_active_window: arg.open_in_active_window,
-        },
-        ctx
-    );
 }
 
 fn requires_post_onboarding_login(is_logged_in: bool, warp_drive_enabled: bool) -> bool {
@@ -1250,8 +1238,6 @@ fn toggle_quake_mode_window(global_resource_handles: &GlobalResourceHandles, ctx
     let state = get_quake_mode_state(ctx);
     match state {
         None => {
-            send_telemetry_from_app_ctx!(TelemetryEvent::OpenQuakeModeWindow, ctx);
-
             let config = quake_mode_config(
                 &KeysSettings::as_ref(ctx)
                     .quake_mode_settings
@@ -1300,8 +1286,6 @@ fn toggle_quake_mode_window(global_resource_handles: &GlobalResourceHandles, ctx
             });
         }
         Some(state) if matches!(state.window_state, WindowState::Hidden) => {
-            send_telemetry_from_app_ctx!(TelemetryEvent::OpenQuakeModeWindow, ctx);
-
             // If quake mode does not have a set pin screen -- move it to the current active screen.
             if KeysSettings::as_ref(ctx)
                 .quake_mode_settings
@@ -1513,19 +1497,6 @@ enum AccountFirstCompletion {
 }
 
 impl AccountFirstCompletion {
-    fn completion_type(self) -> &'static str {
-        match self {
-            AccountFirstCompletion::AccountSkipped => "account_skipped",
-            AccountFirstCompletion::PaidTeam => "paid_team",
-            AccountFirstCompletion::FreeIcpSetupLater => "free_icp_setup_later",
-            AccountFirstCompletion::FreeStandardSetupLater => "free_standard_setup_later",
-            AccountFirstCompletion::FreeStandardCreditsPurchased => {
-                "free_standard_credits_purchased"
-            }
-            AccountFirstCompletion::UpgradeCompleted => "upgrade_completed",
-        }
-    }
-
     fn account_class(self) -> Option<FtueAccountClass> {
         match self {
             AccountFirstCompletion::AccountSkipped => None,
@@ -2080,16 +2051,7 @@ impl RootView {
         };
         let account_class =
             Self::account_first_class(Self::account_first_is_paid(ctx), fresh_request_limit);
-        let has_team = UserWorkspaces::as_ref(ctx).has_teams();
-        send_telemetry_from_ctx!(
-            OnboardingEvent::OnboardingAuthCompleted {
-                account_class: account_class.as_str().to_string(),
-                has_team,
-                is_paid: account_class == FtueAccountClass::Paid,
-                team_discovery_outcome: "unknown".to_string(),
-            },
-            ctx
-        );
+        let _has_team = UserWorkspaces::as_ref(ctx).has_teams();
 
         match account_class {
             FtueAccountClass::Paid => {
@@ -2122,7 +2084,7 @@ impl RootView {
         if !matches!(event, UserWorkspacesEvent::TeamsChanged) {
             return;
         }
-        let (account_class, upgrade_started) = match &self.auth_onboarding_state {
+        let (_account_class, upgrade_started) = match &self.auth_onboarding_state {
             AuthOnboardingState::PostAuthOnboarding {
                 account_class,
                 upgrade_started,
@@ -2135,18 +2097,6 @@ impl RootView {
         }
 
         if upgrade_started {
-            send_telemetry_from_ctx!(
-                OnboardingEvent::OnboardingUpgradeCompleted {
-                    source_slide: match account_class {
-                        FtueAccountClass::FreeIcp => "head_start",
-                        FtueAccountClass::FreeStandard => "choose_how_to_start",
-                        FtueAccountClass::Paid => "unknown",
-                    }
-                    .to_string(),
-                    account_class: account_class.as_str().to_string(),
-                },
-                ctx
-            );
             self.complete_account_first(AccountFirstCompletion::UpgradeCompleted, ctx);
         } else {
             self.complete_account_first(AccountFirstCompletion::PaidTeam, ctx);
@@ -2187,13 +2137,6 @@ impl RootView {
 
         self.pending_tutorial = None;
         self.pending_account_first_tutorial_after_settings = false;
-
-        send_telemetry_from_ctx!(
-            OnboardingEvent::OnboardingCompleted {
-                completion_type: completion.completion_type().to_string(),
-            },
-            ctx
-        );
 
         self.auth_onboarding_state = AuthOnboardingState::Terminal(target.to_workspace(ctx));
         ctx.emit(RootViewEvent::AuthOnboardingStateChanged);
@@ -2419,20 +2362,7 @@ impl RootView {
                     #[cfg(target_family = "wasm")]
                     AuthOnboardingState::WebImport(_) => None,
                 };
-                if let Some(account_class) = upgrade_started {
-                    send_telemetry_from_ctx!(
-                        OnboardingEvent::OnboardingUpgradeStarted {
-                            source_slide: match account_class {
-                                FtueAccountClass::FreeIcp => "head_start",
-                                FtueAccountClass::FreeStandard => "choose_how_to_start",
-                                FtueAccountClass::Paid => "unknown",
-                            }
-                            .to_string(),
-                            account_class: account_class.as_str().to_string(),
-                        },
-                        ctx
-                    );
-                }
+                if let Some(_account_class) = upgrade_started {}
                 let upgrade_url = AuthManager::handle(ctx)
                     .update(ctx, |auth_manager, _| auth_manager.upgrade_url());
                 ctx.open_url(&upgrade_url);
@@ -2636,7 +2566,6 @@ impl RootView {
             host.update(ctx, |host, ctx| host.open_project(project_id, ctx));
         }
         self.focus_pane(&origin.locator, ctx);
-        send_telemetry_from_ctx!(TelemetryEvent::NotificationClicked, ctx);
         true
     }
 

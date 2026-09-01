@@ -15,7 +15,6 @@ use warp_core::channel::{Channel, ChannelState};
 use warpui::AppContext;
 
 use super::{DownloadReady, release_assets_directory_url};
-use crate::server::telemetry::TelemetryEvent;
 use crate::util::windows::install_dir;
 
 lazy_static! {
@@ -146,40 +145,26 @@ pub(super) fn check_and_report_update_errors(ctx: &mut AppContext) {
         b"setup was unable to automatically close all applications",
     )
     .is_some();
-    if has_unable_to_close {
-        crate::send_telemetry_sync_from_app_ctx!(
-            TelemetryEvent::AutoupdateUnableToCloseApplications,
-            ctx
-        );
-    }
+    if has_unable_to_close {}
 
     let has_file_in_use = memchr::memmem::find(
         &contents_lowercase,
         b"the process cannot access the file because it is being used by another process",
     )
     .is_some();
-    if has_file_in_use {
-        crate::send_telemetry_sync_from_app_ctx!(TelemetryEvent::AutoupdateFileInUse, ctx);
-    }
+    if has_file_in_use {}
 
     // Fired when the mutex polling loop timed out and a force-kill was attempted.
     let has_mutex_timeout =
         memchr::memmem::find(&contents_lowercase, b"warp mutex still held after timeout").is_some();
-    if has_mutex_timeout {
-        crate::send_telemetry_sync_from_app_ctx!(TelemetryEvent::AutoupdateMutexTimeout, ctx);
-    }
+    if has_mutex_timeout {}
 
     // Fired when taskkill returned non-zero after the mutex timeout.
     // Exit code 128 means "no matching process found" — the process was already
     // gone when taskkill ran — so suppress that harmless race condition.
     if let Some(exit_code) = parse_forcekill_exit_code(&contents_lowercase)
         && exit_code != 128
-    {
-        crate::send_telemetry_sync_from_app_ctx!(
-            TelemetryEvent::AutoupdateForcekillFailed { exit_code },
-            ctx
-        );
-    }
+    {}
 
     // Rename the log file to avoid duplicate reports on subsequent launches.
     // We keep the file around so the user can still view it or attach it to a GitHub issue.

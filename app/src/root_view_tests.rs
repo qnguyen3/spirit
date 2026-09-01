@@ -11,9 +11,8 @@ use warpui::{
 };
 
 use super::{
-    AccountFirstCompletion, AuthOnboardingState, AuthOnboardingTarget,
-    HAS_COMPLETED_ONBOARDING_KEY, NewWorkspaceSource, RootView, WorkspaceArgs,
-    has_completed_local_onboarding, offer_variant_for_account_class,
+    AuthOnboardingState, AuthOnboardingTarget, HAS_COMPLETED_ONBOARDING_KEY, NewWorkspaceSource,
+    RootView, WorkspaceArgs, has_completed_local_onboarding, offer_variant_for_account_class,
     refresh_pending_onboarding_choices, requires_post_onboarding_login,
 };
 use crate::GlobalResourceHandles;
@@ -104,49 +103,6 @@ fn account_first_classes_route_to_paid_or_the_expected_offer() {
         offer_variant_for_account_class(FtueAccountClass::FreeStandard),
         Some(OfferVariant::ChooseHowToStart)
     );
-}
-
-#[test]
-fn account_first_completion_metadata_matches_terminal_outcomes() {
-    let cases = [
-        (
-            AccountFirstCompletion::AccountSkipped,
-            "account_skipped",
-            None,
-        ),
-        (
-            AccountFirstCompletion::PaidTeam,
-            "paid_team",
-            Some(FtueAccountClass::Paid),
-        ),
-        (
-            AccountFirstCompletion::FreeIcpSetupLater,
-            "free_icp_setup_later",
-            Some(FtueAccountClass::FreeIcp),
-        ),
-        (
-            AccountFirstCompletion::FreeStandardSetupLater,
-            "free_standard_setup_later",
-            Some(FtueAccountClass::FreeStandard),
-        ),
-        (
-            AccountFirstCompletion::FreeStandardCreditsPurchased,
-            "free_standard_credits_purchased",
-            // Buying one-time credits does not put the user on a plan, so they
-            // stay free-standard.
-            Some(FtueAccountClass::FreeStandard),
-        ),
-        (
-            AccountFirstCompletion::UpgradeCompleted,
-            "upgrade_completed",
-            Some(FtueAccountClass::Paid),
-        ),
-    ];
-
-    for (completion, completion_type, account_class) in cases {
-        assert_eq!(completion.completion_type(), completion_type);
-        assert_eq!(completion.account_class(), account_class);
-    }
 }
 
 #[test]

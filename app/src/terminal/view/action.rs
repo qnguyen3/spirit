@@ -17,9 +17,8 @@ use super::{
     NotificationsDiscoveryBannerAction, NotificationsErrorBannerAction, RichContentLink,
     TerminalEditor,
 };
-use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
+use crate::palette::PaletteSource;
 use crate::server::ids::SyncId;
-use crate::server::telemetry::{PaletteSource, ToggleBlockFilterSource};
 use crate::terminal::available_shells::AvailableShell;
 use crate::terminal::block_list_element::{
     BlockHoverAction, BlockListMenuSource, BlockSelectAction, BlockTextSelectAction,
@@ -224,7 +223,7 @@ pub enum TerminalAction {
     OpenSharedSessionOnDesktop {
         source: SharedSessionActionSource,
     },
-    ToggleBlockFilterOnSelectedOrLastBlock(ToggleBlockFilterSource),
+    ToggleBlockFilterOnSelectedOrLastBlock,
     ToggleCLIAgentRichInput,
     OpenShareSessionModal {
         source: SharedSessionActionSource,
@@ -252,9 +251,7 @@ pub enum TerminalAction {
     ClearMarkedText,
     ShowInitializationBlock,
     ShowWarpifySettings,
-    ToggleCodeReviewPane {
-        entrypoint: CodeReviewPaneEntrypoint,
-    },
+    ToggleCodeReviewPane,
     AddProjectAtCurrentDirectory,
     OpenAddPromptPane,
     PickRepoToOpen,
@@ -426,7 +423,7 @@ impl fmt::Debug for TerminalAction {
             OpenSharedSessionOnDesktop { source } => {
                 write!(f, "OpenSharedSessionOnDesktop({source:?})")
             }
-            ToggleBlockFilterOnSelectedOrLastBlock(_) => {
+            ToggleBlockFilterOnSelectedOrLastBlock => {
                 f.write_str("ToggleBlockFilterOnSelectedOrLastBlock")
             }
             ToggleCLIAgentRichInput => f.write_str("ToggleCLIAgentRichInput"),

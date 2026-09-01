@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use parking_lot::FairMutex;
 use pathfinder_color::ColorU;
-use warp_core::send_telemetry_from_ctx;
 use warp_core::ui::color::ContrastingColor;
 use warp_core::ui::color::blend::Blend;
 use warp_core::ui::color::contrast::MinimumAllowedContrast;
@@ -23,7 +22,6 @@ use warpui::{
 use super::init::OPEN_CLI_AGENT_RICH_INPUT_KEYBINDING;
 use super::{Event, TerminalView};
 use crate::appearance::Appearance;
-use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
 use crate::completer::SessionContext;
 use crate::context_chips::display_chip::{
     DisplayChip, DisplayChipConfig, GitLineChanges, PromptChipShellCommand, PromptDisplayChipEvent,
@@ -32,7 +30,6 @@ use crate::context_chips::prompt_type::PromptType;
 use crate::context_chips::{ChipResult, git_line_changes_from_chips, spacing};
 use crate::features::FeatureFlag;
 use crate::pane_group::CodeReviewPanelArg;
-use crate::server::telemetry::{FileTreeSource, TelemetryEvent};
 use crate::settings::CodeSettings;
 use crate::settings_view::{SettingsSection, cli_agent_settings_widget_id};
 use crate::terminal::CLIAgent;
@@ -689,7 +686,6 @@ impl TerminalView {
                 ctx.emit(Event::OpenCodeReviewPane(CodeReviewPanelArg {
                     repo_path: self.current_repo_path.clone(),
                     terminal_view: self.view_handle.clone(),
-                    entrypoint: CodeReviewPaneEntrypoint::GitDiffChip,
                     focus_new_pane: true,
                     cli_agent: self.cli_agent_footer.as_ref(ctx).cli_agent(ctx),
                 }));
@@ -714,16 +710,8 @@ impl TerminalView {
     }
 
     fn toggle_cli_agent_file_explorer(&mut self, ctx: &mut ViewContext<Self>) {
-        let cli_agent = self.cli_agent_footer.as_ref(ctx).cli_agent(ctx);
+        let _cli_agent = self.cli_agent_footer.as_ref(ctx).cli_agent(ctx);
         self.toggle_left_panel_file_tree(false, ctx);
-        send_telemetry_from_ctx!(
-            TelemetryEvent::FileTreeToggled {
-                source: FileTreeSource::CLIAgentView,
-                is_code_mode_v2: true,
-                cli_agent: cli_agent.map(Into::into),
-            },
-            ctx
-        );
     }
 
     pub(super) fn toggle_cli_agent_rich_input(&mut self, ctx: &mut ViewContext<Self>) {

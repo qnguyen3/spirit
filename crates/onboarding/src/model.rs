@@ -1,8 +1,6 @@
-use warp_core::send_telemetry_from_ctx;
 use warpui_core::{Entity, ModelContext};
 
 use crate::slides::OfferVariant;
-use crate::telemetry::OnboardingEvent;
 
 /// UI customization settings chosen during the "Customize your UI" onboarding slide.
 #[derive(Clone, Debug)]
@@ -213,25 +211,11 @@ impl OnboardingStateModel {
         if self.ui_customization.use_vertical_tabs == value {
             return;
         }
-        send_telemetry_from_ctx!(
-            OnboardingEvent::SettingChanged {
-                setting: "tab_styling".to_string(),
-                value: if value { "vertical" } else { "horizontal" }.to_string(),
-            },
-            ctx
-        );
         self.ui_customization.use_vertical_tabs = value;
         ctx.notify();
     }
 
     pub(crate) fn set_tools_panel_enabled(&mut self, enabled: bool, ctx: &mut ModelContext<Self>) {
-        send_telemetry_from_ctx!(
-            OnboardingEvent::SettingChanged {
-                setting: "tools_panel".to_string(),
-                value: if enabled { "enabled" } else { "disabled" }.to_string(),
-            },
-            ctx
-        );
         self.ui_customization.show_conversation_history = enabled;
         self.ui_customization.show_project_explorer = enabled;
         self.ui_customization.show_global_search = enabled;
@@ -247,13 +231,6 @@ impl OnboardingStateModel {
         if self.ui_customization.show_conversation_history == value {
             return;
         }
-        send_telemetry_from_ctx!(
-            OnboardingEvent::SettingChanged {
-                setting: "conversation_history".to_string(),
-                value: value.to_string(),
-            },
-            ctx
-        );
         self.ui_customization.show_conversation_history = value;
         ctx.notify();
     }
@@ -262,13 +239,6 @@ impl OnboardingStateModel {
         if self.ui_customization.show_project_explorer == value {
             return;
         }
-        send_telemetry_from_ctx!(
-            OnboardingEvent::SettingChanged {
-                setting: "project_explorer".to_string(),
-                value: value.to_string(),
-            },
-            ctx
-        );
         self.ui_customization.show_project_explorer = value;
         ctx.notify();
     }
@@ -277,13 +247,6 @@ impl OnboardingStateModel {
         if self.ui_customization.show_global_search == value {
             return;
         }
-        send_telemetry_from_ctx!(
-            OnboardingEvent::SettingChanged {
-                setting: "global_search".to_string(),
-                value: value.to_string(),
-            },
-            ctx
-        );
         self.ui_customization.show_global_search = value;
         ctx.notify();
     }
@@ -292,13 +255,6 @@ impl OnboardingStateModel {
         if self.ui_customization.show_warp_drive == value {
             return;
         }
-        send_telemetry_from_ctx!(
-            OnboardingEvent::SettingChanged {
-                setting: "warp_drive".to_string(),
-                value: value.to_string(),
-            },
-            ctx
-        );
         self.ui_customization.show_warp_drive = value;
         ctx.notify();
     }
@@ -311,13 +267,6 @@ impl OnboardingStateModel {
         if self.ui_customization.show_code_review_button == value {
             return;
         }
-        send_telemetry_from_ctx!(
-            OnboardingEvent::SettingChanged {
-                setting: "code_review".to_string(),
-                value: if value { "enabled" } else { "disabled" }.to_string(),
-            },
-            ctx
-        );
         self.ui_customization.show_code_review_button = value;
         ctx.notify();
     }
@@ -326,29 +275,7 @@ impl OnboardingStateModel {
         ctx.emit(OnboardingStateEvent::UpgradeRequested);
     }
 
-    fn send_completion_telemetry(&self, ctx: &mut ModelContext<Self>) {
-        let intention = if warp_core::features::FeatureFlag::AccountFirstOnboarding.is_enabled() {
-            "account_first"
-        } else {
-            "terminal"
-        };
-        send_telemetry_from_ctx!(
-            OnboardingEvent::OnboardingSlidesCompleted {
-                intention: intention.to_string(),
-                model: None,
-                autonomy: None,
-                has_project_path: false,
-                ai_access: None,
-            },
-            ctx
-        );
-    }
-
     pub(crate) fn complete(&mut self, ctx: &mut ModelContext<Self>) {
-        if warp_core::features::FeatureFlag::AccountFirstOnboarding.is_enabled() {
-            self.send_account_first_action("next", ctx);
-        }
-        self.send_completion_telemetry(ctx);
         ctx.emit(OnboardingStateEvent::Completed);
         ctx.notify();
     }
@@ -370,33 +297,11 @@ impl OnboardingStateModel {
         };
 
         if let Some(prev) = prev {
-            if account_first {
-                self.send_account_first_action("back", ctx);
-            }
-            send_telemetry_from_ctx!(OnboardingEvent::SlideNavigatedBack, ctx);
             self.set_step(prev, ctx);
         }
     }
 
     pub(crate) fn next(&mut self, ctx: &mut ModelContext<Self>) {
-        use warp_core::features::FeatureFlag;
-        let account_first = FeatureFlag::AccountFirstOnboarding.is_enabled();
-        let is_last_step = matches!(
-            self.step,
-            OnboardingStep::ThemePicker | OnboardingStep::PostAuthOffer
-        );
-        if !is_last_step {
-            send_telemetry_from_ctx!(OnboardingEvent::SlideNavigatedNext, ctx);
-        }
-
-        if account_first
-            && !matches!(
-                self.step,
-                OnboardingStep::Intro | OnboardingStep::PostAuthOffer
-            )
-        {
-            self.send_account_first_action("next", ctx);
-        }
         match self.step {
             OnboardingStep::Intro => self.set_step(OnboardingStep::Customize, ctx),
             OnboardingStep::Customize => self.set_step(OnboardingStep::ThemePicker, ctx),
@@ -411,29 +316,6 @@ impl OnboardingStateModel {
         }
 
         self.step = step;
-
-        let account_first = warp_core::features::FeatureFlag::AccountFirstOnboarding.is_enabled();
-        let slide_name = match step {
-            OnboardingStep::Intro => {
-                if account_first {
-                    "welcome"
-                } else {
-                    "intro"
-                }
-            }
-            OnboardingStep::PostAuthOffer => self
-                .offer_variant
-                .expect("offer variant is selected before entering the post-auth offer")
-                .slide_name(),
-            OnboardingStep::ThemePicker => "theme_picker",
-            OnboardingStep::Customize => "customize",
-        };
-        send_telemetry_from_ctx!(
-            OnboardingEvent::SlideViewed {
-                slide_name: slide_name.to_string(),
-            },
-            ctx
-        );
 
         ctx.emit(OnboardingStateEvent::SelectedSlideChanged);
         ctx.notify();
@@ -456,26 +338,6 @@ impl OnboardingStateModel {
             OnboardingStep::ThemePicker => (2, 3),
             OnboardingStep::PostAuthOffer => (0, 0),
         }
-    }
-
-    fn send_account_first_action(&self, action: &str, ctx: &mut ModelContext<Self>) {
-        let slide_name = match self.step {
-            OnboardingStep::Intro => "welcome",
-            OnboardingStep::Customize => "customize",
-            OnboardingStep::ThemePicker => "theme_picker",
-            OnboardingStep::PostAuthOffer => self
-                .offer_variant
-                .expect("offer variant is selected before entering the post-auth offer")
-                .slide_name(),
-        };
-        send_telemetry_from_ctx!(
-            OnboardingEvent::OnboardingAction {
-                slide_name: slide_name.to_string(),
-                action: action.to_string(),
-                account_class: None,
-            },
-            ctx
-        );
     }
 }
 

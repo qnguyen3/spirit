@@ -31,7 +31,6 @@ use crate::view_components::DismissibleToast;
 use crate::workspace::{
     NotificationOrigin, PaneViewLocator, ToastStack, Workspace, WorkspaceEvent, WorkspaceRegistry,
 };
-use crate::{TelemetryEvent, send_telemetry_from_ctx};
 
 pub const MULTIPLE_SCREENS_FLAG: &str = "ProjectHost_MultipleScreens";
 
@@ -299,7 +298,6 @@ impl ProjectHost {
         self.activate_screen(index, ctx);
         self.active_workspace()
             .update(ctx, |workspace, ctx| workspace.focus_pane(*locator, ctx));
-        send_telemetry_from_ctx!(TelemetryEvent::NotificationClicked, ctx);
     }
 
     pub fn new(

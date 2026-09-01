@@ -38,9 +38,7 @@ use crate::search::result_renderer::QueryResultRenderer;
 use crate::search::search_bar::{
     SearchBar, SearchBarEvent, SearchBarState, SearchResultOrdering, SelectionUpdate,
 };
-use crate::send_telemetry_from_ctx;
 use crate::server::ids::SyncId;
-use crate::server::telemetry::{LaunchConfigUiLocation, TelemetryEvent};
 use crate::session_management::SessionSource;
 use crate::settings::CtrlTabBehavior;
 use crate::terminal::keys_settings::KeysSettings;
@@ -605,23 +603,6 @@ impl View {
     }
 
     fn close(&mut self, ctx: &mut ViewContext<Self>, accepted_action_type: Option<&'static str>) {
-        let buffer_length = self.search_bar.as_ref(ctx).query(ctx).len();
-        let filter = self.active_query_filter(ctx);
-        let event = if let Some(result_type) = accepted_action_type {
-            TelemetryEvent::PaletteSearchResultAccepted {
-                result_type,
-                filter,
-                buffer_length,
-            }
-        } else {
-            TelemetryEvent::PaletteSearchExited {
-                filter,
-                buffer_length,
-            }
-        };
-
-        send_telemetry_from_ctx!(event, ctx);
-
         self.state.clipped_scroll_state = Default::default();
         self.reset(ctx);
 
@@ -798,8 +779,6 @@ impl View {
                         &pane_view_locator,
                     );
                 }
-
-                send_telemetry_from_ctx!(TelemetryEvent::SelectNavigationPaletteItem, ctx);
             }
             CommandPaletteItemAction::NavigateToTab {
                 pane_group_id,
@@ -813,7 +792,6 @@ impl View {
                         &pane_group_id,
                     );
                 }
-                send_telemetry_from_ctx!(TelemetryEvent::SelectNavigationPaletteItem, ctx);
             }
             CommandPaletteItemAction::OpenLaunchConfiguration {
                 open_in_active_window,
@@ -824,7 +802,6 @@ impl View {
                     OpenLaunchConfigArg {
                         open_in_active_window,
                         launch_config: config.deref().clone(),
-                        ui_location: LaunchConfigUiLocation::CommandPalette,
                     },
                 );
             }
@@ -902,11 +879,6 @@ impl View {
         action: &dyn warpui::Action,
         ctx: &mut ViewContext<Self>,
     ) {
-        send_telemetry_from_ctx!(
-            TelemetryEvent::SelectCommandPaletteOption(format!("{action:?}")),
-            ctx
-        );
-
         let (window_id, view_id) = match self.binding_source.as_ref(ctx) {
             BindingSource::View {
                 window_id, view_id, ..

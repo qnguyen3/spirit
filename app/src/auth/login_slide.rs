@@ -1,10 +1,10 @@
 use std::cell::Cell;
 
+use onboarding::WARP_DRIVE_FEATURES;
 use onboarding::components::feature_optout_dialog::{
     FeatureOptOutDialog, render_feature_optout_dialog,
 };
 use onboarding::slides::{layout, onboarding_bottom_nav, slide_content};
-use onboarding::{OnboardingEvent, WARP_DRIVE_FEATURES};
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use ui_components::{Component as _, Options as _, button};
@@ -37,11 +37,9 @@ use crate::auth::auth_view_shared_helpers::{
 };
 use crate::auth::login_failure_notification::{self, LoginFailureReason};
 use crate::editor::{EditorView, SingleLineEditorOptions, TextColors, TextOptions};
-use crate::server::telemetry::{LoginEventSource, TelemetryEvent};
 use crate::settings::PrivacySettings;
 use crate::themes::theme::Fill as ThemeFill;
 use crate::util::bindings::CustomAction;
-use crate::{send_telemetry_from_ctx, send_telemetry_sync_from_ctx};
 
 const TOS_URL: &str = "https://www.warp.dev/terms-of-service";
 
@@ -363,14 +361,7 @@ impl LoginSlideView {
             highlighted_hyperlink_state: HighlightedHyperlink::default(),
         };
 
-        if matches!(source, LoginSlideSource::AccountFirstOnboarding) {
-            send_telemetry_from_ctx!(
-                OnboardingEvent::SlideViewed {
-                    slide_name: "create_account".to_string(),
-                },
-                ctx
-            );
-        }
+        if matches!(source, LoginSlideSource::AccountFirstOnboarding) {}
 
         view
     }
@@ -407,20 +398,11 @@ impl LoginSlideView {
 
     fn send_account_first_action(
         &self,
-        slide_name: &str,
-        action: &str,
-        ctx: &mut ViewContext<Self>,
+        _slide_name: &str,
+        _action: &str,
+        _ctx: &mut ViewContext<Self>,
     ) {
-        if matches!(self.source, LoginSlideSource::AccountFirstOnboarding) {
-            send_telemetry_from_ctx!(
-                OnboardingEvent::OnboardingAction {
-                    slide_name: slide_name.to_string(),
-                    action: action.to_string(),
-                    account_class: None,
-                },
-                ctx
-            );
-        }
+        if matches!(self.source, LoginSlideSource::AccountFirstOnboarding) {}
     }
 
     fn handle_pasted_auth_url(&mut self, pasted_url: String, ctx: &mut ViewContext<Self>) {
@@ -446,12 +428,6 @@ impl LoginSlideView {
         self.send_account_first_action("create_account", "skip_account", ctx);
         // Send synchronously since this is an important event in the sign up funnel and we
         // don't want to lose events if the user quits before the event queue is flushed.
-        send_telemetry_sync_from_ctx!(
-            TelemetryEvent::LoginLaterConfirmationButtonClicked {
-                source: LoginEventSource::OnboardingSlide,
-            },
-            ctx
-        );
         if FeatureFlag::SkipFirebaseAnonymousUser.is_enabled() {
             AuthManager::handle(ctx).update(ctx, |_, ctx| {
                 ctx.emit(AuthManagerEvent::SkippedLogin);
@@ -468,22 +444,9 @@ impl LoginSlideView {
     /// skip dialog's cancel button.
     fn start_login(&mut self, ctx: &mut ViewContext<Self>) {
         self.send_account_first_action("create_account", "continue_signup", ctx);
-        send_telemetry_from_ctx!(
-            TelemetryEvent::LoginButtonClicked {
-                source: LoginEventSource::OnboardingSlide,
-            },
-            ctx
-        );
         self.last_login_failure_reason = None;
         self.step = LoginStep::BrowserOpen;
-        if matches!(self.source, LoginSlideSource::AccountFirstOnboarding) {
-            send_telemetry_from_ctx!(
-                OnboardingEvent::SlideViewed {
-                    slide_name: "browser_auth".to_string(),
-                },
-                ctx
-            );
-        }
+        if matches!(self.source, LoginSlideSource::AccountFirstOnboarding) {}
         AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
             let sign_up_url = auth_manager.sign_up_url();
             ctx.open_url(&sign_up_url);
@@ -1245,12 +1208,6 @@ impl TypedActionView for LoginSlideView {
                 self.start_login(ctx);
             }
             LoginSlideAction::ShowSkipDialog => {
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::LoginLaterButtonClicked {
-                        source: LoginEventSource::OnboardingSlide,
-                    },
-                    ctx
-                );
                 self.active_overlay = Some(LoginSlideOverlay::SkipDialog);
                 ctx.notify();
             }
@@ -1348,12 +1305,6 @@ impl TypedActionView for LoginSlideView {
                 ctx.notify();
             }
             LoginSlideAction::ShowPrivacySettings => {
-                send_telemetry_sync_from_ctx!(
-                    TelemetryEvent::OpenAuthPrivacySettings {
-                        source: LoginEventSource::OnboardingSlide,
-                    },
-                    ctx
-                );
                 self.step = LoginStep::PrivacySettings;
                 ctx.notify();
             }

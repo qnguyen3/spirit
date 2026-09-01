@@ -20,13 +20,13 @@ use super::view::WorkspaceBanner;
 use crate::auth::auth_manager::LoginGatedFeature;
 use crate::drive::CloudObjectTypeAndId;
 use crate::drive::items::WarpDriveItemId;
-use crate::palette::PaletteMode;
+use crate::drive::sharing::SharingDialogSource;
+use crate::palette::{PaletteMode, PaletteSource};
 use crate::pane_group::PaneGroup;
 use crate::projects::WorktreeId;
 use crate::prompt::editor_modal::OpenSource as PromptEditorOpenSource;
 use crate::search;
 use crate::server::ids::{ServerId, SyncId};
-use crate::server::telemetry::{AddTabWithShellSource, PaletteSource, SharingDialogSource};
 use crate::settings_view::{SettingsAction as SettingsTabAction, SettingsSection};
 use crate::tab::{NewSessionMenuItem, SelectedTabColor};
 use crate::tab_configs::TabConfig;
@@ -243,7 +243,6 @@ pub enum WorkspaceAction {
     },
     AddTabWithShell {
         shell: AvailableShell,
-        source: AddTabWithShellSource,
     },
     AddGetStartedTab,
     AddAgentPickerTab,

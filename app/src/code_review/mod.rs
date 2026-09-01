@@ -1,11 +1,19 @@
 pub mod agent_handoff;
+#[cfg_attr(not(feature = "local_fs"), allow(unused_imports))]
+pub(crate) mod code_review_header;
 pub mod code_review_view;
 pub mod comment_list_view;
+pub(crate) mod comment_rendering;
+pub mod comments;
 pub mod context;
+pub(crate) mod diff_menu;
+pub(crate) mod diff_selector;
 pub mod diff_size_limits;
 #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
 pub mod diff_state;
 pub mod editor_state;
+#[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
+pub(crate) mod file_invalidation_queue;
 pub(crate) mod find_model;
 pub(crate) mod git_actions;
 pub(crate) mod git_dialog;
@@ -13,17 +21,6 @@ pub mod git_repo_model;
 mod git_repo_models;
 pub mod github_repo_model;
 mod hidden_lines;
-pub mod telemetry_event;
-#[cfg_attr(not(feature = "local_fs"), allow(unused_imports))]
-pub use telemetry_event::CodeReviewTelemetryEvent;
-
-pub(crate) mod code_review_header;
-pub(crate) mod comment_rendering;
-pub mod comments;
-pub(crate) mod diff_menu;
-pub(crate) mod diff_selector;
-#[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
-pub(crate) mod file_invalidation_queue;
 
 use code_review_view::CodeReviewAction;
 use warpui::keymap::{EditableBinding, FixedBinding};
@@ -32,7 +29,6 @@ use warpui::{
 };
 
 use crate::code::buffer_location::LocalOrRemotePath;
-use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
 use crate::terminal::CLIAgent;
 use crate::terminal::view::TerminalView;
 use crate::util::bindings::CustomAction;
@@ -44,7 +40,6 @@ use crate::util::bindings::CustomAction;
 pub struct CodeReviewPanelArg {
     pub repo_path: Option<LocalOrRemotePath>,
     pub terminal_view: WeakViewHandle<TerminalView>,
-    pub entrypoint: CodeReviewPaneEntrypoint,
     pub focus_new_pane: bool,
     pub cli_agent: Option<CLIAgent>,
 }

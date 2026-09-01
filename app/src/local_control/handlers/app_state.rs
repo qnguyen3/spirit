@@ -20,7 +20,6 @@ use warp_util::path::LineAndColumnArg;
 use warpui::SingletonEntity;
 use warpui::{AppContext, ModelContext, TypedActionView};
 
-#[cfg(feature = "local_fs")]
 use crate::code::editor_management::CodeSource;
 use crate::local_control::LocalControlBridge;
 use crate::local_control::handlers::ack;
@@ -32,8 +31,9 @@ use crate::local_control::resolver::{
     target_pane_id, target_session_pane_id, target_window_id_for_target, target_workspace,
 };
 use crate::palette::PaletteMode;
+#[cfg(feature = "local_fs")]
+use crate::palette::PaletteSource;
 use crate::pane_group::{ActivationReason, Direction, PaneGroupAction};
-use crate::server::telemetry::PaletteSource;
 use crate::settings_view::SettingsSection;
 #[cfg(feature = "local_fs")]
 use crate::util::file::external_editor::EditorSettings;

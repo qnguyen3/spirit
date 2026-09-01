@@ -540,15 +540,7 @@ pub enum FtueAccountClass {
     FreeStandard,
 }
 
-impl FtueAccountClass {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            FtueAccountClass::Paid => "paid",
-            FtueAccountClass::FreeIcp => "free_icp",
-            FtueAccountClass::FreeStandard => "free_standard",
-        }
-    }
-}
+impl FtueAccountClass {}
 #[derive(Clone, Debug, Default)]
 pub struct BonusGrantsPurchased {
     pub total_credits_purchased: i32,

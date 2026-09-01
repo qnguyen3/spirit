@@ -1563,11 +1563,6 @@ impl TerminalModel {
     }
 
     fn commit_lifecycle_transition(&mut self, transition: &LifecycleTransition) {
-        if let Some(record) = transition.recovery_record.clone() {
-            log::debug!("Terminal lifecycle transition diagnostic: {record:?}");
-            self.event_proxy
-                .send_app_event(Event::LifecycleRecovery(record));
-        }
         self.lifecycle_coordinator.commit(transition);
     }
 

@@ -43,8 +43,7 @@ use warpui::keymap::{BindingDescription, EditableBinding, FixedBinding};
 
 use crate::channel::{Channel, ChannelState};
 use crate::features::FeatureFlag;
-use crate::palette::PaletteMode;
-use crate::server::telemetry::PaletteSource;
+use crate::palette::{PaletteMode, PaletteSource};
 use crate::settings_view::{self, SettingsSection, flags};
 use crate::tab::{NewSessionMenuItem, uses_vertical_tabs};
 use crate::util::bindings::{self, CustomAction, cmd_or_ctrl_shift, is_binding_pty_compliant};

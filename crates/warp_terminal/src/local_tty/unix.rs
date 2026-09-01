@@ -31,7 +31,7 @@ use warp_errors::report_if_error;
 use warpui_core::{AppContext, SingletonEntity};
 
 use super::event_loop::{PTY_TOKEN, SIGNALS_TOKEN};
-use super::spawner::{PtyHandle, PtySpawnHooks, PtySpawnInfo, PtySpawner};
+use super::spawner::{PtyHandle, PtySpawnInfo, PtySpawner};
 use super::{ChildEvent, EventedPty, EventedReadWrite, PtyOptions, SizeInfo};
 use crate::ASSETS;
 use crate::bootstrap::raw_init_shell_script_for_shell;
@@ -589,11 +589,7 @@ fn spawn_command_in_pty(
 
 impl Pty {
     /// Create a new pty and return a handle to interact with it.
-    pub fn new(
-        options: PtyOptions,
-        hooks: &dyn PtySpawnHooks,
-        ctx: &mut AppContext,
-    ) -> Result<Self> {
+    pub fn new(options: PtyOptions, ctx: &mut AppContext) -> Result<Self> {
         let size = options.size;
         let shell = options.shell_starter.shell_type();
 
@@ -602,9 +598,7 @@ impl Pty {
             .context("error preparing signal handling")?;
 
         let (PtySpawnResult { pid, leader_fd }, pty_handle) = PtySpawner::handle(ctx)
-            .update(ctx, |pty_spawner, ctx| {
-                pty_spawner.spawn_pty(options, hooks, ctx)
-            })?;
+            .update(ctx, |pty_spawner, _ctx| pty_spawner.spawn_pty(options))?;
 
         log::info!(
             "Successfully spawned child {} process with pid {}",
