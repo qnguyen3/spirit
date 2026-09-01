@@ -189,10 +189,10 @@ pub struct SizeUpdate {
     /// The new gap height, if there is one.
     new_gap_height: Option<Lines>,
 
-    /// The pane-computed rows before any shared session size adjustments.
+    /// The pane-computed rows.
     natural_rows: usize,
 
-    /// The pane-computed columns before any shared session size adjustments.
+    /// The pane-computed columns.
     natural_cols: usize,
 }
 
@@ -249,7 +249,7 @@ impl SizeUpdate {
         self.new_gap_height.is_some()
     }
 
-    /// The pane-computed natural rows before shared session adjustments.
+    /// The pane-computed natural rows.
     pub fn natural_rows(&self) -> usize {
         self.natural_rows
     }

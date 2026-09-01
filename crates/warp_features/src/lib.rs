@@ -480,8 +480,7 @@ pub enum FeatureFlag {
     /// `--mcp` arguments, resolved server-side at run setup.
     WellKnownMcpIds,
 
-    /// Observes Ctrl-C (`0x03`) written on the shared-session viewer input
-    /// path to a terminal with a working, rich-status-capable CLI agent
+    /// Observes Ctrl-C (`0x03`) written to a terminal with a working, rich-status-capable CLI agent
     /// session (e.g. Claude Code). Arms a short grace window; if no further
     /// plugin activity is seen, the session (and its ambient task) resolves
     /// to `Cancelled`. Purely client-side status synthesis: the keystroke is

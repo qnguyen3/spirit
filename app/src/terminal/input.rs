@@ -871,15 +871,10 @@ enum DenyExecutionReason {
     /// Can't execute command because there's an active command in control of the pty.
     ExistingActiveCommand,
 
-    /// With the exception of shared sessions, we should only execute commands if they can be
-    /// recorded in history.
+    /// We should only execute commands if they can be recorded in history.
     ///
     /// Gonna be honest, I (zach b) have the least amount of context on this one, don't really know
     /// why this is the case.
-    ///
-    /// This is not returned as a `CancellationReason::No` for shared sessions even if it may be
-    /// true; we do not record shared sessions in the History model thus they are default not-
-    /// appendable.
     HistoryNotAppendable,
 }
 
@@ -949,9 +944,6 @@ pub struct Input {
     /// Note that the input buffer is reinstantiated every time a command is executed,
     /// while ultimately clears this set.
     ///
-    /// Today, we only expect to use this with when starting
-    /// a shared session.
-    ///
     /// TODO (suraj): technically, we don't need the full
     /// history for _selections_; we just need the latest.
     latest_buffer_operations: Vec<CrdtOperation>,
@@ -962,8 +954,6 @@ pub struct Input {
     ///
     /// When the buffer is reinstantiated, we check
     /// if any of these pending remote edits can be flushed.
-    ///
-    /// Today, we only expect to use this for shared session viewers.
     deferred_remote_operations: DeferredRemoteOperations,
 
     /// The last block that the user ran. This is used for generating autosuggestions.

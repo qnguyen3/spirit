@@ -490,8 +490,7 @@ pub struct RunAgentArgs {
     pub idle_on_complete: Option<humantime::Duration>,
 
     /// Keep the agent's session open after the conversation ends in a terminal error, so a human
-    /// can attach to the failed run and debug in it. The agent process is the shared-session
-    /// sharer, so without this the session dies with the process.
+    /// can attach to the failed run and debug in it.
     ///
     /// An idle window, not a fixed one: a follow-up cancels the pending exit.
     ///

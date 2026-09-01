@@ -1617,9 +1617,8 @@ pub(crate) fn initialize_app(
     // Register it after `LocalShellState`: the Manager needs to know where the gcloud
     // cli lives & thus needs PATH config set by ~/.zshrc et al.
     //
-    // Registered on all targets (including wasm) so consumers such as the
-    // shared-session viewer network — which compiles and runs on wasm — can
-    // read the singleton without panicking. On wasm `iap_state` is always
+    // Registered on all targets (including wasm) so consumers that compile and
+    // run on wasm can read the singleton without panicking. On wasm `iap_state` is always
     // `None`, making this an inert no-op: `IapManager::new` early-returns from
     // its refresh loop and `iap_state()` yields no proxy-auth header.
     ctx.add_singleton_model(move |ctx| {

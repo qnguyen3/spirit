@@ -550,10 +550,8 @@ fn spawn_command_in_pty(
             if is_isolated {
                 // If running in a sandbox on Linux, adjust the OOM score
                 // to make the child process more likely to be killed than the parent process
-                // in case of OOM. If the Warp process is killed while hosting an ambient
-                // agent, its shared session will abruptly end with no user-visible error.
-                // Instead, we want to kill whatever process the agent spawned that's using
-                // lots of memory. This gives the agent a chance to gracefully fail.
+                // in case of OOM. Instead, we want to kill whatever process the agent spawned
+                // that's using lots of memory. This gives the agent a chance to gracefully fail.
                 //
                 // Try to open /proc/self/oom_score_adj and set it to a positive value.
                 // Valid values are between -1000 and 1000, where lower values are less likely

@@ -83,7 +83,7 @@ jobs:
         run: |
           cleanup_log="$RUNNER_TEMP/flags_to_cleanup.jsonl"
           # Skip over flags that are also used to enable/disable functionality at runtime.
-          excluded_flags='["CreatingSharedSessions", "ViewingSharedSessions", "AgentMode"]'
+          excluded_flags='["AgentMode"]'
 
           flag_name=""
           cargo_flag=""

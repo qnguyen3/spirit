@@ -3045,7 +3045,6 @@ impl Workspace {
         }
     }
 
-    // Returns true if the focused pane is the viewer of a shared session
     /// Returns the type of simplified WASM tab bar content to display, if any.
     /// Used to determine whether to show the simplified tab bar layout on WASM.
     #[cfg(target_family = "wasm")]
@@ -11101,7 +11100,7 @@ impl Workspace {
             // Reset mixer with correct file data source before setting filter
             let mixer = view.search_bar.as_ref(ctx).mixer().clone();
             view.data_source_store.update(ctx, |store, ctx| {
-                store.reset_search_mixer(mixer, false, ctx);
+                store.reset_search_mixer(mixer, ctx);
             });
             view.set_active_query_filter(QueryFilter::Files, ctx);
         });
@@ -11577,7 +11576,6 @@ impl Workspace {
     }
 
     fn handle_changelog_event(&mut self, event: &ChangelogEvent, ctx: &mut ViewContext<Self>) {
-        // For certain contexts, like shared sessions, we do not want to force open the side panel.
         if !ContextFlag::ForceSidePanelOpen.is_enabled() {
             return;
         }
@@ -15345,7 +15343,7 @@ impl Workspace {
     ) -> Box<dyn Element> {
         let mut tab_bar = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
 
-        // Simplified mode for viewing Warp Drive objects, shared sessions, or conversation transcripts on WASM
+        // Simplified mode for viewing Warp Drive objects or conversation transcripts on WASM
         #[cfg(target_family = "wasm")]
         if let Some(content_type) = self.get_simplified_wasm_tab_bar_content(ctx) {
             // Use MainAxisAlignment::SpaceBetween and expand to fill width
@@ -16874,7 +16872,7 @@ impl Workspace {
         let mut prev_panel_added = false;
 
         // Config-driven vertical-tabs-era panels (left side).
-        // Hidden for simplified WASM views (notebooks, shared sessions, etc.)
+        // Hidden for simplified WASM views (notebooks, etc.)
         // where these panels are unnecessary.
         let vertical_tabs_active = !hide_vertical_tabs && uses_vertical_tabs(app);
 
@@ -19360,7 +19358,7 @@ impl View for Workspace {
 
         let tab_bar_mode = self.tab_bar_mode(app);
 
-        // For WASM simplified tab bar views (Warp Drive objects, shared sessions, conversation transcripts),
+        // For WASM simplified tab bar views (Warp Drive objects, conversation transcripts),
         // we render the tab bar outside of panels so that the details panel only affects content below the tab bar.
         cfg_if::cfg_if! {
             if #[cfg(target_family = "wasm")] {
@@ -19379,7 +19377,7 @@ impl View for Workspace {
                 outer_column.add_child(self.render_tab_bar(self.tab_fixed_width, appearance, app));
             }
             let content = self.render_banner_and_active_tab(app, appearance);
-            // Hide the vertical tab rail for simplified WASM views (notebooks, shared sessions, etc.)
+            // Hide the vertical tab rail for simplified WASM views (notebooks, etc.)
             let panels_row = self.render_panels(app, Shrinkable::new(1.0, content).finish(), true);
             outer_column.add_child(Shrinkable::new(1.0, panels_row).finish());
             Container::new(outer_column.finish())

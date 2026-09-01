@@ -3760,8 +3760,6 @@ impl TerminalView {
         ctx.emit(Event::WriteBytesToPty { bytes: data.into() });
     }
 
-    /// Writes a shared session viewer's bytes to the pty.
-    ///
     /// A lone Ctrl-C byte that is actually forwarded to the PTY is
     /// additionally observed by `CLIAgentSessionsModel` so that an interrupt
     /// which silently kills a third-party harness turn (no plugin hook fires
@@ -4892,9 +4890,6 @@ impl TerminalView {
                     // here because `active_block_metadata` was just consumed
                     // via `take()` above, so it would always return `None`
                     // and misclassify every local session as Remote.
-                    //
-                    // `session_is_local` keeps the shared-session viewer /
-                    // conversation-transcript guard intact.
                     let session_id = block_metadata.session_id();
                     let session_type = session_id.map(|sid| {
                         if self.session_is_local(sid, ctx) {
@@ -12159,8 +12154,6 @@ impl TerminalView {
     fn render_input(&self) -> Box<dyn Element> {
         let input = ChildView::new(&self.input).finish();
         Hoverable::new(self.input_hoverable_handle.clone(), |_| input)
-            // We rely on the hover-out delay for the "Request edit access"
-            // button UX for shared sessions.
             .with_hover_out_delay(Duration::from_millis(500))
             .finish()
     }

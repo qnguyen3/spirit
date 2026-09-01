@@ -211,7 +211,7 @@ fn no_proxy_suffix_with_dot() {
         env::set_var("NO_PROXY", ".warp.dev");
     }
 
-    assert!(resolved_proxy_tls("sessions.app.warp.dev").is_none());
+    assert!(resolved_proxy_tls("rtc.app.warp.dev").is_none());
 
     assert!(resolved_proxy_tls("warp.dev").is_some()); // Exact "warp.dev" != ".warp.dev"
     assert!(resolved_proxy_tls("other.com").is_some());
@@ -229,8 +229,8 @@ fn no_proxy_suffix_without_dot() {
         env::set_var("NO_PROXY", "warp.dev");
     }
 
-    // "sessions.app.warp.dev" ends with ".warp.dev" → matches
-    assert!(resolved_proxy_tls("sessions.app.warp.dev").is_none());
+    // "rtc.app.warp.dev" ends with ".warp.dev" → matches
+    assert!(resolved_proxy_tls("rtc.app.warp.dev").is_none());
     // Exact match too
     assert!(resolved_proxy_tls("warp.dev").is_none());
     assert!(resolved_proxy_tls("notwarp.dev").is_some());

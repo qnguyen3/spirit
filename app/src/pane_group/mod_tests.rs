@@ -57,8 +57,8 @@ fn initialize_app(app: &mut App) {
     initialize_settings_for_tests(app);
 
     app.add_singleton_model(|_ctx| ServerApiProvider::new_for_test());
-    // Disabled (`None`) IapManager so shared-session viewer code that reads the
-    // singleton doesn't panic in tests; it is an inert no-op.
+    // Disabled (`None`) IapManager so code that reads the singleton doesn't panic
+    // in tests; it is an inert no-op.
     app.add_singleton_model(|ctx| {
         IapManager::new(
             None,

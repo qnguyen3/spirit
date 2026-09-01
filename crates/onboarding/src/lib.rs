@@ -7,7 +7,7 @@ pub mod slides;
 /// User-facing names of the Warp Drive features enabled when Warp Drive is
 /// turned on. Shared by the login slide's skip-login confirmation dialog so the
 /// list stays in sync with any future surfaces that need it.
-pub const WARP_DRIVE_FEATURES: &[&str] = &["Warp Drive", "Session Sharing"];
+pub const WARP_DRIVE_FEATURES: &[&str] = &["Warp Drive"];
 
 pub mod components;
 

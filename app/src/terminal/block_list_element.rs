@@ -115,7 +115,7 @@ const POLYNOMIAL_SCROLLING: ScrollingAcceleration =
 const LINEAR_SCROLLING: ScrollingAcceleration = ScrollingAcceleration::Polynomial(1.);
 
 /// Height for a block hover button element.
-/// Without making the vertical size fixed, for some reason some elements (bookmark, block filter, shared session avatar)
+/// Without making the vertical size fixed, for some reason some elements (bookmark, block filter)
 /// have a height that extends down to the bottom of the window when there's a horizontal scroll bar, which messes with the on-hover behavior.
 const BLOCK_HOVER_BUTTON_HEIGHT: f32 = 28.;
 

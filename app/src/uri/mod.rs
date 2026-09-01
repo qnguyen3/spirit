@@ -74,7 +74,6 @@ pub enum UriHost {
     Action,
     /// A host prefix for all actions that involve launch configurations
     Launch,
-    /// Supports joining shared sessions via a warp:// URI.
     /// Supports WD object actions
     Drive,
     /// Supports opening warp's settings panel via URI

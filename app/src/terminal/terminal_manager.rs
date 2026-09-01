@@ -78,8 +78,7 @@ pub(super) fn compute_block_size(
     let appearance = Appearance::as_ref(ctx);
     let size_info = if ctx.is_headless() {
         // In headless mode, we don't actually have a font since we aren't rendering anything.
-        // We skip the font-based size computation and hardcode a terminal size, so that
-        // viewers of the shared session see a reasonable terminal width.
+        // We skip the font-based size computation and hardcode a terminal size.
         SizeInfo::new_without_font_metrics(24, 120)
     } else {
         let font_cache = ctx.font_cache();

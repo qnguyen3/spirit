@@ -49,8 +49,7 @@ pub fn initialize_app_for_terminal_view(app: &mut App) {
 
     app.add_singleton_model(|_| ServerApiProvider::new_for_test());
     // Register a disabled `IapManager` (no IAP state) so code paths that read
-    // the singleton (e.g. the shared-session viewer network) don't panic in
-    // tests. With `None` state it is an inert no-op.
+    // the singleton don't panic in tests. With `None` state it is an inert no-op.
     app.add_singleton_model(|ctx| {
         IapManager::new(
             None,

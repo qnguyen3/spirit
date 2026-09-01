@@ -434,7 +434,7 @@ pub struct TerminalModel {
     obfuscate_secrets: ObfuscateSecrets,
 
     /// Whether this terminal model was created as a cloud mode dummy session
-    /// (no local shell process, deferred shared-session viewer backing).
+    /// (no local shell process).
     is_dummy_cloud_mode_session: bool,
 
     /// When some, the TerminalModel emits the event [Event::DetectedEndOfSshLogin]. This
