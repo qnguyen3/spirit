@@ -55,7 +55,7 @@ use super::{HEIGHT_FUDGE_FACTOR_LINES, TerminalModel, heights_approx_eq};
 use crate::appearance::Appearance;
 use crate::features::FeatureFlag;
 use crate::pane_group::SplitPaneState;
-use crate::settings::{DebugSettings, EnforceMinimumContrast, PrivacySettings, TerminalSpacing};
+use crate::settings::{DebugSettings, EnforceMinimumContrast, TerminalSpacing};
 use crate::terminal::alt_screen::{should_intercept_mouse, should_intercept_scroll};
 use crate::terminal::block_list_viewport::AutoscrollBehavior;
 use crate::terminal::blockgrid_renderer::BlockGridParams;
@@ -75,7 +75,7 @@ use crate::terminal::view::TerminalAction;
 use crate::terminal::warpify::SubshellSource;
 use crate::terminal::{SizeInfo, grid_renderer, should_right_click_paste};
 use crate::themes::theme::WarpTheme;
-use crate::ui_components::{self, icons as UIIcon};
+use crate::ui_components::icons as UIIcon;
 use crate::util::color::Opacity;
 
 /// The number of pixels at the bottom of padding where selection scrolling is performed.
@@ -994,9 +994,9 @@ impl BlockListElement {
     pub fn with_hovered_index(
         mut self,
         block_index: BlockIndex,
-        model: &TerminalModel,
-        should_render_tooltip_below_button: bool,
-        app: &AppContext,
+        _model: &TerminalModel,
+        _should_render_tooltip_below_button: bool,
+        _app: &AppContext,
     ) -> Self {
         self.hovered_block_index = Some(block_index);
         let icon_color = self

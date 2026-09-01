@@ -10,7 +10,6 @@ use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
 use super::model::block::{Block, SerializedBlock};
 use super::shell::ShellType;
-use crate::server::ids::{ClientId, HashableId as _, SyncId};
 use crate::terminal::model::session::{Session, SessionId};
 use crate::util::dedupe_from_last;
 use crate::workflows::local_workflows::LocalWorkflows;

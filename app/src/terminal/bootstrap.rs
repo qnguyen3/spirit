@@ -1,4 +1,3 @@
-use itertools::Itertools;
 use warp_core::session_id::SessionId;
 use warp_terminal::bootstrap::SESSION_ID_PLACEHOLDER;
 pub use warp_terminal::bootstrap::{

@@ -8,7 +8,7 @@ use lazy_static::lazy_static;
 use strum::IntoEnumIterator;
 use warp_core::channel::ChannelState;
 use warp_core::semantic_selection::{
-    SemanticSelection, SemanticSelectionChangedEvent, SmartSelectEnabled,
+    SemanticSelection, SemanticSelectionChangedEvent,
 };
 use warp_errors::{report_error, report_if_error};
 use warpui::elements::{
@@ -36,7 +36,7 @@ use super::keybindings::KeyBindingModifyingState;
 #[cfg(feature = "local_tty")]
 use super::settings_page::render_sub_sub_header;
 use super::settings_page::{
-    AdditionalInfo, CONTENT_FONT_SIZE, Category, HEADER_PADDING, LocalOnlyIconState, MatchData,
+    AdditionalInfo, CONTENT_FONT_SIZE, Category, HEADER_PADDING, MatchData,
     PageType, SettingsPageMeta, SettingsPageViewHandle, SettingsWidget,
     TOGGLE_BUTTON_RIGHT_PADDING, ToggleState, add_setting, build_reset_button,
     build_toggle_element, render_body_item, render_body_item_label, render_dropdown_item,
@@ -55,49 +55,33 @@ use crate::editor::{
 use crate::features::FeatureFlag;
 use crate::gpu_state::{GPUState, GPUStateEvent};
 use crate::root_view::QuakeModePinPosition;
-use crate::search::command_search::settings::{
-    CommandSearchSettings, ShowGlobalWorkflowsInUniversalSearch,
-};
+use crate::search::command_search::settings::CommandSearchSettings;
 use crate::settings::native_preference::{NativePreferenceSettings, UserNativePreference};
 use crate::settings::{
-    AliasExpansionEnabled, AliasExpansionSettings, AppEditorSettings, AtContextMenuInTerminalMode,
-    AutocompleteSymbols, AutosuggestionKeybindingHint, ChangelogSettings,
-    CodeSettings, CommandCorrections, CompletionsOpenWhileTyping, CopyOnSelect, CtrlTabBehavior,
-    DEFAULT_QUAKE_MODE_SIZE_PERCENTAGES, DefaultSessionMode, ErrorUnderliningEnabled,
-    ExtraMetaKeys, GPUSettings, GlobalHotkeyMode, InputSettings, InputSettingsChangedEvent,
-    LinuxSelectionClipboard, MiddleClickPasteEnabled, MouseScrollMultiplier, NewSessionSettings,
-    NewSessionSettingsChangedEvent, OutlineCodebaseSymbolsForAtContextMenu, PreferLowPowerGPU,
-    PreferredGraphicsBackend, QUAKE_WINDOW_AUTOHIDE_SUPPORTED, QuakeModeSettings,
-    RightClickBehavior, RightClickBehaviorSetting, ScrollSettings, ScrollSettingsChangedEvent,
-    SelectionSettings, SelectionSettingsChangedEvent, ShowAutosuggestionIgnoreButton,
-    ShowChangelogAfterUpdate, ShowTerminalInputMessageBar, SshSettings, SyntaxHighlighting,
-    TabBehavior, UserNativeRedirectPreference, VimModeEnabled, VimStatusBar,
-    VimUnnamedSystemClipboard,
+    AliasExpansionSettings, AppEditorSettings, ChangelogSettings,
+    CodeSettings, CtrlTabBehavior,
+    DEFAULT_QUAKE_MODE_SIZE_PERCENTAGES, DefaultSessionMode,
+    ExtraMetaKeys, GPUSettings, GlobalHotkeyMode, InputSettings, InputSettingsChangedEvent, NewSessionSettings,
+    NewSessionSettingsChangedEvent, QUAKE_WINDOW_AUTOHIDE_SUPPORTED, QuakeModeSettings,
+    RightClickBehavior, ScrollSettings, ScrollSettingsChangedEvent,
+    SelectionSettings, SelectionSettingsChangedEvent, SshSettings,
+    TabBehavior,
 };
-use crate::terminal::alt_screen_reporting::{
-    AltScreenReporting, FocusReportingEnabled, MouseReportingEnabled, ScrollReportingEnabled,
-};
-use crate::terminal::general_settings::{
-    GeneralSettings, LinkTooltip, LoginItem, QuitOnLastWindowClosed, RestoreSession,
-    ShowWarningBeforeQuitting,
-};
+use crate::terminal::alt_screen_reporting::AltScreenReporting;
+use crate::terminal::general_settings::GeneralSettings;
 use crate::terminal::input::OPEN_COMPLETIONS_KEYBINDING_NAME;
 use crate::terminal::keys_settings::{
-    ActivationHotkeyEnabled, CtrlTabBehaviorSetting, KeysSettings, KeysSettingsChangedEvent,
+    KeysSettings, KeysSettingsChangedEvent,
 };
-#[cfg(feature = "local_tty")]
-use crate::terminal::session_settings::StartupShellOverride;
-#[cfg(feature = "local_tty")]
-use crate::terminal::session_settings::WorkingDirectoryConfig;
 use crate::terminal::session_settings::{
     Notifications, NotificationsMode, NotificationsSettings, SessionSettings,
     SessionSettingsChangedEvent,
 };
 use crate::terminal::settings::{
-    AsyncFindEnabled, MaximumGridSize, Osc52ClipboardAccess, Osc52ClipboardAccessSetting,
-    TerminalSettings, TerminalSettingsChangedEvent, UseAudibleBell,
+    Osc52ClipboardAccess,
+    TerminalSettings, TerminalSettingsChangedEvent,
 };
-use crate::terminal::{BlockListSettings, PreserveInputFocusOnBlockSelection, SnackbarEnabled};
+use crate::terminal::BlockListSettings;
 use crate::undo_close::UndoCloseSettings;
 use crate::user_config::{WarpConfig, WarpConfigUpdateEvent};
 use crate::util::bindings::{
@@ -3708,7 +3692,6 @@ impl FeaturesPageView {
     fn render_setting_subgroup_item(
         &self,
         appearance: &Appearance,
-        local_only_icon_state: LocalOnlyIconState,
         switch: Box<dyn Element>,
         label_text: String,
     ) -> Box<dyn Element> {
@@ -3722,7 +3705,6 @@ impl FeaturesPageView {
                                 label_text,
                                 None,
                                 None,
-                                local_only_icon_state,
                                 ToggleState::Enabled,
                                 appearance,
                             ))
@@ -3897,7 +3879,7 @@ impl SettingsWidget for NativeRedirectWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -3912,7 +3894,6 @@ impl SettingsWidget for NativeRedirectWidget {
                     "Automatically open links in desktop app whenever possible.".into(),
                 ),
             }),
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             ui_builder
@@ -3949,7 +3930,7 @@ impl SettingsWidget for SessionRestorationWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -3974,7 +3955,6 @@ impl SettingsWidget for SessionRestorationWidget {
                 secondary_text: None,
                 tooltip_override_text: None,
             }),
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             switch,
@@ -4036,7 +4016,7 @@ impl SettingsWidget for SnackbarHeaderWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -4051,7 +4031,6 @@ impl SettingsWidget for SnackbarHeaderWidget {
                 secondary_text: None,
                 tooltip_override_text: None,
             }),
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             ui_builder
@@ -4081,7 +4060,7 @@ impl SettingsWidget for LinkTooltipWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -4089,7 +4068,6 @@ impl SettingsWidget for LinkTooltipWidget {
         render_body_item::<FeaturesPageAction>(
             "Show tooltip on click on links".into(),
             None,
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             ui_builder
@@ -4119,7 +4097,7 @@ impl SettingsWidget for QuitWarningModalWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -4128,7 +4106,6 @@ impl SettingsWidget for QuitWarningModalWidget {
         render_body_item::<FeaturesPageAction>(
             "Show warning before quitting/logging out".into(),
             None,
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             ui_builder
@@ -4158,7 +4135,7 @@ impl SettingsWidget for LoginItemWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -4171,7 +4148,6 @@ impl SettingsWidget for LoginItemWidget {
         render_body_item::<FeaturesPageAction>(
             label.into(),
             None,
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             ui_builder
@@ -4201,7 +4177,7 @@ impl SettingsWidget for QuitWhenAllWindowsClosedWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -4210,7 +4186,6 @@ impl SettingsWidget for QuitWhenAllWindowsClosedWidget {
         render_body_item::<FeaturesPageAction>(
             "Quit when all windows are closed".into(),
             None,
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             ui_builder
@@ -4240,7 +4215,7 @@ impl SettingsWidget for ShowChangelogWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -4249,7 +4224,6 @@ impl SettingsWidget for ShowChangelogWidget {
         render_body_item::<FeaturesPageAction>(
             "Show changelog toast after updates".into(),
             None,
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             ui_builder
@@ -4281,7 +4255,7 @@ impl SettingsWidget for MouseScrollMultiplierWidget {
         &self,
         view: &Self::View,
         appearance: &Appearance,
-        app: &AppContext,
+        _app: &AppContext,
     ) -> Box<dyn Element> {
         let border_color = match view.valid_mouse_scroll_multiplier {
             false => Some(themes::theme::Fill::error().into()),
@@ -4334,7 +4308,6 @@ impl SettingsWidget for MouseScrollMultiplierWidget {
                     "Supports floating point values between 1 and 20.".to_string(),
                 ),
             }),
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             input_column,
@@ -4404,7 +4377,7 @@ impl SettingsWidget for BlockLimitWidget {
         &self,
         view: &Self::View,
         appearance: &Appearance,
-        app: &AppContext,
+        _app: &AppContext,
     ) -> Box<dyn Element> {
         let border_color: Option<Fill> = match view.valid_max_block_size {
             false => Some(themes::theme::Fill::error().into()),
@@ -4431,7 +4404,6 @@ impl SettingsWidget for BlockLimitWidget {
         render_body_item::<FeaturesPageAction>(
             "Maximum rows in a block".into(),
             None,
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             input_field,
@@ -4470,7 +4442,6 @@ impl SettingsWidget for DesktopNotificationsWidget {
                 secondary_text: None,
                 tooltip_override_text: None,
             }),
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             ui_builder
@@ -4552,14 +4523,13 @@ impl SettingsWidget for StartupShellWidget {
         &self,
         view: &Self::View,
         appearance: &Appearance,
-        app: &AppContext,
+        _app: &AppContext,
     ) -> Box<dyn Element> {
         Flex::column()
             .with_children([
                 render_sub_sub_header(
                     appearance,
                     "Default shell for new sessions".to_string(),
-                    Some(LocalOnlyIconState::Hidden),
                 ),
                 ChildView::new(&view.startup_shell_view).finish(),
             ])
@@ -4583,14 +4553,13 @@ impl SettingsWidget for WorkingDirectoryWidget {
         &self,
         view: &Self::View,
         appearance: &Appearance,
-        app: &AppContext,
+        _app: &AppContext,
     ) -> Box<dyn Element> {
         Flex::column()
             .with_children([
                 render_sub_sub_header(
                     appearance,
                     "Working directory for new sessions".to_string(),
-                    Some(LocalOnlyIconState::Hidden),
                 ),
                 ChildView::new(&view.working_directory_view).finish(),
             ])
@@ -4639,7 +4608,7 @@ impl SettingsWidget for ExtraMetaKeysWidget {
     ) -> Box<dyn Element> {
         let ui_builder = appearance.ui_builder();
         let key_settings = KeysSettings::as_ref(app);
-        let mut tooltip_states = view
+        let _tooltip_states = view
             .button_mouse_states
             .local_only_icon_tooltip_states
             .borrow_mut();
@@ -4647,7 +4616,6 @@ impl SettingsWidget for ExtraMetaKeysWidget {
             .with_child(render_body_item::<FeaturesPageAction>(
                 EXTRA_META_KEYS_LEFT_TEXT.into(),
                 None,
-                LocalOnlyIconState::Hidden,
                 ToggleState::Enabled,
                 appearance,
                 ui_builder
@@ -4663,7 +4631,6 @@ impl SettingsWidget for ExtraMetaKeysWidget {
             .with_child(render_body_item::<FeaturesPageAction>(
                 EXTRA_META_KEYS_RIGHT_TEXT.into(),
                 None,
-                LocalOnlyIconState::Hidden,
                 ToggleState::Enabled,
                 appearance,
                 ui_builder
@@ -4710,7 +4677,6 @@ impl SettingsWidget for GlobalHotkeyWidget {
                 "Global hotkey:".to_owned(),
                 None,
                 // Fine not to show local only icon state for this, as it's not a supported setting.
-                LocalOnlyIconState::Hidden,
                 ToggleState::Disabled,
                 appearance,
                 Flex::row()
@@ -4746,7 +4712,6 @@ impl SettingsWidget for GlobalHotkeyWidget {
                         "Global hotkey:",
                         None,
                         None,
-                        LocalOnlyIconState::Hidden,
                         None,
                         &view.global_hotkey_dropdown,
                     )
@@ -4836,7 +4801,7 @@ impl SettingsWidget for AutocompleteSymbolsWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -4844,7 +4809,6 @@ impl SettingsWidget for AutocompleteSymbolsWidget {
         render_body_item::<FeaturesPageAction>(
             "Autocomplete quotes, parentheses, and brackets".into(),
             None,
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             ui_builder
@@ -4874,7 +4838,7 @@ impl SettingsWidget for ErrorUnderliningWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -4882,7 +4846,6 @@ impl SettingsWidget for ErrorUnderliningWidget {
         render_body_item::<FeaturesPageAction>(
             "Error underlining for commands".into(),
             None,
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             ui_builder
@@ -4912,7 +4875,7 @@ impl SettingsWidget for SyntaxHighlightingWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -4920,7 +4883,6 @@ impl SettingsWidget for SyntaxHighlightingWidget {
         render_body_item::<FeaturesPageAction>(
             "Syntax highlighting for commands".into(),
             None,
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             ui_builder
@@ -4950,7 +4912,7 @@ impl SettingsWidget for CompletionsMenuWhileTypingWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -4958,7 +4920,6 @@ impl SettingsWidget for CompletionsMenuWhileTypingWidget {
         render_body_item::<FeaturesPageAction>(
             "Open completions menu as you type".into(),
             None,
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             ui_builder
@@ -4992,7 +4953,7 @@ impl SettingsWidget for CommandCorrectionsWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -5000,7 +4961,6 @@ impl SettingsWidget for CommandCorrectionsWidget {
         render_body_item::<FeaturesPageAction>(
             "Suggest corrected commands".into(),
             None,
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             ui_builder
@@ -5030,7 +4990,7 @@ impl SettingsWidget for AliasExpansionWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -5039,7 +4999,6 @@ impl SettingsWidget for AliasExpansionWidget {
         render_body_item::<FeaturesPageAction>(
             "Expand aliases as you type".into(),
             None,
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             ui_builder
@@ -5069,7 +5028,7 @@ impl SettingsWidget for MiddleClickPasteWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -5078,7 +5037,6 @@ impl SettingsWidget for MiddleClickPasteWidget {
         render_body_item::<FeaturesPageAction>(
             "Middle-click to paste".into(),
             None,
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             ui_builder
@@ -5123,7 +5081,6 @@ impl SettingsWidget for RightClickBehaviorWidget {
                         .right_click_pastes()
                         .then_some("Shift+right-click to open the context menu."),
                     None,
-                    LocalOnlyIconState::Hidden,
                     None,
                     &view.right_click_behavior_dropdown,
                 )
@@ -5161,7 +5118,6 @@ impl SettingsWidget for VimModeWidget {
         column.add_child(render_body_item::<FeaturesPageAction>(
             "Edit code and commands with Vim keybindings".into(),
             None,
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             ui_builder
@@ -5189,7 +5145,6 @@ impl SettingsWidget for VimModeWidget {
                 .finish();
             let clipboard_setting = view.render_setting_subgroup_item(
                 appearance,
-                LocalOnlyIconState::Hidden,
                 clipboard_switch,
                 "Set unnamed register as system clipboard".into(),
             );
@@ -5205,7 +5160,6 @@ impl SettingsWidget for VimModeWidget {
                 .finish();
             let status_bar_setting = view.render_setting_subgroup_item(
                 appearance,
-                LocalOnlyIconState::Hidden,
                 status_bar_switch,
                 "Show Vim status bar".into(),
             );
@@ -5234,7 +5188,7 @@ impl SettingsWidget for AtContextMenuInTerminalModeWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -5242,7 +5196,6 @@ impl SettingsWidget for AtContextMenuInTerminalModeWidget {
         render_body_item::<FeaturesPageAction>(
             "Enable '@' context menu in terminal mode".into(),
             None,
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             ui_builder
@@ -5278,7 +5231,7 @@ impl SettingsWidget for OutlineCodebaseSymbolsForAtContextMenuWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -5286,7 +5239,6 @@ impl SettingsWidget for OutlineCodebaseSymbolsForAtContextMenuWidget {
         render_body_item::<FeaturesPageAction>(
             "Outline codebase symbols for '@' context menu".into(),
             None,
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             ui_builder
@@ -5322,7 +5274,7 @@ impl SettingsWidget for ShowTerminalInputMessageLineWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -5330,7 +5282,6 @@ impl SettingsWidget for ShowTerminalInputMessageLineWidget {
         render_body_item::<FeaturesPageAction>(
             "Show terminal input message line".into(),
             None,
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             ui_builder
@@ -5362,7 +5313,7 @@ impl SettingsWidget for PreserveInputFocusOnBlockSelectionWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -5370,7 +5321,6 @@ impl SettingsWidget for PreserveInputFocusOnBlockSelectionWidget {
         render_body_item::<FeaturesPageAction>(
             "Preserve input focus on block selection".into(),
             None,
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             ui_builder
@@ -5402,7 +5352,7 @@ impl SettingsWidget for AutosuggestionKeybindingHintWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -5415,7 +5365,6 @@ impl SettingsWidget for AutosuggestionKeybindingHintWidget {
         column.add_child(render_body_item::<FeaturesPageAction>(
             "Show autosuggestion keybinding hint".into(),
             None,
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             ui_builder
@@ -5449,7 +5398,7 @@ impl SettingsWidget for AutosuggestionIgnoreButtonWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -5463,7 +5412,6 @@ impl SettingsWidget for AutosuggestionIgnoreButtonWidget {
         column.add_child(render_body_item::<FeaturesPageAction>(
             "Show autosuggestion ignore button".into(),
             None,
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             ui_builder
@@ -5575,7 +5523,7 @@ impl SettingsWidget for TabKeyBehaviorWidget {
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
-        let mut tab_key_span = Flex::row()
+        let tab_key_span = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Start)
             .with_child(
                 appearance
@@ -5633,7 +5581,6 @@ impl SettingsWidget for CtrlTabBehaviorWidget {
                     "Ctrl+Tab behavior:",
                     None,
                     None,
-                    LocalOnlyIconState::Hidden,
                     None,
                     &view.ctrl_tab_behavior_dropdown,
                 )
@@ -5658,7 +5605,7 @@ impl SettingsWidget for MouseReportingWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -5675,7 +5622,6 @@ impl SettingsWidget for MouseReportingWidget {
                 secondary_text: None,
                 tooltip_override_text: None,
             }),
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             ui_builder
@@ -5705,7 +5651,7 @@ impl SettingsWidget for ScrollReportingWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -5714,7 +5660,6 @@ impl SettingsWidget for ScrollReportingWidget {
         render_body_item::<FeaturesPageAction>(
             "Enable Scroll Reporting".into(),
             None,
-            LocalOnlyIconState::Hidden,
             if *reporting_settings.mouse_reporting_enabled.value() {
                 ToggleState::Enabled
             } else {
@@ -5755,7 +5700,7 @@ impl SettingsWidget for FocusReportingWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -5764,7 +5709,6 @@ impl SettingsWidget for FocusReportingWidget {
         render_body_item::<FeaturesPageAction>(
             "Enable Focus Reporting".into(),
             None,
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             ui_builder
@@ -5794,7 +5738,7 @@ impl SettingsWidget for AudibleBellWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -5803,7 +5747,6 @@ impl SettingsWidget for AudibleBellWidget {
         render_body_item::<FeaturesPageAction>(
             "Use Audible Bell".into(),
             None,
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             ui_builder
@@ -5907,7 +5850,6 @@ impl SettingsWidget for SmartSelectWidget {
                 secondary_text: None,
                 tooltip_override_text: None,
             }),
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             ui_builder
@@ -5950,7 +5892,7 @@ impl SettingsWidget for CopyOnSelectWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -5959,7 +5901,6 @@ impl SettingsWidget for CopyOnSelectWidget {
         render_body_item::<FeaturesPageAction>(
             "Copy on select".into(),
             None,
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             ui_builder
@@ -5989,7 +5930,7 @@ impl SettingsWidget for Osc52ClipboardAccessWidget {
         &self,
         view: &Self::View,
         appearance: &Appearance,
-        app: &AppContext,
+        _app: &AppContext,
     ) -> Box<dyn Element> {
         render_dropdown_item(
             appearance,
@@ -5998,7 +5939,6 @@ impl SettingsWidget for Osc52ClipboardAccessWidget {
                 "Controls whether programs running in the terminal can read or write your system clipboard.",
             ),
             None,
-            LocalOnlyIconState::Hidden,
             None,
             &view.osc52_clipboard_access_dropdown,
         )
@@ -6019,14 +5959,13 @@ impl SettingsWidget for NewTabPlacementWidget {
         &self,
         view: &Self::View,
         appearance: &Appearance,
-        app: &AppContext,
+        _app: &AppContext,
     ) -> Box<dyn Element> {
         render_dropdown_item(
             appearance,
             "New tab placement",
             None,
             None,
-            LocalOnlyIconState::Hidden,
             None,
             &view.new_tab_placement_dropdown,
         )
@@ -6047,12 +5986,11 @@ impl SettingsWidget for DefaultSessionModeWidget {
         &self,
         view: &Self::View,
         appearance: &Appearance,
-        app: &AppContext,
+        _app: &AppContext,
     ) -> Box<dyn Element> {
         let label = render_dropdown_item_label(
             "Default mode for new sessions".to_string(),
             None,
-            LocalOnlyIconState::Hidden,
             None,
             appearance,
         );
@@ -6089,7 +6027,7 @@ impl SettingsWidget for WorkflowsInCommandSearch {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -6105,7 +6043,6 @@ impl SettingsWidget for WorkflowsInCommandSearch {
                 secondary_text: None,
                 tooltip_override_text: None,
             }),
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             ui_builder
@@ -6138,7 +6075,7 @@ impl SettingsWidget for LinuxSelectionClipboardWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -6152,7 +6089,6 @@ impl SettingsWidget for LinuxSelectionClipboardWidget {
                     "Whether the Linux primary clipboard should be supported.".into(),
                 ),
             }),
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             appearance
@@ -6191,7 +6127,6 @@ impl SettingsWidget for GPUWidget {
         let mut col = Flex::column().with_child(render_body_item::<FeaturesPageAction>(
             "Prefer rendering new windows with integrated GPU (low power)".into(),
             None,
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             appearance
@@ -6258,7 +6193,6 @@ impl SettingsWidget for WindowSystemWidget {
                 secondary_text: None,
                 tooltip_override_text: Some("Enables the use of Wayland".to_string()),
             }),
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             appearance
@@ -6322,7 +6256,6 @@ impl SettingsWidget for GraphicsBackendWidget {
             "Preferred graphics backend",
             None,
             None,
-            LocalOnlyIconState::Hidden,
             None,
             &view.graphics_backend_dropdown,
         );
@@ -6382,7 +6315,7 @@ impl SettingsWidget for AsyncFindWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -6392,7 +6325,6 @@ impl SettingsWidget for AsyncFindWidget {
             "Asynchronous find".into(),
             None,
             None,
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
         );

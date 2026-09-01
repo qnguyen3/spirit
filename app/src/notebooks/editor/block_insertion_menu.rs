@@ -1,4 +1,3 @@
-use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use warp_editor::content::text::BufferBlockItem;

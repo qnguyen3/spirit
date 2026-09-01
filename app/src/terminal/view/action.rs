@@ -16,7 +16,6 @@ use super::{
     TerminalEditor,
 };
 use crate::palette::PaletteSource;
-use crate::server::ids::SyncId;
 use crate::terminal::available_shells::AvailableShell;
 use crate::terminal::block_list_element::{
     BlockHoverAction, BlockListMenuSource, BlockSelectAction, BlockTextSelectAction,

@@ -8,19 +8,16 @@ use warpui::color::ColorU;
 use warpui::elements::{
     self, Align, Border, Clipped, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox,
     Container, CornerRadius, CrossAxisAlignment, DropShadow, Flex, Highlight, Icon,
-    MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius, Rect, Shrinkable,
-    Stack, Text,
+    MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius, Rect, Shrinkable, Text,
 };
 use warpui::fonts::{Properties, Weight};
 use warpui::geometry::vector::Vector2F;
 use warpui::keymap::Keystroke;
-use warpui::presenter::ChildView;
-use warpui::text_layout::{ClipConfig, TextStyle};
+use warpui::text_layout::TextStyle;
 use warpui::ui_components::button::ButtonVariant;
 use warpui::ui_components::components::{UiComponent, UiComponentStyles};
 use warpui::{
     AppContext, Element, Entity, EventContext, SingletonEntity, TypedActionView, View, ViewContext,
-    ViewHandle,
 };
 
 use super::command_parser::{
@@ -28,17 +25,13 @@ use super::command_parser::{
 };
 use super::workflow::Argument;
 use crate::appearance::Appearance;
-use crate::server::ids::SyncId;
 use crate::settings::InputModeSettings;
 use crate::terminal::block_list_viewport::InputMode;
 use crate::terminal::input::InputAction;
-use crate::terminal::view::TerminalAction;
 use crate::ui_components::buttons::icon_button;
 use crate::ui_components::icons;
 use crate::util::color::coloru_with_opacity;
-use crate::view_components::FilterableDropdownOrientation;
 use crate::workflows::WorkflowType;
-use crate::workspace::WorkspaceAction;
 
 const INFO_BOX_PADDING: f32 = 20.;
 const ARGUMENT_PADDING: f32 = 10.;
@@ -136,7 +129,7 @@ impl WorkflowsMoreInfoView {
         info_box_expanded: bool,
         workflow: WorkflowType,
         show_shift_tab_treatment: bool,
-        ctx: &mut ViewContext<Self>,
+        _ctx: &mut ViewContext<Self>,
     ) -> Self {
         let num_arguments = workflow.as_workflow().arguments().len();
 
@@ -473,7 +466,7 @@ impl WorkflowsMoreInfoView {
         &self,
         appearance: &Appearance,
         input_mode: &InputMode,
-        app: &AppContext,
+        _app: &AppContext,
     ) -> Box<dyn Element> {
         let content_and_args = self.render_content_and_arguments(appearance);
 
@@ -826,7 +819,7 @@ impl Entity for WorkflowsMoreInfoView {
 impl TypedActionView for WorkflowsMoreInfoView {
     type Action = WorkflowsInfoBoxViewAction;
 
-    fn handle_action(&mut self, action: &WorkflowsInfoBoxViewAction, ctx: &mut ViewContext<Self>) {
+    fn handle_action(&mut self, action: &WorkflowsInfoBoxViewAction, _ctx: &mut ViewContext<Self>) {
         match action {
             WorkflowsInfoBoxViewAction::CollapseOrExpand => {
                 self.info_box_expanded = !self.info_box_expanded

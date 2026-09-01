@@ -21,16 +21,16 @@ use warpui::{
 };
 
 use super::settings_page::{
-    Category, CategoryHeader, HEADER_FONT_SIZE, HEADER_PADDING, LocalOnlyIconState, MatchData,
+    Category, CategoryHeader, HEADER_FONT_SIZE, HEADER_PADDING, MatchData,
     PageType, SettingsPageEvent, SettingsPageMeta, SettingsPageViewHandle, SettingsWidget,
     ToggleState, add_setting, render_alternating_color_list, render_body_item,
     render_dropdown_item, render_page_title,
 };
 use super::{SettingsAction, SettingsSection, ToggleSettingActionPair, flags};
 use crate::appearance::Appearance;
-use crate::settings::{ReuseExistingSshControlMaster, SshSettings};
+use crate::settings::SshSettings;
 use crate::terminal::warpify::settings::{
-    EnableSshWarpification, SshExtensionInstallMode, SshExtensionInstallModeSetting,
+    SshExtensionInstallMode,
     WarpifySettings, WarpifySettingsChangedEvent,
 };
 use crate::ui_components::blended_colors;
@@ -608,7 +608,6 @@ impl SettingsWidget for SSHWidget {
                 render_body_item::<WarpifyPageAction>(
                     "Warpify SSH Sessions".into(),
                     None,
-                    LocalOnlyIconState::Hidden,
                     ToggleState::Enabled,
                     appearance,
                     ui_builder
@@ -639,7 +638,6 @@ impl SettingsWidget for SSHWidget {
                         "Install SSH extension",
                         Some(SSH_EXTENSION_INSTALL_MODE_DESCRIPTION),
                         None,
-                        LocalOnlyIconState::Hidden,
                         label_color_override,
                         &view.ssh_extension_install_mode_dropdown,
                     ))
@@ -660,7 +658,6 @@ impl SettingsWidget for SSHWidget {
                 column.add_child(render_body_item::<WarpifyPageAction>(
                     "Reuse existing SSH ControlMaster".into(),
                     None,
-                    LocalOnlyIconState::Hidden,
                     enable_ssh_warpification.into(),
                     appearance,
                     ui_builder

@@ -7,21 +7,8 @@ use std::sync::{Arc, Once};
 use std::{fs, thread};
 
 use anyhow::{Context, Result, anyhow, bail};
-use cloud_object_models::folder::persistence as folder_persistence;
-use cloud_object_models::folder::persistence::upsert_folders;
-use cloud_object_models::json_model::persistence::{
-    self as generic_string_persistence, PersistedGenericStringObject,
-};
-use cloud_object_models::notebook::persistence as notebook_persistence;
-use cloud_object_models::notebook::persistence::upsert_notebooks;
-use cloud_object_models::workflow::persistence as workflow_persistence;
-use cloud_object_models::workflow::persistence::upsert_workflows;
 use cloud_object_persistence::{
-    GenericStringObjectPersistenceData, delete_cloud_object, delete_generic_string_object,
-    increment_retry_count, load_cloud_object_read_context, mark_object_as_synced,
     read_time_of_next_force_object_refresh, record_time_of_next_refresh,
-    update_object_after_server_creation, update_object_metadata,
-    upsert_generic_string_objects as upsert_generic_string_object_rows,
 };
 use diesel::connection::{DefaultLoadingMode, SimpleConnection};
 use diesel::result::Error;
@@ -67,16 +54,15 @@ use crate::auth::UserUid;
 use crate::auth::auth_manager::PersistedCurrentUserInformation;
 use crate::auth::auth_state::AuthStateProvider;
 use crate::code::editor_management::CodeSource;
-use crate::notebooks::NotebookId;
 use crate::persisted_workspace::EnablementState;
 use crate::persistence::block_list::get_all_restored_blocks;
 use crate::persistence::model::{
-    CODE_REVIEW_PANE_KIND, GET_STARTED_PANE_KIND, NewPersistedObjectAction, NewTeamSettings,
+    CODE_REVIEW_PANE_KIND, GET_STARTED_PANE_KIND, NewTeamSettings,
     UserProfile,
 };
 use crate::projects::{Project, ProjectId, Worktree, WorktreeId};
 use crate::safe_info;
-use crate::server::ids::{ClientId, HashableId, ServerId, SyncId};
+use crate::server::ids::ServerId;
 use crate::settings_view::SettingsSection;
 use crate::suggestions::ignored_suggestions_model::SuggestionType;
 use crate::tab::SelectedTabColor;
@@ -1908,7 +1894,7 @@ fn read_node(conn: &mut SqliteConnection, node: model::PaneNode) -> Result<PaneN
 /// In the future, the awkwardness of the transaction interface is resolved in diesel 2.0.0.
 fn read_sqlite_data(
     conn: &mut SqliteConnection,
-    current_user_id: Option<UserUid>,
+    _current_user_id: Option<UserUid>,
     data_scope: PersistedDataScope,
 ) -> Result<PersistedData, Error> {
     if matches!(data_scope, PersistedDataScope::CodebaseIndicesOnly) {

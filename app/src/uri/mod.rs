@@ -21,7 +21,6 @@ use crate::auth::github_auth_notifier::GitHubAuthNotifier;
 use crate::features::FeatureFlag;
 use crate::launch_configs::launch_config::LaunchConfig;
 use crate::root_view::{OpenLaunchConfigArg, open_new_window_get_handles};
-use crate::server::ids::ServerId;
 use crate::settings_view::{
     OpenTeamsSettingsModalArgs, SettingsSection, settings_widget_deeplink_target,
 };

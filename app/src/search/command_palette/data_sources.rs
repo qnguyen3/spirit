@@ -32,7 +32,7 @@ impl DataSourceStore {
     pub fn new(
         binding_source: ModelHandle<BindingSource>,
         active_session_handle: ModelHandle<SessionSource>,
-        window_id: WindowId,
+        _window_id: WindowId,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
         let actions_data_source =

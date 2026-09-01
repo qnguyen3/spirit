@@ -31,7 +31,7 @@ use warpui::{
 
 use super::privacy::{AddRegexModal, AddRegexModalEvent};
 use super::settings_page::{
-    HEADER_PADDING, LocalOnlyIconState, MatchData, PageTitle, PageType, SettingsPageMeta,
+    HEADER_PADDING, MatchData, PageTitle, PageType, SettingsPageMeta,
     SettingsPageViewHandle, SettingsWidget, TOGGLE_BUTTON_RIGHT_PADDING, ToggleState,
     render_body_item, render_sub_header,
 };
@@ -43,7 +43,7 @@ use crate::modal::{Modal, ModalEvent, ModalViewState};
 use crate::settings::{CustomSecretRegex, PrivacySettings, RegexDisplayInfo};
 use crate::settings_view::privacy::AddRegexModalViewState;
 use crate::terminal::safe_mode_settings::{
-    SafeModeEnabled, SafeModeSettings, SecretDisplayMode, SecretDisplayModeSetting,
+    SafeModeSettings, SecretDisplayMode,
     get_effective_secret_display_mode,
 };
 use crate::ui_components::buttons::icon_button;
@@ -1123,14 +1123,13 @@ impl SettingsWidget for SecretRedactionWidget {
         let ui_builder = appearance.ui_builder();
         let is_enterprise_enabled = privacy_settings.is_enterprise_secret_redaction_enabled();
 
-        let local_only_icon_state = LocalOnlyIconState::Hidden;
 
         let secret_redaction_title_row = Container::new(
             Flex::row()
                 .with_child(
                     Shrinkable::new(
                         1.0,
-                        render_sub_header(appearance, SAFE_MODE_TITLE, Some(local_only_icon_state)),
+                        render_sub_header(appearance, SAFE_MODE_TITLE),
                     )
                     .finish(),
                 )
@@ -1182,13 +1181,11 @@ impl SettingsWidget for SecretRedactionWidget {
 
         if *safe_mode_settings.safe_mode_enabled {
             // Add the secret display mode dropdown
-            let local_only_icon_state = LocalOnlyIconState::Hidden;
 
             // Create the label with local-only icon if needed
             let label_with_icon = super::settings_page::render_dropdown_item_label(
                 "Secret visual redaction mode".to_string(),
                 None,
-                local_only_icon_state,
                 None,
                 appearance,
             );
@@ -1377,7 +1374,6 @@ impl SettingsWidget for CloudConversationStorageWidget {
             .with_child(render_body_item::<PrivacyPageAction>(
                 "Store AI conversations in the cloud".into(),
                 None,
-                LocalOnlyIconState::Hidden,
                 toggle_state,
                 appearance,
                 switch,
@@ -1442,7 +1438,6 @@ impl SettingsWidget for NetworkLogWidget {
                 "Network log console".into(),
                 None,
                 // Not rendering a setting, so no need to show local only icon state.
-                LocalOnlyIconState::Hidden,
                 ToggleState::Enabled,
                 appearance,
                 Empty::new().finish(),
@@ -1520,7 +1515,6 @@ impl SettingsWidget for DataManagementWidget {
                 DATA_MANAGEMENT_TITLE.into(),
                 None,
                 // Not rendering a setting, so no need to show local only icon state.
-                LocalOnlyIconState::Hidden,
                 ToggleState::Enabled,
                 appearance,
                 Empty::new().finish(),
@@ -1595,7 +1589,6 @@ impl SettingsWidget for PrivacyPolicyWidget {
                 PRIVACY_POLICY_TITLE.into(),
                 None,
                 // Not rendering a setting, so no need to show local only icon state.
-                LocalOnlyIconState::Hidden,
                 ToggleState::Enabled,
                 appearance,
                 Empty::new().finish(),

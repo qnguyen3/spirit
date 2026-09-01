@@ -72,10 +72,8 @@ use regex::Regex;
 use repo_metadata::repositories::DetectedRepositories;
 use repo_metadata::repositories::RepoDetectionSource;
 use serde::Serialize;
-use serde_json::json;
 use settings::{Setting, ToggleableSetting};
 use ssh_file_upload::{FileUpload, FileUploadEvent};
-use uuid::Uuid;
 use vec1::vec1;
 use warp_core::r#async::debounce;
 use warp_core::channel::ChannelState;
@@ -131,7 +129,7 @@ use super::block_list_viewport::FindMatchScrollLocation;
 use super::event::SshLoginStatus;
 use super::find::FindOptions;
 use super::model::block::{
-    BlockSection, BlocklistEnvVarMetadata, LONG_RUNNING_COMMAND_DURATION_MS,
+    BlockSection, LONG_RUNNING_COMMAND_DURATION_MS,
 };
 use super::model::completions::ShellCompletion;
 use super::model::rich_content::RichContentType;
@@ -178,7 +176,6 @@ use crate::remote_server::manager::{RemoteServerManager, RemoteServerManagerEven
 use crate::resource_center::{
     Tip, TipHint, TipsCompleted, mark_feature_used_and_write_to_user_defaults,
 };
-use crate::server::ids::{ObjectUid, SyncId};
 use crate::session_management::{CommandContext, SessionNavigationPromptElements};
 #[cfg(feature = "local_fs")]
 use crate::settings::import::model::ImportedConfigModel;
@@ -327,7 +324,6 @@ use crate::util::openable_file_type::{
 use crate::util::repo_detection::{RepoDetectionSessionType, detect_possible_git_repo};
 use crate::view_components::find::{Event as FindEvent, Find, FindDirection, FindWithinBlockState};
 use crate::view_components::{DismissibleToast, ToastFlavor};
-use crate::workflows::workflow::Workflow;
 use crate::workspace::sync_inputs::SyncedInputState;
 use crate::workspace::{CommandSearchOptions, ToastStack, WorkspaceAction};
 use crate::workspaces::user_workspaces::UserWorkspaces;
@@ -5403,8 +5399,8 @@ impl TerminalView {
                 command_finished_to_precmd_delay,
                 block_type,
                 num_secrets_obfuscated: _,
-                cloud_workflow_id,
-                cloud_env_var_collection_id,
+                cloud_workflow_id: _,
+                cloud_env_var_collection_id: _,
             }) => {
                 // To automatically warpify a subshell, we run the relevant command to open the
                 // subshell and create a future to delay bootstrapping the subshell long enough for

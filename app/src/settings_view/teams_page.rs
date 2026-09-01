@@ -61,7 +61,6 @@ use crate::view_components::{
     ClickableTextInput, ClickableTextInputAction, ClickableTextInputEvent, ToastFlavor,
 };
 use crate::word_block_editor::{ChipEditorState, WordBlockEditorView, WordBlockEditorViewEvent};
-use crate::workspace::WorkspaceAction;
 use crate::workspaces::team::{DiscoverableTeam, MembershipRole, Team, TeamDeleteDisabledReason};
 use cloud_objects::cloud_object::CloudObjectEventEntrypoint;
 
@@ -3991,7 +3990,7 @@ impl TeamsWidget {
         );
 
         let mut page = Flex::column();
-        page.add_child(render_sub_header(appearance, "Teams".to_string(), None));
+        page.add_child(render_sub_header(appearance, "Teams".to_string()));
 
         for (index, section) in sections.iter().enumerate() {
             if index > 0 && matches!(sections[index - 1], TeamsPageSection::CreateTeam) {

@@ -4,9 +4,8 @@ pub mod file;
 pub mod link;
 mod styles;
 
-use std::sync::Arc;
 
-pub use cloud_object_models::{CloudNotebook, CloudNotebookModel, NotebookId, SerializedNotebook};
+pub use cloud_object_models::NotebookId;
 use serde::{Deserialize, Serialize};
 use warpui::AppContext;
 

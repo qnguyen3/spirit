@@ -8,7 +8,6 @@ pub(crate) mod cross_window_tab_drag;
 mod global_actions;
 pub mod header_toolbar_editor;
 pub mod header_toolbar_item;
-mod home;
 mod lightbox_view;
 mod native_modal;
 mod registry;

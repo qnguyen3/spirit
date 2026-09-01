@@ -140,7 +140,6 @@ use crate::resource_center::{
 };
 use crate::search::QueryFilter;
 use crate::search::slash_command_menu::static_commands::commands::COMMAND_REGISTRY;
-use crate::server::ids::SyncId;
 use crate::session_management::SessionNavigationPromptElements;
 use crate::settings::{
     AliasExpansionSettings, AppEditorSettings, AppEditorSettingsChangedEvent, InputSettings,
@@ -2806,7 +2805,7 @@ impl Input {
     fn handle_workflow_more_info_event(
         &mut self,
         event: &WorkflowsInfoBoxViewEvent,
-        ctx: &mut ViewContext<Self>,
+        _ctx: &mut ViewContext<Self>,
     ) {
         match *event {}
     }

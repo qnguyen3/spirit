@@ -1,13 +1,11 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use ::settings::{Setting, ToggleableSetting};
-use lazy_static::lazy_static;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use warp_core::channel::ChannelState;
 use warp_core::context_flag::ContextFlag;
 use warp_core::ui::icons::Icon;
-use warp_errors::{report_error, report_if_error};
+use warp_errors::report_error;
 #[cfg(not(target_family = "wasm"))]
 use warp_server_client::iap::{IapCredentialsState, IapManager, IapManagerEvent};
 use warpui::assets::asset_cache::AssetSource;
@@ -17,23 +15,21 @@ use warpui::elements::{
     Radius, Shrinkable, Text,
 };
 use warpui::fonts::Weight;
-use warpui::keymap::ContextPredicate;
 use warpui::platform::Cursor;
 use warpui::ui_components::button::{ButtonVariant, TextAndIcon, TextAndIconAlignment};
 use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
-use warpui::ui_components::switch::SwitchStateHandle;
 use warpui::{
-    Action, AppContext, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
-    ViewHandle, WeakViewHandle, id,
+    AppContext, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
+    ViewHandle, WeakViewHandle,
 };
 
 use super::settings_page::{
-    AdditionalInfo, HEADER_PADDING, LocalOnlyIconState, MatchData, PageTitle, PageType,
-    SettingsPageMeta, SettingsPageViewHandle, SettingsWidget, ToggleState, render_body_item,
+    HEADER_PADDING, MatchData, PageTitle, PageType,
+    SettingsPageMeta, SettingsPageViewHandle, SettingsWidget,
     render_customer_type_badge,
 };
 use super::{
-    SettingsAction, SettingsSection, ToggleSettingActionPair, flags, plan_header_presentation,
+    SettingsSection, plan_header_presentation,
 };
 use crate::appearance::Appearance;
 use crate::auth::auth_manager::{AuthManager, LoginGatedFeature};
