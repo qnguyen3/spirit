@@ -255,6 +255,8 @@ fn legacy_ai_panes_restore_as_terminal_panes() {
         "ai_document",
         "ambient_agent",
         "execution_profile_editor",
+        "workflow",
+        "env_var_collection",
     ] {
         let tempdir = tempfile::tempdir().expect("tempdir should be created");
         let database_path = tempdir.path().join("warp.sqlite");
