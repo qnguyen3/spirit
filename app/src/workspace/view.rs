@@ -17817,10 +17817,6 @@ impl Workspace {
             context.set.insert(flags::SYNTAX_HIGHLIGHTING_FLAG);
         }
 
-        if privacy_settings.is_telemetry_enabled {
-            context.set.insert(flags::TELEMETRY_FLAG);
-        }
-
         let cloud_preferences_settings = CloudPreferencesSettings::as_ref(app);
         if *cloud_preferences_settings.settings_sync_enabled.value() {
             context.set.insert(flags::SETTINGS_SYNC_FLAG);
@@ -17842,12 +17838,10 @@ impl Workspace {
         if *safe_mode_settings.safe_mode_enabled.value() {
             context.set.insert(flags::SAFE_MODE_FLAG);
         }
-        if !privacy_settings.is_telemetry_force_enabled()
-            && matches!(
-                UserWorkspaces::as_ref(app).get_cloud_conversation_storage_enablement_setting(),
-                AdminEnablementSetting::RespectUserSetting
-            )
-        {
+        if matches!(
+            UserWorkspaces::as_ref(app).get_cloud_conversation_storage_enablement_setting(),
+            AdminEnablementSetting::RespectUserSetting
+        ) {
             context
                 .set
                 .insert(flags::CLOUD_CONVERSATION_STORAGE_EDITABLE_FLAG);

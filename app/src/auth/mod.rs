@@ -22,7 +22,6 @@ use itertools::Itertools;
 pub use login_failure_notification::LoginFailureReason;
 pub use user_uid::UserUid;
 use warp_core::channel::ChannelState;
-use warp_core::user_preferences::GetUserPreferences as _;
 use warp_errors::{report_error, report_if_error};
 use warpui::modals::{AlertDialogWithCallbacks, ModalButton};
 use warpui::{AppContext, SingletonEntity};
@@ -36,7 +35,7 @@ use crate::root_view::RootView;
 use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::sync_queue::SyncQueue;
 use crate::session_management::{RunningSessionSummary, SessionNavigationData};
-use crate::settings::{CloudPreferencesSettings, PrivacySettings, TELEMETRY_ENABLED_DEFAULTS_KEY};
+use crate::settings::{CloudPreferencesSettings, PrivacySettings};
 use crate::terminal::general_settings::GeneralSettings;
 use crate::terminal::shared_session::manager::Manager as SharedSessionManager;
 use crate::workflows::manager::WorkflowManager;
@@ -283,16 +282,6 @@ fn remove_cloud_persisted_settings(app: &mut AppContext) {
                 );
             }
         });
-    }
-
-    if let Err(e) = app
-        .private_user_preferences()
-        .remove_value(TELEMETRY_ENABLED_DEFAULTS_KEY)
-    {
-        report_error!(
-            anyhow::Error::new(e)
-                .context("Failed to remove Telemetry Enabled Defaults Key from user defaults")
-        );
     }
 
     // Reset the Privacy Settings in the login screen to default values.

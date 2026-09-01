@@ -208,8 +208,7 @@ use crate::settings::{
     BlockVisibilitySettingsChangedEvent, CodeSettings, DebugSettings, DebugSettingsChangedEvent,
     EmacsBindingsSettings, FontSettings, FontSettingsChangedEvent, InputModeSettings,
     InputModeSettingsChangedEvent, InputSettings, PaneSettings, PaneSettingsChangedEvent,
-    PrivacySettings, PrivacySettingsChangedEvent, PrivacySettingsSnapshot, SelectionSettings,
-    VimBannerSettings,
+    SelectionSettings, VimBannerSettings,
 };
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
 use crate::settings_view::{SettingsSection, flags};
@@ -1952,14 +1951,6 @@ pub struct TerminalView {
     last_focus_ts: Option<NaiveDateTime>,
     tips_completed: ModelHandle<TipsCompleted>,
 
-    /// A manually managed [`PrivacySettingsSnapshot`]. We must maintain a separate snapshot of
-    /// [`PrivacySettings`] (rather than using it directly), so we can decide whether to send a
-    /// telemetry event in the view's `drop()` method, which does not have access to a ViewContext
-    /// (which is required for reading the `PrivacySettings` model). This is a less-than-ideal
-    /// workaround; other usages of PrivacyModel should directly read from the singleton model
-    /// managed by the UI framework (e.g. via `PrivacySettings::handle(ctx)`).
-    privacy_settings_snapshot: PrivacySettingsSnapshot,
-
     /// Whether or not this terminal session was ever active.
     was_ever_visible: bool,
 
@@ -2633,17 +2624,6 @@ impl TerminalView {
         let ligature_handle = LigatureSettings::handle(ctx);
         ctx.subscribe_to_model(&ligature_handle, |_, _, _, ctx| ctx.notify());
 
-        let privacy_settings_handle = PrivacySettings::handle(ctx);
-        ctx.subscribe_to_model(
-            &privacy_settings_handle,
-            |me, privacy_settings_handle, event, ctx| {
-                if let PrivacySettingsChangedEvent::UpdateIsTelemetryEnabled { .. } = event {
-                    me.privacy_settings_snapshot =
-                        privacy_settings_handle.as_ref(ctx).get_snapshot(ctx)
-                }
-            },
-        );
-
         let block_visibility_settings_handle = BlockVisibilitySettings::handle(ctx);
         ctx.subscribe_to_model(
             &block_visibility_settings_handle,
@@ -2836,7 +2816,6 @@ impl TerminalView {
             file_link_scanning_join_handle: None,
             last_focus_ts: None,
             tips_completed: resources.tips_completed.clone(),
-            privacy_settings_snapshot: privacy_settings_handle.as_ref(ctx).get_snapshot(ctx),
             was_ever_visible: false,
             view_id: ctx.view_id(),
             current_state: TerminalViewStateChange::default(),
