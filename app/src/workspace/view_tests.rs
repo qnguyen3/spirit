@@ -27,7 +27,6 @@ use crate::notebooks::editor::keys::NotebookKeybindings;
 use crate::pane_group::{Direction, PaneGroupAction, PaneId};
 use crate::persisted_workspace::PersistedWorkspace;
 use crate::projects::registry::ProjectRegistryModel;
-use crate::resource_center::Tip;
 use crate::server::server_api::ServerApiProvider;
 use crate::settings::PrivacySettings;
 use crate::settings_view::DisplayCount;

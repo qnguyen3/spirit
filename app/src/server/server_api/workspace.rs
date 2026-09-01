@@ -30,6 +30,7 @@ use crate::workspaces::workspace::AiOverages;
 
 /// Outcome of a successful `purchaseAddonCredits` mutation. Mirrors the
 /// server's `PurchaseAddonCreditsResult` union members one-to-one.
+#[allow(dead_code)]
 pub enum PurchaseAddonCreditsOutcome {
     /// The saved payment method was charged synchronously and credits were
     /// granted immediately. Carries refreshed workspace metadata.
@@ -43,6 +44,7 @@ pub enum PurchaseAddonCreditsOutcome {
 #[cfg_attr(test, automock)]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
+#[allow(dead_code)]
 pub trait WorkspaceClient: 'static + Send + Sync {
     async fn generate_stripe_billing_portal_link(&self, team_uid: ServerId) -> Result<String>;
 

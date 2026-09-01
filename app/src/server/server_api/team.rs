@@ -151,6 +151,7 @@ pub trait TeamClient: 'static + Send + Sync {
         discoverable: bool,
     ) -> Result<WorkspacesMetadataWithPricing>;
 
+    #[allow(dead_code)]
     async fn transfer_team_ownership(
         &self,
         new_owner_email: String,

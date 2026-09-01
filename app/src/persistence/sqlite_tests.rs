@@ -2,12 +2,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use chrono::Utc;
-use cloud_object_persistence::to_cloud_object_permissions;
 use diesel::connection::SimpleConnection;
 use pathfinder_geometry::rect::RectF;
 use pathfinder_geometry::vector::Vector2F;
-use warp_core::features::FeatureFlag;
-use warp_graphql::scalars::time::ServerTimestamp;
 
 use super::{
     app_database_file_path, database_file_path_for_current_scope, database_file_path_for_scope,
@@ -22,11 +19,11 @@ use crate::app_state::{
 use crate::auth::UserUid;
 use crate::code::editor_management::CodeSource;
 use crate::persistence::model::{
-    ObjectPermissions, Project as ProjectRow, ProjectWorktree as WorktreeRow,
+    Project as ProjectRow, ProjectWorktree as WorktreeRow,
 };
 use crate::persistence::{BlockCompleted, ModelEvent, PersistedDataScope, PersistenceScope};
 use crate::projects::{Project, ProjectId, ProjectKind, Worktree, WorktreeId, WorktreeKind};
-use crate::server::ids::{ClientId, ServerId};
+use crate::server::ids::ServerId;
 use crate::tab::SelectedTabColor;
 use crate::terminal::ShellLaunchData;
 use crate::terminal::model::block::SerializedBlock;

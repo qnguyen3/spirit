@@ -8,7 +8,7 @@ use crate::server::server_api::workspace::{MockWorkspaceClient, WorkspaceClient}
 use crate::settings::PrivacySettings;
 use crate::system::SystemStats;
 use crate::workspaces::user_profiles::UserProfiles;
-use crate::workspaces::workspace::{PurchaseAddOnCreditsPolicy, Workspace, WorkspaceUid};
+use crate::workspaces::workspace::{PurchaseAddOnCreditsPolicy, Workspace};
 
 fn initialize_app(
     team_client: Arc<dyn TeamClient>,
