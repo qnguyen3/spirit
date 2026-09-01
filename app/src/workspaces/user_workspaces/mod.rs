@@ -718,7 +718,6 @@ impl UserWorkspaces {
     fn notify_and_emit_teams_changed(&self, ctx: &mut ModelContext<Self>) {
         // Update session-sharing enablement since it depends on what teams the user
         // is part of.
-        self.update_session_sharing_enablement();
 
         // PrivacySettings can't observe UserWorkspaces for updates, as it's initialized too early in
         // the app initialization flow. So, we update it manually whenever teams data changes.
@@ -1470,19 +1469,6 @@ impl UserWorkspaces {
             .find(|team| team.settings.codebase_context.value == AdminEnablementSetting::Disable)
     }
 
-    /// Updates whether or not session sharing is enabled based on the current team's tier policy.
-    fn update_session_sharing_enablement(&self) {
-        if cfg!(any(test, feature = "integration_tests")) {
-            return;
-        }
-
-        let is_session_sharing_enabled_via_tier_policy = self
-            .current_workspace()
-            .and_then(|workspace| workspace.billing_metadata.tier.session_sharing_policy)
-            .map(|policy| policy.is_enabled)
-            .unwrap_or(true);
-        FeatureFlag::CreatingSharedSessions.set_enabled(is_session_sharing_enabled_via_tier_policy);
-    }
 }
 
 #[cfg(test)]

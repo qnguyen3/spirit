@@ -175,7 +175,6 @@ serde_regex = "1.1.0"
 serde_urlencoded.workspace = true
 serde_with.workspace = true
 serde_yaml.workspace = true
-session-sharing-protocol.workspace = true
 settings.workspace = true
 settings_value = { workspace = true, features = ["derive"] }
 sha2.workspace = true
@@ -439,7 +438,6 @@ agent_mode = []
 agent_onboarding = []
 account_first_onboarding = []
 ade_workspaces = []
-agent_shared_sessions = []
 async_find = []
 changelog = []
 clear_autosuggestion_on_escape = []
@@ -452,17 +450,14 @@ completions_v2 = [
     "warp_completer/v2",
     "dep:command-signatures-v2",
 ]
-creating_shared_sessions = []
 cross_repo_context = []
 codebase_index_persistence = ["full_source_code_embedding"]
 well_known_mcp_ids = []
 default = [
     "agent_mode",
     "osc_hyperlinks",
-    "viewing_shared_sessions",
     "render_continuous_block_selections_with_single_border",
     "shared_with_me",
-    "session_sharing_acls",
     "external_agent_mode_context",
     "shell_selector",
     "minimalist_ui",
@@ -489,7 +484,6 @@ default = [
     "command_palette_file_search",
     "usage_based_pricing",
     "agent_management_view",
-    "shared_block_title_generation",
     "tab_close_button_on_left",
     "code_find_replace",
     "ai_context_menu_code",
@@ -509,14 +503,12 @@ default = [
     "discard_per_file_and_all_changes",
     "diff_set_as_context",
     "inline_code_review",
-    "agent_shared_sessions",
     "integration_command",
     "artifact_command",
     "conversation_api",
     "cloud_environments",
     "code_review_find",
     "async_find",
-    "shared_session_long_running_commands",
     "context_window_usage_v2",
     "ambient_agents_command_line",
     "scheduled_ambient_agents",
@@ -678,8 +670,6 @@ runtime_feature_flags = []
 selectable_prompt = []
 settings_file = []
 sequential_storage = []
-session_sharing = []
-session_sharing_acls = []
 skip_login = ["warp_server_client/skip_login"]
 # This feature should only be enabled when building a self-contained binary with the bundle script.
 standalone = ["warp_assets/standalone", "warp_core/standalone"]
@@ -708,7 +698,6 @@ integration_tests = [
     "warp_server_client/integration_tests",
 ]
 traces = []
-viewing_shared_sessions = []
 workflow_aliases = []
 rect_selection = []
 alacritty_settings_import = []
@@ -716,7 +705,6 @@ shared_with_me = []
 ai_rules = []
 am_workflows = []
 shell_selector = []
-shared_session_long_running_commands = []
 minimalist_ui = []
 loginless_conversion = []
 external_agent_mode_context = []
@@ -736,7 +724,6 @@ full_source_code_embedding = []
 use_tantivy_search = []
 agent_management_popup = []
 simulate_github_unauthed = []
-shared_block_title_generation = []
 usage_based_pricing = []
 code_find_replace = []
 command_palette_file_search = []
