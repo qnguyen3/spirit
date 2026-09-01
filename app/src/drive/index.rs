@@ -4636,18 +4636,18 @@ impl View for DriveIndex {
             }
         };
 
-        if let Some(team) = workspaces.team_for_window(self.window_id) {
-            if team.billing_metadata.is_delinquent_due_to_payment_issue() {
-                let current_user_email = self.auth_state.user_email().unwrap_or_default();
-                let has_admin_permissions = team.has_admin_permissions(&current_user_email);
-                let is_on_stripe_paid_plan = team.billing_metadata.is_on_stripe_paid_plan();
-                drive.add_child(self.render_payment_issue_banner(
-                    appearance,
-                    team.uid,
-                    has_admin_permissions,
-                    is_on_stripe_paid_plan,
-                ));
-            }
+        if let Some(team) = workspaces.team_for_window(self.window_id)
+            && team.billing_metadata.is_delinquent_due_to_payment_issue()
+        {
+            let current_user_email = self.auth_state.user_email().unwrap_or_default();
+            let has_admin_permissions = team.has_admin_permissions(&current_user_email);
+            let is_on_stripe_paid_plan = team.billing_metadata.is_on_stripe_paid_plan();
+            drive.add_child(self.render_payment_issue_banner(
+                appearance,
+                team.uid,
+                has_admin_permissions,
+                is_on_stripe_paid_plan,
+            ));
         }
 
         drive.finish()
