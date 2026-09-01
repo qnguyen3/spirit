@@ -99,7 +99,6 @@ pub enum CustomAction {
     AddWindow,
     CloseCurrentSession,
     CloseWindow,
-    OpenTeamSettings,
     #[cfg(windows)]
     WindowsPaste,
     #[cfg(windows)]
@@ -427,8 +426,7 @@ pub fn custom_tag_to_keystroke(custom: CustomTag) -> Option<Keystroke> {
         | CustomAction::TriggerWelcomeBlock
         | CustomAction::HistorySearch
         | CustomAction::DisableSyncTerminalInputs
-        | CustomAction::ToggleSyncAllTerminalInputsInAllTabs
-        | CustomAction::OpenTeamSettings => None,
+        | CustomAction::ToggleSyncAllTerminalInputsInAllTabs => None,
     }
 }
 

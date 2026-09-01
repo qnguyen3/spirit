@@ -285,10 +285,6 @@ pub fn init(app: &mut AppContext) {
         RootView::add_session_at_path,
     );
     app.add_action(
-        "root_view:open_team_settings_page",
-        RootView::open_team_settings_page,
-    );
-    app.add_action(
         "root_view:handle_notification_click",
         RootView::handle_notification_click,
     );
@@ -2203,21 +2199,6 @@ impl RootView {
             })
         } else {
             log::warn!("Auth not complete before trying to fill input");
-        }
-        true
-    }
-
-    pub fn open_team_settings_page(&mut self, _: &(), ctx: &mut ViewContext<Self>) -> bool {
-        let window_id = ctx.window_id();
-        if let Some(handle) = self.active_workspace(ctx) {
-            ctx.dispatch_typed_action_for_view(
-                window_id,
-                handle.id(),
-                &WorkspaceAction::ShowSettingsPage(SettingsSection::Teams),
-            );
-            ctx.windows().show_window_and_focus_app(window_id);
-        } else {
-            report_error!("Auth not complete before trying to open team settings page");
         }
         true
     }

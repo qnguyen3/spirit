@@ -548,10 +548,6 @@ fn test_settings_section_for_simple_subpage() {
         settings_section_for_simple_subpage("appearance"),
         Some(SettingsSection::Appearance),
     );
-    assert_eq!(
-        settings_section_for_simple_subpage("platform"),
-        Some(SettingsSection::WarpCloudAgentAPIKeys),
-    );
     assert!(settings_section_for_simple_subpage("not_a_subpage").is_none());
 }
 

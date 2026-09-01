@@ -19,8 +19,8 @@ use super::{Builder, new_builder};
 /// Label of the umbrella that groups the agent subpages.
 const AGENTS_UMBRELLA: &str = "Agents";
 
-/// Label of the umbrella that groups the cloud-platform subpages.
-const CLOUD_PLATFORM_UMBRELLA: &str = "Cloud platform";
+/// Label of the umbrella that groups the code subpages.
+const CODE_UMBRELLA: &str = "Code";
 
 // ---------------------------------------------------------------------------
 // Mouse navigation
@@ -86,14 +86,14 @@ pub fn test_settings_keyboard_navigation_down_into_collapsed_umbrella() -> Build
 pub fn test_settings_keyboard_navigation_up_into_collapsed_umbrella() -> Builder {
     new_builder()
         .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
-        // Teams sits directly below the Cloud platform umbrella.
-        .with_step(open_settings_page(SettingsSection::Teams))
-        .with_step(assert_umbrella_expanded(CLOUD_PLATFORM_UMBRELLA, false))
+        // Appearance sits directly below the Code umbrella.
+        .with_step(open_settings_page(SettingsSection::Appearance))
+        .with_step(assert_umbrella_expanded(CODE_UMBRELLA, false))
         .with_step(press_settings_nav_up())
         .with_step(assert_settings_section(
-            SettingsSection::WarpCloudAgentAPIKeys,
+            SettingsSection::EditorAndCodeReview,
         ))
-        .with_step(assert_umbrella_expanded(CLOUD_PLATFORM_UMBRELLA, true))
+        .with_step(assert_umbrella_expanded(CODE_UMBRELLA, true))
 }
 
 /// Collapsing an umbrella while one of its subpages is selected keeps arrow

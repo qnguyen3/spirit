@@ -1076,7 +1076,6 @@ fn dispatch_action_in_new_or_existing_window<T: 'static>(
 
 fn settings_section_for_simple_subpage(subpage: &str) -> Option<SettingsSection> {
     match subpage {
-        "platform" => Some(SettingsSection::WarpCloudAgentAPIKeys),
         "appearance" => Some(SettingsSection::Appearance),
         _ => None,
     }

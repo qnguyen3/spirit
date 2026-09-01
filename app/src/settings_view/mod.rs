@@ -179,14 +179,11 @@ pub enum SettingsSection {
     Keybindings,
     Privacy,
     Scripting,
-    Teams,
     Warpify,
     // ── Agents umbrella subpages ──
     ThirdPartyCLIAgents,
     // ── Code umbrella subpages ──
     EditorAndCodeReview,
-    // ── Cloud platform umbrella subpages ──
-    WarpCloudAgentAPIKeys,
 }
 
 use std::fmt::{self, Display};
@@ -200,7 +197,6 @@ impl Display for SettingsSection {
             SettingsSection::Scripting => write!(f, "Scripting"),
             SettingsSection::ThirdPartyCLIAgents => write!(f, "Third party CLI agents"),
             SettingsSection::EditorAndCodeReview => write!(f, "Editor and Code Review"),
-            SettingsSection::WarpCloudAgentAPIKeys => write!(f, "API keys"),
             _ => write!(f, "{self:?}"),
         }
     }
@@ -229,13 +225,9 @@ impl SettingsSection {
             Self::Keybindings => "Keyboard shortcuts",
             Self::Privacy => "Privacy",
             Self::Scripting => "Scripting",
-            Self::Teams => "Teams",
             Self::Warpify => "Warpify",
             Self::ThirdPartyCLIAgents => "Third party CLI agents",
             Self::EditorAndCodeReview => "Editor and Code Review",
-            // Keeps the "Oz" spelling the slug was seeded from; only the
-            // Display label above dropped it.
-            Self::WarpCloudAgentAPIKeys => "Oz Cloud API Keys",
         }
     }
 
@@ -255,11 +247,9 @@ impl SettingsSection {
             "Keyboard shortcuts" => Self::Keybindings,
             "Privacy" => Self::Privacy,
             "Scripting" => Self::Scripting,
-            "Teams" => Self::Teams,
             "Warpify" => Self::Warpify,
             "Third party CLI agents" | "ThirdPartyCLIAgents" => Self::ThirdPartyCLIAgents,
             "Editor and Code Review" | "EditorAndCodeReview" => Self::EditorAndCodeReview,
-            "Oz Cloud API Keys" | "OzCloudAPIKeys" => Self::WarpCloudAgentAPIKeys,
             _ => return None,
         };
         Some(section)
