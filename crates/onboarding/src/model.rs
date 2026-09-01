@@ -45,8 +45,7 @@ pub struct SelectedSettings {
     pub show_agent_notifications: bool,
 }
 
-impl SelectedSettings {
-}
+impl SelectedSettings {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum OnboardingStep {

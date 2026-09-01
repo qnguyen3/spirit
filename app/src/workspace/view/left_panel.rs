@@ -63,7 +63,6 @@ pub const MAX_SIDEBAR_WIDTH_RATIO: f32 = 0.75;
 struct MouseStateHandles {
     project_explorer_button: MouseStateHandle,
     global_search_button: MouseStateHandle,
-    warp_drive_button: MouseStateHandle,
     source_control_button: MouseStateHandle,
     sign_in_button: MouseStateHandle,
 }
@@ -1090,7 +1089,6 @@ impl View for LeftPanelView {
         let mouse_state_handles = vec![
             self.mouse_state_handles.project_explorer_button.clone(),
             self.mouse_state_handles.global_search_button.clone(),
-            self.mouse_state_handles.warp_drive_button.clone(),
             self.mouse_state_handles.source_control_button.clone(),
         ];
 

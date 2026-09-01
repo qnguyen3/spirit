@@ -157,29 +157,23 @@ impl PrivacySettings {
         // Initialize from `CloudPrivacySettings`, which is the source of truth for these
         // booleans.
         let cloud_privacy = CloudPrivacySettings::as_ref(ctx);
-        let is_cloud_conversation_storage_enabled = *cloud_privacy
-            .is_cloud_conversation_storage_enabled
-            .value();
+        let is_cloud_conversation_storage_enabled =
+            *cloud_privacy.is_cloud_conversation_storage_enabled.value();
 
         // Listen for changes to the cloud model and update ourselves when they happen.
-        ctx.subscribe_to_model(
-            &CloudPrivacySettings::handle(ctx),
-            |me, _, event, ctx| {
-                let privacy_settings = CloudPrivacySettings::as_ref(ctx);
-                match event {
-                    CloudPrivacySettingsChangedEvent::IsCloudConversationStorageEnabled {
-                        ..
-                    } => {
-                        me.set_is_cloud_conversation_storage_enabled(
-                            *privacy_settings
-                                .is_cloud_conversation_storage_enabled
-                                .value(),
-                            ctx,
-                        );
-                    }
+        ctx.subscribe_to_model(&CloudPrivacySettings::handle(ctx), |me, _, event, ctx| {
+            let privacy_settings = CloudPrivacySettings::as_ref(ctx);
+            match event {
+                CloudPrivacySettingsChangedEvent::IsCloudConversationStorageEnabled { .. } => {
+                    me.set_is_cloud_conversation_storage_enabled(
+                        *privacy_settings
+                            .is_cloud_conversation_storage_enabled
+                            .value(),
+                        ctx,
+                    );
                 }
-            },
-        );
+            }
+        });
 
         let user_secret_regex_list: CustomSecretRegexList =
             CustomSecretRegexList::new_from_storage(ctx);

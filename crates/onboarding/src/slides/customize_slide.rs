@@ -266,7 +266,6 @@ impl CustomizeUISlide {
                     }
                 })),
             });
-
         }
 
         render_toggle_card(

@@ -18,7 +18,6 @@ use warpui::{AddSingletonModel, App, ViewHandle};
 use watcher::HomeDirectoryWatcher;
 
 use super::*;
-use crate::server::ids::ServerId;
 use crate::auth::github_auth_notifier::GitHubAuthNotifier;
 use crate::context_chips::prompt::Prompt;
 use crate::editor::Event;
@@ -28,6 +27,7 @@ use crate::notebooks::editor::keys::NotebookKeybindings;
 use crate::pane_group::{Direction, PaneGroupAction, PaneId};
 use crate::persisted_workspace::PersistedWorkspace;
 use crate::projects::registry::ProjectRegistryModel;
+use crate::server::ids::ServerId;
 use crate::server::server_api::ServerApiProvider;
 use crate::settings::PrivacySettings;
 use crate::settings_view::DisplayCount;
