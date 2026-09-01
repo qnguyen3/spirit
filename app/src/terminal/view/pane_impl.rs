@@ -2,16 +2,10 @@
 //! business logic for integrating the terminal view with the pane infra (`crate::pane_group`).
 use settings::Setting as _;
 use warp_core::context_flag::ContextFlag;
-use warpui::elements::{
-    ConstrainedBox, CrossAxisAlignment, Flex, MainAxisAlignment, MainAxisSize, ParentElement,
-    Shrinkable,
-};
+use warpui::elements::{ConstrainedBox, CrossAxisAlignment, Flex, MainAxisAlignment, MainAxisSize, ParentElement, Shrinkable};
 use warpui::prelude::{ChildView, Container};
 use warpui::text_layout::ClipConfig;
-use warpui::{
-    AppContext, Element, ModelHandle, SingletonEntity, TypedActionView, ViewContext,
-    WeakModelHandle,
-};
+use warpui::{AppContext, Element, ModelHandle, SingletonEntity, TypedActionView, ViewContext, WeakModelHandle};
 
 use super::shared_session::adapter::Kind as SharedSessionKind;
 use super::{Event, PaneConfiguration, TerminalAction, TerminalViewState, Viewer};
@@ -19,21 +13,12 @@ use crate::appearance::Appearance;
 use crate::features::FeatureFlag;
 use crate::menu::{MenuItem, MenuItemFields};
 use crate::pane_group::focus_state::{PaneFocusHandle, PaneGroupFocusEvent, PaneGroupFocusState};
-use crate::pane_group::pane::view::header::components::{
-    CenteredHeaderEdgeWidth, header_edge_min_width, render_pane_header_buttons,
-    render_pane_header_title_text, render_three_column_header,
-};
+use crate::pane_group::pane::view::header::components::{CenteredHeaderEdgeWidth, header_edge_min_width, render_pane_header_buttons, render_pane_header_title_text, render_three_column_header};
 use crate::pane_group::pane::view::header::render_pane_header_draggable;
 use crate::pane_group::pane::{PaneStack, view};
 use crate::pane_group::{BackingView, SplitPaneState, TOGGLE_MAXIMIZE_PANE_BINDING_NAME};
-use crate::settings::app_installation_detection::{
-    UserAppInstallDetectionSettings, UserAppInstallStatus,
-};
+use crate::settings::app_installation_detection::{UserAppInstallDetectionSettings, UserAppInstallStatus};
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
-use crate::terminal::shared_session::SharedSessionActionSource;
-use crate::terminal::shared_session::manager::Manager;
-use crate::terminal::shared_session::participant_avatar_view::render_participants_and_role_elements;
-use crate::terminal::shared_session::render_util::shared_session_indicator_color;
 use crate::terminal::{TerminalManager, TerminalView};
 use crate::ui_components::agent_icon::terminal_view_agent_icon_variant;
 use crate::ui_components::icon_with_status::render_icon_with_status;

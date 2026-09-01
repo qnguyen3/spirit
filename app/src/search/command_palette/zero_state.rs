@@ -5,10 +5,7 @@ pub use items::Items;
 use warp_core::context_flag::ContextFlag;
 use warp_core::features::FeatureFlag;
 use warpui::elements::{Container, Flex, MouseStateHandle, ParentElement, Shrinkable, Wrap};
-use warpui::{
-    AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
-    WindowId,
-};
+use warpui::{AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext, WindowId};
 
 use crate::appearance::Appearance;
 use crate::drive::settings::WarpDriveSettings;

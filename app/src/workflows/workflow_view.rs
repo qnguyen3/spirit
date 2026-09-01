@@ -16,22 +16,14 @@ use warp_core::ui::theme::AnsiColorIdentifier;
 use warp_editor::editor::NavigationKey;
 use warp_errors::report_error;
 use warpui::clipboard::ClipboardContent;
-use warpui::elements::{
-    Align, Border, ChildAnchor, ChildView, Clipped, ClippedScrollStateHandle, ClippedScrollable,
-    ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty, Flex, Hoverable,
-    MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning, ParentAnchor,
-    ParentElement, ParentOffsetBounds, Radius, Rect, ScrollbarWidth, Shrinkable, Stack,
-};
+use warpui::elements::{Align, Border, ChildAnchor, ChildView, Clipped, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty, Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Radius, Rect, ScrollbarWidth, Shrinkable, Stack};
 use warpui::fonts::{FamilyId, Weight};
 use warpui::keymap::EditableBinding;
 use warpui::platform::Cursor;
 use warpui::text_layout::TextStyle;
 use warpui::ui_components::button::{Button, ButtonVariant, TextAndIcon, TextAndIconAlignment};
 use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
-use warpui::{
-    AppContext, Element, Entity, FocusContext, ModelHandle, SingletonEntity, TypedActionView, View,
-    ViewContext, ViewHandle, WindowId,
-};
+use warpui::{AppContext, Element, Entity, FocusContext, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle, WindowId};
 
 use super::aliases::WorkflowAliases;
 use super::command_parser::WorkflowCommandDisplayData;
@@ -41,42 +33,25 @@ use crate::appearance::Appearance;
 use crate::cloud_object::breadcrumbs::ContainingObject;
 use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
 use crate::cloud_object::model::view::CloudViewModel;
-use crate::cloud_object::{
-    CloudObject, CloudObjectEventEntrypoint, ObjectType, Owner, Revision, Space,
-};
+use crate::cloud_object::{CloudObject, CloudObjectEventEntrypoint, ObjectType, Owner, Revision, Space};
 use crate::drive::cloud_object_styling::warp_drive_icon_color;
 use crate::drive::drive_helpers::has_feature_gated_anonymous_user_reached_workflow_limit;
 use crate::drive::items::WarpDriveItemId;
-use crate::drive::sharing::{
-    ContentEditability, ShareableObject, SharingAccessLevel, SharingDialogSource,
-};
+use crate::drive::sharing::{ContentEditability, SharingAccessLevel};
 use crate::drive::workflows::arguments::ArgumentsState;
-use crate::drive::workflows::enum_creation_dialog::{
-    EnumCreationDialog, EnumCreationDialogEvent, WorkflowEnumData,
-};
-use crate::drive::workflows::workflow_arg_selector::{
-    WorkflowArgSelector, WorkflowArgSelectorEvent,
-};
+use crate::drive::workflows::enum_creation_dialog::{EnumCreationDialog, EnumCreationDialogEvent, WorkflowEnumData};
+use crate::drive::workflows::workflow_arg_selector::{WorkflowArgSelector, WorkflowArgSelectorEvent};
 use crate::drive::workflows::workflow_arg_type_helpers::{self, ArgumentEditorRowIndex};
 use crate::drive::{CloudObjectTypeAndId, DriveObjectType, OpenWarpDriveObjectSettings};
-use crate::editor::{
-    EditorOptions, EditorView, EnterAction, EnterSettings, Event as EditorEvent, InteractionState,
-    PlainTextEditorViewAction as EditorAction, PropagateAndNoOpNavigationKeys,
-    SingleLineEditorOptions, TextOptions, TextStyleOperation,
-};
+use crate::editor::{EditorOptions, EditorView, EnterAction, EnterSettings, Event as EditorEvent, InteractionState, PlainTextEditorViewAction as EditorAction, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions, TextOptions, TextStyleOperation};
 use crate::menu::{MenuItem, MenuItemFields};
 use crate::network::NetworkStatus;
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::pane_group::pane::view;
 use crate::pane_group::{BackingView, PaneConfiguration, PaneEvent};
-use crate::server::cloud_objects::update_manager::{
-    FetchSingleObjectOption, ObjectOperation, OperationSuccessType, UpdateManager,
-    UpdateManagerEvent,
-};
+use crate::server::cloud_objects::update_manager::{FetchSingleObjectOption, ObjectOperation, OperationSuccessType, UpdateManager, UpdateManagerEvent};
 use crate::server::ids::{ClientId, ServerId, SyncId};
-use crate::settings::app_installation_detection::{
-    UserAppInstallDetectionSettings, UserAppInstallStatus,
-};
+use crate::settings::app_installation_detection::{UserAppInstallDetectionSettings, UserAppInstallStatus};
 use crate::terminal::model::secrets::find_secrets_in_text;
 use crate::terminal::safe_mode_settings::get_secret_obfuscation_mode;
 use crate::ui_components::breadcrumb::{BreadcrumbState, render_breadcrumbs};

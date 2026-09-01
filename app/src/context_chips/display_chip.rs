@@ -7,38 +7,22 @@ use pathfinder_geometry::vector::{Vector2F, vec2f};
 use warp_core::features::FeatureFlag;
 use warp_core::ui::theme::Fill;
 use warp_core::ui::theme::color::internal_colors;
-use warpui::elements::{
-    Border, ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
-    DEFAULT_UI_LINE_HEIGHT_RATIO, Empty, Flex, Hoverable, MouseStateHandle, OffsetPositioning,
-    ParentAnchor, ParentElement, ParentOffsetBounds, Radius, Stack, Text,
-};
+use warpui::elements::{Border, ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, DEFAULT_UI_LINE_HEIGHT_RATIO, Empty, Flex, Hoverable, MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Radius, Stack, Text};
 use warpui::fonts::{Cache, FamilyId, Properties, Weight};
 use warpui::keymap::Keystroke;
 use warpui::platform::Cursor;
 use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
-use warpui::{
-    AppContext, Element, Entity, EntityId, Gradient, ModelHandle, SingletonEntity, TypedActionView,
-    View, ViewContext, ViewHandle,
-};
+use warpui::{AppContext, Element, Entity, EntityId, Gradient, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle};
 
-use super::directory_fetcher::{
-    DirectoryFetcher, DirectoryFetcherEvent, DirectoryItem, DirectoryType,
-};
-use super::display_menu::{
-    ChipMenuType, DisplayChipMenu, FixedFooter, GenericMenuItem, PromptDisplayMenuEvent,
-};
-use super::{
-    ChipResult, ChipValue, ContextChipKind, agent_view_chip_color, github_pr_display_text_from_url,
-    render_text_from_kind,
-};
+use super::directory_fetcher::{DirectoryFetcher, DirectoryFetcherEvent, DirectoryItem, DirectoryType};
+use super::display_menu::{ChipMenuType, DisplayChipMenu, FixedFooter, GenericMenuItem, PromptDisplayMenuEvent};
+use super::{ChipResult, ChipValue, ContextChipKind, agent_view_chip_color, github_pr_display_text_from_url, render_text_from_kind};
 use crate::appearance::Appearance;
 use crate::code::editor::{add_color, remove_color};
 use crate::code_review::code_review_view::CODE_REVIEW_TOOLTIP_TEXT;
 use crate::code_review::diff_state::DiffStats;
 use crate::completer::SessionContext;
-use crate::context_chips::git_branch_on_click::{
-    GitBranchOnClickValue, is_plausible_new_branch_name,
-};
+use crate::context_chips::git_branch_on_click::{GitBranchOnClickValue, is_plausible_new_branch_name};
 use crate::context_chips::node_version_popup::{NodeVersionPopupEvent, NodeVersionPopupView};
 use crate::context_chips::spacing;
 use crate::settings_view::keybindings::{KeybindingChangedEvent, KeybindingChangedNotifier};
@@ -346,7 +330,6 @@ pub struct DisplayChip {
     on_click_values: Vec<String>,
     session_context: Option<SessionContext>,
     menu_positioning_provider: Arc<dyn MenuPositioningProvider>,
-    is_shared_session_viewer: bool,
     is_in_agent_view: bool,
     /// Cached display string for the code review keybinding.
     code_review_keybinding: Option<String>,
@@ -680,7 +663,6 @@ pub struct DisplayChipConfig {
     pub session_context: Option<SessionContext>,
     pub current_repo_path: Option<PathBuf>,
     pub model_events: ModelHandle<ModelEventDispatcher>,
-    pub is_shared_session_viewer: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -1074,7 +1056,6 @@ impl DisplayChip {
             on_click_values: chip_result.on_click_values,
             session_context: config.session_context,
             menu_positioning_provider: config.menu_positioning_provider,
-            is_shared_session_viewer: config.is_shared_session_viewer,
             is_in_agent_view,
             code_review_keybinding,
             terminal_view_id: config.terminal_view_id,
@@ -1282,8 +1263,7 @@ impl DisplayChip {
             appearance.theme().ansi_fg_green()
         };
 
-        let is_interactive =
-            !self.is_shared_session_viewer && !self.is_cli_agent_session_active(app);
+        let is_interactive = !self.is_cli_agent_session_active(app);
         let is_in_agent_view = self.is_in_agent_view;
         let chip_text = self.text.clone();
         let hover = Hoverable::new(self.mouse_state.clone(), move |state| {
@@ -1408,8 +1388,7 @@ impl DisplayChip {
             appearance.monospace_font_family()
         };
         let font_size = udi_font_size(appearance);
-        let is_interactive =
-            !self.is_shared_session_viewer && !self.is_cli_agent_session_active(app);
+        let is_interactive = !self.is_cli_agent_session_active(app);
         let fallback_branch = self.text.clone();
         let tracking_status = tracking_status
             .clone()
@@ -1556,10 +1535,6 @@ impl DisplayChip {
         let Some(line_changes_info) = line_changes_info else {
             return None;
         };
-
-        if self.is_shared_session_viewer {
-            return None;
-        }
 
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();

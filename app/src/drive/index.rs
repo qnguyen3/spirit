@@ -13,41 +13,23 @@ use warp_core::ui::theme::color::internal_colors;
 use warp_errors::{report_error, report_if_error};
 use warp_util::sync::Condition;
 use warpui::clipboard::ClipboardContent;
-use warpui::elements::{
-    Align, AnchorPair, Border, ChildAnchor, ChildView, ClippedScrollStateHandle, ClippedScrollable,
-    ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Dash, DropTarget, DropTargetData,
-    Empty, Flex, Highlight, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle,
-    OffsetPositioning, OffsetType, ParentAnchor, ParentElement, ParentOffsetBounds,
-    PositionedElementAnchor, PositionedElementOffsetBounds, PositioningAxis, Radius, SavePosition,
-    ScrollTarget, ScrollToPositionMode, ScrollbarWidth, Shrinkable, Stack, Text, XAxisAnchor,
-    YAxisAnchor,
-};
+use warpui::elements::{Align, AnchorPair, Border, ChildAnchor, ChildView, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Dash, DropTarget, DropTargetData, Empty, Flex, Highlight, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning, OffsetType, ParentAnchor, ParentElement, ParentOffsetBounds, PositionedElementAnchor, PositionedElementOffsetBounds, PositioningAxis, Radius, SavePosition, ScrollTarget, ScrollToPositionMode, ScrollbarWidth, Shrinkable, Stack, Text, XAxisAnchor, YAxisAnchor};
 use warpui::fonts::{Properties, Weight};
 use warpui::keymap::FixedBinding;
 use warpui::platform::{Cursor, OperatingSystem};
 use warpui::ui_components::button::ButtonVariant;
 use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 use warpui::units::IntoPixels;
-use warpui::{
-    AppContext, BlurContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView,
-    UpdateView, View, ViewContext, ViewHandle, WindowId,
-};
+use warpui::{AppContext, BlurContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, UpdateView, View, ViewContext, ViewHandle, WindowId};
 
 use super::cloud_object_naming_dialog::CloudObjectNamingDialog;
-use super::drive_helpers::{
-    has_feature_gated_anonymous_user_reached_env_var_limit,
-    has_feature_gated_anonymous_user_reached_notebook_limit,
-    has_feature_gated_anonymous_user_reached_workflow_limit,
-};
-use super::empty_trash_confirmation_dialog::{
-    EmptyTrashConfirmationDialog, EmptyTrashConfirmationEvent,
-};
+use super::drive_helpers::{has_feature_gated_anonymous_user_reached_env_var_limit, has_feature_gated_anonymous_user_reached_notebook_limit, has_feature_gated_anonymous_user_reached_workflow_limit};
+use super::empty_trash_confirmation_dialog::{EmptyTrashConfirmationDialog, EmptyTrashConfirmationEvent};
 use super::folders::CloudFolder;
 use super::items::WarpDriveItemId;
 use super::items::item::{ItemStates, WarpDriveRow, tools_panel_menu_direction};
 use super::settings::WarpDriveSettings;
-use super::sharing::dialog::{SharingDialog, SharingDialogEvent};
-use super::sharing::{ContentEditability, ShareableObject};
+use super::sharing::ContentEditability;
 use super::{CloudObjectTypeAndId, DriveObjectType, DriveSortOrder};
 use crate::ObjectActions;
 use crate::appearance::Appearance;
@@ -58,26 +40,17 @@ use crate::auth::auth_view_modal::AuthViewVariant;
 use crate::banner::BannerState;
 use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
 use crate::cloud_object::model::view::{CloudViewModel, CloudViewModelEvent, UpdateTimestamp};
-use crate::cloud_object::{
-    CloudObject, CloudObjectEventEntrypoint, CloudObjectLocation, CloudObjectSyncStatus,
-    GenericStringObjectFormat, JsonObjectType, NumInFlightRequests, ObjectType, Space,
-};
+use crate::cloud_object::{CloudObject, CloudObjectEventEntrypoint, CloudObjectLocation, CloudObjectSyncStatus, GenericStringObjectFormat, JsonObjectType, NumInFlightRequests, ObjectType, Space};
 use crate::drive::panel::DrivePanelAction;
-use crate::drive::sharing::SharingDialogSource;
 use crate::editor::{EditorView, Event as EditorEvent, SingleLineEditorOptions};
 use crate::env_vars::CloudEnvVarCollection;
 use crate::features::FeatureFlag;
 use crate::menu::{Event, Menu, MenuItem, MenuItemFields};
 use crate::network::NetworkStatus;
-use crate::server::cloud_objects::update_manager::{
-    FetchSingleObjectOption, InitiatedBy, UpdateManager,
-};
+use crate::server::cloud_objects::update_manager::{FetchSingleObjectOption, InitiatedBy, UpdateManager};
 use crate::server::ids::{ObjectUid, ServerId, SyncId};
 use crate::server::sync_queue::SyncQueue;
-use crate::settings::SharedObjectLimitBannerSettings;
-use crate::settings::app_installation_detection::{
-    UserAppInstallDetectionSettings, UserAppInstallStatus,
-};
+use crate::settings::app_installation_detection::{UserAppInstallDetectionSettings, UserAppInstallStatus};
 use crate::ui_components::blended_colors;
 use crate::ui_components::buttons::{highlight, icon_button};
 use crate::ui_components::icons::{ICON_DIMENSIONS, Icon};

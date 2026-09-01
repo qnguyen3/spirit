@@ -22,7 +22,6 @@ use crate::terminal::model::image_map::StoredImageMetadata;
 use crate::terminal::model::index::Side;
 use crate::terminal::model::selection::ExpandedSelectionRange;
 use crate::terminal::model::test_utils::block_size;
-use crate::terminal::shared_session::SharedSessionStatus;
 
 /// Helper function to create a SerializedBlock with default values,
 /// including the new is_local field.

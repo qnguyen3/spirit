@@ -11,9 +11,7 @@ use crate::cloud_object::{CloudObject, CloudObjectLocation, Space};
 use crate::drive::folders::CloudFolder;
 use crate::drive::sharing::{ContentEditability, SharingAccessLevel};
 use crate::safe_info;
-use crate::server::cloud_objects::update_manager::{
-    ObjectOperation, OperationSuccessType, UpdateManager, UpdateManagerEvent,
-};
+use crate::server::cloud_objects::update_manager::{ObjectOperation, OperationSuccessType, UpdateManager, UpdateManagerEvent};
 use crate::server::ids::{ObjectUid, SyncId};
 use crate::workspaces::user_profiles::UserProfiles;
 

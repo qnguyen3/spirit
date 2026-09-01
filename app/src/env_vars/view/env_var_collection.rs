@@ -2,21 +2,12 @@ use pathfinder_geometry::vector::{Vector2F, vec2f};
 use warp_core::features::FeatureFlag;
 use warp_errors::report_error;
 use warpui::clipboard::ClipboardContent;
-use warpui::elements::{
-    Align, AnchorPair, ChildAnchor, Clipped, ClippedScrollStateHandle, ClippedScrollable,
-    ConstrainedBox, Container, CrossAxisAlignment, DispatchEventResult, EventHandler, Fill, Flex,
-    MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning, OffsetType, ParentAnchor,
-    ParentElement, ParentOffsetBounds, PositioningAxis, SavePosition, ScrollbarWidth, Shrinkable,
-    Stack, XAxisAnchor, YAxisAnchor,
-};
+use warpui::elements::{Align, AnchorPair, ChildAnchor, Clipped, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox, Container, CrossAxisAlignment, DispatchEventResult, EventHandler, Fill, Flex, MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning, OffsetType, ParentAnchor, ParentElement, ParentOffsetBounds, PositioningAxis, SavePosition, ScrollbarWidth, Shrinkable, Stack, XAxisAnchor, YAxisAnchor};
 use warpui::keymap::EditableBinding;
 use warpui::platform::Cursor;
 use warpui::presenter::ChildView;
 use warpui::ui_components::components::UiComponent;
-use warpui::{
-    AppContext, BlurContext, Element, Entity, FocusContext, ModelAsRef, ModelHandle,
-    SingletonEntity, TypedActionView, View, ViewContext, ViewHandle, WindowId, id,
-};
+use warpui::{AppContext, BlurContext, Element, Entity, FocusContext, ModelAsRef, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle, WindowId, id};
 
 use super::command_dialog::EnvVarCommandDialog;
 use super::menus::Menus;
@@ -24,16 +15,10 @@ use crate::cloud_object::breadcrumbs::ContainingObject;
 use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
 use crate::cloud_object::{CloudObjectEventEntrypoint, Owner};
 use crate::drive::items::WarpDriveItemId;
-use crate::drive::sharing::{ContentEditability, ShareableObject};
+use crate::drive::sharing::ContentEditability;
 use crate::editor::EditorView;
-use crate::env_vars::active_env_var_collection_data::{
-    ActiveEnvVarCollection, ActiveEnvVarCollectionData, ActiveEnvVarCollectionDataEvent,
-    SavingStatus, TrashStatus,
-};
-use crate::env_vars::{
-    CloudEnvVarCollection, CloudEnvVarCollectionModel, EnvVar, EnvVarCollection,
-    EnvVarCollectionType, EnvVarValue,
-};
+use crate::env_vars::active_env_var_collection_data::{ActiveEnvVarCollection, ActiveEnvVarCollectionData, ActiveEnvVarCollectionDataEvent, SavingStatus, TrashStatus};
+use crate::env_vars::{CloudEnvVarCollection, CloudEnvVarCollectionModel, EnvVar, EnvVarCollection, EnvVarCollectionType, EnvVarValue};
 use crate::external_secrets::SecretManager;
 use crate::menu::MenuItem;
 use crate::network::{NetworkStatus, NetworkStatusEvent};
@@ -48,9 +33,7 @@ use crate::terminal::safe_mode_settings::get_secret_obfuscation_mode;
 use crate::ui_components::breadcrumb::{BreadcrumbState, render_breadcrumbs};
 use crate::ui_components::buttons::icon_button;
 use crate::ui_components::icons::Icon;
-use crate::ui_components::menu_button::{
-    MenuDirection, highlight_icon_button_with_context_menu, icon_button_with_context_menu,
-};
+use crate::ui_components::menu_button::{MenuDirection, highlight_icon_button_with_context_menu, icon_button_with_context_menu};
 use crate::util::bindings::CustomAction;
 use crate::view_components::alert::AlertConfig;
 use crate::view_components::{Alert, DismissibleToast, ToastType};

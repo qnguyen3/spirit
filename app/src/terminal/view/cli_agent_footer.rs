@@ -10,22 +10,14 @@ use warp_core::ui::color::contrast::MinimumAllowedContrast;
 use warp_core::ui::theme::Fill;
 use warp_terminal::model::escape_sequences::{BRACKETED_PASTE_END, BRACKETED_PASTE_START};
 use warpui::r#async::Timer;
-use warpui::elements::{
-    ChildView, ConstrainedBox, Container, CrossAxisAlignment, Element, Empty, Flex,
-    MainAxisAlignment, MainAxisSize, ParentElement, Wrap, WrapFill, WrapFillEntireRun,
-};
-use warpui::{
-    AppContext, Entity, EntityId, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
-    ViewHandle,
-};
+use warpui::elements::{ChildView, ConstrainedBox, Container, CrossAxisAlignment, Element, Empty, Flex, MainAxisAlignment, MainAxisSize, ParentElement, Wrap, WrapFill, WrapFillEntireRun};
+use warpui::{AppContext, Entity, EntityId, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle};
 
 use super::init::OPEN_CLI_AGENT_RICH_INPUT_KEYBINDING;
 use super::{Event, TerminalView};
 use crate::appearance::Appearance;
 use crate::completer::SessionContext;
-use crate::context_chips::display_chip::{
-    DisplayChip, DisplayChipConfig, GitLineChanges, PromptChipShellCommand, PromptDisplayChipEvent,
-};
+use crate::context_chips::display_chip::{DisplayChip, DisplayChipConfig, GitLineChanges, PromptChipShellCommand, PromptDisplayChipEvent};
 use crate::context_chips::prompt_type::PromptType;
 use crate::context_chips::{ChipResult, git_line_changes_from_chips, spacing};
 use crate::features::FeatureFlag;
@@ -39,9 +31,7 @@ use crate::terminal::input::voice_input::VoiceInputButton;
 use crate::terminal::model::TerminalModel;
 use crate::terminal::model_events::ModelEventDispatcher;
 use crate::ui_components::icons::Icon;
-use crate::view_components::action_button::{
-    ActionButton, ActionButtonTheme, ButtonSize, KeystrokeSource, TooltipAlignment,
-};
+use crate::view_components::action_button::{ActionButton, ActionButtonTheme, ButtonSize, KeystrokeSource, TooltipAlignment};
 use crate::workspace::view::TOGGLE_PROJECT_EXPLORER_BINDING_NAME;
 
 const ITEM_SPACING: f32 = 4.;

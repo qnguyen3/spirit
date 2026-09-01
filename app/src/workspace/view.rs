@@ -64,91 +64,50 @@ use warp_editor::editor::NavigationKey;
 use warp_errors::{report_error, report_if_error};
 use warp_server_client::auth::AuthEvent;
 use warp_util::path::{LineAndColumnArg, user_friendly_path};
-use warpui::accessibility::{
-    AccessibilityContent, AccessibilityVerbosity, ActionAccessibilityContent, WarpA11yRole,
-};
+use warpui::accessibility::{AccessibilityContent, AccessibilityVerbosity, ActionAccessibilityContent, WarpA11yRole};
 use warpui::clipboard::ClipboardContent;
 #[cfg(target_family = "wasm")]
 use warpui::elements::Percentage;
-use warpui::elements::{
-    Align, Border, CacheOption, ChildAnchor, ChildView, Clipped, ConstrainedBox, Container,
-    CornerRadius, CrossAxisAlignment, Dismiss, DispatchEventResult, DragAxis, Draggable,
-    DraggableState, DropTarget, Element, Empty, EventHandler, Expanded, Fill as ElementFill, Flex,
-    Highlight, Hoverable, Icon as WarpUiIcon, Image, MainAxisAlignment, MainAxisSize,
-    MouseInBehavior, MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement,
-    ParentOffsetBounds, PositionedElementAnchor, PositionedElementOffsetBounds, Radius, Rect,
-    SavePosition, Shrinkable, SizeConstraintCondition, SizeConstraintSwitch, Stack, Text,
-};
+use warpui::elements::{Align, Border, CacheOption, ChildAnchor, ChildView, Clipped, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Dismiss, DispatchEventResult, DragAxis, Draggable, DraggableState, DropTarget, Element, Empty, EventHandler, Expanded, Fill as ElementFill, Flex, Highlight, Hoverable, Icon as WarpUiIcon, Image, MainAxisAlignment, MainAxisSize, MouseInBehavior, MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, PositionedElementAnchor, PositionedElementOffsetBounds, Radius, Rect, SavePosition, Shrinkable, SizeConstraintCondition, SizeConstraintSwitch, Stack, Text};
 use warpui::event::KeyState;
 use warpui::fonts::{Properties, Weight};
 use warpui::geometry::vector::{Vector2F, vec2f};
 use warpui::keymap::Context;
 use warpui::modals::{AlertDialogWithCallbacks, AppModalCallback};
 use warpui::notification::{NotificationSendError, RequestPermissionsOutcome, UserNotification};
-use warpui::platform::{
-    Cursor, FilePickerConfiguration, FullscreenState, SystemTheme, TerminationMode,
-};
+use warpui::platform::{Cursor, FilePickerConfiguration, FullscreenState, SystemTheme, TerminationMode};
 use warpui::text_layout::ClipConfig;
 use warpui::ui_components::button::Button;
 use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 use warpui::windowing::state::ApplicationStage;
 use warpui::windowing::{StateEvent, WindowManager};
-use warpui::{
-    AppContext, Entity, EntityId, FocusContext, ModelHandle, SingletonEntity, TypedActionView,
-    UpdateModel, UpdateView, View, ViewAsRef, ViewContext, ViewHandle, WeakViewHandle, WindowId,
-};
+use warpui::{AppContext, Entity, EntityId, FocusContext, ModelHandle, SingletonEntity, TypedActionView, UpdateModel, UpdateView, View, ViewAsRef, ViewContext, ViewHandle, WeakViewHandle, WindowId};
 
-use self::vertical_tabs::{
-    SummaryPaneKind, SummaryPaneKindIcons, VERTICAL_TABS_SETTINGS_BUTTON_POSITION_ID,
-    VerticalTabsPanelState, htab_group_position_id, pane_summary_kind, render_detail_sidecar,
-    render_settings_popup, render_summary_pane_kind_icons, show_before_indicator,
-    vtab_group_position_id,
-};
-use super::action::{
-    InitContent, NewSessionMenuAnchor, TabContextMenuAnchor, VerticalTabsPaneContextMenuTarget,
-    WorkspaceAction, WorktreeSectionMenuKind,
-};
+use self::vertical_tabs::{SummaryPaneKind, SummaryPaneKindIcons, VERTICAL_TABS_SETTINGS_BUTTON_POSITION_ID, VerticalTabsPanelState, htab_group_position_id, pane_summary_kind, render_detail_sidecar, render_settings_popup, render_summary_pane_kind_icons, show_before_indicator, vtab_group_position_id};
+use super::action::{InitContent, NewSessionMenuAnchor, TabContextMenuAnchor, VerticalTabsPaneContextMenuTarget, WorkspaceAction, WorktreeSectionMenuKind};
 pub(crate) use super::close_session_confirmation_dialog::OpenDialogSource;
-use super::close_session_confirmation_dialog::{
-    CloseSessionConfirmationDialog, CloseSessionConfirmationEvent,
-};
+use super::close_session_confirmation_dialog::{CloseSessionConfirmationDialog, CloseSessionConfirmationEvent};
 use super::lightbox_view::{LightboxParams, LightboxView, LightboxViewEvent};
 use super::native_modal::{NativeModal, NativeModalEvent};
-use super::tab_settings::{
-    HeaderToolbarChipSelection, NewTabPlacement, TabSettings, TabSettingsChangedEvent,
-    VerticalTabsDisplayGranularity, WorkspaceDecorationVisibility,
-};
-use super::util::{
-    PaneViewLocator, TabMovement, TerminalSessionFallbackBehavior, WelcomeTipsViewState,
-    WorkspaceMouseStates, WorkspaceState, active_screen_id,
-};
+use super::tab_settings::{HeaderToolbarChipSelection, NewTabPlacement, TabSettings, TabSettingsChangedEvent, VerticalTabsDisplayGranularity, WorkspaceDecorationVisibility};
+use super::util::{PaneViewLocator, TabMovement, TerminalSessionFallbackBehavior, WelcomeTipsViewState, WorkspaceMouseStates, WorkspaceState, active_screen_id};
 use super::{ActiveSession, TabBarDropTargetData, TabBarLocation, WorkspaceRegistry, util};
 use crate::agent_launcher::catalog::agent_catalog;
 use crate::agent_launcher::pane_manager::AgentPickerPaneManager;
-use crate::app_state::{
-    LeafContents, LeafSnapshot, LeftPanelDisplayedTab, LeftPanelSnapshot, NotebookPaneSnapshot,
-    PaneNodeSnapshot, PaneUuid, ProjectScreenSnapshot, RightPanelSnapshot, SettingsPaneSnapshot,
-    TabGroupSnapshot, TabSnapshot, TerminalPaneSnapshot, WindowSnapshot, WorkflowPaneSnapshot,
-};
+use crate::app_state::{LeafContents, LeafSnapshot, LeftPanelDisplayedTab, LeftPanelSnapshot, NotebookPaneSnapshot, PaneNodeSnapshot, PaneUuid, ProjectScreenSnapshot, RightPanelSnapshot, SettingsPaneSnapshot, TabGroupSnapshot, TabSnapshot, TerminalPaneSnapshot, WindowSnapshot, WorkflowPaneSnapshot};
 use crate::appearance::{Appearance, AppearanceManager};
 use crate::auth::AuthStateProvider;
 use crate::auth::auth_manager::{AuthManager, AuthManagerEvent};
-use crate::auth::auth_override_warning_modal::{
-    AuthOverrideWarningModal, AuthOverrideWarningModalEvent, AuthOverrideWarningModalVariant,
-};
+use crate::auth::auth_override_warning_modal::{AuthOverrideWarningModal, AuthOverrideWarningModalEvent, AuthOverrideWarningModalVariant};
 use crate::auth::auth_state::AuthState;
 use crate::auth::auth_view_modal::{AuthRedirectPayload, AuthView, AuthViewEvent, AuthViewVariant};
-use crate::autoupdate::{
-    AutoupdateState, AutoupdateStateEvent, RelaunchModel, is_incoming_version_past_current,
-};
+use crate::autoupdate::{AutoupdateState, AutoupdateStateEvent, RelaunchModel, is_incoming_version_past_current};
 use crate::banner::BannerState;
 use crate::changelog_model::{ChangelogModel, ChangelogRequestType, Event as ChangelogEvent};
 use crate::channel::ChannelState;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::cloud_object::toast_message::CloudObjectToastMessage;
-use crate::cloud_object::{
-    CloudObject, GenericStringObjectFormat, JsonObjectType, ObjectType, Owner, Space,
-};
+use crate::cloud_object::{CloudObject, GenericStringObjectFormat, JsonObjectType, ObjectType, Owner, Space};
 use crate::code::buffer_location::LocalOrRemotePath;
 use crate::code::editor::{add_color, remove_color};
 #[cfg(feature = "local_fs")]
@@ -164,23 +123,14 @@ use crate::drive::export::ExportManager;
 use crate::drive::import::modal::{ImportModal, ImportModalEvent};
 use crate::drive::items::WarpDriveItemId;
 use crate::drive::settings::{WarpDriveSettings, WarpDriveSettingsChangedEvent};
-use crate::drive::sharing::SharingDialogSource;
 use crate::drive::workflows::modal::{WorkflowModal, WorkflowModalEvent};
-use crate::drive::{
-    CloudObjectTypeAndId, DriveObjectType, DrivePanel, DrivePanelEvent, OpenWarpDriveObjectSettings,
-};
-use crate::editor::{
-    EditorView, Event as EditorEvent, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions,
-    TextOptions,
-};
+use crate::drive::{CloudObjectTypeAndId, DriveObjectType, DrivePanel, DrivePanelEvent, OpenWarpDriveObjectSettings};
+use crate::editor::{EditorView, Event as EditorEvent, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions, TextOptions};
 use crate::env_vars::CloudEnvVarCollection;
 use crate::env_vars::manager::{EnvVarCollectionManager, EnvVarCollectionSource};
 use crate::launch_configs::launch_config::WindowTemplate;
 use crate::launch_configs::save_modal::{LaunchConfigModalEvent, LaunchConfigSaveModal};
-use crate::menu::{
-    Event as MenuEvent, MENU_VERTICAL_PADDING, Menu, MenuItem, MenuItemFields, MenuSelectionSource,
-    MenuVariant,
-};
+use crate::menu::{Event as MenuEvent, MENU_VERTICAL_PADDING, Menu, MenuItem, MenuItemFields, MenuSelectionSource, MenuVariant};
 use crate::modal::{Modal, ModalEvent, ModalViewState};
 use crate::network::{NetworkStatus, NetworkStatusEvent};
 use crate::notebooks::CloudNotebook;
@@ -188,12 +138,7 @@ use crate::notebooks::manager::{NotebookManager, NotebookSource};
 use crate::notification::NotificationContext;
 use crate::palette::{PaletteMode, PaletteSource};
 use crate::pane_group::pane::ActionOrigin;
-use crate::pane_group::{
-    self, AGENT_PICKER_PANE_TITLE, AnyPaneContent, CodePane, CodeReviewPanelArg,
-    Direction as PaneGroupDirection, Direction, EnvironmentManagementPane, FilePane,
-    NetworkLogPane, NewTerminalOptions, PaneGroup, PaneId, PanesLayout, TabBarHoverIndex,
-    TerminalPaneId,
-};
+use crate::pane_group::{self, AGENT_PICKER_PANE_TITLE, AnyPaneContent, CodePane, CodeReviewPanelArg, Direction as PaneGroupDirection, Direction, EnvironmentManagementPane, FilePane, NetworkLogPane, NewTerminalOptions, PaneGroup, PaneId, PanesLayout, TabBarHoverIndex, TerminalPaneId};
 use crate::persisted_workspace::PersistedWorkspace;
 use crate::persistence::ModelEvent;
 use crate::projects::create_worktree_modal::CreateWorktreeModal;
@@ -202,65 +147,37 @@ use crate::projects::delete_worktree_dialog::DeleteWorktreeDialog;
 use crate::projects::host::ProjectHostAction;
 use crate::projects::registry::ProjectRegistryModel;
 use crate::projects::{Project, ProjectId, WorktreeId, agent_status};
-use crate::prompt::editor_modal::{
-    EditorModal as PromptEditorModal, EditorModalEvent as PromptEditorModalEvent,
-    OpenSource as PromptEditorOpenSource,
-};
+use crate::prompt::editor_modal::{EditorModal as PromptEditorModal, EditorModalEvent as PromptEditorModalEvent, OpenSource as PromptEditorOpenSource};
 use crate::quit_warning::UnsavedStateSummary;
 use crate::remote_server::manager::RemoteServerManager;
-use crate::resource_center::{
-    ResourceCenterEvent, ResourceCenterPage, ResourceCenterView, Tip, TipAction, TipsCompleted,
-    mark_feature_used_and_write_to_user_defaults, skip_tips_and_write_to_user_defaults,
-};
+use crate::resource_center::{ResourceCenterEvent, ResourceCenterPage, ResourceCenterView, Tip, TipAction, TipsCompleted, mark_feature_used_and_write_to_user_defaults, skip_tips_and_write_to_user_defaults};
 use crate::root_view::{NewWorkspaceSource, OpenLaunchConfigArg, quake_mode_window_id};
-use crate::search::command_palette::view::{
-    Event as CommandPaletteEvent, NavigationMode, View as CommandPalette,
-};
-use crate::search::command_search::searcher::{
-    AcceptedHistoryItem, AcceptedWorkflow, CommandSearchItemAction,
-};
+use crate::search::command_palette::view::{Event as CommandPaletteEvent, NavigationMode, View as CommandPalette};
+use crate::search::command_search::searcher::{AcceptedHistoryItem, AcceptedWorkflow, CommandSearchItemAction};
 use crate::search::command_search::settings::CommandSearchSettings;
 use crate::search::command_search::view::{CommandSearchEvent, CommandSearchView};
 #[cfg(target_family = "wasm")]
 use crate::search::slash_command_menu::static_commands::commands;
 use crate::search::{self, QueryFilter};
-use crate::server::cloud_objects::update_manager::{
-    ObjectOperation, OperationSuccessType, UpdateManager, UpdateManagerEvent,
-};
+use crate::server::cloud_objects::update_manager::{ObjectOperation, OperationSuccessType, UpdateManager, UpdateManagerEvent};
 use crate::server::ids::{ObjectUid, ServerId, SyncId};
 use crate::server::network_log_pane_manager::NetworkLogPaneManager;
 use crate::server::server_api::{ServerApi, ServerApiProvider, ServerTime};
 use crate::session_management::{SessionNavigationData, SessionSource, TabNavigationData};
 use crate::settings::cloud_preferences::CloudPreferencesSettings;
-use crate::settings::{
-    AccessibilitySettings, AliasExpansionSettings, AppEditorSettings, BlockVisibilitySettings,
-    ChangelogSettings, CodeSettings, CodeSettingsChangedEvent, CtrlTabBehavior, CursorBlink,
-    DebugSettings, DefaultSessionMode, FontSettings, GPUSettings, InputModeSettings, InputSettings,
-    MonospaceFontSize, NewSessionSettings, PaneSettings, PrivacySettings, SelectionSettings,
-    Settings, SshSettings, ThemeSettings, active_theme_kind, respect_system_theme,
-};
+use crate::settings::{AccessibilitySettings, AliasExpansionSettings, AppEditorSettings, BlockVisibilitySettings, ChangelogSettings, CodeSettings, CodeSettingsChangedEvent, CtrlTabBehavior, CursorBlink, DebugSettings, DefaultSessionMode, FontSettings, GPUSettings, InputModeSettings, InputSettings, MonospaceFontSize, NewSessionSettings, PaneSettings, PrivacySettings, SelectionSettings, Settings, SshSettings, ThemeSettings, active_theme_kind, respect_system_theme};
 use crate::settings_view::environments_page::EnvironmentsPage;
 use crate::settings_view::keybindings::{KeybindingChangedEvent, KeybindingChangedNotifier};
 use crate::settings_view::pane_manager::SettingsPaneManager;
 use crate::settings_view::{SettingsSection, SettingsView, SettingsViewEvent, flags};
 #[cfg(all(target_os = "windows", feature = "local_tty"))]
 use crate::shell_indicator::ShellIndicatorType;
-use crate::tab::{
-    COMPACT_TAB_WIDTH_THRESHOLD, ColorPickerTarget, MOVE_TO_GROUP_LABEL, NewSessionMenuItem,
-    PaneNameMenuTarget, SelectedTabColor, TAB_BAR_BORDER_HEIGHT, TAB_INDICATOR_HEIGHT,
-    TAB_PIN_INDICATOR_ICON_SIZE, TAB_PIN_VANISH_THRESHOLD, TabBarState, TabComponent, TabData,
-    TabShortcutModifierState, color_picker_menu_items, next_tab_color, tab_position_id,
-    uses_vertical_tabs, vertical_tabs_forced,
-};
+use crate::tab::{COMPACT_TAB_WIDTH_THRESHOLD, ColorPickerTarget, MOVE_TO_GROUP_LABEL, NewSessionMenuItem, PaneNameMenuTarget, SelectedTabColor, TAB_BAR_BORDER_HEIGHT, TAB_INDICATOR_HEIGHT, TAB_PIN_INDICATOR_ICON_SIZE, TAB_PIN_VANISH_THRESHOLD, TabBarState, TabComponent, TabData, TabShortcutModifierState, color_picker_menu_items, next_tab_color, tab_position_id, uses_vertical_tabs, vertical_tabs_forced};
 use crate::tab_configs::action_sidecar::SidecarItemKind;
-use crate::tab_configs::remove_confirmation_dialog::{
-    RemoveTabConfigConfirmationDialog, RemoveTabConfigConfirmationEvent,
-};
+use crate::tab_configs::remove_confirmation_dialog::{RemoveTabConfigConfirmationDialog, RemoveTabConfigConfirmationEvent};
 use crate::tab_configs::session_config_modal::{SessionConfigModal, SessionConfigModalEvent};
 #[cfg(feature = "local_fs")]
-use crate::tab_configs::{
-    NewWorktreeModal, NewWorktreeModalEvent, TabConfigParamsModal, TabConfigParamsModalEvent,
-};
+use crate::tab_configs::{NewWorktreeModal, NewWorktreeModalEvent, TabConfigParamsModal, TabConfigParamsModalEvent};
 use crate::terminal::alt_screen_reporting::AltScreenReporting;
 use crate::terminal::available_shells::AvailableShell;
 #[cfg(target_os = "windows")]
@@ -272,29 +189,19 @@ use crate::terminal::input::{Input, MenuPositioning};
 use crate::terminal::keys_settings::KeysSettings;
 use crate::terminal::ligature_settings::should_use_ligature_rendering;
 #[cfg(feature = "local_tty")]
-use crate::terminal::local_tty::docker_sandbox::{
-    DEFAULT_DOCKER_SANDBOX_BASE_IMAGE, resolve_sbx_path_from_user_shell,
-};
+use crate::terminal::local_tty::docker_sandbox::{DEFAULT_DOCKER_SANDBOX_BASE_IMAGE, resolve_sbx_path_from_user_shell};
 use crate::terminal::model::block::SerializedBlock;
 use crate::terminal::model::blockgrid::BlockGrid;
 #[cfg(feature = "local_fs")]
 use crate::terminal::model::session::Session;
 use crate::terminal::model::session::SessionId;
-use crate::terminal::resizable_data::{
-    DEFAULT_LEFT_PANEL_WIDTH, DEFAULT_RIGHT_PANEL_WIDTH, ModalSizes, ModalType, ResizableData,
-};
+use crate::terminal::resizable_data::{DEFAULT_LEFT_PANEL_WIDTH, DEFAULT_RIGHT_PANEL_WIDTH, ModalSizes, ModalType, ResizableData};
 use crate::terminal::safe_mode_settings::SafeModeSettings;
-use crate::terminal::session_settings::{
-    NewSessionSource, NotificationsMode, NotificationsSettings, SessionSettings,
-    SessionSettingsChangedEvent, WorkingDirectoryMode,
-};
+use crate::terminal::session_settings::{NewSessionSource, NotificationsMode, NotificationsSettings, SessionSettings, SessionSettingsChangedEvent, WorkingDirectoryMode};
 use crate::terminal::settings::{SpacingMode, TerminalSettings};
-use crate::terminal::shared_session::SharedSessionActionSource;
 use crate::terminal::shell::ShellType;
 use crate::terminal::view::ssh_file_upload::FileUploadId;
-use crate::terminal::view::{
-    AgentInboxEntry, LeftPanelTargetView, NOTIFICATIONS_TROUBLESHOOT_URL, SyncEvent, SyncInputType,
-};
+use crate::terminal::view::{AgentInboxEntry, LeftPanelTargetView, NOTIFICATIONS_TROUBLESHOOT_URL, SyncEvent, SyncInputType};
 use crate::terminal::warpify::settings::WarpifySettings;
 use crate::terminal::{self, BlockListSettings, SizeInfo, TerminalModel, TerminalView};
 use crate::themes::theme::{AnsiColorIdentifier, RespectSystemTheme, ThemeKind};
@@ -313,14 +220,8 @@ use crate::undo_close::UndoCloseStack;
 use crate::uri::browser_url_handler::{parse_current_url, update_browser_url};
 use crate::user_config::{WarpConfig, WarpConfigUpdateEvent};
 #[cfg(feature = "local_fs")]
-use crate::user_config::{
-    ensure_default_worktree_config, find_unused_tab_config_path, find_unused_toml_path,
-    find_unused_worktree_config_path, materialize_default_worktree_config, sanitize_toml_base_name,
-    tab_configs_dir,
-};
-use crate::util::bindings::{
-    keybinding_name_to_display_string, keybinding_name_to_keystroke, trigger_to_keystroke,
-};
+use crate::user_config::{ensure_default_worktree_config, find_unused_tab_config_path, find_unused_toml_path, find_unused_worktree_config_path, materialize_default_worktree_config, sanitize_toml_base_name, tab_configs_dir};
+use crate::util::bindings::{keybinding_name_to_display_string, keybinding_name_to_keystroke, trigger_to_keystroke};
 #[cfg(feature = "local_fs")]
 use crate::util::file::external_editor::Editor;
 #[cfg(feature = "local_fs")]
@@ -333,38 +234,26 @@ use crate::util::traffic_lights::{TrafficLightMouseStates, TrafficLightSide, tra
 use crate::util::truncation::truncate_from_end;
 #[cfg(target_family = "wasm")]
 use crate::view_components::action_button::ActionButton;
-use crate::view_components::callout_bubble::{
-    CalloutArrowDirection, CalloutArrowPosition, CalloutBubbleConfig, render_callout_bubble,
-};
+use crate::view_components::callout_bubble::{CalloutArrowDirection, CalloutArrowPosition, CalloutBubbleConfig, render_callout_bubble};
 use crate::view_components::{DismissibleToast, DismissibleToastStack, ToastLink};
 use crate::window_settings::{WindowSettings, WindowSettingsChangedEvent, ZoomLevel};
 use crate::workflows::manager::{WorkflowManager, WorkflowOpenSource};
 use crate::workflows::workflow::Workflow;
-use crate::workflows::{
-    CloudWorkflow, WorkflowSelectionSource, WorkflowSource, WorkflowType, WorkflowViewMode,
-};
+use crate::workflows::{CloudWorkflow, WorkflowSelectionSource, WorkflowSource, WorkflowType, WorkflowViewMode};
 use crate::workspace::action::CommandSearchOptions;
-use crate::workspace::agent_inbox::{
-    AgentInboxModel, AgentInboxView, AgentInboxViewEvent, InboxItem, InboxItemFields,
-};
+use crate::workspace::agent_inbox::{AgentInboxModel, AgentInboxView, AgentInboxViewEvent, InboxItem, InboxItemFields};
 use crate::workspace::agent_notification;
 #[cfg(target_os = "macos")]
 use crate::workspace::cli_install;
-use crate::workspace::cross_window_tab_drag::{
-    AttachTarget, CrossWindowTabDrag, DragResult, DropResult, GhostState,
-};
+use crate::workspace::cross_window_tab_drag::{AttachTarget, CrossWindowTabDrag, DragResult, DropResult, GhostState};
 use crate::workspace::header_toolbar_editor::{HeaderToolbarEditorEvent, HeaderToolbarEditorModal};
 use crate::workspace::header_toolbar_item::HeaderToolbarItemKind;
 use crate::workspace::sync_inputs::SyncedInputState;
 use crate::workspace::tab_group::{TabGroup, TabGroupId};
 use crate::workspace::tab_settings::TabCloseButtonPosition;
-use crate::workspace::toast_stack::{
-    ToastStack, ToastStack as WorkspaceToastStack, ToastStackEvent as WorkspaceToastStackEvent,
-};
+use crate::workspace::toast_stack::{ToastStack, ToastStack as WorkspaceToastStack, ToastStackEvent as WorkspaceToastStackEvent};
 use crate::workspace::view::global_search::view::GlobalSearchEntryFocus;
-use crate::workspace::view::left_panel::{
-    LeftPanelAction, LeftPanelEvent, LeftPanelView, ToolPanelView,
-};
+use crate::workspace::view::left_panel::{LeftPanelAction, LeftPanelEvent, LeftPanelView, ToolPanelView};
 use crate::workspace::view::right_panel::{RightPanelEvent, RightPanelView};
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::workspaces::workspace::AdminEnablementSetting;

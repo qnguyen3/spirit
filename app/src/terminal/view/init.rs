@@ -11,7 +11,6 @@ use crate::settings_view::flags;
 use crate::terminal::TerminalView;
 use crate::terminal::model::escape_sequences::{self, EscCodes};
 use crate::terminal::model::selection::SelectionDirection;
-use crate::terminal::shared_session::{SharedSessionActionSource, SharedSessionStatus};
 use crate::util::bindings::{CustomAction, cmd_or_ctrl_shift, is_binding_pty_compliant};
 
 pub const TOGGLE_BLOCK_FILTER_KEYBINDING: &str =

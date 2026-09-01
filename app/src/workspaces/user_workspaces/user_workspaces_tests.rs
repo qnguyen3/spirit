@@ -5,46 +5,9 @@ use std::time::Duration;
 use mockall::Sequence;
 use regex::Regex;
 use settings::{PrivatePreferences, PublicPreferences};
-use warp_graphql::billing::{
-    BillingMetadata as GqlBillingMetadata, BonusGrantsInfo as GqlBonusGrantsInfo,
-    CustomerType as GqlCustomerType, DelinquencyStatus as GqlDelinquencyStatus,
-    PurchaseAddOnCreditsPolicy as GqlPurchaseAddOnCreditsPolicy, Tier as GqlTier,
-};
-use warp_graphql::queries::get_workspaces_metadata_for_user::{
-    User as GqlUser, UserProfile as GqlUserProfile, UserPurchasePolicyBillingMetadata,
-    UserPurchasePolicyTier,
-};
-use warp_graphql::workspace::{
-    AddonCreditsSettings as GqlAddonCreditsSettings,
-    AdminEnablementSetting as GqlAdminEnablementSetting,
-    AdminEnablementSettingInfo as GqlAdminEnablementSettingInfo,
-    AiAutonomySettingInfo as GqlAiAutonomySettingInfo, AiAutonomySettings as GqlAiAutonomySettings,
-    AiAutonomySettingsInfo as GqlAiAutonomySettingsInfo, AiAutonomyValue as GqlAiAutonomyValue,
-    AiPermissionsSettings as GqlAiPermissionsSettings,
-    AiPermissionsSettingsInfo as GqlAiPermissionsSettingsInfo, AvailableLlms as GqlAvailableLlms,
-    BooleanSettingInfo as GqlBooleanSettingInfo,
-    CloudConversationStorageSettings as GqlCloudConversationStorageSettings,
-    CodebaseContextSettings as GqlCodebaseContextSettings,
-    ComputerUseAutonomyValue as GqlComputerUseAutonomyValue,
-    ComputerUseSettingInfo as GqlComputerUseSettingInfo,
-    FeatureModelChoice as GqlFeatureModelChoice, LinkSharingSettings as GqlLinkSharingSettings,
-    LinkSharingSettingsInfo as GqlLinkSharingSettingsInfo, LlmSettings as GqlLlmSettings,
-    MembershipRole as GqlMembershipRole,
-    SandboxedAgentSettingsInfo as GqlSandboxedAgentSettingsInfo,
-    SecretRedactionRegexListInfo as GqlSecretRedactionRegexListInfo,
-    SecretRedactionSettings as GqlSecretRedactionSettings,
-    SecretRedactionSettingsInfo as GqlSecretRedactionSettingsInfo,
-    StringListSettingInfo as GqlStringListSettingInfo, Team as GqlTeam,
-    TeamMember as GqlTeamMember, TeamSettings as GqlTeamSettings,
-    TeamVisibility as GqlTeamVisibility, TelemetrySettings as GqlTelemetrySettings,
-    UgcCollectionEnablementSetting as GqlUgcCollectionEnablementSetting,
-    UgcCollectionSettingInfo as GqlUgcCollectionSettingInfo,
-    UgcCollectionSettings as GqlUgcCollectionSettings,
-    UsageBasedPricingSettings as GqlUsageBasedPricingSettings, Workspace as GqlWorkspace,
-    WorkspaceSettings as GqlWorkspaceSettings,
-    WriteToPtyAutonomyValue as GqlWriteToPtyAutonomyValue,
-    WriteToPtySettingInfo as GqlWriteToPtySettingInfo,
-};
+use warp_graphql::billing::{BillingMetadata as GqlBillingMetadata, BonusGrantsInfo as GqlBonusGrantsInfo, CustomerType as GqlCustomerType, DelinquencyStatus as GqlDelinquencyStatus, PurchaseAddOnCreditsPolicy as GqlPurchaseAddOnCreditsPolicy, Tier as GqlTier};
+use warp_graphql::queries::get_workspaces_metadata_for_user::{User as GqlUser, UserProfile as GqlUserProfile, UserPurchasePolicyBillingMetadata, UserPurchasePolicyTier};
+use warp_graphql::workspace::{AddonCreditsSettings as GqlAddonCreditsSettings, AdminEnablementSetting as GqlAdminEnablementSetting, AdminEnablementSettingInfo as GqlAdminEnablementSettingInfo, AiAutonomySettingInfo as GqlAiAutonomySettingInfo, AiAutonomySettings as GqlAiAutonomySettings, AiAutonomySettingsInfo as GqlAiAutonomySettingsInfo, AiAutonomyValue as GqlAiAutonomyValue, AiPermissionsSettings as GqlAiPermissionsSettings, AiPermissionsSettingsInfo as GqlAiPermissionsSettingsInfo, AvailableLlms as GqlAvailableLlms, BooleanSettingInfo as GqlBooleanSettingInfo, CloudConversationStorageSettings as GqlCloudConversationStorageSettings, CodebaseContextSettings as GqlCodebaseContextSettings, ComputerUseAutonomyValue as GqlComputerUseAutonomyValue, ComputerUseSettingInfo as GqlComputerUseSettingInfo, FeatureModelChoice as GqlFeatureModelChoice, LinkSharingSettings as GqlLinkSharingSettings, LinkSharingSettingsInfo as GqlLinkSharingSettingsInfo, LlmSettings as GqlLlmSettings, MembershipRole as GqlMembershipRole, SandboxedAgentSettingsInfo as GqlSandboxedAgentSettingsInfo, SecretRedactionRegexListInfo as GqlSecretRedactionRegexListInfo, SecretRedactionSettings as GqlSecretRedactionSettings, SecretRedactionSettingsInfo as GqlSecretRedactionSettingsInfo, StringListSettingInfo as GqlStringListSettingInfo, Team as GqlTeam, TeamMember as GqlTeamMember, TeamSettings as GqlTeamSettings, TeamVisibility as GqlTeamVisibility, TelemetrySettings as GqlTelemetrySettings, UgcCollectionEnablementSetting as GqlUgcCollectionEnablementSetting, UgcCollectionSettingInfo as GqlUgcCollectionSettingInfo, UgcCollectionSettings as GqlUgcCollectionSettings, UsageBasedPricingSettings as GqlUsageBasedPricingSettings, Workspace as GqlWorkspace, WorkspaceSettings as GqlWorkspaceSettings, WriteToPtyAutonomyValue as GqlWriteToPtyAutonomyValue, WriteToPtySettingInfo as GqlWriteToPtySettingInfo};
 use warpui::elements::Empty;
 use warpui::platform::WindowStyle;
 use warpui::{AddSingletonModel, App, Element, TypedActionView, View, ViewHandle, WindowId};
@@ -71,10 +34,7 @@ use crate::workspaces::team::{Team, TeamMember, TeamVisibility};
 use crate::workspaces::team_tester::TeamTesterStatus;
 use crate::workspaces::update_manager::TeamUpdateManager;
 use crate::workspaces::user_workspaces::UserWorkspaces;
-use crate::workspaces::workspace::{
-    AdminEnablementSetting, ByoFirstPartyKey, ManagedByokByoePolicy, MultiAdminPolicy,
-    PurchaseAddOnCreditsPolicy, TeamByoSettings, Workspace,
-};
+use crate::workspaces::workspace::{AdminEnablementSetting, ByoFirstPartyKey, ManagedByokByoePolicy, MultiAdminPolicy, PurchaseAddOnCreditsPolicy, TeamByoSettings, Workspace};
 
 #[derive(Default)]
 struct CachedResources {

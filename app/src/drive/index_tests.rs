@@ -10,9 +10,7 @@ use crate::auth::auth_manager::AuthManager;
 use crate::cloud_object::model::actions::ObjectActions;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::cloud_object::model::view::CloudViewModel;
-use crate::cloud_object::{
-    CloudObjectSyncStatus, ObjectIdType, ObjectType, Owner, ServerCreationInfo, Space,
-};
+use crate::cloud_object::{CloudObjectSyncStatus, ObjectIdType, ObjectType, Owner, ServerCreationInfo, Space};
 use crate::drive::CloudObjectTypeAndId;
 use crate::drive::items::WarpDriveItemId;
 use crate::menu::MenuItem;
@@ -23,7 +21,6 @@ use crate::server::ids::{ClientId, ServerIdAndType, SyncId};
 use crate::server::server_api::ServerApiProvider;
 use crate::server::sync_queue::{QueueItem, SyncQueue};
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
-use crate::terminal::shared_session::permissions_manager::SessionPermissionsManager;
 use crate::test_util::settings::initialize_settings_for_tests;
 use crate::workflows::workflow::Workflow;
 use crate::workflows::{CloudWorkflow, CloudWorkflowModel};

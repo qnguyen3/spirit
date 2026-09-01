@@ -11,10 +11,7 @@ use repo_metadata::watcher::DirectoryWatcher;
 use session_sharing_protocol::common::Role;
 use smol_str::SmolStr;
 use unindent::Unindent;
-use warp_completer::completer::{
-    EngineFileType, Match, MatchStrategy, MatchedSuggestion, PathSeparators, Priority, Suggestion,
-    SuggestionResults, SuggestionType,
-};
+use warp_completer::completer::{EngineFileType, Match, MatchStrategy, MatchedSuggestion, PathSeparators, Priority, Suggestion, SuggestionResults, SuggestionType};
 use warp_completer::meta::Span;
 use warp_util::standardized_path::StandardizedPath;
 use warp_util::user_input::UserInput;
@@ -64,7 +61,6 @@ use crate::terminal::model::session::{BootstrapSessionType, SessionInfo};
 use crate::terminal::model::terminal_model::BlockIndex;
 use crate::terminal::model_events::ModelEvent;
 use crate::terminal::resizable_data::ResizableData;
-use crate::terminal::shared_session::permissions_manager::SessionPermissionsManager;
 use crate::terminal::shell::ShellType;
 use crate::terminal::writeable_pty::command_history::update_command_history;
 use crate::test_util::settings::initialize_settings_for_tests;

@@ -8,22 +8,13 @@ pub use header_content::{
     HeaderContent, HeaderRenderContext, StandardHeader, StandardHeaderOptions,
 };
 use pathfinder_geometry::rect::RectF;
-use warpui::elements::{
-    Border, ConstrainedBox, Container, DropTarget, DropTargetData, Flex, MainAxisSize,
-    ParentElement, SavePosition, Shrinkable,
-};
+use warpui::elements::{Border, ConstrainedBox, Container, DropTarget, DropTargetData, Flex, MainAxisSize, ParentElement, SavePosition, Shrinkable};
 use warpui::keymap::EditableBinding;
 use warpui::presenter::ChildView;
-use warpui::{
-    AppContext, Element, Entity, EntityId, ModelHandle, SingletonEntity, TypedActionView, View,
-    ViewContext, ViewHandle,
-};
+use warpui::{AppContext, Element, Entity, EntityId, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle};
 
-use super::{
-    BackingView, PaneConfiguration, PaneConfigurationEvent, PaneId, PaneStack, PaneStackEvent,
-};
+use super::{BackingView, PaneConfiguration, PaneConfigurationEvent, PaneId, PaneStack, PaneStackEvent};
 use crate::appearance::Appearance;
-use crate::drive::sharing::SharingDialogSource;
 use crate::pane_group::focus_state::{PaneFocusHandle, PaneGroupFocusEvent};
 use crate::pane_group::pane::ActionOrigin;
 use crate::pane_group::{Direction, SplitPaneState, TabBarHoverIndex};
@@ -40,18 +31,6 @@ const HAS_SHARED_OBJECT_CONTEXT_KEY: &str = "PaneView_HasSharedObject";
 /// infinite/NaN viewport and panicking in `Scene::validate_rect`. Capping the preview keeps
 /// the width finite while still producing a representative header ghost.
 const DRAG_PREVIEW_HEADER_MAX_WIDTH: f32 = 400.;
-
-pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
-
-    app.register_editable_bindings([EditableBinding::new(
-        "pane:share_pane_contents",
-        "Share pane",
-        PaneAction::ShareContents,
-    )
-    .with_custom_action(CustomAction::SharePaneContents)
-    .with_context_predicate(id!("PaneView") & id!(HAS_SHARED_OBJECT_CONTEXT_KEY))]);
-}
 
 pub enum PaneViewEvent {
     MovePaneWithinPaneGroup {
@@ -70,11 +49,6 @@ pub enum PaneViewEvent {
     PaneDraggedOutsideTabBarOrPaneGroup,
     PaneDragEnded,
     PaneHeaderClicked,
-}
-
-#[derive(Debug, Clone)]
-pub enum PaneAction {
-    ShareContents,
 }
 
 impl<P: BackingView> Entity for PaneView<P> {
@@ -247,27 +221,7 @@ impl<P: BackingView> PaneView<P> {
                 self.header.update(ctx, |header, ctx| {
                     header.set_toolbelt_buttons(buttons, ctx);
                 });
-                if matches!(event, PaneConfigurationEvent::SharedSessionLinkChanged) {
-                    self.header.update(ctx, |header, ctx| {
-                        header.refresh_shared_session_link(ctx);
-                    });
-                }
                 ctx.notify();
-            }
-            PaneConfigurationEvent::ShareableObjectChanged(object) => {
-                self.header.update(ctx, |header, ctx| {
-                    header.set_shareable_object(object.clone(), ctx);
-                });
-            }
-            PaneConfigurationEvent::ToggleSharingDialog(source) => {
-                self.header.update(ctx, |header, ctx| {
-                    header.share_pane_contents(*source, ctx);
-                });
-            }
-            PaneConfigurationEvent::OpenSharingQrCode(source) => {
-                self.header.update(ctx, |header, ctx| {
-                    header.open_shared_session_qr_code(*source, ctx);
-                });
             }
             _ => {}
         }
@@ -468,18 +422,6 @@ impl<P: BackingView> View for PaneView<P> {
         let mut ids = vec![self.header.id()];
         ids.extend(self.pane_stack.as_ref(app).views().map(|view| view.id()));
         ids
-    }
-}
-
-impl<P: BackingView> TypedActionView for PaneView<P> {
-    type Action = PaneAction;
-
-    fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
-        match action {
-            PaneAction::ShareContents => self.header.update(ctx, |header, ctx| {
-                header.share_pane_contents(SharingDialogSource::CommandPalette, ctx);
-            }),
-        }
     }
 }
 

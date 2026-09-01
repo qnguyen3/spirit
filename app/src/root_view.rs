@@ -7,9 +7,7 @@ use anyhow::Result;
 use cfg_if::cfg_if;
 use itertools::Itertools;
 use lazy_static::lazy_static;
-use onboarding::{
-    AgentOnboardingEvent, AgentOnboardingView, OfferVariant, OnboardingAuthState, SelectedSettings,
-};
+use onboarding::{AgentOnboardingEvent, AgentOnboardingView, OfferVariant, OnboardingAuthState, SelectedSettings};
 use parking_lot::Mutex;
 use pathfinder_geometry::rect::RectF;
 use pathfinder_geometry::vector::{Vector2F, vec2f};
@@ -22,26 +20,18 @@ use warp_core::safe_error;
 use warp_core::user_preferences::GetUserPreferences as _;
 use warp_errors::{report_error, report_if_error};
 use warpui::clipboard::ClipboardContent;
-use warpui::elements::{
-    Border, ChildAnchor, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Stack,
-};
+use warpui::elements::{Border, ChildAnchor, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Stack};
 use warpui::keymap::{EditableBinding, FixedBinding};
 use warpui::platform::{WindowBounds, WindowStyle};
 use warpui::presenter::ChildView;
 use warpui::rendering::OnGPUDeviceSelected;
 use warpui::windowing::WindowManager;
-use warpui::{
-    AddWindowOptions, AppContext, DisplayId, Element, Entity, EntityId, FocusContext,
-    NextNewWindowsHasThisWindowsBoundsUponClose, SingletonEntity, TypedActionView, View,
-    ViewContext, ViewHandle, WindowId, id,
-};
+use warpui::{AddWindowOptions, AppContext, DisplayId, Element, Entity, EntityId, FocusContext, NextNewWindowsHasThisWindowsBoundsUponClose, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle, WindowId, id};
 
 use crate::app_state::{AppState, PaneUuid, WindowSnapshot};
 use crate::appearance::Appearance;
 use crate::auth::auth_manager::{AuthManager, AuthManagerEvent};
-use crate::auth::auth_override_warning_modal::{
-    AuthOverrideWarningModal, AuthOverrideWarningModalEvent, AuthOverrideWarningModalVariant,
-};
+use crate::auth::auth_override_warning_modal::{AuthOverrideWarningModal, AuthOverrideWarningModalEvent, AuthOverrideWarningModalVariant};
 use crate::auth::auth_state::AuthState;
 use crate::auth::auth_view_modal::{AuthRedirectPayload, AuthView, AuthViewVariant};
 use crate::auth::login_slide::{LoginSlideEvent, LoginSlideSource, LoginSlideView};
@@ -68,13 +58,8 @@ use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::ids::{ServerId, SyncId};
 use crate::server::server_api::auth::UserAuthenticationError;
 use crate::server::server_api::{ServerApi, ServerApiProvider, ServerTime};
-use crate::settings::cloud_preferences_syncer::{
-    CloudPreferencesSyncer, CloudPreferencesSyncerEvent,
-};
-use crate::settings::{
-    QuakeModeSettings, ThemeSettings, apply_account_first_onboarding_settings,
-    apply_onboarding_settings,
-};
+use crate::settings::cloud_preferences_syncer::{CloudPreferencesSyncer, CloudPreferencesSyncerEvent};
+use crate::settings::{QuakeModeSettings, ThemeSettings, apply_account_first_onboarding_settings, apply_onboarding_settings};
 use crate::settings_view::{OpenTeamsSettingsModalArgs, SettingsSection, flags};
 use crate::terminal::available_shells::AvailableShell;
 use crate::terminal::general_settings::GeneralSettings;
@@ -91,16 +76,12 @@ use crate::view_components::DismissibleToast;
 use crate::window_settings::WindowSettings;
 use crate::workspace::tab_settings::TabSettings;
 use crate::workspace::view::OnboardingTutorial;
-use crate::workspace::{
-    NotificationOrigin, PaneViewLocator, Workspace, WorkspaceAction, WorkspaceRegistry,
-};
+use crate::workspace::{NotificationOrigin, PaneViewLocator, Workspace, WorkspaceAction, WorkspaceRegistry};
 use crate::workspaces::team_tester::TeamTesterStatus;
 use crate::workspaces::update_manager::TeamUpdateManager;
 use crate::workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent};
 use crate::workspaces::workspace::FtueAccountClass;
-use crate::{
-    ChannelState, GlobalResourceHandles, GlobalResourceHandlesProvider, UpdateQuakeModeEventArg,
-};
+use crate::{ChannelState, GlobalResourceHandles, GlobalResourceHandlesProvider, UpdateQuakeModeEventArg};
 
 const WINDOW_TITLE: &str = "Warp";
 

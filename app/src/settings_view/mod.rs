@@ -16,7 +16,6 @@ use settings_page::{
     HEADER_PADDING, MatchData, SettingsPage, SettingsPageEvent, SettingsPageMeta,
     SettingsPageViewHandle,
 };
-use show_blocks_view::{ShowBlocksEvent, ShowBlocksView};
 use teams_page::{TeamsPageView, TeamsPageViewEvent};
 use warp_core::channel::ChannelState;
 use warp_core::context_flag::ContextFlag;
@@ -80,7 +79,6 @@ mod privacy_page;
 mod scripting_page;
 mod settings_file_footer;
 pub(crate) mod settings_page;
-mod show_blocks_view;
 mod tab_menu;
 mod teams_page;
 mod transfer_ownership_confirmation_modal;

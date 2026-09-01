@@ -12,17 +12,11 @@ use warpui::event::ModifiersState;
 use warpui::units::Lines;
 
 use super::inline_banner::{OpenInWarpBannerAction, VimModeBannerAction};
-use super::{
-    AliasExpansionBannerAction, ContextMenuAction, GridHighlightedLink, InputContextMenuAction,
-    NotificationsDiscoveryBannerAction, NotificationsErrorBannerAction, RichContentLink,
-    TerminalEditor,
-};
+use super::{AliasExpansionBannerAction, ContextMenuAction, GridHighlightedLink, InputContextMenuAction, NotificationsDiscoveryBannerAction, NotificationsErrorBannerAction, RichContentLink, TerminalEditor};
 use crate::palette::PaletteSource;
 use crate::server::ids::SyncId;
 use crate::terminal::available_shells::AvailableShell;
-use crate::terminal::block_list_element::{
-    BlockHoverAction, BlockListMenuSource, BlockSelectAction, BlockTextSelectAction,
-};
+use crate::terminal::block_list_element::{BlockHoverAction, BlockListMenuSource, BlockSelectAction, BlockTextSelectAction};
 use crate::terminal::block_list_viewport::OverhangingBlock;
 use crate::terminal::model::SecretHandle;
 use crate::terminal::model::completions::ShellCompletion;
@@ -30,7 +24,6 @@ use crate::terminal::model::index::Point;
 use crate::terminal::model::mouse::MouseState;
 use crate::terminal::model::selection::{SelectAction, SelectionDirection};
 use crate::terminal::model::terminal_model::{BlockIndex, WithinModel};
-use crate::terminal::shared_session::SharedSessionActionSource;
 
 /// This represents whether entering a subshell for a particular command should become automatic in
 /// the future, or to ask again.

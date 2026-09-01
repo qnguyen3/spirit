@@ -14,10 +14,7 @@ use warp_core::ui::theme::Fill;
 use warp_graphql::object_permissions::AccessLevel;
 use warp_graphql::scalars::time::ServerTimestamp;
 use warpui_core::Element;
-use warpui_core::elements::{
-    Align, ChildAnchor, ConstrainedBox, Hoverable, MouseStateHandle, OffsetPositioning,
-    ParentAnchor, ParentElement, ParentOffsetBounds, Stack,
-};
+use warpui_core::elements::{Align, ChildAnchor, ConstrainedBox, Hoverable, MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Stack};
 use warpui_core::ui_components::components::UiComponent;
 
 use crate::auth::UserUid;

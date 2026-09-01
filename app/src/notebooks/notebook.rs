@@ -15,28 +15,16 @@ use warp_errors::{report_error, report_if_error};
 use warpui::accessibility::{AccessibilityContent, WarpA11yRole};
 use warpui::r#async::SpawnedFutureHandle;
 use warpui::clipboard::ClipboardContent;
-use warpui::elements::{
-    Align, Clipped, ConstrainedBox, Container, CrossAxisAlignment, DispatchEventResult, Empty,
-    EventHandler, Flex, MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement,
-    SavePosition, Shrinkable, Stack,
-};
+use warpui::elements::{Align, Clipped, ConstrainedBox, Container, CrossAxisAlignment, DispatchEventResult, Empty, EventHandler, Flex, MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, SavePosition, Shrinkable, Stack};
 use warpui::keymap::{EditableBinding, FixedBinding};
 use warpui::presenter::ChildView;
 use warpui::ui_components::button::ButtonVariant;
 use warpui::ui_components::components::{UiComponent, UiComponentStyles};
-use warpui::{
-    AppContext, BlurContext, Element, Entity, FocusContext, ModelAsRef, ModelHandle,
-    SingletonEntity, TypedActionView, View, ViewContext, ViewHandle, WindowId,
-};
+use warpui::{AppContext, BlurContext, Element, Entity, FocusContext, ModelAsRef, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle, WindowId};
 
 use self::details_bar::DetailsBar;
-use super::active_notebook_data::{
-    ActiveNotebook, ActiveNotebookData, ActiveNotebookDataEvent, Mode, SavingStatus, TrashStatus,
-};
-use super::context_menu::{
-    ContextMenuAction, ContextMenuState, show_rich_editor_context_menu,
-    show_text_editor_context_menu,
-};
+use super::active_notebook_data::{ActiveNotebook, ActiveNotebookData, ActiveNotebookDataEvent, Mode, SavingStatus, TrashStatus};
+use super::context_menu::{ContextMenuAction, ContextMenuState, show_rich_editor_context_menu, show_text_editor_context_menu};
 use super::editor::NotebookWorkflow;
 use super::editor::view::{EditorViewEvent, RichTextEditorConfig, RichTextEditorView};
 use super::link::{NotebookLinks, SessionSource};
@@ -50,12 +38,8 @@ use crate::cloud_object::{CloudObject, CloudObjectEventEntrypoint, ObjectType, O
 use crate::drive::drive_helpers::has_feature_gated_anonymous_user_reached_notebook_limit;
 use crate::drive::export::ExportManager;
 use crate::drive::items::WarpDriveItemId;
-use crate::drive::sharing::{ShareableObject, SharingDialogSource};
 use crate::drive::{CloudObjectTypeAndId, OpenWarpDriveObjectSettings};
-use crate::editor::{
-    EditOrigin, EditorView, Event as EditorEvent, InteractionState, PropagateAndNoOpNavigationKeys,
-    SingleLineEditorOptions, TextColors, TextOptions,
-};
+use crate::editor::{EditOrigin, EditorView, Event as EditorEvent, InteractionState, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions, TextColors, TextOptions};
 use crate::features::FeatureFlag;
 use crate::menu::{MenuItem, MenuItemFields};
 use crate::network::{NetworkStatus, NetworkStatusEvent};
@@ -67,13 +51,8 @@ use crate::pane_group::pane::view;
 use crate::pane_group::{BackingView, PaneConfiguration, PaneEvent};
 use crate::server::cloud_objects::update_manager::{FetchSingleObjectOption, UpdateManager};
 use crate::server::ids::{ClientId, ServerId, SyncId};
-use crate::settings::app_installation_detection::{
-    UserAppInstallDetectionSettings, UserAppInstallStatus,
-};
-use crate::settings::{
-    FontSettings, FontSettingsChangedEvent, NotebookFontSize, decrease_notebook_font_size,
-    increase_notebook_font_size,
-};
+use crate::settings::app_installation_detection::{UserAppInstallDetectionSettings, UserAppInstallStatus};
+use crate::settings::{FontSettings, FontSettingsChangedEvent, NotebookFontSize, decrease_notebook_font_size, increase_notebook_font_size};
 use crate::terminal::model::secrets::find_secrets_in_text;
 use crate::terminal::safe_mode_settings::get_secret_obfuscation_mode;
 use crate::throttle::throttle;
