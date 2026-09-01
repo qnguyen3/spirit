@@ -1,32 +1,18 @@
 use std::any::Any;
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::mpsc::SyncSender;
 
 use parking_lot::FairMutex;
-#[cfg(not(any(test, feature = "integration_tests")))]
-use warp_core::execution_mode::AppExecutionMode;
-use warpui::{AppContext, ModelHandle, SingletonEntity, ViewHandle, WindowId};
+use warpui::{AppContext, ViewHandle, WindowId};
 
 use super::terminal_manager::{TerminalManager, TerminalSurfaceInit, TerminalSurfaceResult};
-use crate::NetworkStatus;
 use crate::context_chips::current_prompt::CurrentPrompt;
-use crate::context_chips::prompt_snapshot::PromptSnapshot;
 use crate::context_chips::prompt_type::PromptType;
-use crate::editor::CrdtOperation;
-use crate::features::FeatureFlag;
-use crate::network::{NetworkStatusEvent, NetworkStatusKind};
 use crate::pane_group::TerminalViewResources;
 use crate::persistence::ModelEvent;
-use crate::terminal::cli_agent_sessions::{CLIAgentInputState, CLIAgentSessionsModel, CLIAgentSessionsModelEvent};
 use crate::terminal::model::block::SerializedBlock;
-use crate::terminal::safe_mode_settings::get_secret_obfuscation_mode;
-use crate::terminal::session_settings::{SessionSettings, SessionSettingsChangedEvent};
-use crate::terminal::view::Event as TerminalViewEvent;
 use crate::terminal::writeable_pty::terminal_manager_util::wire_up_remote_server_controller_with_view;
 use crate::terminal::{TerminalManager as TerminalManagerTrait, TerminalModel, TerminalView};
-use crate::view_components::ToastFlavor;
 
 /// Configuration for constructing the GUI terminal surface.
 pub(crate) struct TerminalViewSurfaceConfig {

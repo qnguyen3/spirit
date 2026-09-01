@@ -12,7 +12,6 @@ use parking_lot::Mutex;
 use pathfinder_geometry::rect::RectF;
 use pathfinder_geometry::vector::{Vector2F, vec2f};
 use serde::{Deserialize, Serialize};
-use session_sharing_protocol::common::SessionId;
 use settings::Setting as _;
 use url::Url;
 use warp_core::context_flag::ContextFlag;
@@ -335,17 +334,6 @@ pub fn init(app: &mut AppContext) {
         RootView::toggle_maximize_window,
     );
     app.add_action("root_view:toggle_fullscreen", RootView::toggle_fullscreen);
-
-    if FeatureFlag::ViewingSharedSessions.is_enabled() {
-        app.add_global_action(
-            "root_view:join_shared_session",
-            open_shared_session_as_viewer,
-        );
-        app.add_action(
-            "root_view:join_shared_session_in_existing_window",
-            RootView::join_shared_session_in_existing_window,
-        );
-    }
 
     app.add_global_action(
         "root_view:open_drive_object_new_window",
@@ -855,16 +843,6 @@ pub(crate) fn open_new_from_path(
     )
 }
 
-/// Opens a new window and tries to join session identified by the session ID.
-fn open_shared_session_as_viewer(session_id: &SessionId, ctx: &mut AppContext) {
-    open_new_with_workspace_source(
-        NewWorkspaceSource::SharedSessionAsViewer {
-            session_id: *session_id,
-        },
-        ctx,
-    );
-}
-
 fn open_team_settings_with_email_invite_in_new_window(
     arg: &OpenTeamsSettingsModalArgs,
     ctx: &mut AppContext,
@@ -1347,9 +1325,6 @@ pub enum NewWorkspaceSource {
     Session {
         options: Box<NewTerminalOptions>,
     },
-    SharedSessionAsViewer {
-        session_id: SessionId,
-    },
     NotebookFromFilePath {
         file_path: Option<PathBuf>,
     },
@@ -1423,7 +1398,6 @@ impl NewWorkspaceSource {
             } => Some(*source_window_id),
             Self::FromTemplate { .. }
             | Self::Session { .. }
-            | Self::SharedSessionAsViewer { .. }
             | Self::NotebookFromFilePath { .. }
             | Self::NotebookById { .. }
             | Self::WorkflowById { .. } => None,
@@ -2723,26 +2697,6 @@ impl RootView {
             log::warn!("Auth not complete before trying to open warp drive object");
         }
         true
-    }
-
-    pub fn join_shared_session_in_existing_window(
-        &mut self,
-        session_id: &SessionId,
-        ctx: &mut ViewContext<Self>,
-    ) -> bool {
-        if let Some(handle) = self.active_workspace(ctx) {
-            handle.update(ctx, |workspace, ctx| {
-                // Generic session link: ambient-ness (if any) is discovered at SessionJoined.
-                workspace.add_tab_for_joining_shared_session(*session_id, ctx);
-            });
-            let window_id = ctx.window_id();
-            ctx.windows().show_window_and_focus_app(window_id);
-            ctx.notify();
-            true
-        } else {
-            log::warn!("Auth not complete before trying to join shared session");
-            false
-        }
     }
 
     pub fn add_file_pane(&mut self, path: &PathBuf, ctx: &mut ViewContext<Self>) -> bool {

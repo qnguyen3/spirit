@@ -61,7 +61,7 @@ use crate::terminal::safe_mode_settings::get_secret_obfuscation_mode;
 use crate::terminal::view::TerminalAction;
 use crate::terminal::warpify::SubshellSource;
 use crate::terminal::{SizeInfo, grid_renderer, should_right_click_paste};
-use crate::themes::theme::{Fill, WarpTheme};
+use crate::themes::theme::WarpTheme;
 use crate::ui_components::{self, icons as UIIcon};
 use crate::util::color::Opacity;
 

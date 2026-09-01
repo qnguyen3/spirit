@@ -4,7 +4,7 @@ use chrono::NaiveDateTime;
 use warpui::{AppContext, Entity, EntityId, WindowId};
 
 use crate::context_chips::prompt_snapshot::PromptSnapshot;
-use crate::pane_group::{PaneGroup, PaneId};
+use crate::pane_group::PaneId;
 use crate::terminal::model::blockgrid::BlockGrid;
 use crate::themes::theme::AnsiColorIdentifier;
 use crate::workspace::{PaneViewLocator, Workspace};

@@ -1,7 +1,6 @@
 //! Implementation of terminal panes.
 use std::sync::mpsc::SyncSender;
 
-use url::Url;
 use warp_core::execution_mode::AppExecutionMode;
 use warp_errors::report_error;
 use warpui::{AppContext, EntityId, ModelHandle, SingletonEntity, ViewContext, ViewHandle, WindowId};

@@ -9,7 +9,6 @@ pub use header_content::{
 };
 use pathfinder_geometry::rect::RectF;
 use warpui::elements::{Border, ConstrainedBox, Container, DropTarget, DropTargetData, Flex, MainAxisSize, ParentElement, SavePosition, Shrinkable};
-use warpui::keymap::EditableBinding;
 use warpui::presenter::ChildView;
 use warpui::{AppContext, Element, Entity, EntityId, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle};
 
@@ -19,7 +18,6 @@ use crate::pane_group::focus_state::{PaneFocusHandle, PaneGroupFocusEvent};
 use crate::pane_group::pane::ActionOrigin;
 use crate::pane_group::{Direction, SplitPaneState, TabBarHoverIndex};
 use crate::settings::{PaneSettings, PaneSettingsChangedEvent};
-use crate::util::bindings::CustomAction;
 
 
 /// Max width applied to the pane header while the pane renders as a floating drag preview.

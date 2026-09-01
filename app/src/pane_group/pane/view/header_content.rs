@@ -6,7 +6,7 @@
 use warpui::elements::{DraggableState, MouseStateHandle};
 use warpui::fonts::Properties;
 use warpui::text_layout::ClipConfig;
-use warpui::{AppContext, Element};
+use warpui::Element;
 
 /// Context provided to backing views when rendering header content.
 ///

@@ -46,7 +46,7 @@ use async_channel::{Receiver, Sender};
 pub use block_banner::{BLOCK_BANNER_HEIGHT, WithinBlockBanner};
 use block_banner::{WarpifyBannerState, render_warpification_banner};
 use bookmarks::render_floating_block_snapshot;
-use chrono::{DateTime, Local, NaiveDateTime};
+use chrono::{Local, NaiveDateTime};
 use cli_agent_footer::CliAgentFooter;
 use command_corrections::rules::generic::history::History as CommandCorrectionsHistoryRule;
 use command_corrections::rules::{Rule, RuleId as CommandCorrectionsRuleId};
@@ -125,7 +125,7 @@ use crate::appearance::{Appearance, AppearanceEvent};
 use crate::auth::auth_manager::AuthManager;
 use crate::auth::auth_state::AuthState;
 use crate::auth::auth_view_modal::AuthViewVariant;
-use crate::auth::{AuthStateProvider, UserUid};
+use crate::auth::AuthStateProvider;
 use crate::autoupdate::{self, AutoupdateStage, get_update_state};
 use crate::banner::{Banner, BannerAction, BannerEvent, BannerState, BannerTextButton, BannerTextContent, DismissalType};
 use crate::cloud_object::model::actions::ObjectActionType;
@@ -8060,10 +8060,10 @@ impl TerminalView {
                 };
 
                 let is_single_selection = self.selected_blocks.is_singleton();
-                let is_active_block_selected = self
+                let _is_active_block_selected = self
                     .selected_blocks
                     .is_selected(model.block_list().active_block_index());
-                let is_active_block_running = model
+                let _is_active_block_running = model
                     .block_list()
                     .active_block()
                     .is_active_and_long_running();
@@ -12293,13 +12293,13 @@ impl TerminalView {
         if self.should_hide_cli_agent_cursor_cell(app) {
             alt_screen_element = alt_screen_element.with_hide_cursor_cell();
         }
-        let required_terminal_height = self.size_info.cell_height_px.as_f32() * (rows as f32)
+        let _required_terminal_height = self.size_info.cell_height_px.as_f32() * (rows as f32)
             + 2. * self.size_info.padding_y_px().as_f32();
-        let pane_height = self.content_element_height_px(app);
+        let _pane_height = self.content_element_height_px(app);
 
         let required_terminal_width = self.size_info.cell_width_px.as_f32() * (columns as f32)
             + 2. * self.size_info.padding_x_px().as_f32();
-        let pane_width = self.content_element_width_px(app);
+        let _pane_width = self.content_element_width_px(app);
 
         let should_be_vertical_scrollable = false;
         let should_be_horizontal_scrollable = false;
@@ -12588,7 +12588,7 @@ impl TerminalView {
         let required_terminal_width = self.size_info.cell_width_px.as_f32()
             * (columns_needed as f32)
             + 2. * self.size_info.padding_x_px().as_f32();
-        let pane_width = self.content_element_width_px(app);
+        let _pane_width = self.content_element_width_px(app);
 
         let should_be_vertical_scrollable =
             heights_approx_gt(total_height, visible_rows) && is_scrollable;

@@ -13,7 +13,7 @@ use super::app_installation_detection::UserAppInstallDetectionSettings;
 use super::cloud_preferences::CloudPreferencesSettings;
 use super::initializer::SettingsInitializer;
 use super::native_preference::NativePreferenceSettings;
-use super::{AccessibilitySettings, AliasExpansionSettings, AppEditorSettings, BlockVisibilitySettings, ChangelogSettings, CodeSettings, DebugSettings, EmacsBindingsSettings, FontSettings, FontSettingsChangedEvent, GPUSettings, InputBoxType, InputModeSettings, InputSettings, LocalControlSettings, NewSessionSettings, PaneSettings, SameLinePromptBlockSettings, ScrollSettings, SelectionSettings, SshSettings, ThemeSettings, VimBannerSettings, WarpDrivePrivacySettings};
+use super::{AccessibilitySettings, AliasExpansionSettings, AppEditorSettings, BlockVisibilitySettings, ChangelogSettings, CodeSettings, DebugSettings, EmacsBindingsSettings, FontSettings, FontSettingsChangedEvent, GPUSettings, InputBoxType, InputModeSettings, InputSettings, LocalControlSettings, NewSessionSettings, PaneSettings, SameLinePromptBlockSettings, ScrollSettings, SelectionSettings, SharedObjectLimitBannerSettings, SshSettings, ThemeSettings, VimBannerSettings, WarpDrivePrivacySettings};
 use crate::banner::BannerState;
 use crate::drive::settings::WarpDriveSettings;
 use crate::resource_center::TipsCompleted;
@@ -82,6 +82,7 @@ pub fn register_all_settings(ctx: &mut AppContext) {
     UndoCloseSettings::register(ctx);
     SshSettings::register(ctx);
     VimBannerSettings::register(ctx);
+    SharedObjectLimitBannerSettings::register(ctx);
     WarpDriveSettings::register(ctx);
     WorkflowAliases::register(ctx);
     EmacsBindingsSettings::register(ctx);

@@ -465,10 +465,10 @@ impl TabData {
 
     fn session_sharing_menu_items(
         &self,
-        index: usize,
-        ctx: &AppContext,
+        _index: usize,
+        _ctx: &AppContext,
     ) -> Vec<MenuItem<WorkspaceAction>> {
-        let mut menu_items = vec![];
+        let menu_items = vec![];
 
         menu_items
     }

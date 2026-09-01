@@ -1,4 +1,3 @@
-use warp_core::context_flag::ContextFlag;
 use warpui::AppContext;
 use warpui::keymap::{BindingDescription, EditableBinding, FixedBinding, PerPlatformKeystroke};
 use warpui::platform::OperatingSystem;
