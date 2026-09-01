@@ -207,7 +207,6 @@ pub enum SettingsViewEvent {
     StartResize,
     CheckForUpdate,
     LaunchNetworkLogging,
-    OpenWarpDrive,
     SignupAnonymousUser,
     ShowToast {
         message: String,
@@ -227,14 +226,12 @@ pub enum SettingsSection {
     Privacy,
     Scripting,
     Teams,
-    WarpDrive,
     Warpify,
     // ── Agents umbrella subpages ──
     ThirdPartyCLIAgents,
     // ── Code umbrella subpages ──
     EditorAndCodeReview,
     // ── Cloud platform umbrella subpages ──
-    CloudEnvironments,
     WarpCloudAgentAPIKeys,
 }
 
@@ -247,10 +244,8 @@ impl Display for SettingsSection {
         match self {
             SettingsSection::Keybindings => write!(f, "Keyboard shortcuts"),
             SettingsSection::Scripting => write!(f, "Scripting"),
-            SettingsSection::WarpDrive => write!(f, "Warp Drive"),
             SettingsSection::ThirdPartyCLIAgents => write!(f, "Third party CLI agents"),
             SettingsSection::EditorAndCodeReview => write!(f, "Editor and Code Review"),
-            SettingsSection::CloudEnvironments => write!(f, "Environments"),
             SettingsSection::WarpCloudAgentAPIKeys => write!(f, "API keys"),
             _ => write!(f, "{self:?}"),
         }
@@ -281,11 +276,9 @@ impl SettingsSection {
             Self::Privacy => "Privacy",
             Self::Scripting => "Scripting",
             Self::Teams => "Teams",
-            Self::WarpDrive => "Warp Drive",
             Self::Warpify => "Warpify",
             Self::ThirdPartyCLIAgents => "Third party CLI agents",
             Self::EditorAndCodeReview => "Editor and Code Review",
-            Self::CloudEnvironments => "Environments",
             // Keeps the "Oz" spelling the slug was seeded from; only the
             // Display label above dropped it.
             Self::WarpCloudAgentAPIKeys => "Oz Cloud API Keys",
@@ -309,11 +302,9 @@ impl SettingsSection {
             "Privacy" => Self::Privacy,
             "Scripting" => Self::Scripting,
             "Teams" => Self::Teams,
-            "Warp Drive" | "WarpDrive" => Self::WarpDrive,
             "Warpify" => Self::Warpify,
             "Third party CLI agents" | "ThirdPartyCLIAgents" => Self::ThirdPartyCLIAgents,
             "Editor and Code Review" | "EditorAndCodeReview" => Self::EditorAndCodeReview,
-            "Environments" | "CloudEnvironments" => Self::CloudEnvironments,
             "Oz Cloud API Keys" | "OzCloudAPIKeys" => Self::WarpCloudAgentAPIKeys,
             _ => return None,
         };
@@ -526,7 +517,6 @@ pub mod flags {
     pub const AUTO_OPEN_RICH_INPUT_ON_CLI_AGENT_START_FLAG: &str =
         "AutoOpenRichInputOnCLIAgentStart";
     pub const AUTO_DISMISS_RICH_INPUT_AFTER_SUBMIT_FLAG: &str = "AutoDismissRichInputAfterSubmit";
-    pub const ENABLE_WARP_DRIVE: &str = "EnableWarpDrive";
     // Right sidebar settings
     pub const SHOW_CONVERSATION_HISTORY: &str = "ShowConversationHistory";
     pub const SHOW_PROJECT_EXPLORER: &str = "ShowProjectExplorer";
@@ -545,7 +535,6 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
     warpify_page::init_actions_from_parent_view(app, context, builder);
     privacy_page::init_actions_from_parent_view(app, context, builder);
     code_editor_review_page::init_actions_from_parent_view(app, context, builder);
-    warp_drive_page::init_actions_from_parent_view(app, context, builder);
 
     if ChannelState::enable_debug_features() || cfg!(windows) {
         ToggleSettingActionPair::add_toggle_setting_action_pairs_as_bindings(
@@ -848,7 +837,6 @@ pub enum SettingsAction {
     FeaturesPageToggle(FeaturesPageAction),
     PrivacyPageToggle(PrivacyPageAction),
     EditorAndCodeReview(EditorAndCodeReviewPageAction),
-    WarpDrive(warp_drive_page::WarpDriveSettingsPageAction),
     WarpifyPageToggle(WarpifyPageAction),
     Tab,
     Split(Direction),
@@ -1001,12 +989,10 @@ macro_rules! update_page {
             SettingsPageViewHandle::Privacy(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Scripting(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::CLIAgents(handle) => $ctx.update_view(handle, $update),
-            SettingsPageViewHandle::CloudEnvironments(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::About(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::EditorAndCodeReview(handle) => {
                 $ctx.update_view(handle, $update)
             }
-            SettingsPageViewHandle::WarpDrive(handle) => $ctx.update_view(handle, $update),
         }
     };
 }
@@ -1070,7 +1056,6 @@ impl SettingsView {
         let cli_agents_page_handle = ctx.add_view(|_| CLIAgentsPageView::new());
 
         // Environments page
-        let environments_page_handle = ctx.add_typed_action_view(EnvironmentsPageView::new);
         ctx.subscribe_to_view(&environments_page_handle, |me, _, event, ctx| {
             me.handle_environments_page_event(event, ctx);
         });
@@ -1086,7 +1071,6 @@ impl SettingsView {
         let teams_page_handle = ctx.add_typed_action_view(TeamsPageView::new);
         ctx.subscribe_to_view(&teams_page_handle, |_, _, event, ctx| match event {
             TeamsPageViewEvent::TeamsChanged => ctx.notify(),
-            TeamsPageViewEvent::OpenWarpDrive => ctx.emit(SettingsViewEvent::OpenWarpDrive),
             TeamsPageViewEvent::ShowToast { message, flavor } => {
                 ctx.emit(SettingsViewEvent::ShowToast {
                     message: message.clone(),
@@ -1113,11 +1097,6 @@ impl SettingsView {
         };
 
         // Warp Drive page
-        let warp_drive_page_handle =
-            ctx.add_typed_action_view(warp_drive_page::WarpDriveSettingsPageView::new);
-        ctx.subscribe_to_view(&warp_drive_page_handle, |me, _, event, ctx| {
-            me.handle_warp_drive_page_event(event, ctx);
-        });
 
         let platform_page_handle = ctx.add_typed_action_view(platform_page::PlatformPageView::new);
         ctx.subscribe_to_view(&platform_page_handle, |me, _, event, ctx| {
@@ -1162,7 +1141,6 @@ impl SettingsView {
             SettingsPage::new(keybindings_handle),
             SettingsPage::new(platform_page_handle),
             SettingsPage::new(warpify_page_handle),
-            SettingsPage::new(warp_drive_page_handle),
         ];
 
         if let Some(scripting_page_handle) = scripting_page_handle {
@@ -1170,7 +1148,6 @@ impl SettingsView {
         }
 
         settings_pages.extend(vec![
-            SettingsPage::new(environments_page_handle),
             SettingsPage::new(privacy_page_handle),
             SettingsPage::new(about_page_handle),
         ]);
@@ -1189,28 +1166,24 @@ impl SettingsView {
             )),
             SettingsNavItem::Umbrella(SettingsUmbrella::new(
                 "Cloud platform",
-                vec![
-                    SettingsSection::CloudEnvironments,
-                    SettingsSection::WarpCloudAgentAPIKeys,
-                ],
+                vec![SettingsSection::WarpCloudAgentAPIKeys],
             )),
             SettingsNavItem::Page(SettingsSection::Teams),
             SettingsNavItem::Page(SettingsSection::Appearance),
             SettingsNavItem::Page(SettingsSection::Features),
             SettingsNavItem::Page(SettingsSection::Keybindings),
             SettingsNavItem::Page(SettingsSection::Warpify),
-            SettingsNavItem::Page(SettingsSection::WarpDrive),
             SettingsNavItem::Page(SettingsSection::Privacy),
             SettingsNavItem::Page(SettingsSection::About),
         ];
 
         if FeatureFlag::WarpControlCli.is_enabled() {
-            let warp_drive_index = nav_items
+            let privacy_index = nav_items
                 .iter()
-                .position(|item| matches!(item, SettingsNavItem::Page(SettingsSection::WarpDrive)))
+                .position(|item| matches!(item, SettingsNavItem::Page(SettingsSection::Privacy)))
                 .unwrap_or(nav_items.len());
             nav_items.insert(
-                warp_drive_index,
+                privacy_index,
                 SettingsNavItem::Page(SettingsSection::Scripting),
             );
         }
@@ -1608,18 +1581,6 @@ impl SettingsView {
         }
     }
 
-    fn handle_warp_drive_page_event(
-        &mut self,
-        event: &warp_drive_page::WarpDriveSettingsPageEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            warp_drive_page::WarpDriveSettingsPageEvent::SignUp => {
-                ctx.emit(SettingsViewEvent::SignupAnonymousUser)
-            }
-        }
-    }
-
     pub fn current_settings_section(&self) -> SettingsSection {
         self.current_settings_page
     }
@@ -1720,9 +1681,7 @@ impl SettingsView {
             SettingsPageViewHandle::Warpify(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Scripting(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::CLIAgents(v) => v.as_ref(app).should_render(app),
-            SettingsPageViewHandle::CloudEnvironments(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::EditorAndCodeReview(v) => v.as_ref(app).should_render(app),
-            SettingsPageViewHandle::WarpDrive(v) => v.as_ref(app).should_render(app),
         }
     }
 
@@ -2291,15 +2250,6 @@ impl TypedActionView for SettingsView {
                 {
                     view.update(ctx, |view, ctx| {
                         view.handle_action(action, ctx);
-                    })
-                }
-            }
-            SettingsAction::WarpDrive(warp_drive_action) => {
-                if let Some(warp_drive_page) = self.settings_page(SettingsSection::WarpDrive)
-                    && let SettingsPageViewHandle::WarpDrive(view) = &warp_drive_page.view_handle
-                {
-                    view.update(ctx, |view, ctx| {
-                        view.handle_action(warp_drive_action, ctx);
                     })
                 }
             }

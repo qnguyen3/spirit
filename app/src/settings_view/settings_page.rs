@@ -107,8 +107,6 @@ pub enum SettingsPageViewHandle {
     Warpify(ViewHandle<WarpifyPageView>),
     Scripting(ViewHandle<ScriptingSettingsPageView>),
     CLIAgents(ViewHandle<CLIAgentsPageView>),
-    CloudEnvironments(ViewHandle<EnvironmentsPageView>),
-    WarpDrive(ViewHandle<WarpDriveSettingsPageView>),
 }
 
 impl SettingsPageViewHandle {
@@ -127,8 +125,6 @@ impl SettingsPageViewHandle {
             Warpify(view_handle) => ChildView::new(view_handle).finish(),
             Scripting(view_handle) => ChildView::new(view_handle).finish(),
             CLIAgents(view_handle) => ChildView::new(view_handle).finish(),
-            CloudEnvironments(view_handle) => ChildView::new(view_handle).finish(),
-            WarpDrive(view_handle) => ChildView::new(view_handle).finish(),
         }
     }
 }

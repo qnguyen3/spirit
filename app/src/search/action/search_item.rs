@@ -203,17 +203,10 @@ impl SearchItemIcon for BindingGroup {
             | Self::Folders
             | Self::Terminal
             | Self::Workspaces
-            | Self::Notifications => appearance.theme().foreground().into_solid(),
-            Self::Workflow => warp_drive_icon_color(appearance, DriveObjectType::Workflow),
-            Self::Notebooks => warp_drive_icon_color(
-                appearance,
-                DriveObjectType::Notebook {
-                    is_ai_document: false,
-                },
-            ),
-            Self::EnvVarCollection => {
-                warp_drive_icon_color(appearance, DriveObjectType::EnvVarCollection)
-            }
+            | Self::Notifications
+            | Self::Workflow
+            | Self::Notebooks
+            | Self::EnvVarCollection => appearance.theme().foreground().into_solid(),
         }
     }
 }

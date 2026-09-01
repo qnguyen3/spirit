@@ -114,12 +114,8 @@ impl Display for IPaneId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub(crate) enum IPaneType {
     Terminal,
-    Notebook,
     File,
     Code,
-    EnvVarCollection,
-    EnvironmentManagement,
-    Workflow,
     Settings,
     GetStarted,
     AgentPicker,
@@ -174,13 +170,6 @@ impl PaneId {
         Self::new_from_ctx(IPaneType::File, ctx)
     }
 
-    /// Creates a [`PaneId`] from a [`ViewContext<PaneView<EnvironmentsPageView>>`]
-    pub fn from_environment_management_pane_ctx(
-        ctx: &ViewContext<PaneView<EnvironmentsPageView>>,
-    ) -> Self {
-        Self::new_from_ctx(IPaneType::EnvironmentManagement, ctx)
-    }
-
     /// Creates a [`PaneId`] from a [`ViewContext<PaneView<TextView>>`]
     pub fn from_code_pane_ctx(ctx: &ViewContext<PaneView<CodeView>>) -> Self {
         Self::new_from_ctx(IPaneType::Code, ctx)
@@ -219,23 +208,6 @@ impl PaneId {
     /// Creates a [`PaneId`] from a [`PaneView<TextView>`] entity ID.
     pub fn from_code_pane_view(code_pane_view: &ViewHandle<PaneView<CodeView>>) -> Self {
         Self::new(IPaneType::Code, code_pane_view)
-    }
-
-    /// Creates a [`PaneId`] from a [`PaneView<EnvVarCollection>`] entity ID.
-    pub fn from_env_var_collection_view(
-        env_var_collection_view: &ViewHandle<PaneView<EnvVarCollectionView>>,
-    ) -> Self {
-        Self::new(IPaneType::EnvVarCollection, env_var_collection_view)
-    }
-
-    /// Creates a [`PaneId`] from a [`PaneView<EnvironmentsPageView>`] entity ID.
-    pub fn from_environment_management_pane_view(
-        environment_management_pane_view: &ViewHandle<PaneView<EnvironmentsPageView>>,
-    ) -> Self {
-        Self::new(
-            IPaneType::EnvironmentManagement,
-            environment_management_pane_view,
-        )
     }
 
     /// Creates a [`PaneId`] from a [`PaneView<SettingsView>`] entity ID.
@@ -324,23 +296,11 @@ impl PaneId {
             IPaneType::Terminal => {
                 ChildView::<PaneView<TerminalView>>::with_id(self.0.pane_view_id).finish()
             }
-            IPaneType::Notebook => {
-                ChildView::<PaneView<NotebookView>>::with_id(self.0.pane_view_id).finish()
-            }
             IPaneType::File => {
                 ChildView::<PaneView<FileNotebookView>>::with_id(self.0.pane_view_id).finish()
             }
             IPaneType::Code => {
                 ChildView::<PaneView<CodeView>>::with_id(self.0.pane_view_id).finish()
-            }
-            IPaneType::EnvVarCollection => {
-                ChildView::<PaneView<EnvVarCollectionView>>::with_id(self.0.pane_view_id).finish()
-            }
-            IPaneType::EnvironmentManagement => {
-                ChildView::<PaneView<EnvironmentsPageView>>::with_id(self.0.pane_view_id).finish()
-            }
-            IPaneType::Workflow => {
-                ChildView::<PaneView<WorkflowView>>::with_id(self.0.pane_view_id).finish()
             }
             IPaneType::Settings => {
                 ChildView::<PaneView<SettingsView>>::with_id(self.0.pane_view_id).finish()
