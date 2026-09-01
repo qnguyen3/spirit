@@ -1,5 +1,4 @@
 pub mod auth;
-pub mod integrations;
 pub mod managed_secrets;
 pub mod team;
 pub mod workspace;
@@ -491,10 +490,6 @@ impl ServerApiProvider {
     }
 
     pub fn get_team_client(&self) -> Arc<dyn TeamClient> {
-        self.server_api.clone()
-    }
-
-    pub fn get_integrations_client(&self) -> Arc<dyn integrations::IntegrationsClient> {
         self.server_api.clone()
     }
 
