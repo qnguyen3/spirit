@@ -98,9 +98,9 @@ The Warp **client** is open source: the app and most crates are licensed under [
 
 **Not in this repo:** the server, the Drive backend, hosted authentication, and Oz orchestration.
 
-### Can I run Warp without signing in or using Warp's cloud?
+### Can I run Spirit without signing in or using Warp's cloud?
 
-Some functionality works fully locally; other features (Drive sync, hosted-model agents, team features) require Warp's backend. We're working to make the locally-runnable surface clearer over time, including more explicit controls in onboarding.
+Yes — Spirit is fully local. It has no login, no Drive sync, no team features, and talks to no Warp backend.
 
 ### Will the server or Oz ever be open-sourced?
 

@@ -304,6 +304,48 @@ fn legacy_ai_panes_restore_as_terminal_panes() {
     }
 }
 
+/// A cloud notebook pane keeps its `notebook_panes` row (the table survives for local
+/// Markdown panes), so it reaches the restore path with a null `local_path` and must
+/// degrade to a fresh terminal rather than aborting the whole window.
+#[test]
+fn cloud_notebook_panes_restore_as_terminal_panes() {
+    let tempdir = tempfile::tempdir().expect("tempdir should be created");
+    let database_path = tempdir.path().join("warp.sqlite");
+    let mut conn = setup_database(&database_path).expect("database should initialize");
+
+    let app_state = AppState {
+        windows: vec![test_terminal_window_snapshot(false)],
+        active_window_index: Some(0),
+        block_lists: Default::default(),
+    };
+    save_app_state(&mut conn, &app_state).expect("app state should save");
+
+    conn.batch_execute(
+        "DELETE FROM terminal_panes; \
+         UPDATE pane_leaves SET kind = 'notebook' WHERE kind = 'terminal'; \
+         INSERT INTO notebook_panes (id, kind, notebook_id, local_path) \
+             SELECT pane_node_id, 'notebook', 'cloud-notebook-id', NULL FROM pane_leaves;",
+    )
+    .expect("cloud notebook pane should be written");
+
+    let restored = read_sqlite_data(&mut conn, PersistedDataScope::Full)
+        .expect("restore must not fail for a cloud notebook pane");
+    let restored_app_state = restored.app_state.expect("app state should be present");
+
+    assert_eq!(restored_app_state.windows.len(), 1);
+    let tabs = &restored_app_state.windows[0].tabs();
+    assert_eq!(tabs.len(), 1);
+
+    let PaneNodeSnapshot::Leaf(leaf) = &tabs[0].root else {
+        panic!("restored root should be a leaf");
+    };
+    let LeafContents::Terminal(terminal) = &leaf.contents else {
+        panic!("a cloud notebook pane should restore as a terminal pane");
+    };
+    assert!(terminal.cwd.is_none() && terminal.shell_launch_data.is_none());
+    assert!(!terminal.uuid.is_empty());
+}
+
 fn test_terminal_window_snapshot(vertical_tabs_panel_open: bool) -> WindowSnapshot {
     WindowSnapshot {
         screens: vec![ProjectScreenSnapshot {
