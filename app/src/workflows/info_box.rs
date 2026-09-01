@@ -119,11 +119,6 @@ pub struct WorkflowsMoreInfoView {
     /// When false, we want to remove the subpanel that explains the shift-tab UX for moving between arguments.
     pub show_shift_tab_treatment: bool,
 
-    /// View for selecting environment variables to apply to the workflow.
-    ///
-    /// This is `None` for AI workflows.
-    environment_variables_dropdown: Option<ViewHandle<EnvVarSelector>>,
-
     scroll_state: ClippedScrollStateHandle,
 }
 
@@ -152,20 +147,6 @@ impl WorkflowsMoreInfoView {
             ..
         } = compute_workflow_display_data(&workflow.as_workflow());
 
-        let environment_variables_dropdown = (!workflow.as_workflow().is_agent_mode_workflow())
-            .then(|| {
-                let dropdown = ctx.add_typed_action_view(|ctx| {
-                    let mut dropdown = EnvVarSelector::new(ctx);
-                    dropdown.set_orientation(FilterableDropdownOrientation::Up, ctx);
-                    dropdown.set_width(ENV_VAR_DROPDOWN_WIDTH, ctx);
-                    dropdown
-                });
-                ctx.subscribe_to_view(&dropdown, |me, _, event, ctx| {
-                    me.handle_env_var_selector_event(event, ctx);
-                });
-                dropdown
-            });
-
         Self {
             workflow,
             command_with_replaced_arguments,
@@ -178,7 +159,6 @@ impl WorkflowsMoreInfoView {
                 argument_cycling_enabled: true,
             },
             show_shift_tab_treatment,
-            environment_variables_dropdown,
             scroll_state: Default::default(),
         }
     }
@@ -209,19 +189,6 @@ impl WorkflowsMoreInfoView {
         }
     }
 
-    fn handle_env_var_selector_event(
-        &mut self,
-        event: &EnvVarSelectorEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            EnvVarSelectorEvent::SelectionChanged(id) => {
-                ctx.emit(WorkflowsInfoBoxViewEvent::PrefixCommandWithEnvironmentVariables(*id));
-            }
-            EnvVarSelectorEvent::Refreshed => ctx.notify(),
-        }
-    }
-
     fn render_collapse_button(&self, appearance: &Appearance) -> Box<dyn Element> {
         let icon = if self.info_box_expanded {
             icons::Icon::ChevronDown
@@ -235,30 +202,6 @@ impl WorkflowsMoreInfoView {
             self.button_mouse_states.collapse.clone(),
             |ctx, _, _| {
                 ctx.dispatch_typed_action(WorkflowsInfoBoxViewAction::CollapseOrExpand);
-            },
-            appearance,
-        )
-    }
-
-    fn render_edit_button(
-        &self,
-        cloud_workflow: &CloudWorkflow,
-        appearance: &Appearance,
-    ) -> Box<dyn Element> {
-        let label = if cloud_workflow.model().data.is_agent_mode_workflow() {
-            "Edit prompt"
-        } else {
-            "Edit workflow"
-        };
-        let workflow = cloud_workflow.clone();
-        render_hoverable_card_button(
-            icons::Icon::Rename,
-            Some(label.to_owned()),
-            self.button_mouse_states.edit_cloud_workflow.clone(),
-            move |ctx: &mut warpui::EventContext<'_>, _, _| {
-                ctx.dispatch_typed_action(TerminalAction::OpenWorkflowModalWithCloudWorkflow(
-                    workflow.id,
-                ))
             },
             appearance,
         )
@@ -654,44 +597,6 @@ impl WorkflowsMoreInfoView {
         let mut row_content = Flex::row();
 
         match &self.workflow {
-            WorkflowType::Cloud(cloud_workflow) => {
-                let editing_history = cloud_workflow.metadata.semantic_editing_history(app);
-
-                let action_history = ObjectActions::as_ref(app)
-                    .get_action_history_summary_for_action_type(
-                        &cloud_workflow.id.uid(),
-                        ObjectActionType::Execute,
-                    );
-
-                let full_object_history_text = match (editing_history, action_history) {
-                    (Some(edits), Some(actions)) => Some(format!("{edits}  |  {actions}")),
-                    (Some(edits), None) => Some(edits),
-                    _ => None,
-                };
-
-                let metadata_history = full_object_history_text.map(|str| {
-                    Container::new(
-                        Text::new_inline(str, appearance.ui_font_family(), 12.)
-                            .with_color(
-                                appearance
-                                    .theme()
-                                    .sub_text_color(appearance.theme().surface_2())
-                                    .into(),
-                            )
-                            .with_clip(ClipConfig::end())
-                            .finish(),
-                    )
-                    .with_uniform_padding(5.)
-                    .finish()
-                });
-
-                if let Some(metadata_history_element) = metadata_history {
-                    row_content.add_child(Shrinkable::new(1., metadata_history_element).finish());
-                }
-
-                let edit_button = self.render_edit_button(cloud_workflow, appearance);
-                row_content.add_children([edit_button, collapse_button, close_button]);
-            }
             _ => row_content.add_children([collapse_button, close_button]),
         };
 
