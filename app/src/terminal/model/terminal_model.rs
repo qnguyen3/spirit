@@ -23,14 +23,24 @@ use warpui::image_cache::ImageType;
 
 use super::super::{AltScreen, BlockList};
 use super::ansi::{BootstrappedValue, FinishUpdateValue, InputBufferValue, Mode, PendingHook};
-use super::block::{Block, BlockId, BlockMetadata, BlockSize, BlockState, BlocklistEnvVarMetadata, SerializedBlock};
+use super::block::{
+    Block, BlockId, BlockMetadata, BlockSize, BlockState, BlocklistEnvVarMetadata, SerializedBlock,
+};
 use super::blockgrid::BlockGrid;
 use super::blocks::ActiveBlockCompletion;
-use super::grid::grid_handler::{ContainsPoint, FragmentBoundary, GridHandler, Link, PossiblePath, TermMode};
+use super::grid::grid_handler::{
+    ContainsPoint, FragmentBoundary, GridHandler, Link, PossiblePath, TermMode,
+};
 use super::image_map::StoredImageMetadata;
 use super::index::Point;
-use super::kitty::{DeletionType, KittyAction, KittyChunk, KittyMessage, KittyResponse, PendingKittyMessage, create_kitty_error_reply, create_kitty_ok_reply};
-use super::lifecycle::{BlockLifecycleCoordinator, CommandStartKind, IgnoreReason, LifecycleAction, LifecycleInput, LifecycleSnapshot, LifecycleTransition, PreexecObservation, StartCommandOutcome};
+use super::kitty::{
+    DeletionType, KittyAction, KittyChunk, KittyMessage, KittyResponse, PendingKittyMessage,
+    create_kitty_error_reply, create_kitty_ok_reply,
+};
+use super::lifecycle::{
+    BlockLifecycleCoordinator, CommandStartKind, IgnoreReason, LifecycleAction, LifecycleInput,
+    LifecycleSnapshot, LifecycleTransition, PreexecObservation, StartCommandOutcome,
+};
 use super::secrets::{RespectObfuscatedSecrets, SecretAndHandle};
 use super::selection::ScrollDelta;
 use super::session::{BootstrapSessionType, InBandCommandOutputReceiver, SessionId};
@@ -38,13 +48,22 @@ use super::{Secret, SecretHandle};
 use crate::terminal::available_shells::AvailableShell;
 use crate::terminal::block_filter::BlockFilterQuery;
 use crate::terminal::block_list_element::GridType;
-use crate::terminal::event::{BootstrappedEvent, Event, ExecutedExecutorCommandEvent, InitSubshellEvent, SourcedRcFileInSubshellEvent, SshLoginStatus, TerminalMode};
+use crate::terminal::event::{
+    BootstrappedEvent, Event, ExecutedExecutorCommandEvent, InitSubshellEvent,
+    SourcedRcFileInSubshellEvent, SshLoginStatus, TerminalMode,
+};
 use crate::terminal::event_listener::ChannelEventListener;
 pub use crate::terminal::history::HistoryEntry;
 use crate::terminal::model::ansi;
-use crate::terminal::model::ansi::{ClearValue, CommandFinishedValue, CompletionMetadata, ExitShellValue, Handler, InitShellValue, InitSubshellValue, PreInteractiveSSHSessionValue, PrecmdValue, PreexecValue, PromptMetadata, SSHValue, SourcedRcFileForWarpValue};
+use crate::terminal::model::ansi::{
+    ClearValue, CommandFinishedValue, CompletionMetadata, ExitShellValue, Handler, InitShellValue,
+    InitSubshellValue, PreInteractiveSSHSessionValue, PrecmdValue, PreexecValue, PromptMetadata,
+    SSHValue, SourcedRcFileForWarpValue,
+};
 use crate::terminal::model::bootstrap::BootstrapStage;
-use crate::terminal::model::completions::{ShellCompletion, ShellCompletionUpdate, ShellData as CompletionsShellData};
+use crate::terminal::model::completions::{
+    ShellCompletion, ShellCompletionUpdate, ShellData as CompletionsShellData,
+};
 use crate::terminal::model::escape_sequences::ModeProvider;
 use crate::terminal::model::grid::IndexRegion;
 use crate::terminal::model::index::VisibleRow;
@@ -53,7 +72,9 @@ use crate::terminal::model::secrets::ObfuscateSecrets;
 use crate::terminal::model::session::SessionInfo;
 use crate::terminal::shell::ShellType;
 use crate::terminal::ssh::util::{InteractiveSshCommand, SshLoginState};
-use crate::terminal::{BlockPadding, ShellHost, ShellLaunchData, ShellLaunchState, SizeUpdate, color, ssh};
+use crate::terminal::{
+    BlockPadding, ShellHost, ShellLaunchData, ShellLaunchState, SizeUpdate, color, ssh,
+};
 
 /// Max size of the window title stack.
 const TITLE_STACK_MAX_DEPTH: usize = 4096;
@@ -1280,9 +1301,7 @@ impl TerminalModel {
         let outcome = match transition.action {
             LifecycleAction::StartActiveBlock => {
                 match kind {
-                    CommandStartKind::UserOrQueued => {
-                        self.block_list.start_active_block()
-                    }
+                    CommandStartKind::UserOrQueued => self.block_list.start_active_block(),
                     CommandStartKind::InBand => {
                         self.block_list.start_active_block_for_in_band_command()
                     }

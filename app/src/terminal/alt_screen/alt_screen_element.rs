@@ -15,7 +15,11 @@ use warpui::geometry::rect::RectF;
 use warpui::geometry::vector::Vector2F;
 use warpui::text::SelectionType;
 use warpui::units::{IntoLines, IntoPixels, Lines, Pixels};
-use warpui::{AfterLayoutContext, AppContext, ClipBounds, Element, EntityId, Event, EventContext, LayoutContext, ModelHandle, PaintContext, SizeConstraint, end_trace, record_trace_event, start_trace};
+use warpui::{
+    AfterLayoutContext, AppContext, ClipBounds, Element, EntityId, Event, EventContext,
+    LayoutContext, ModelHandle, PaintContext, SizeConstraint, end_trace, record_trace_event,
+    start_trace,
+};
 
 use super::should_intercept_mouse;
 use crate::appearance::Appearance;
@@ -26,7 +30,9 @@ use crate::terminal::find::TerminalFindModel;
 use crate::terminal::grid_renderer::CellGlyphCache;
 use crate::terminal::meta_shortcuts::handle_keystroke_despite_composing;
 use crate::terminal::model::SecretHandle;
-use crate::terminal::model::escape_sequences::{KeystrokeWithDetails, ToEscapeSequence, maybe_kitty_keyboard_escape_sequence};
+use crate::terminal::model::escape_sequences::{
+    KeystrokeWithDetails, ToEscapeSequence, maybe_kitty_keyboard_escape_sequence,
+};
 use crate::terminal::model::grid::grid_handler::{Link, TermMode};
 use crate::terminal::model::grid::{Dimensions, RespectDisplayedOutput};
 use crate::terminal::model::index::Point;
@@ -34,8 +40,12 @@ use crate::terminal::model::mouse::{MouseAction, MouseButton, MouseState};
 use crate::terminal::model::selection::{SelectAction, SelectionPoint};
 use crate::terminal::model::terminal_model::WithinModel;
 use crate::terminal::safe_mode_settings::get_secret_obfuscation_mode;
-use crate::terminal::view::{ActiveSessionState, TerminalAction, TerminalEditor, TerminalViewRenderContext};
-use crate::terminal::{SizeInfo, TerminalModel, grid_renderer, heights_approx_eq, should_right_click_paste};
+use crate::terminal::view::{
+    ActiveSessionState, TerminalAction, TerminalEditor, TerminalViewRenderContext,
+};
+use crate::terminal::{
+    SizeInfo, TerminalModel, grid_renderer, heights_approx_eq, should_right_click_paste,
+};
 
 const CLI_SUBAGENT_HORIZONTAL_MARGIN: f32 = 8.;
 const CLI_SUBAGENT_VERTICAL_MARGIN: f32 = 8.;

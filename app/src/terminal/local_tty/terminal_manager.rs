@@ -52,9 +52,14 @@ use crate::terminal::shell::ShellName;
 use crate::terminal::terminal_manager::BlockSpacing;
 use crate::terminal::warpify::settings::WarpifySettings;
 use crate::terminal::writeable_pty::pty_controller::{EventLoopSendError, EventLoopSender};
-use crate::terminal::writeable_pty::terminal_manager_util::{init_pty_controller_model, init_remote_server_controller, wire_up_pty_controller_with_surface};
+use crate::terminal::writeable_pty::terminal_manager_util::{
+    init_pty_controller_model, init_remote_server_controller, wire_up_pty_controller_with_surface,
+};
 use crate::terminal::writeable_pty::{self, Message, PtyIntentEvent, TerminalSurface};
-use crate::terminal::{PTY_READS_BROADCAST_CHANNEL_SIZE, ShellLaunchData, ShellLaunchState, SizeInfo, TerminalManager as TerminalManagerTrait, TerminalModel, terminal_manager};
+use crate::terminal::{
+    PTY_READS_BROADCAST_CHANNEL_SIZE, ShellLaunchData, ShellLaunchState, SizeInfo,
+    TerminalManager as TerminalManagerTrait, TerminalModel, terminal_manager,
+};
 
 type PtyController = writeable_pty::PtyController<mio_channel::Sender<Message>>;
 type RemoteServerController =

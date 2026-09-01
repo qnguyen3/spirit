@@ -40,7 +40,11 @@ use settings::{Setting as _, ToggleableSetting};
 use string_offset::{ByteOffset, CharOffset};
 use vec1::Vec1;
 use vim::vim::VimMode;
-use warp_completer::completer::{self, CompleterOptions, CompletionContext, CompletionsFallbackStrategy, Description, ExplicitTabCompletion, MatchStrategy, MatchType, PathSeparators, PreparedSuggestion, SuggestionResults};
+use warp_completer::completer::{
+    self, CompleterOptions, CompletionContext, CompletionsFallbackStrategy, Description,
+    ExplicitTabCompletion, MatchStrategy, MatchType, PathSeparators, PreparedSuggestion,
+    SuggestionResults,
+};
 use warp_completer::meta::{HasSpan, Spanned};
 use warp_completer::parsers::LiteCommand;
 use warp_completer::parsers::simple::command_at_cursor_position;
@@ -56,7 +60,11 @@ use warpui::accessibility::{AccessibilityContent, ActionAccessibilityContent, Wa
 use warpui::r#async::SpawnedFutureHandle;
 use warpui::clipboard::ClipboardContent;
 use warpui::color::ColorU;
-use warpui::elements::{AnchorPair, ChildAnchor, Clipped, ConstrainedBox, Container, DispatchEventResult, DropTargetData, Element, EventHandler, MouseStateHandle, OffsetType, ParentAnchor, ResizableStateHandle, SavePosition, SelectionHandle, YAxisAnchor, resizable_state_handle};
+use warpui::elements::{
+    AnchorPair, ChildAnchor, Clipped, ConstrainedBox, Container, DispatchEventResult,
+    DropTargetData, Element, EventHandler, MouseStateHandle, OffsetType, ParentAnchor,
+    ResizableStateHandle, SavePosition, SelectionHandle, YAxisAnchor, resizable_state_handle,
+};
 pub use warpui::elements::{ParentElement as _, Stack};
 use warpui::event::KeyState;
 pub use warpui::geometry::vector::{Vector2F, vec2f};
@@ -65,23 +73,38 @@ use warpui::platform::OperatingSystem;
 use warpui::presenter::ChildView;
 use warpui::text_layout::TextStyle;
 use warpui::units::IntoPixels;
-use warpui::{AppContext, Entity, EntityId, FocusContext, ModelAsRef, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle, WeakViewHandle, end_trace, start_trace};
+use warpui::{
+    AppContext, Entity, EntityId, FocusContext, ModelAsRef, ModelHandle, SingletonEntity,
+    TypedActionView, View, ViewContext, ViewHandle, WeakViewHandle, end_trace, start_trace,
+};
 
 use self::decorations::InputBackgroundJobOptions;
 use super::alias::is_expandable_alias;
 use super::event::{BlockCompletedEvent, BlockType, UserBlockCompleted};
-use super::history_autosuggestions::{get_reverse_chronological_potential_autosuggestions, is_command_valid};
+use super::history_autosuggestions::{
+    get_reverse_chronological_potential_autosuggestions, is_command_valid,
+};
 use super::ligature_settings::LigatureSettings;
 use super::model::block::{BlockId, BlockMetadata, BlocklistEnvVarMetadata};
 use super::model::session::{Session, SessionId, Sessions};
-use super::prompt_render_helper::{PromptRenderHelper, SameLinePromptElements, should_render_prompt_on_same_line, should_render_prompt_using_editor_decorator_elements};
-use super::safe_mode_settings::{SafeModeSettings, SafeModeSettingsChangedEvent, get_secret_obfuscation_mode};
+use super::prompt_render_helper::{
+    PromptRenderHelper, SameLinePromptElements, should_render_prompt_on_same_line,
+    should_render_prompt_using_editor_decorator_elements,
+};
+use super::safe_mode_settings::{
+    SafeModeSettings, SafeModeSettingsChangedEvent, get_secret_obfuscation_mode,
+};
 use super::session_settings::{SessionSettings, SessionSettingsChangedEvent};
 use super::settings::{SpacingMode, TerminalSettings, TerminalSettingsChangedEvent};
 use super::shell::ShellType;
-use super::view::{ExecuteCommandEvent, PADDING_LEFT as TERMINAL_VIEW_PADDING_LEFT, SyncInputType, TerminalAction};
+use super::view::{
+    ExecuteCommandEvent, PADDING_LEFT as TERMINAL_VIEW_PADDING_LEFT, SyncInputType, TerminalAction,
+};
 use super::warpify::SubshellSource;
-use super::{History, HistoryEntry, SizeInfo, TerminalModel, UpArrowHistoryConfig, prompt, should_right_click_paste};
+use super::{
+    History, HistoryEntry, SizeInfo, TerminalModel, UpArrowHistoryConfig, prompt,
+    should_right_click_paste,
+};
 use crate::appearance::{Appearance, AppearanceEvent};
 use crate::channel::{Channel, ChannelState};
 use crate::cloud_object::model::persistence::CloudModel;
@@ -91,10 +114,21 @@ use crate::completer::SessionContext;
 use crate::context_chips::display::{PromptDisplay, PromptDisplayEvent};
 use crate::context_chips::display_chip::PromptChipShellCommand;
 use crate::context_chips::prompt_type::PromptType;
-use crate::editor::{AutosuggestionLocation, AutosuggestionType, BaselinePositionComputationMethod, CommandXRayAnchor, CrdtOperation, DisplayPoint, EditOrigin, EditorAction, EditorDecoratorElements, EditorOptions, EditorSnapshot, EditorView, Event as EditorEvent, InteractionState, PathTransformerFn, PlainTextEditorViewAction, Point as BufferPoint, PropagateAndNoOpEscapeKey, PropagateAndNoOpNavigationKeys, PropagateHorizontalNavigationKeys, TextColors, TextRun, default_cursor_colors, position_id_for_cached_point, position_id_for_cursor, position_id_for_first_cursor};
+use crate::editor::{
+    AutosuggestionLocation, AutosuggestionType, BaselinePositionComputationMethod,
+    CommandXRayAnchor, CrdtOperation, DisplayPoint, EditOrigin, EditorAction,
+    EditorDecoratorElements, EditorOptions, EditorSnapshot, EditorView, Event as EditorEvent,
+    InteractionState, PathTransformerFn, PlainTextEditorViewAction, Point as BufferPoint,
+    PropagateAndNoOpEscapeKey, PropagateAndNoOpNavigationKeys, PropagateHorizontalNavigationKeys,
+    TextColors, TextRun, default_cursor_colors, position_id_for_cached_point,
+    position_id_for_cursor, position_id_for_first_cursor,
+};
 use crate::env_vars::EnvVarCollectionExt;
 use crate::features::FeatureFlag;
-use crate::input_suggestions::{Event as InputSuggestionsEvent, HistoryInputSuggestion, InputSuggestions, TabCompletionsPreselectOption};
+use crate::input_suggestions::{
+    Event as InputSuggestionsEvent, HistoryInputSuggestion, InputSuggestions,
+    TabCompletionsPreselectOption,
+};
 #[allow(unused_imports)]
 use crate::palette::PaletteSource;
 use crate::pane_group::PaneGroupAction;
@@ -103,22 +137,36 @@ use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::persistence::{database_file_path_for_current_scope, establish_ro_connection};
 use crate::prefix::longest_common_prefix;
 use crate::prompt::editor_modal::OpenSource as PromptEditorOpenSource;
-use crate::resource_center::{Tip, TipAction, TipHint, TipsCompleted, mark_feature_used_and_write_to_user_defaults};
+use crate::resource_center::{
+    Tip, TipAction, TipHint, TipsCompleted, mark_feature_used_and_write_to_user_defaults,
+};
 use crate::search::QueryFilter;
 use crate::search::slash_command_menu::static_commands::commands::COMMAND_REGISTRY;
 use crate::server::ids::SyncId;
 use crate::session_management::SessionNavigationPromptElements;
-use crate::settings::{AliasExpansionSettings, AppEditorSettings, AppEditorSettingsChangedEvent, InputSettings, InputSettingsChangedEvent, MAX_TIMES_TO_SHOW_AUTOSUGGESTION_HINT};
+use crate::settings::{
+    AliasExpansionSettings, AppEditorSettings, AppEditorSettingsChangedEvent, InputSettings,
+    InputSettingsChangedEvent, MAX_TIMES_TO_SHOW_AUTOSUGGESTION_HINT,
+};
 use crate::settings_view::{SettingsSection, flags};
-use crate::suggestions::ignored_suggestions_model::{IgnoredSuggestionsModel, IgnoredSuggestionsModelEvent, SuggestionType};
+use crate::suggestions::ignored_suggestions_model::{
+    IgnoredSuggestionsModel, IgnoredSuggestionsModelEvent, SuggestionType,
+};
 #[cfg(not(target_family = "wasm"))]
-use crate::terminal::cli_agent_sessions::{CLIAgentInputState, CLIAgentSessionsModel, CLIAgentSessionsModelEvent};
+use crate::terminal::cli_agent_sessions::{
+    CLIAgentInputState, CLIAgentSessionsModel, CLIAgentSessionsModelEvent,
+};
 use crate::terminal::input::buffer_model::InputBufferModel;
 use crate::terminal::input::inline_history::InlineHistoryMenuView;
 use crate::terminal::input::inline_menu::InlineMenuPositioner;
 use crate::terminal::input::slash_command_model::SlashCommandModel;
-use crate::terminal::input::slash_commands::{GuiSlashCommandDataSource, InlineSlashCommandView, SlashCommandDataSource as _, SlashCommandTrigger, UpdatedActiveCommands};
-use crate::terminal::input::suggestions_mode_model::{InputSuggestionsModeEvent, InputSuggestionsModeModel};
+use crate::terminal::input::slash_commands::{
+    GuiSlashCommandDataSource, InlineSlashCommandView, SlashCommandDataSource as _,
+    SlashCommandTrigger, UpdatedActiveCommands,
+};
+use crate::terminal::input::suggestions_mode_model::{
+    InputSuggestionsModeEvent, InputSuggestionsModeModel,
+};
 use crate::terminal::input::terminal_message_bar::TerminalInputMessageBar;
 use crate::terminal::input::voice_input::VoiceInputButton;
 use crate::terminal::model::session::active_session::ActiveSession;
@@ -131,10 +179,19 @@ use crate::util::bindings::{self, CustomAction, keybinding_name_to_normalized_st
 use crate::util::file::external_editor;
 use crate::util::truncation::truncate_from_end;
 use crate::view_components::{DismissibleToast, ToastFlavor};
-use crate::voltron::{Voltron, VoltronEvent, VoltronFeatureView, VoltronFeatureViewHandle, VoltronFeatureViewMeta, VoltronItem, VoltronMetadata};
+use crate::voltron::{
+    Voltron, VoltronEvent, VoltronFeatureView, VoltronFeatureViewHandle, VoltronFeatureViewMeta,
+    VoltronItem, VoltronMetadata,
+};
 use crate::workflows::aliases::WorkflowAliases;
-use crate::workflows::command_parser::{WorkflowArgumentIndex, WorkflowDisplayData, compute_workflow_display_data, compute_workflow_display_data_for_history_command, compute_workflow_display_data_with_overrides};
-use crate::workflows::info_box::{WORKFLOW_PARAMETER_HIGHLIGHT_COLOR, WorkflowsInfoBoxViewEvent, WorkflowsMoreInfoView};
+use crate::workflows::command_parser::{
+    WorkflowArgumentIndex, WorkflowDisplayData, compute_workflow_display_data,
+    compute_workflow_display_data_for_history_command,
+    compute_workflow_display_data_with_overrides,
+};
+use crate::workflows::info_box::{
+    WORKFLOW_PARAMETER_HIGHLIGHT_COLOR, WorkflowsInfoBoxViewEvent, WorkflowsMoreInfoView,
+};
 use crate::workflows::local_workflows::LocalWorkflows;
 use crate::workflows::workflow_enum::EnumVariants;
 use crate::workflows::{self, WorkflowSelectionSource, WorkflowSource, WorkflowType};

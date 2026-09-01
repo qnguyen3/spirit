@@ -5,9 +5,18 @@ use pathfinder_geometry::vector::{Vector2F, vec2f};
 use warp_core::features::FeatureFlag;
 use warp_core::settings::Setting;
 use warp_errors::report_error;
-use warpui::elements::{AcceptedByDropTarget, Align, Border, ChildAnchor, Clipped, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Dismiss, Draggable, DraggableState, Empty, Flex, Hoverable, Icon, MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, PositionedElementAnchor, PositionedElementOffsetBounds, Radius, SavePosition, Shrinkable, Stack, Text};
+use warpui::elements::{
+    AcceptedByDropTarget, Align, Border, ChildAnchor, Clipped, ConstrainedBox, Container,
+    CornerRadius, CrossAxisAlignment, Dismiss, Draggable, DraggableState, Empty, Flex, Hoverable,
+    Icon, MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning, ParentAnchor,
+    ParentElement, ParentOffsetBounds, PositionedElementAnchor, PositionedElementOffsetBounds,
+    Radius, SavePosition, Shrinkable, Stack, Text,
+};
 use warpui::presenter::ChildView;
-use warpui::{AppContext, Element, Entity, EntityId, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle};
+use warpui::{
+    AppContext, Element, Entity, EntityId, ModelHandle, SingletonEntity, TypedActionView, View,
+    ViewContext, ViewHandle,
+};
 
 use super::PaneDropTargetData;
 use super::header_content::{HeaderContent, HeaderRenderContext, StandardHeaderOptions};
@@ -15,14 +24,18 @@ use crate::appearance::Appearance;
 use crate::menu::{Menu, MenuItem};
 use crate::pane_group::focus_state::{PaneFocusHandle, PaneGroupFocusEvent};
 use crate::pane_group::pane::view::StandardHeader;
-use crate::pane_group::pane::{ActionOrigin, PaneConfiguration, PaneConfigurationEvent, PaneStack, PaneStackEvent, ToolbeltButton};
-use crate::pane_group::{BackingView, Direction, PaneDragDropLocation, PaneId, TabBarAxis, TabBarHoverIndex};
+use crate::pane_group::pane::{
+    ActionOrigin, PaneConfiguration, PaneConfigurationEvent, PaneStack, PaneStackEvent,
+    ToolbeltButton,
+};
+use crate::pane_group::{
+    BackingView, Direction, PaneDragDropLocation, PaneId, TabBarAxis, TabBarHoverIndex,
+};
 use crate::settings::CodeSettings;
 use crate::tab::tab_position_id;
 use crate::terminal::view::TerminalAction;
 use crate::view_components::{FeaturePopup, NewFeaturePopupEvent, NewFeaturePopupLabel};
 use crate::workspace::{TabBarDropTargetData, TabBarLocation, VerticalTabsPaneDropTargetData};
-
 
 pub(crate) mod components;
 

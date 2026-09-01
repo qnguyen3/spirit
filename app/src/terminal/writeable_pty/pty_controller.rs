@@ -17,7 +17,9 @@ use crate::terminal::input::CommandExecutionSource;
 use crate::terminal::line_editor_status::{LineEditorStatus, LineEditorStatusEvent};
 use crate::terminal::model::ansi::Handler;
 use crate::terminal::model::completions::ShellCompletion;
-use crate::terminal::model::session::{ExecutorCommandEvent, InBandCommandCancelledEvent, SessionInfo, Sessions};
+use crate::terminal::model::session::{
+    ExecutorCommandEvent, InBandCommandCancelledEvent, SessionInfo, Sessions,
+};
 use crate::terminal::model::{StartCommandOutcome, escape_sequences};
 use crate::terminal::model_events::{AnsiHandlerEvent, ModelEvent, ModelEventDispatcher};
 use crate::terminal::shell::ShellType;

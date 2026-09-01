@@ -82,12 +82,7 @@ pub(crate) fn tab_close(
         if tab_indices.is_empty() {
             return Ok(true);
         }
-        let closed = workspace.close_tabs(
-            tab_indices.into_iter(),
-            false,
-            true,
-            ctx,
-        );
+        let closed = workspace.close_tabs(tab_indices.into_iter(), false, true, ctx);
         Ok(closed)
     })?;
     if closed {

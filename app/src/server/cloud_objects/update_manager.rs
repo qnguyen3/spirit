@@ -17,27 +17,52 @@ use warp_errors::report_error;
 use warp_graphql::scalars::time::ServerTimestamp;
 use warp_util::sync::Condition;
 use warpui::r#async::{FutureId, Timer};
-use warpui::{AppContext, Entity, ModelContext, ModelHandle, RequestState, RetryOption, SingletonEntity, duration_with_jitter};
+use warpui::{
+    AppContext, Entity, ModelContext, ModelHandle, RequestState, RetryOption, SingletonEntity,
+    duration_with_jitter,
+};
 
 use super::listener::ObjectUpdateMessage;
 use crate::auth::AuthStateProvider;
 use crate::auth::auth_manager::AuthManager;
-use crate::cloud_object::model::actions::{ObjectAction, ObjectActionHistory, ObjectActionType, ObjectActions};
-use crate::cloud_object::model::generic_string_model::{GenericStringModel, GenericStringObjectId, Serializer, StringModel};
+use crate::cloud_object::model::actions::{
+    ObjectAction, ObjectActionHistory, ObjectActionType, ObjectActions,
+};
+use crate::cloud_object::model::generic_string_model::{
+    GenericStringModel, GenericStringObjectId, Serializer, StringModel,
+};
 use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent, UpdateSource};
 use crate::cloud_object::model::view::{CloudViewModel, Editor, EditorState};
-use crate::cloud_object::{CloudModelType, CloudObject, CloudObjectEventEntrypoint, CloudObjectLocation, CloudObjectSyncStatus, CreateCloudObjectResult, CreateObjectRequest, GenericCloudObject, GenericServerObject, GenericStringObjectFormat, JsonObjectType, NumInFlightRequests, ObjectDeleteResult, ObjectIdType, ObjectMetadataUpdateResult, ObjectType, Owner, Revision, RevisionAndLastEditor, ServerCloudObject, ServerEnvVarCollection, ServerMetadata, ServerPermissions, ServerPreference, ServerWorkflowEnum, Space, UpdateCloudObjectResult};
+use crate::cloud_object::{
+    CloudModelType, CloudObject, CloudObjectEventEntrypoint, CloudObjectLocation,
+    CloudObjectSyncStatus, CreateCloudObjectResult, CreateObjectRequest, GenericCloudObject,
+    GenericServerObject, GenericStringObjectFormat, JsonObjectType, NumInFlightRequests,
+    ObjectDeleteResult, ObjectIdType, ObjectMetadataUpdateResult, ObjectType, Owner, Revision,
+    RevisionAndLastEditor, ServerCloudObject, ServerEnvVarCollection, ServerMetadata,
+    ServerPermissions, ServerPreference, ServerWorkflowEnum, Space, UpdateCloudObjectResult,
+};
 use crate::drive::CloudObjectTypeAndId;
-use crate::drive::drive_helpers::{is_feature_gated_anonymous_user_past_env_var_limit, is_feature_gated_anonymous_user_past_notebook_limit, is_feature_gated_anonymous_user_past_workflow_limit};
+use crate::drive::drive_helpers::{
+    is_feature_gated_anonymous_user_past_env_var_limit,
+    is_feature_gated_anonymous_user_past_notebook_limit,
+    is_feature_gated_anonymous_user_past_workflow_limit,
+};
 use crate::drive::folders::{CloudFolderModel, FolderId};
 use crate::env_vars::{CloudEnvVarCollectionModel, EnvVarCollection};
 use crate::network::{NetworkStatus, NetworkStatusEvent, NetworkStatusKind};
 use crate::notebooks::{CloudNotebookModel, NotebookId};
 use crate::persistence::ModelEvent;
-use crate::server::ids::{ClientId, HashableId, HashedSqliteId, ObjectUid, ServerId, SyncId, ToServerId, parse_sqlite_id_to_uid};
-use crate::server::retry_strategies::{OUT_OF_BAND_REQUEST_RETRY_STRATEGY, PERIODIC_POLL, PERIODIC_POLL_RETRY_STRATEGY};
+use crate::server::ids::{
+    ClientId, HashableId, HashedSqliteId, ObjectUid, ServerId, SyncId, ToServerId,
+    parse_sqlite_id_to_uid,
+};
+use crate::server::retry_strategies::{
+    OUT_OF_BAND_REQUEST_RETRY_STRATEGY, PERIODIC_POLL, PERIODIC_POLL_RETRY_STRATEGY,
+};
 use crate::server::server_api::object::ObjectClient;
-use crate::server::sync_queue::{CreationFailureReason, GenericStringObjectToCreate, QueueItem, SyncQueue, SyncQueueEvent};
+use crate::server::sync_queue::{
+    CreationFailureReason, GenericStringObjectToCreate, QueueItem, SyncQueue, SyncQueueEvent,
+};
 use crate::settings::cloud_preferences::Preference;
 use crate::workflows::workflow::Workflow;
 use crate::workflows::workflow_enum::{CloudWorkflowEnum, CloudWorkflowEnumModel, WorkflowEnum};

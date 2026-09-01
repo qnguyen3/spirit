@@ -10,7 +10,9 @@ use crate::auth::auth_manager::AuthManager;
 use crate::cloud_object::model::actions::ObjectActions;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::cloud_object::model::view::CloudViewModel;
-use crate::cloud_object::{CloudObjectSyncStatus, ObjectIdType, ObjectType, Owner, ServerCreationInfo, Space};
+use crate::cloud_object::{
+    CloudObjectSyncStatus, ObjectIdType, ObjectType, Owner, ServerCreationInfo, Space,
+};
 use crate::drive::CloudObjectTypeAndId;
 use crate::drive::items::WarpDriveItemId;
 use crate::menu::MenuItem;
@@ -265,4 +267,3 @@ fn test_warp_drive_navigation_states() {
         });
     });
 }
-

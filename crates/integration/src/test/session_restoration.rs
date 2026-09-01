@@ -1,6 +1,8 @@
 use settings::{RespectUserSyncSetting, SyncToCloud};
 use warp::features::FeatureFlag;
-use warp::integration_testing::notebook::{assert_cloud_preference_exists, assert_notebook_contents};
+use warp::integration_testing::notebook::{
+    assert_cloud_preference_exists, assert_notebook_contents,
+};
 use warp::integration_testing::step::{
     new_step_with_default_assertions, new_step_with_default_assertions_for_pane,
 };

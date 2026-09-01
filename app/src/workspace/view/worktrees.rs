@@ -655,12 +655,7 @@ impl Workspace {
             .map(|(index, _)| index)
             .collect();
         if !indices.is_empty() {
-            self.close_tabs(
-                indices.into_iter().rev(),
-                true,
-                false,
-                ctx,
-            );
+            self.close_tabs(indices.into_iter().rev(), true, false, ctx);
         }
 
         let root_path = context.root_path.clone();
@@ -777,12 +772,7 @@ impl Workspace {
                         .map(|(index, _)| index)
                         .collect();
                     if !indices.is_empty() {
-                        self.close_tabs(
-                            indices.into_iter().rev(),
-                            true,
-                            false,
-                            ctx,
-                        );
+                        self.close_tabs(indices.into_iter().rev(), true, false, ctx);
                     }
                     let _ = ProjectRegistryModel::handle(ctx).update(ctx, |registry, ctx| {
                         registry.remove_worktree(worktree.id, ctx)

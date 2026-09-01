@@ -1468,7 +1468,6 @@ impl UserWorkspaces {
             .flat_map(|workspace| workspace.teams.iter())
             .find(|team| team.settings.codebase_context.value == AdminEnablementSetting::Disable)
     }
-
 }
 
 #[cfg(test)]

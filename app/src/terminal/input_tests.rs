@@ -10,7 +10,10 @@ use repo_metadata::repositories::DetectedRepositories;
 use repo_metadata::watcher::DirectoryWatcher;
 use smol_str::SmolStr;
 use unindent::Unindent;
-use warp_completer::completer::{EngineFileType, Match, MatchStrategy, MatchedSuggestion, PathSeparators, Priority, Suggestion, SuggestionResults, SuggestionType};
+use warp_completer::completer::{
+    EngineFileType, Match, MatchStrategy, MatchedSuggestion, PathSeparators, Priority, Suggestion,
+    SuggestionResults, SuggestionType,
+};
 use warp_completer::meta::Span;
 use warp_util::standardized_path::StandardizedPath;
 use warp_util::user_input::UserInput;

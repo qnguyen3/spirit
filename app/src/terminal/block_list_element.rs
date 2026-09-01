@@ -13,7 +13,12 @@ use warp_core::semantic_selection::SemanticSelection;
 use warp_core::ui::builder::UiBuilder;
 use warp_util::user_input::UserInput;
 use warpui::elements::new_scrollable::{NewScrollableElement, ScrollableAxis};
-use warpui::elements::{Axis, Border, ChildAnchor, ClippedScrollStateHandle, ConstrainedBox, Container, CornerRadius, Hoverable, Icon, MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Point, Radius, SavePosition, ScrollData, ScrollableElement, Stack, Text, ZIndex};
+use warpui::elements::{
+    Axis, Border, ChildAnchor, ClippedScrollStateHandle, ConstrainedBox, Container, CornerRadius,
+    Hoverable, Icon, MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement,
+    ParentOffsetBounds, Point, Radius, SavePosition, ScrollData, ScrollableElement, Stack, Text,
+    ZIndex,
+};
 use warpui::event::{DispatchedEvent, KeyState, ModifiersState};
 use warpui::fonts::{FamilyId, Properties, Weight};
 use warpui::geometry::rect::RectF;
@@ -22,7 +27,10 @@ use warpui::platform::Cursor;
 use warpui::text::SelectionType;
 use warpui::ui_components::components::UiComponent;
 use warpui::units::{IntoLines, IntoPixels, Lines, Pixels};
-use warpui::{AfterLayoutContext, AppContext, ClipBounds, Element, EntityId, Event, EventContext, LayoutContext, ModelHandle, PaintContext, SingletonEntity as _, SizeConstraint};
+use warpui::{
+    AfterLayoutContext, AppContext, ClipBounds, Element, EntityId, Event, EventContext,
+    LayoutContext, ModelHandle, PaintContext, SingletonEntity as _, SizeConstraint,
+};
 
 use super::block_list_viewport::{ClampingMode, InputMode, ScrollPosition, ViewportState};
 use super::blockgrid_renderer::{BlockGridRenderer, GridRenderParams};
@@ -38,7 +46,10 @@ use super::model::image_map::StoredImageMetadata;
 use super::model::mouse::{MouseAction, MouseButton, MouseState};
 use super::model::session::SessionId;
 use super::model::terminal_model::{SelectedBlocks, WithinBlock, WithinModel};
-use super::view::{BLOCK_BANNER_HEIGHT, InlineBannerId, RichContentMetadata, SeparatorId, TerminalEditor, TerminalViewRenderContext};
+use super::view::{
+    BLOCK_BANNER_HEIGHT, InlineBannerId, RichContentMetadata, SeparatorId, TerminalEditor,
+    TerminalViewRenderContext,
+};
 use super::warpify::render::{draw_flag_pole, render_subshell_flag};
 use super::{HEIGHT_FUDGE_FACTOR_LINES, TerminalModel, heights_approx_eq};
 use crate::appearance::Appearance;
@@ -51,8 +62,12 @@ use crate::terminal::block_list_viewport::AutoscrollBehavior;
 use crate::terminal::blockgrid_renderer::BlockGridParams;
 use crate::terminal::input::inline_menu::InlineMenuPositioner;
 use crate::terminal::model::block::{Block, BlockSection};
-use crate::terminal::model::blocks::{BlockHeight, BlockHeightItem, BlockHeightSummary, BlockList, BlockListPoint, TotalIndex};
-use crate::terminal::model::escape_sequences::{KeystrokeWithDetails, ToEscapeSequence, maybe_kitty_keyboard_escape_sequence};
+use crate::terminal::model::blocks::{
+    BlockHeight, BlockHeightItem, BlockHeightSummary, BlockList, BlockListPoint, TotalIndex,
+};
+use crate::terminal::model::escape_sequences::{
+    KeystrokeWithDetails, ToEscapeSequence, maybe_kitty_keyboard_escape_sequence,
+};
 use crate::terminal::model::index::Point as IndexPoint;
 use crate::terminal::model::selection::{SelectAction, SelectionPoint};
 use crate::terminal::model::terminal_model::BlockIndex;

@@ -14,22 +14,40 @@ use super::{GetCloudObjectResponse, InitialLoadResponse, UpdateManager};
 use crate::ASSETS;
 use crate::auth::UserUid;
 use crate::auth::user::TEST_USER_UID;
-use crate::cloud_object::model::actions::{ObjectAction, ObjectActionHistory, ObjectActionSubtype, ObjectActionType, ObjectActions};
+use crate::cloud_object::model::actions::{
+    ObjectAction, ObjectActionHistory, ObjectActionSubtype, ObjectActionType, ObjectActions,
+};
 use crate::cloud_object::model::generic_string_model::GenericStringObjectId;
 use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent, UpdateSource};
-use crate::cloud_object::{BulkCreateCloudObjectResult, CloudModelType, CloudObjectEventEntrypoint, CloudObjectLocation, ConflictStatus, CreateCloudObjectResult, CreatedCloudObject, GenericCloudObject, GenericStringObjectFormat, JsonObjectType, ObjectDeleteResult, ObjectIdType, ObjectMetadataUpdateResult, ObjectType, Owner, Revision, RevisionAndLastEditor, ServerCloudObject, ServerFolder, ServerNotebook, ServerObject, ServerPreference, ServerWorkflow, ServerWorkflowEnum, Space, UpdateCloudObjectResult};
+use crate::cloud_object::{
+    BulkCreateCloudObjectResult, CloudModelType, CloudObjectEventEntrypoint, CloudObjectLocation,
+    ConflictStatus, CreateCloudObjectResult, CreatedCloudObject, GenericCloudObject,
+    GenericStringObjectFormat, JsonObjectType, ObjectDeleteResult, ObjectIdType,
+    ObjectMetadataUpdateResult, ObjectType, Owner, Revision, RevisionAndLastEditor,
+    ServerCloudObject, ServerFolder, ServerNotebook, ServerObject, ServerPreference,
+    ServerWorkflow, ServerWorkflowEnum, Space, UpdateCloudObjectResult,
+};
 use crate::drive::CloudObjectTypeAndId;
 use crate::drive::folders::{CloudFolder, CloudFolderModel, FolderId};
 use crate::notebooks::{CloudNotebook, CloudNotebookModel, NotebookId};
 use crate::persistence::ModelEvent;
 use crate::server::cloud_objects::listener::ObjectUpdateMessage;
-use crate::server::cloud_objects::test_utils::{UpdateManagerStruct, create_update_manager_struct, initialize_app, mock_server_api};
-use crate::server::cloud_objects::update_manager::{FetchSingleObjectOption, GenericStringObjectInput, InitiatedBy, ServerMetadata, ServerPermissions, get_duplicate_object_name};
-use crate::server::ids::{ClientId, HashableId, ObjectUid, ServerId, ServerIdAndType, SyncId, ToServerId};
+use crate::server::cloud_objects::test_utils::{
+    UpdateManagerStruct, create_update_manager_struct, initialize_app, mock_server_api,
+};
+use crate::server::cloud_objects::update_manager::{
+    FetchSingleObjectOption, GenericStringObjectInput, InitiatedBy, ServerMetadata,
+    ServerPermissions, get_duplicate_object_name,
+};
+use crate::server::ids::{
+    ClientId, HashableId, ObjectUid, ServerId, ServerIdAndType, SyncId, ToServerId,
+};
 use crate::server::sync_queue::SyncQueue;
 use crate::settings::{CloudPreferenceModel, Preference};
 use crate::workflows::workflow::{Argument, ArgumentType, Workflow};
-use crate::workflows::workflow_enum::{CloudWorkflowEnum, CloudWorkflowEnumModel, EnumVariants, WorkflowEnum};
+use crate::workflows::workflow_enum::{
+    CloudWorkflowEnum, CloudWorkflowEnumModel, EnumVariants, WorkflowEnum,
+};
 use crate::workflows::{CloudWorkflow, CloudWorkflowModel, WorkflowId};
 use crate::workspaces::user_profiles::{UserProfileWithUID, UserProfiles};
 

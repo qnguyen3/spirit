@@ -1,11 +1,20 @@
 use futures::Future;
 use warp_errors::report_error;
-use warpui::elements::{Align, Flex, Hoverable, MouseStateHandle, ParentElement, SavePosition, Shrinkable};
+use warpui::elements::{
+    Align, Flex, Hoverable, MouseStateHandle, ParentElement, SavePosition, Shrinkable,
+};
 use warpui::presenter::ChildView;
 use warpui::windowing::{StateEvent, WindowManager};
-use warpui::{AppContext, Element, Entity, FocusContext, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle};
+use warpui::{
+    AppContext, Element, Entity, FocusContext, SingletonEntity, TypedActionView, View, ViewContext,
+    ViewHandle,
+};
 
-use super::drive_helpers::{has_feature_gated_anonymous_user_reached_env_var_limit, has_feature_gated_anonymous_user_reached_notebook_limit, has_feature_gated_anonymous_user_reached_workflow_limit};
+use super::drive_helpers::{
+    has_feature_gated_anonymous_user_reached_env_var_limit,
+    has_feature_gated_anonymous_user_reached_notebook_limit,
+    has_feature_gated_anonymous_user_reached_workflow_limit,
+};
 use super::index::{DriveIndex, DriveIndexAction, DriveIndexEvent};
 use super::items::WarpDriveItemId;
 use super::{CloudObjectTypeAndId, DriveObjectType};

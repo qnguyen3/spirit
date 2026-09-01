@@ -7,7 +7,9 @@ use crate::cloud_object::model::view::CloudViewModel;
 use crate::cloud_object::{CloudObject, Owner, Revision, Space};
 use crate::drive::sharing::{ContentEditability, SharingAccessLevel};
 use crate::env_vars::CloudEnvVarCollection;
-use crate::server::cloud_objects::update_manager::{ObjectOperation, OperationSuccessType, UpdateManagerEvent};
+use crate::server::cloud_objects::update_manager::{
+    ObjectOperation, OperationSuccessType, UpdateManagerEvent,
+};
 use crate::server::ids::{ClientId, SyncId};
 use crate::{AppContext, CloudModel, UpdateManager};
 

@@ -1066,7 +1066,6 @@ fn normal_lifecycle_pipeline_emits_completion_and_prompt_side_effects_once() {
             .count(),
         1
     );
-
 }
 
 #[test]

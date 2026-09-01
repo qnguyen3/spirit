@@ -54,7 +54,12 @@ use command_corrections::{Command, Correction, HistoryItem, SessionMetadata, cor
 use enclose::enclose;
 pub use init::{CANCEL_COMMAND_KEYBINDING, init};
 use init::{INPUT_BOX_VISIBLE_KEY, TOGGLE_BLOCK_FILTER_KEYBINDING};
-use inline_banner::{AliasExpansionBanner, AliasExpansionBannerAction, OpenInWarpBannerState, VimModeBannerAction, render_alias_expansion_banner, render_inline_notifications_discovery_banner, render_inline_notifications_error_banner, render_open_in_warp_banner, render_shell_process_terminated_banner, render_vim_mode_banner};
+use inline_banner::{
+    AliasExpansionBanner, AliasExpansionBannerAction, OpenInWarpBannerState, VimModeBannerAction,
+    render_alias_expansion_banner, render_inline_notifications_discovery_banner,
+    render_inline_notifications_error_banner, render_open_in_warp_banner,
+    render_shell_process_terminated_banner, render_vim_mode_banner,
+};
 pub use inline_banner::{NotificationsDiscoveryBannerAction, NotificationsErrorBannerAction};
 use instant::Instant;
 use itertools::Itertools;
@@ -88,9 +93,19 @@ use warpui::assets::asset_cache::{AssetCache, AssetCacheEvent};
 use warpui::r#async::{SpawnedFutureHandle, Timer};
 use warpui::clipboard::{ClipboardContent, ImageData};
 use warpui::clipboard_utils::get_image_filepaths_from_paths;
-use warpui::elements::new_scrollable::{AxisConfiguration, ClippedAxisConfiguration, DualAxisConfig, NewScrollableElement, ScrollableAppearance, SingleAxisConfig};
+use warpui::elements::new_scrollable::{
+    AxisConfiguration, ClippedAxisConfiguration, DualAxisConfig, NewScrollableElement,
+    ScrollableAppearance, SingleAxisConfig,
+};
 use warpui::elements::shimmering_text::ShimmeringTextStateHandle;
-use warpui::elements::{Align, ChildAnchor, ChildView, Clipped, ClippedScrollStateHandle, ConstrainedBox, Container, CornerRadius, DispatchEventResult, DropTarget, DropTargetData, Empty, EventHandler, Fill, Flex, Hoverable, Icon, LiveElement, MouseStateHandle, NewScrollable, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, PositionedElementAnchor, PositionedElementOffsetBounds, Radius, Rect, SavePosition, ScrollStateHandle, Scrollable, ScrollableElement, ScrollbarWidth, Shrinkable, Stack, Text, get_rich_content_position_id};
+use warpui::elements::{
+    Align, ChildAnchor, ChildView, Clipped, ClippedScrollStateHandle, ConstrainedBox, Container,
+    CornerRadius, DispatchEventResult, DropTarget, DropTargetData, Empty, EventHandler, Fill, Flex,
+    Hoverable, Icon, LiveElement, MouseStateHandle, NewScrollable, OffsetPositioning, ParentAnchor,
+    ParentElement, ParentOffsetBounds, PositionedElementAnchor, PositionedElementOffsetBounds,
+    Radius, Rect, SavePosition, ScrollStateHandle, Scrollable, ScrollableElement, ScrollbarWidth,
+    Shrinkable, Stack, Text, get_rich_content_position_id,
+};
 use warpui::event::ModifiersState;
 use warpui::fonts::{Cache as FontCache, FamilyId, Properties};
 use warpui::geometry::vector::{Vector2F, vec2f};
@@ -102,7 +117,12 @@ use warpui::text::SelectionType;
 use warpui::ui_components::components::UiComponent;
 use warpui::units::{IntoLines, IntoPixels, Lines, Pixels};
 use warpui::windowing::WindowManager;
-use warpui::{AccessibilityData, AppContext, BlurContext, CursorInfo, Element, Entity, EntityId, EventContext, FocusContext, ModelAsRef, ModelHandle, SingletonEntity, Tracked, TypedActionView, View, ViewContext, ViewHandle, WeakModelHandle, WeakViewHandle, WindowId, end_trace_after_next, record_trace_event, windowing};
+use warpui::{
+    AccessibilityData, AppContext, BlurContext, CursorInfo, Element, Entity, EntityId,
+    EventContext, FocusContext, ModelAsRef, ModelHandle, SingletonEntity, Tracked, TypedActionView,
+    View, ViewContext, ViewHandle, WeakModelHandle, WeakViewHandle, WindowId, end_trace_after_next,
+    record_trace_event, windowing,
+};
 
 use self::link_detection::HighlightedLinkOption;
 pub use self::link_detection::{GridHighlightedLink, RichContentLink, RichContentLinkTooltipInfo};
@@ -110,7 +130,9 @@ use super::available_shells::AvailableShell;
 use super::block_list_viewport::FindMatchScrollLocation;
 use super::event::SshLoginStatus;
 use super::find::FindOptions;
-use super::model::block::{BlockSection, BlocklistEnvVarMetadata, LONG_RUNNING_COMMAND_DURATION_MS};
+use super::model::block::{
+    BlockSection, BlocklistEnvVarMetadata, LONG_RUNNING_COMMAND_DURATION_MS,
+};
 use super::model::completions::ShellCompletion;
 use super::model::rich_content::RichContentType;
 use super::model::selection::ExpandedSelectionRange;
@@ -122,12 +144,15 @@ use super::warpify::success_block::{WarpifySuccessBlock, WarpifySuccessBlockEven
 use super::warpify::trigger_state::{SshBlockState, WarpifyState};
 use super::{CLIAgent, GridType, cli_agent, should_right_click_paste};
 use crate::appearance::{Appearance, AppearanceEvent};
+use crate::auth::AuthStateProvider;
 use crate::auth::auth_manager::AuthManager;
 use crate::auth::auth_state::AuthState;
 use crate::auth::auth_view_modal::AuthViewVariant;
-use crate::auth::AuthStateProvider;
 use crate::autoupdate::{self, AutoupdateStage, get_update_state};
-use crate::banner::{Banner, BannerAction, BannerEvent, BannerState, BannerTextButton, BannerTextContent, DismissalType};
+use crate::banner::{
+    Banner, BannerAction, BannerEvent, BannerState, BannerTextButton, BannerTextContent,
+    DismissalType,
+};
 use crate::cloud_object::model::actions::ObjectActionType;
 use crate::cloud_object::{CloudObject, GenericStringObjectFormat, JsonObjectType};
 #[cfg(feature = "local_fs")]
@@ -143,24 +168,37 @@ use crate::context_chips::prompt_type::PromptType;
 use crate::drive::CloudObjectTypeAndId;
 use crate::drive::settings::WarpDriveSettings;
 use crate::editor::{AutosuggestionType, CrdtOperation, EditorAction};
-use crate::env_vars::env_var_collection_block::{EnvVarCollectionBlock, EnvVarCollectionBlockEvent};
+use crate::env_vars::env_var_collection_block::{
+    EnvVarCollectionBlock, EnvVarCollectionBlockEvent,
+};
 use crate::env_vars::{CloudEnvVarCollection, EnvVar, EnvVarExt};
 use crate::features::FeatureFlag;
 use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields};
 use crate::palette::PaletteSource;
 use crate::pane_group::focus_state::PaneFocusHandle;
-use crate::pane_group::{CodeReviewPanelArg, PaneConfiguration, PaneEvent, PaneGroupAction, SplitPaneState, TerminalViewResources};
+use crate::pane_group::{
+    CodeReviewPanelArg, PaneConfiguration, PaneEvent, PaneGroupAction, SplitPaneState,
+    TerminalViewResources,
+};
 use crate::persisted_workspace::PersistedWorkspace;
 use crate::persistence::{self, FinishedCommandMetadata};
 use crate::remote_server::manager::{RemoteServerManager, RemoteServerManagerEvent};
-use crate::resource_center::{Tip, TipHint, TipsCompleted, mark_feature_used_and_write_to_user_defaults};
+use crate::resource_center::{
+    Tip, TipHint, TipsCompleted, mark_feature_used_and_write_to_user_defaults,
+};
 use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::ids::{ObjectUid, SyncId};
 use crate::session_management::{CommandContext, SessionNavigationPromptElements};
 #[cfg(feature = "local_fs")]
 use crate::settings::import::model::ImportedConfigModel;
 use crate::settings::import::view::{SettingsImportEvent, SettingsImportView};
-use crate::settings::{AliasExpansionSettings, AppEditorSettings, BlockVisibilitySettings, BlockVisibilitySettingsChangedEvent, CodeSettings, DebugSettings, DebugSettingsChangedEvent, EmacsBindingsSettings, FontSettings, FontSettingsChangedEvent, InputModeSettings, InputModeSettingsChangedEvent, InputSettings, PaneSettings, PaneSettingsChangedEvent, SelectionSettings, VimBannerSettings};
+use crate::settings::{
+    AliasExpansionSettings, AppEditorSettings, BlockVisibilitySettings,
+    BlockVisibilitySettingsChangedEvent, CodeSettings, DebugSettings, DebugSettingsChangedEvent,
+    EmacsBindingsSettings, FontSettings, FontSettingsChangedEvent, InputModeSettings,
+    InputModeSettingsChangedEvent, InputSettings, PaneSettings, PaneSettingsChangedEvent,
+    SelectionSettings, VimBannerSettings,
+};
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
 use crate::settings_view::{SettingsSection, flags};
 use crate::shell_indicator::ShellIndicatorType;
@@ -168,21 +206,40 @@ use crate::terminal::alias::{AliasedCommand, check_for_alias_async};
 use crate::terminal::alt_screen::alt_screen_element::AltScreenElement;
 use crate::terminal::alt_screen::should_intercept_scroll;
 use crate::terminal::alt_screen_reporting::{AltScreenReporting, AltScreenReportingChangedEvent};
-use crate::terminal::block_filter::{BlockFilterEditor, BlockFilterEditorEvent, BlockFilterQuery, OpenedFromClick, filter_button_position_id};
-use crate::terminal::block_list_element::{BlockListElement, BlockListMenuSource, BlockListMouseStates, BlockSelectAction, BlockTextSelectAction, SnackbarHeaderState, ToolbeltButtonTooltip, render_hoverable_block_button};
-use crate::terminal::block_list_viewport::{AutoscrollBehavior, InputMode, OverhangingBlock, ScrollPosition, ScrollPositionUpdate, ScrollState, ViewportState};
+use crate::terminal::block_filter::{
+    BlockFilterEditor, BlockFilterEditorEvent, BlockFilterQuery, OpenedFromClick,
+    filter_button_position_id,
+};
+use crate::terminal::block_list_element::{
+    BlockListElement, BlockListMenuSource, BlockListMouseStates, BlockSelectAction,
+    BlockTextSelectAction, SnackbarHeaderState, ToolbeltButtonTooltip,
+    render_hoverable_block_button,
+};
+use crate::terminal::block_list_viewport::{
+    AutoscrollBehavior, InputMode, OverhangingBlock, ScrollPosition, ScrollPositionUpdate,
+    ScrollState, ViewportState,
+};
 use crate::terminal::bootstrap::init_subshell_command;
-use crate::terminal::cli_agent_sessions::event::{CLI_AGENT_NOTIFICATION_SENTINEL, CLIAgentEventType, parse_event};
+use crate::terminal::cli_agent_sessions::event::{
+    CLI_AGENT_NOTIFICATION_SENTINEL, CLIAgentEventType, parse_event,
+};
 use crate::terminal::cli_agent_sessions::signal::{AgentSignal, classify_generic_notification};
-use crate::terminal::cli_agent_sessions::{CLIAgentInputState, CLIAgentSession, CLIAgentSessionContext, CLIAgentSessionStatus, CLIAgentSessionsModel, CLIAgentSessionsModelEvent};
+use crate::terminal::cli_agent_sessions::{
+    CLIAgentInputState, CLIAgentSession, CLIAgentSessionContext, CLIAgentSessionStatus,
+    CLIAgentSessionsModel, CLIAgentSessionsModelEvent,
+};
 use crate::terminal::color::List;
-use crate::terminal::event::{AfterBlockCompletedEvent, BlockType, RemoteServerSetupState, TerminalMode, UserBlockCompleted};
+use crate::terminal::event::{
+    AfterBlockCompletedEvent, BlockType, RemoteServerSetupState, TerminalMode, UserBlockCompleted,
+};
 use crate::terminal::find::{BlockGridMatch, BlockListMatch, TerminalFindModel};
 use crate::terminal::general_settings::GeneralSettings;
 use crate::terminal::grid_size_util::grid_cell_dimensions;
 use crate::terminal::input::decorations::InputBackgroundJobOptions;
 use crate::terminal::input::inline_menu::InlineMenuPositioner;
-use crate::terminal::input::{CommandExecutionSource, InputAction, InputState, MenuPositioning, MenuPositioningProvider};
+use crate::terminal::input::{
+    CommandExecutionSource, InputAction, InputState, MenuPositioning, MenuPositioningProvider,
+};
 use crate::terminal::ligature_settings::{LigatureSettings, should_use_ligature_rendering};
 use crate::terminal::links::should_directly_open_link;
 #[cfg(feature = "local_tty")]
@@ -193,39 +250,64 @@ use crate::terminal::local_tty::shell::ShellStarter;
 #[cfg(all(windows, feature = "local_tty"))]
 use crate::terminal::local_tty::windows::get_user_and_system_env_variable;
 use crate::terminal::model::ansi::{ClearMode, Handler};
-use crate::terminal::model::block::{Block, BlockId, BlockMetadata, LONG_RUNNING_BOTTOM_PADDING_LINES};
+use crate::terminal::model::block::{
+    Block, BlockId, BlockMetadata, LONG_RUNNING_BOTTOM_PADDING_LINES,
+};
 use crate::terminal::model::blockgrid::BlockGrid;
 use crate::terminal::model::blocks::{BlockList, BlockListPoint, Gap};
-use crate::terminal::model::escape_sequences::{self, C1, EscCodes, ToEscapeSequence, alt_screen_scroll_to_pty_bytes};
+use crate::terminal::model::escape_sequences::{
+    self, C1, EscCodes, ToEscapeSequence, alt_screen_scroll_to_pty_bytes,
+};
 use crate::terminal::model::grid::grid_handler::{FragmentBoundary, TermMode};
 use crate::terminal::model::index::{Point, Side};
 use crate::terminal::model::mouse::MouseState;
 use crate::terminal::model::selection::{SelectAction, SelectionDirection};
 use crate::terminal::model::session::active_session::ActiveSession;
-use crate::terminal::model::session::{BootstrapSessionType, Session, SessionId, SessionType, Sessions, SessionsEvent};
-use crate::terminal::model::terminal_model::{BlockIndex, BlockSelectionCardinality, SelectedBlocks, TerminalInputState, WithinModel};
+use crate::terminal::model::session::{
+    BootstrapSessionType, Session, SessionId, SessionType, Sessions, SessionsEvent,
+};
+use crate::terminal::model::terminal_model::{
+    BlockIndex, BlockSelectionCardinality, SelectedBlocks, TerminalInputState, WithinModel,
+};
 use crate::terminal::model::{ObfuscateSecrets, RespectObfuscatedSecrets, SecretHandle};
 use crate::terminal::model_events::{AnsiHandlerEvent, ModelEvent, ModelEventDispatcher};
 use crate::terminal::recorder::PtyRecorder;
 use crate::terminal::safe_mode_settings::get_secret_obfuscation_mode;
-use crate::terminal::session_settings::{DEFAULT_THRESHOLD_FOR_LONG_RUNNING_NOTIFICATION, NotificationsMode, NotificationsSettings, SessionSettings, SessionSettingsChangedEvent};
+use crate::terminal::session_settings::{
+    DEFAULT_THRESHOLD_FOR_LONG_RUNNING_NOTIFICATION, NotificationsMode, NotificationsSettings,
+    SessionSettings, SessionSettingsChangedEvent,
+};
 use crate::terminal::settings::{TerminalSettings, TerminalSettingsChangedEvent};
 use crate::terminal::view::block_onboarding::onboarding_prompt_block::OnboardingPromptBlock;
-use crate::terminal::view::inline_banner::{AliasExpansionBannerState, NotificationsDiscoveryBannerState, NotificationsErrorBannerState, VimModeBannerState};
+use crate::terminal::view::inline_banner::{
+    AliasExpansionBannerState, NotificationsDiscoveryBannerState, NotificationsErrorBannerState,
+    VimModeBannerState,
+};
 pub use crate::terminal::view::rich_content::{
     RichContent, RichContentInsertionPosition, RichContentMetadata,
 };
 use crate::terminal::view::ssh_file_upload::FileUploadId;
-use crate::terminal::view::ssh_remote_server_choice_view::{SshRemoteServerChoiceView, SshRemoteServerChoiceViewEvent};
-use crate::terminal::view::ssh_remote_server_failed_banner::{SshRemoteServerFailedBanner, SshRemoteServerFailedBannerEvent};
-use crate::terminal::view::ssh_tmux_deprecation_banner::{SshTmuxDeprecationBanner, SshTmuxDeprecationBannerEvent};
+use crate::terminal::view::ssh_remote_server_choice_view::{
+    SshRemoteServerChoiceView, SshRemoteServerChoiceViewEvent,
+};
+use crate::terminal::view::ssh_remote_server_failed_banner::{
+    SshRemoteServerFailedBanner, SshRemoteServerFailedBannerEvent,
+};
+use crate::terminal::view::ssh_tmux_deprecation_banner::{
+    SshTmuxDeprecationBanner, SshTmuxDeprecationBannerEvent,
+};
 use crate::terminal::view::zero_state_block::TerminalViewZeroStateBlock;
 use crate::terminal::warpify::SubshellSource;
 use crate::terminal::warpify::render::render_subshell_separator;
 use crate::terminal::warpify::settings::WarpifySettings;
 use crate::terminal::waterfall_gap_element::WaterfallGapElement;
 use crate::terminal::writeable_pty::{PtyIntent, PtyIntentEvent, TerminalSurface};
-use crate::terminal::{AudibleBell, BlockListSettings, BlockListSettingsChangedEvent, CellSizeAndWindowPadding, History, HistoryEntry, ShellHost, ShellLaunchData, SizeInfo, SizeUpdate, SizeUpdateReason, color, element_size_at_last_frame, height_in_range_approx, heights_approx_eq, heights_approx_gt, prompt};
+use crate::terminal::{
+    AudibleBell, BlockListSettings, BlockListSettingsChangedEvent, CellSizeAndWindowPadding,
+    History, HistoryEntry, ShellHost, ShellLaunchData, SizeInfo, SizeUpdate, SizeUpdateReason,
+    color, element_size_at_last_frame, height_in_range_approx, heights_approx_eq,
+    heights_approx_gt, prompt,
+};
 use crate::terminal::{
     TerminalModel,
     block_list_element::BlockHoverAction,
@@ -239,13 +321,18 @@ use crate::themes::theme::WarpTheme;
 use crate::throttle::throttle;
 use crate::ui_components::icons;
 use crate::ui_components::shimmering_loading_text::shimmering_warp_loading_text;
-use crate::util::bindings::{CustomAction, custom_tag_to_keystroke, keybinding_name_to_display_string, keybinding_name_to_keystroke, set_custom_keybinding};
+use crate::util::bindings::{
+    CustomAction, custom_tag_to_keystroke, keybinding_name_to_display_string,
+    keybinding_name_to_keystroke, set_custom_keybinding,
+};
 use crate::util::clipboard::clipboard_content_with_escaped_paths;
 use crate::util::color::darken;
 #[cfg(feature = "local_fs")]
 use crate::util::file::external_editor::{EditorSettings, settings::EditorLayout};
 #[cfg(feature = "local_fs")]
-use crate::util::openable_file_type::{FileTarget, renders_in_warp_notebook_viewer, resolve_file_target};
+use crate::util::openable_file_type::{
+    FileTarget, renders_in_warp_notebook_viewer, resolve_file_target,
+};
 use crate::util::repo_detection::{RepoDetectionSessionType, detect_possible_git_repo};
 use crate::view_components::find::{Event as FindEvent, Find, FindDirection, FindWithinBlockState};
 use crate::view_components::{DismissibleToast, ToastFlavor};
@@ -3181,7 +3268,7 @@ impl TerminalView {
         self.sessions
             .as_ref(ctx)
             .get(session_id)
-                .is_some_and(|session| session.is_local())
+            .is_some_and(|session| session.is_local())
     }
 
     /// Returns whether or not the active session is a local session.  Returns
@@ -8586,7 +8673,6 @@ impl TerminalView {
                 .with_disabled(is_editor_disabled)
                 .into_item(),
         );
-
 
         // Section 2: AI Command Search, Ask Warp AI
         items.extend([

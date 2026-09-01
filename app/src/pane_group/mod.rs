@@ -23,13 +23,23 @@ use warp_terminal::focus_env::add_session_focus_env_vars;
 use warp_util::path::LineAndColumnArg;
 use warp_util::path::convert_wsl_to_windows_host_path;
 use warp_util::remote_path::RemotePath;
-use warpui::elements::{ChildView, CrossAxisAlignment, DispatchEventResult, Element, EventHandler, Flex, MainAxisSize, ParentElement, Shrinkable, Stack};
+use warpui::elements::{
+    ChildView, CrossAxisAlignment, DispatchEventResult, Element, EventHandler, Flex, MainAxisSize,
+    ParentElement, Shrinkable, Stack,
+};
 use warpui::keymap::{Context, EditableBinding, FixedBinding};
 use warpui::notification::NotificationSendError;
 use warpui::windowing::WindowManager;
-use warpui::{AppContext, Entity, EntityId, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle, WindowId};
+use warpui::{
+    AppContext, Entity, EntityId, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
+    ViewHandle, WindowId,
+};
 
-use crate::app_state::{self, BranchSnapshot, CodePaneSnapShot, EnvVarCollectionPaneSnapshot, LeafContents, LeafSnapshot, NotebookPaneSnapshot, PaneNodeSnapshot, PaneUuid, SettingsPaneSnapshot, TerminalPaneSnapshot, WorkflowPaneSnapshot};
+use crate::app_state::{
+    self, BranchSnapshot, CodePaneSnapShot, EnvVarCollectionPaneSnapshot, LeafContents,
+    LeafSnapshot, NotebookPaneSnapshot, PaneNodeSnapshot, PaneUuid, SettingsPaneSnapshot,
+    TerminalPaneSnapshot, WorkflowPaneSnapshot,
+};
 use crate::appearance::Appearance;
 use crate::banner::{Banner, BannerEvent, BannerState, BannerTextContent, DismissalType};
 use crate::channel::{Channel, ChannelState};
@@ -56,7 +66,9 @@ use crate::pane_group::pane::ActionOrigin;
 use crate::pane_group::pane::get_started_pane::GetStartedPane;
 use crate::persistence::ModelEvent;
 use crate::quit_warning::UnsavedStateSummary;
-use crate::resource_center::{Tip, TipAction, TipsCompleted, mark_feature_used_and_write_to_user_defaults};
+use crate::resource_center::{
+    Tip, TipAction, TipsCompleted, mark_feature_used_and_write_to_user_defaults,
+};
 #[cfg(target_family = "wasm")]
 use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::ids::{ObjectUid, SyncId};
@@ -71,14 +83,19 @@ use crate::terminal::general_settings::{GeneralSettings, GeneralSettingsChangedE
 #[cfg(feature = "local_tty")]
 use crate::terminal::local_tty::TerminalManager as LocalTtyTerminalManager;
 #[cfg(all(feature = "local_tty", not(feature = "remote_tty")))]
-use crate::terminal::local_tty::{TerminalViewSurfaceConfig, create_terminal_view_surface, terminal_view_restored_blocks};
+use crate::terminal::local_tty::{
+    TerminalViewSurfaceConfig, create_terminal_view_surface, terminal_view_restored_blocks,
+};
 use crate::terminal::model::block::SerializedBlock;
 use crate::terminal::model::session::Session;
 #[cfg(feature = "remote_tty")]
 use crate::terminal::remote_tty::TerminalManager as RemoteTtyTerminalManager;
 use crate::terminal::session_settings::{NewSessionSource, SessionSettings};
 use crate::terminal::view::ssh_file_upload::FileUploadId;
-use crate::terminal::view::{AgentInboxEntry, AgentNotification, BlockNotification, ExecuteCommandEvent, LeftPanelTargetView, SyncEvent, TerminalViewState};
+use crate::terminal::view::{
+    AgentInboxEntry, AgentNotification, BlockNotification, ExecuteCommandEvent,
+    LeftPanelTargetView, SyncEvent, TerminalViewState,
+};
 use crate::terminal::{ShellLaunchData, TerminalManager, TerminalModel, TerminalView};
 use crate::undo_close::{UndoCloseStack, UndoCloseStackEvent};
 #[cfg(target_family = "wasm")]
@@ -3756,12 +3773,8 @@ impl PaneGroup {
         startup_directory: Option<PathBuf>,
         ctx: &mut ViewContext<Self>,
     ) -> TerminalPaneId {
-        let pane_data = self.create_terminal_pane_data(
-            startup_directory,
-            HashMap::new(),
-            chosen_shell,
-            ctx,
-        );
+        let pane_data =
+            self.create_terminal_pane_data(startup_directory, HashMap::new(), chosen_shell, ctx);
         let new_pane_id = pane_data.terminal_pane_id();
 
         let _ = self.add_pane(direction, base_pane_id, Box::new(pane_data), true, ctx);

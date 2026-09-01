@@ -2,8 +2,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use warp_core::features::FeatureFlag;
-use warpui::elements::{ChildView, Clipped, Container, CrossAxisAlignment, Element, Flex, MainAxisAlignment, MainAxisSize, ParentElement, Wrap};
-use warpui::{AppContext, Entity, EntityId, FocusContext, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle};
+use warpui::elements::{
+    ChildView, Clipped, Container, CrossAxisAlignment, Element, Flex, MainAxisAlignment,
+    MainAxisSize, ParentElement, Wrap,
+};
+use warpui::{
+    AppContext, Entity, EntityId, FocusContext, ModelHandle, SingletonEntity, TypedActionView,
+    View, ViewContext, ViewHandle,
+};
 
 use super::display_chip::{DisplayChip, DisplayChipConfig, PromptDisplayChipEvent};
 use super::prompt_type::PromptType;

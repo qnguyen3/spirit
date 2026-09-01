@@ -615,8 +615,7 @@ impl AuthViewBody {
 
         if matches!(
             self.variant,
-            AuthViewVariant::RequireLoginCloseable
-                | AuthViewVariant::HitDriveObjectLimitCloseable
+            AuthViewVariant::RequireLoginCloseable | AuthViewVariant::HitDriveObjectLimitCloseable
         ) {
             let close_button = ui_builder
                 .close_button(

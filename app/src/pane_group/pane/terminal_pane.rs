@@ -3,9 +3,14 @@ use std::sync::mpsc::SyncSender;
 
 use warp_core::execution_mode::AppExecutionMode;
 use warp_errors::report_error;
-use warpui::{AppContext, EntityId, ModelHandle, SingletonEntity, ViewContext, ViewHandle, WindowId};
+use warpui::{
+    AppContext, EntityId, ModelHandle, SingletonEntity, ViewContext, ViewHandle, WindowId,
+};
 
-use super::{DetachType, PaneConfiguration, PaneContent, PaneId, PaneStackEvent, PaneView, ShareableLink, ShareableLinkError, TerminalPaneId};
+use super::{
+    DetachType, PaneConfiguration, PaneContent, PaneId, PaneStackEvent, PaneView, ShareableLink,
+    ShareableLinkError, TerminalPaneId,
+};
 use crate::app_state::{LeafContents, TerminalPaneSnapshot};
 use crate::code::buffer_location::LocalOrRemotePath;
 #[cfg(feature = "local_fs")]
@@ -180,7 +185,6 @@ impl PaneContent for TerminalPane {
 
             group.send_sync_event_to_session(terminal_pane_id, &event, ctx);
         }
-
     }
 
     fn detach(

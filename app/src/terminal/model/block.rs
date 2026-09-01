@@ -41,10 +41,15 @@ use crate::context_chips::prompt_snapshot::PromptSnapshot;
 use crate::server::ids::SyncId;
 use crate::terminal::block_filter::BlockFilterQuery;
 use crate::terminal::block_list_element::GridType;
-use crate::terminal::event::{BlockCompletedEvent, BlockMetadataReceivedEvent, BlockType, BlockWorkingDirectoryUpdatedEvent, Event, UserBlockCompleted};
+use crate::terminal::event::{
+    BlockCompletedEvent, BlockMetadataReceivedEvent, BlockType, BlockWorkingDirectoryUpdatedEvent,
+    Event, UserBlockCompleted,
+};
 use crate::terminal::event_listener::ChannelEventListener;
 use crate::terminal::model::GridStorage;
-use crate::terminal::model::ansi::{self, Handler, PrecmdValue, PreexecValue, Processor, PromptMetadata};
+use crate::terminal::model::ansi::{
+    self, Handler, PrecmdValue, PreexecValue, Processor, PromptMetadata,
+};
 use crate::terminal::model::blockgrid::BlockGrid;
 use crate::terminal::model::blocks::BlockList;
 use crate::terminal::model::grid::grid_handler::TermMode;

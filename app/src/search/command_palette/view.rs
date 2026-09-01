@@ -5,12 +5,19 @@ use std::sync::Arc;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use warp_util::path::LineAndColumnArg;
-use warpui::elements::{Align, Border, ChildView, Clipped, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox, Container, CornerRadius, Dismiss, DispatchEventResult, Empty, EventHandler, Fill, Flex, ParentElement, Radius, SavePosition, Shrinkable};
+use warpui::elements::{
+    Align, Border, ChildView, Clipped, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox,
+    Container, CornerRadius, Dismiss, DispatchEventResult, Empty, EventHandler, Fill, Flex,
+    ParentElement, Radius, SavePosition, Shrinkable,
+};
 use warpui::event::KeyState;
 use warpui::keymap::BindingId;
 use warpui::platform::keyboard::KeyCode;
 use warpui::units::{IntoPixels, Pixels};
-use warpui::{AppContext, Element, Entity, EntityId, FocusContext, ModelHandle, SingletonEntity, TypedActionView, ViewContext, ViewHandle, WindowId};
+use warpui::{
+    AppContext, Element, Entity, EntityId, FocusContext, ModelHandle, SingletonEntity,
+    TypedActionView, ViewContext, ViewHandle, WindowId,
+};
 
 use super::super::palette_styles as styles;
 use super::CommandPaletteMixer;
@@ -28,7 +35,9 @@ use crate::search::command_palette::mixer::CommandPaletteItemAction;
 use crate::search::command_palette::zero_state::{self, Event as ZeroStateEvent, ZeroState};
 use crate::search::data_source::QueryResult;
 use crate::search::result_renderer::QueryResultRenderer;
-use crate::search::search_bar::{SearchBar, SearchBarEvent, SearchBarState, SearchResultOrdering, SelectionUpdate};
+use crate::search::search_bar::{
+    SearchBar, SearchBarEvent, SearchBarState, SearchResultOrdering, SelectionUpdate,
+};
 use crate::server::ids::SyncId;
 use crate::session_management::SessionSource;
 use crate::settings::CtrlTabBehavior;
@@ -121,7 +130,6 @@ pub struct View {
 
     /// The current navigation mode.
     navigation_mode: NavigationMode,
-
 }
 
 impl Entity for View {

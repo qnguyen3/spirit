@@ -32,7 +32,10 @@ use url::Url;
 use warp_util::remote_path::RemotePath;
 use warpui::elements::{DispatchEventResult, EventHandler, MouseInBehavior};
 use warpui::presenter::ChildView;
-use warpui::{Action, AppContext, Element, Entity, EntityId, ModelContext, ModelHandle, SingletonEntity, View, ViewContext, ViewHandle, WeakModelHandle};
+use warpui::{
+    Action, AppContext, Element, Entity, EntityId, ModelContext, ModelHandle, SingletonEntity,
+    View, ViewContext, ViewHandle, WeakModelHandle,
+};
 
 pub use self::view::{PaneHeaderAction, PaneHeaderCustomAction, PaneView, PaneViewEvent};
 use super::{ActivationReason, LeafContents, PaneGroup, PaneGroupAction};

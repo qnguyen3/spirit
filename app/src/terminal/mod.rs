@@ -171,7 +171,6 @@ pub enum SizeUpdateReason {
     /// Updated after the temrinal has been laid out, so some of the element
     /// sizes that drive terminal size may have changed.
     AfterLayout,
-
 }
 
 /// Encapsulates info for updating the size of the terminal.

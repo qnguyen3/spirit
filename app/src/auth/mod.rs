@@ -40,7 +40,9 @@ use crate::terminal::general_settings::GeneralSettings;
 use crate::workflows::manager::WorkflowManager;
 use crate::workspace::{Workspace, WorkspaceAction};
 use crate::workspaces::update_manager::TeamUpdateManager;
-use crate::{GlobalResourceHandlesProvider, focus_running_window_and_show_native_modal, persistence};
+use crate::{
+    GlobalResourceHandlesProvider, focus_running_window_and_show_native_modal, persistence,
+};
 
 pub fn init(app: &mut AppContext) {
     auth_view_modal::init(app);
@@ -80,9 +82,7 @@ pub fn maybe_log_out(app: &mut AppContext) {
         .show_warning_before_quitting
         .value();
     if show_warning_before_log_out
-        && (num_long_running_commands > 0
-            || num_unsaved_objects > 0
-            || num_unsaved_files > 0)
+        && (num_long_running_commands > 0 || num_unsaved_objects > 0 || num_unsaved_files > 0)
     {
         let mut button_data = vec![ModalButton::for_app("Yes, log out", |ctx| {
             log_out_and_open_web(ctx);

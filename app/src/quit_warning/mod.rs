@@ -4,7 +4,9 @@ use itertools::Itertools;
 use settings::ToggleableSetting as _;
 use warp_errors::report_if_error;
 use warpui::modals::{AlertDialogWithCallbacks, AppModalCallback, ModalButton};
-use warpui::{AppContext, EntityId, SingletonEntity, ViewContext, ViewHandle, WeakViewHandle, WindowId};
+use warpui::{
+    AppContext, EntityId, SingletonEntity, ViewContext, ViewHandle, WeakViewHandle, WindowId,
+};
 
 use crate::code::editor_management::{CodeEditorStatus, CodeEditorSummary};
 use crate::code::view::CodeView;
@@ -231,7 +233,6 @@ impl QuitScope<'_> {
                 .collect(),
         }
     }
-
 }
 
 impl UnsavedStateSummary<'static> {

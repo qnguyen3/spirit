@@ -38,7 +38,11 @@ use crate::terminal::event::Event::{AfterBlockCompleted, TerminalClear};
 use crate::terminal::event::{AfterBlockCompletedEvent, BlockType, Event as TerminalEvent};
 use crate::terminal::event_listener::ChannelEventListener;
 use crate::terminal::model::ansi;
-use crate::terminal::model::ansi::{Attr, BootstrappedValue, CharsetIndex, ClearMode, CommandFinishedValue, CompletionMetadata, CursorShape, CursorStyle, LineClearMode, Mode, PrecmdValue, PreexecValue, Processor, PromptMetadata, StandardCharset, TabulationClearMode};
+use crate::terminal::model::ansi::{
+    Attr, BootstrappedValue, CharsetIndex, ClearMode, CommandFinishedValue, CompletionMetadata,
+    CursorShape, CursorStyle, LineClearMode, Mode, PrecmdValue, PreexecValue, Processor,
+    PromptMetadata, StandardCharset, TabulationClearMode,
+};
 use crate::terminal::model::block::{Block, SerializedBlock, TranscriptScope};
 use crate::terminal::model::blockgrid::BlockGrid;
 use crate::terminal::model::bootstrap::BootstrapStage;

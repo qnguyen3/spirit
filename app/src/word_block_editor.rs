@@ -11,10 +11,7 @@ use warpui::{
 };
 
 use crate::appearance::Appearance;
-use crate::editor::{
-    EditorView, Event, InteractionState, SingleLineEditorOptions,
-    TextOptions,
-};
+use crate::editor::{EditorView, Event, InteractionState, SingleLineEditorOptions, TextOptions};
 use crate::themes::theme::Fill;
 
 pub struct WordBlockEditorView {

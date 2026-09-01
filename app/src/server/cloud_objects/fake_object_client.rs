@@ -21,13 +21,19 @@ use anyhow::{Result, anyhow};
 use async_channel::Sender;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use cloud_object_client::ObjectPermissionUpdateResult;
-use cloud_object_client::ObjectPermissionsUpdateData;
+use cloud_object_client::{ObjectPermissionUpdateResult, ObjectPermissionsUpdateData};
 use warp_graphql::object_permissions::AccessLevel;
 
 use crate::cloud_object::model::actions::{ObjectActionHistory, ObjectActionType};
 use crate::cloud_object::model::generic_string_model::GenericStringObjectId;
-use crate::cloud_object::{BulkCreateCloudObjectResult, BulkCreateGenericStringObjectsRequest, CreateCloudObjectResult, CreateObjectRequest, CreatedCloudObject, GenericStringObjectFormat, GenericStringObjectUniqueKey, JsonObjectType, ObjectDeleteResult, ObjectIdType, ObjectMetadataUpdateResult, ObjectType, ObjectsToUpdate, Owner, Revision, RevisionAndLastEditor, ServerFolder, ServerMetadata, ServerNotebook, ServerObject, ServerPermissions, ServerPreference, ServerWorkflow, UpdateCloudObjectResult};
+use crate::cloud_object::{
+    BulkCreateCloudObjectResult, BulkCreateGenericStringObjectsRequest, CreateCloudObjectResult,
+    CreateObjectRequest, CreatedCloudObject, GenericStringObjectFormat,
+    GenericStringObjectUniqueKey, JsonObjectType, ObjectDeleteResult, ObjectIdType,
+    ObjectMetadataUpdateResult, ObjectType, ObjectsToUpdate, Owner, Revision,
+    RevisionAndLastEditor, ServerFolder, ServerMetadata, ServerNotebook, ServerObject,
+    ServerPermissions, ServerPreference, ServerWorkflow, UpdateCloudObjectResult,
+};
 use crate::drive::folders::FolderId;
 use crate::drive::sharing::SharingAccessLevel;
 use crate::notebooks::NotebookId;

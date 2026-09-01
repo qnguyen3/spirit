@@ -113,7 +113,9 @@ use code_review::GlobalCodeReviewModel;
 use code_review::git_repo_model::GitRepoModels;
 use quit_warning::UnsavedStateSummary;
 #[cfg(feature = "local_fs")]
-use repo_metadata::{RepoMetadataModel, repositories::DetectedRepositories, watcher::DirectoryWatcher};
+use repo_metadata::{
+    RepoMetadataModel, repositories::DetectedRepositories, watcher::DirectoryWatcher,
+};
 use server::network_log_pane_manager::NetworkLogPaneManager;
 #[cfg(feature = "local_fs")]
 use settings::import::model::ImportedConfigModel;
@@ -203,7 +205,9 @@ use crate::palette::PaletteMode;
 use crate::persisted_workspace::PersistedWorkspace;
 use crate::persistence::PersistenceWriter;
 use crate::projects::registry::ProjectRegistryModel;
-use crate::root_view::{OpenFromRestoredArg, OpenPath, quake_mode_window_id, quake_mode_window_is_open};
+use crate::root_view::{
+    OpenFromRestoredArg, OpenPath, quake_mode_window_id, quake_mode_window_is_open,
+};
 use crate::server::cloud_objects::listener::Listener;
 use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::sync_queue::{QueueItem, SyncQueue};
@@ -226,7 +230,9 @@ use crate::vim_registers::VimRegisters;
 use crate::warp_managed_paths_watcher::{WarpManagedPathsWatcher, ensure_warp_watch_roots_exist};
 use crate::workflows::aliases::WorkflowAliases;
 use crate::workflows::local_workflows::LocalWorkflows;
-use crate::workspace::{ActiveSession, NotificationOrigin, PaneViewLocator, ToastStack, Workspace, WorkspaceAction};
+use crate::workspace::{
+    ActiveSession, NotificationOrigin, PaneViewLocator, ToastStack, Workspace, WorkspaceAction,
+};
 use crate::workspaces::team_tester::TeamTesterStatus;
 use crate::workspaces::update_manager::TeamUpdateManager;
 use crate::workspaces::user_profiles::UserProfiles;

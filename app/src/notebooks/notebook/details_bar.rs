@@ -1,7 +1,10 @@
 //! Components for the notebook header.
 
 use warp_core::features::FeatureFlag;
-use warpui::elements::{Container, CrossAxisAlignment, Flex, Highlight, MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Shrinkable};
+use warpui::elements::{
+    Container, CrossAxisAlignment, Flex, Highlight, MainAxisAlignment, MainAxisSize,
+    MouseStateHandle, ParentElement, Shrinkable,
+};
 use warpui::platform::Cursor;
 use warpui::ui_components::components::{UiComponent, UiComponentStyles};
 use warpui::{AppContext, Element, SingletonEntity};

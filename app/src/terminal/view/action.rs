@@ -10,11 +10,17 @@ use warpui::event::ModifiersState;
 use warpui::units::Lines;
 
 use super::inline_banner::{OpenInWarpBannerAction, VimModeBannerAction};
-use super::{AliasExpansionBannerAction, ContextMenuAction, GridHighlightedLink, InputContextMenuAction, NotificationsDiscoveryBannerAction, NotificationsErrorBannerAction, RichContentLink, TerminalEditor};
+use super::{
+    AliasExpansionBannerAction, ContextMenuAction, GridHighlightedLink, InputContextMenuAction,
+    NotificationsDiscoveryBannerAction, NotificationsErrorBannerAction, RichContentLink,
+    TerminalEditor,
+};
 use crate::palette::PaletteSource;
 use crate::server::ids::SyncId;
 use crate::terminal::available_shells::AvailableShell;
-use crate::terminal::block_list_element::{BlockHoverAction, BlockListMenuSource, BlockSelectAction, BlockTextSelectAction};
+use crate::terminal::block_list_element::{
+    BlockHoverAction, BlockListMenuSource, BlockSelectAction, BlockTextSelectAction,
+};
 use crate::terminal::block_list_viewport::OverhangingBlock;
 use crate::terminal::model::SecretHandle;
 use crate::terminal::model::completions::ShellCompletion;

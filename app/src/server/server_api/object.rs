@@ -6,56 +6,142 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 // #[cfg(any(test, feature = "test-util"))]
 // pub use cloud_object_client::MockObjectClient;
-use cloud_object_client::{GetCloudObjectResponse, InitialLoadResponse, ObjectActionHistory, ObjectActionType, ObjectDeleteResult, ObjectMetadataUpdateResult, ObjectPermissionUpdateResult, ObjectPermissionsUpdateData, ObjectUpdateMessage};
+use cloud_object_client::{
+    GetCloudObjectResponse, InitialLoadResponse, ObjectActionHistory, ObjectActionType,
+    ObjectDeleteResult, ObjectMetadataUpdateResult, ObjectPermissionUpdateResult,
+    ObjectPermissionsUpdateData, ObjectUpdateMessage,
+};
 pub use cloud_object_client::{GuestIdentifier, ObjectClient};
 use cloud_object_models::JsonSerializer;
 use cynic::{MutationBuilder, QueryBuilder, SubscriptionBuilder};
 use warp_errors::report_error;
 use warp_graphql::error::UserFacingErrorInterface;
 use warp_graphql::generic_string_object::GenericStringObjectInput;
-use warp_graphql::mutations::add_object_guests::{AddObjectGuests, AddObjectGuestsInput, AddObjectGuestsResult, AddObjectGuestsVariables};
-use warp_graphql::mutations::bulk_create_objects::{BulkCreateGenericStringObjectsInput, BulkCreateObjects, BulkCreateObjectsInput, BulkCreateObjectsResult, BulkCreateObjectsVariables};
-use warp_graphql::mutations::create_folder::{CreateFolder, CreateFolderInput, CreateFolderResult, CreateFolderVariables};
-use warp_graphql::mutations::create_generic_string_object::{CreateGenericStringObject, CreateGenericStringObjectInput, CreateGenericStringObjectResult, CreateGenericStringObjectVariables};
-use warp_graphql::mutations::create_notebook::{CreateNotebook, CreateNotebookInput, CreateNotebookResult, CreateNotebookVariables};
-use warp_graphql::mutations::create_workflow::{CreateWorkflow, CreateWorkflowInput, CreateWorkflowResult, CreateWorkflowVariables};
-use warp_graphql::mutations::delete_object::{DeleteObject, DeleteObjectInput, DeleteObjectResult, DeleteObjectVariables};
-use warp_graphql::mutations::empty_trash::{EmptyTrash, EmptyTrashInput, EmptyTrashResult, EmptyTrashVariables};
-use warp_graphql::mutations::give_up_notebook_edit_access::{GiveUpNotebookEditAccess, GiveUpNotebookEditAccessVariables};
-use warp_graphql::mutations::grab_notebook_edit_access::{GrabNotebookEditAccess, GrabNotebookEditAccessVariables};
-use warp_graphql::mutations::leave_object::{LeaveObject, LeaveObjectInput, LeaveObjectResult, LeaveObjectVariables};
-use warp_graphql::mutations::move_object::{MoveObject, MoveObjectInput, MoveObjectResult, MoveObjectVariables};
-use warp_graphql::mutations::record_object_action::{RecordObjectAction, RecordObjectActionInput, RecordObjectActionResult, RecordObjectActionVariables};
-use warp_graphql::mutations::remove_object_guest::{RemoveObjectGuest, RemoveObjectGuestInput, RemoveObjectGuestResult, RemoveObjectGuestVariables};
-use warp_graphql::mutations::remove_object_link_permissions::{RemoveObjectLinkPermissions, RemoveObjectLinkPermissionsInput, RemoveObjectLinkPermissionsResult, RemoveObjectLinkPermissionsVariables};
-use warp_graphql::mutations::set_object_link_permissions::{SetObjectLinkPermissions, SetObjectLinkPermissionsInput, SetObjectLinkPermissionsResult, SetObjectLinkPermissionsVariables};
-use warp_graphql::mutations::transfer_generic_string_object_owner::{TransferGenericStringObjectOwner, TransferGenericStringObjectOwnerInput, TransferGenericStringObjectOwnerResult, TransferGenericStringObjectOwnerVariables};
-use warp_graphql::mutations::transfer_notebook_owner::{TransferNotebookOwner, TransferNotebookOwnerInput, TransferNotebookOwnerResult, TransferNotebookOwnerVariables};
-use warp_graphql::mutations::transfer_workflow_owner::{TransferWorkflowOwner, TransferWorkflowOwnerInput, TransferWorkflowOwnerResult, TransferWorkflowOwnerVariables};
-use warp_graphql::mutations::trash_object::{TrashObject, TrashObjectInput, TrashObjectResult, TrashObjectVariables};
-use warp_graphql::mutations::untrash_object::{UntrashObject, UntrashObjectInput, UntrashObjectVariables};
-use warp_graphql::mutations::update_folder::{UpdateFolder, UpdateFolderInput, UpdateFolderResult, UpdateFolderVariables};
-use warp_graphql::mutations::update_generic_string_object::{UpdateGenericStringObject, UpdateGenericStringObjectInput, UpdateGenericStringObjectVariables};
-use warp_graphql::mutations::update_notebook::{NotebookUpdate, UpdateNotebook, UpdateNotebookInput, UpdateNotebookResult, UpdateNotebookVariables};
-use warp_graphql::mutations::update_object_guests::{UpdateObjectGuests, UpdateObjectGuestsInput, UpdateObjectGuestsResult, UpdateObjectGuestsVariables};
-use warp_graphql::mutations::update_workflow::{UpdateWorkflow, UpdateWorkflowInput, UpdateWorkflowResult, UpdateWorkflowVariables, WorkflowUpdate};
+use warp_graphql::mutations::add_object_guests::{
+    AddObjectGuests, AddObjectGuestsInput, AddObjectGuestsResult, AddObjectGuestsVariables,
+};
+use warp_graphql::mutations::bulk_create_objects::{
+    BulkCreateGenericStringObjectsInput, BulkCreateObjects, BulkCreateObjectsInput,
+    BulkCreateObjectsResult, BulkCreateObjectsVariables,
+};
+use warp_graphql::mutations::create_folder::{
+    CreateFolder, CreateFolderInput, CreateFolderResult, CreateFolderVariables,
+};
+use warp_graphql::mutations::create_generic_string_object::{
+    CreateGenericStringObject, CreateGenericStringObjectInput, CreateGenericStringObjectResult,
+    CreateGenericStringObjectVariables,
+};
+use warp_graphql::mutations::create_notebook::{
+    CreateNotebook, CreateNotebookInput, CreateNotebookResult, CreateNotebookVariables,
+};
+use warp_graphql::mutations::create_workflow::{
+    CreateWorkflow, CreateWorkflowInput, CreateWorkflowResult, CreateWorkflowVariables,
+};
+use warp_graphql::mutations::delete_object::{
+    DeleteObject, DeleteObjectInput, DeleteObjectResult, DeleteObjectVariables,
+};
+use warp_graphql::mutations::empty_trash::{
+    EmptyTrash, EmptyTrashInput, EmptyTrashResult, EmptyTrashVariables,
+};
+use warp_graphql::mutations::give_up_notebook_edit_access::{
+    GiveUpNotebookEditAccess, GiveUpNotebookEditAccessVariables,
+};
+use warp_graphql::mutations::grab_notebook_edit_access::{
+    GrabNotebookEditAccess, GrabNotebookEditAccessVariables,
+};
+use warp_graphql::mutations::leave_object::{
+    LeaveObject, LeaveObjectInput, LeaveObjectResult, LeaveObjectVariables,
+};
+use warp_graphql::mutations::move_object::{
+    MoveObject, MoveObjectInput, MoveObjectResult, MoveObjectVariables,
+};
+use warp_graphql::mutations::record_object_action::{
+    RecordObjectAction, RecordObjectActionInput, RecordObjectActionResult,
+    RecordObjectActionVariables,
+};
+use warp_graphql::mutations::remove_object_guest::{
+    RemoveObjectGuest, RemoveObjectGuestInput, RemoveObjectGuestResult, RemoveObjectGuestVariables,
+};
+use warp_graphql::mutations::remove_object_link_permissions::{
+    RemoveObjectLinkPermissions, RemoveObjectLinkPermissionsInput,
+    RemoveObjectLinkPermissionsResult, RemoveObjectLinkPermissionsVariables,
+};
+use warp_graphql::mutations::set_object_link_permissions::{
+    SetObjectLinkPermissions, SetObjectLinkPermissionsInput, SetObjectLinkPermissionsResult,
+    SetObjectLinkPermissionsVariables,
+};
+use warp_graphql::mutations::transfer_generic_string_object_owner::{
+    TransferGenericStringObjectOwner, TransferGenericStringObjectOwnerInput,
+    TransferGenericStringObjectOwnerResult, TransferGenericStringObjectOwnerVariables,
+};
+use warp_graphql::mutations::transfer_notebook_owner::{
+    TransferNotebookOwner, TransferNotebookOwnerInput, TransferNotebookOwnerResult,
+    TransferNotebookOwnerVariables,
+};
+use warp_graphql::mutations::transfer_workflow_owner::{
+    TransferWorkflowOwner, TransferWorkflowOwnerInput, TransferWorkflowOwnerResult,
+    TransferWorkflowOwnerVariables,
+};
+use warp_graphql::mutations::trash_object::{
+    TrashObject, TrashObjectInput, TrashObjectResult, TrashObjectVariables,
+};
+use warp_graphql::mutations::untrash_object::{
+    UntrashObject, UntrashObjectInput, UntrashObjectVariables,
+};
+use warp_graphql::mutations::update_folder::{
+    UpdateFolder, UpdateFolderInput, UpdateFolderResult, UpdateFolderVariables,
+};
+use warp_graphql::mutations::update_generic_string_object::{
+    UpdateGenericStringObject, UpdateGenericStringObjectInput, UpdateGenericStringObjectVariables,
+};
+use warp_graphql::mutations::update_notebook::{
+    NotebookUpdate, UpdateNotebook, UpdateNotebookInput, UpdateNotebookResult,
+    UpdateNotebookVariables,
+};
+use warp_graphql::mutations::update_object_guests::{
+    UpdateObjectGuests, UpdateObjectGuestsInput, UpdateObjectGuestsResult,
+    UpdateObjectGuestsVariables,
+};
+use warp_graphql::mutations::update_workflow::{
+    UpdateWorkflow, UpdateWorkflowInput, UpdateWorkflowResult, UpdateWorkflowVariables,
+    WorkflowUpdate,
+};
 use warp_graphql::notebook::{UpdateNotebookEditAccessInput, UpdateNotebookEditAccessResult};
 use warp_graphql::object::CloudObjectWithDescendants;
 use warp_graphql::object_permissions::AccessLevel;
-use warp_graphql::queries::get_cloud_environments::{GetCloudEnvironmentsQuery, GetCloudEnvironmentsQueryVariables, GetCloudEnvironmentsResult};
-use warp_graphql::queries::get_cloud_object::{CloudObjectInput, CloudObjectResult, GetCloudObject, GetCloudObjectVariables};
-use warp_graphql::queries::get_updated_cloud_objects::{GetUpdatedCloudObjects, GetUpdatedCloudObjectsVariables, UpdatedCloudObjectsInput, UpdatedCloudObjectsResult};
+use warp_graphql::queries::get_cloud_environments::{
+    GetCloudEnvironmentsQuery, GetCloudEnvironmentsQueryVariables, GetCloudEnvironmentsResult,
+};
+use warp_graphql::queries::get_cloud_object::{
+    CloudObjectInput, CloudObjectResult, GetCloudObject, GetCloudObjectVariables,
+};
+use warp_graphql::queries::get_updated_cloud_objects::{
+    GetUpdatedCloudObjects, GetUpdatedCloudObjectsVariables, UpdatedCloudObjectsInput,
+    UpdatedCloudObjectsResult,
+};
 use warp_graphql::subscriptions::get_warp_drive_updates::GetWarpDriveUpdates;
 use warp_graphql::subscriptions::start_graphql_streaming_operation;
 
 use crate::channel::ChannelState;
-use crate::cloud_object::model::generic_string_model::{GenericStringModel, GenericStringObjectId, Serializer, StringModel};
-use crate::cloud_object::{BulkCreateCloudObjectResult, BulkCreateGenericStringObjectsRequest, CreateCloudObjectResult, CreateObjectRequest, CreatedCloudObject, GenericCloudObject, GenericServerObject, GenericStringObjectFormat, GenericStringObjectUniqueKey, JsonObjectType, ObjectIdType, ObjectType, ObjectsToUpdate, Owner, Revision, RevisionAndLastEditor, ServerCloudObject, ServerFolder, ServerMetadata, ServerNotebook, ServerObject, ServerPermissions, ServerWorkflow, TryFromGql as _, UpdateCloudObjectResult};
+use crate::cloud_object::model::generic_string_model::{
+    GenericStringModel, GenericStringObjectId, Serializer, StringModel,
+};
+use crate::cloud_object::{
+    BulkCreateCloudObjectResult, BulkCreateGenericStringObjectsRequest, CreateCloudObjectResult,
+    CreateObjectRequest, CreatedCloudObject, GenericCloudObject, GenericServerObject,
+    GenericStringObjectFormat, GenericStringObjectUniqueKey, JsonObjectType, ObjectIdType,
+    ObjectType, ObjectsToUpdate, Owner, Revision, RevisionAndLastEditor, ServerCloudObject,
+    ServerFolder, ServerMetadata, ServerNotebook, ServerObject, ServerPermissions, ServerWorkflow,
+    TryFromGql as _, UpdateCloudObjectResult,
+};
 use crate::drive::folders::FolderId;
 use crate::drive::sharing::SharingAccessLevel;
 use crate::env_vars::EnvVarCollection;
 use crate::notebooks::{NotebookId, SerializedNotebook};
-use crate::server::graphql::schema::{action_type_to_gql_action_type, object_action_history_from_gql, object_update_success_to_update_result, update_generic_string_object_result_to_update_result};
+use crate::server::graphql::schema::{
+    action_type_to_gql_action_type, object_action_history_from_gql,
+    object_update_success_to_update_result, update_generic_string_object_result_to_update_result,
+};
 use crate::server::graphql::{get_request_context, get_user_facing_error_message};
 use crate::server::ids::{ClientId, HashableId, ServerId, ServerIdAndType, SyncId, ToServerId};
 use crate::server::server_api::ServerApi;

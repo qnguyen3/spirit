@@ -9,7 +9,9 @@ use uuid::Uuid;
 use warp_core::channel::ChannelState;
 use warp_core::features::FeatureFlag;
 use warp_errors::{report_error, report_if_error};
-use warp_graphql::mutations::create_anonymous_user::{AnonymousUserType, CreateAnonymousUserResult};
+use warp_graphql::mutations::create_anonymous_user::{
+    AnonymousUserType, CreateAnonymousUserResult,
+};
 use warp_server_auth::API_KEY_PREFIX;
 use warp_server_auth::user::persistence::PersistedUser;
 use warpui::clipboard::ClipboardContent;
@@ -26,7 +28,10 @@ use crate::persistence::ModelEvent;
 use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::graphql::get_user_facing_error_message;
 use crate::server::server_api::ServerApi;
-use crate::server::server_api::auth::{AnonymousUserCreationError, AuthClient, FetchUserResult, MintCustomTokenError, UserAuthenticationError};
+use crate::server::server_api::auth::{
+    AnonymousUserCreationError, AuthClient, FetchUserResult, MintCustomTokenError,
+    UserAuthenticationError,
+};
 use crate::settings::PrivacySettings;
 use crate::settings::cloud_preferences_syncer::CloudPreferencesSyncer;
 use crate::settings::initializer::SettingsInitializer;

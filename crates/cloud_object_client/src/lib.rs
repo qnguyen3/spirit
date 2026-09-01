@@ -7,7 +7,9 @@ use chrono::{DateTime, Utc};
 pub use cloud_object_models::*;
 pub use cloud_objects::cloud_object::*;
 use cloud_objects::drive::sharing::SharingAccessLevel;
-use cloud_objects::ids::{FolderId, GenericStringObjectId, HashedSqliteId, ObjectUid, ServerId, SyncId};
+use cloud_objects::ids::{
+    FolderId, GenericStringObjectId, HashedSqliteId, ObjectUid, ServerId, SyncId,
+};
 #[cfg(any(test, feature = "test-util"))]
 use mockall::automock;
 use warp_graphql::mcp_gallery_template::MCPGalleryTemplate;
