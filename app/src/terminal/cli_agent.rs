@@ -25,9 +25,6 @@ use crate::skills::SkillProvider;
 use crate::ui_components::icons::Icon;
 use crate::util::color::CLAUDE_ORANGE;
 
-/// UID for the Uber team.
-/// See https://warp.metabaseapp.com/dashboard/1454?team_id=46347
-
 /// Gemini brand blue color
 pub(crate) const GEMINI_BLUE: ColorU = ColorU {
     r: 66,
