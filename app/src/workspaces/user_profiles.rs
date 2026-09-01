@@ -22,7 +22,9 @@ pub fn user_profile_from_persistence(
 /// Private struct for internal mapping between the user's uid and the important information we might
 /// want to query about them.
 pub struct UserProfileData {
+    #[allow(dead_code)]
     pub display_name: Option<String>,
+    #[allow(dead_code)]
     pub email: String,
     #[allow(dead_code)]
     pub photo_url: String,
