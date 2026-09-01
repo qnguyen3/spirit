@@ -7,9 +7,6 @@ use std::sync::{Arc, Once};
 use std::{fs, thread};
 
 use anyhow::{Context, Result, anyhow, bail};
-use cloud_object_persistence::{
-    read_time_of_next_force_object_refresh, record_time_of_next_refresh,
-};
 use diesel::connection::{DefaultLoadingMode, SimpleConnection};
 use diesel::result::Error;
 use diesel::sqlite::SqliteConnection;
@@ -33,11 +30,10 @@ use warpui::{AppContext, SingletonEntity};
 use super::block_list::{delete_blocks, save_block};
 use super::model::{
     self, AI_DOCUMENT_PANE_KIND, AI_FACT_PANE_KIND, AMBIENT_AGENT_PANE_KIND, CODE_PANE_KIND,
-    CurrentUserInformation, ENV_VAR_COLLECTION_PANE_KIND, EXECUTION_PROFILE_EDITOR_PANE_KIND,
-    MCP_SERVER_PANE_KIND, NOTEBOOK_PANE_KIND, NewApp, NewCommand, NewTab, NewTabGroup, NewTeam,
-    NewWindow, NewWorkspace, NewWorkspaceMetadata, NewWorkspaceTeam, Project as ProjectRow,
-    ProjectWorktree as WorktreeRow, SETTINGS_PANE_KIND, TERMINAL_PANE_KIND, Tab, TabGroup,
-    WORKFLOW_PANE_KIND, Window, WorkspaceMetadata as WorkspaceMetadataModel,
+    ENV_VAR_COLLECTION_PANE_KIND, EXECUTION_PROFILE_EDITOR_PANE_KIND, MCP_SERVER_PANE_KIND,
+    NOTEBOOK_PANE_KIND, NewApp, NewCommand, NewTab, NewTabGroup, NewWindow, NewWorkspaceMetadata,
+    Project as ProjectRow, ProjectWorktree as WorktreeRow, SETTINGS_PANE_KIND, TERMINAL_PANE_KIND,
+    Tab, TabGroup, WORKFLOW_PANE_KIND, Window, WorkspaceMetadata as WorkspaceMetadataModel,
 };
 use super::{
     BlockCompleted, FinishedCommandMetadata, ModelEvent, PersistedData, PersistedDataScope,
@@ -54,9 +50,7 @@ use crate::auth::auth_state::AuthStateProvider;
 use crate::code::editor_management::CodeSource;
 use crate::persisted_workspace::EnablementState;
 use crate::persistence::block_list::get_all_restored_blocks;
-use crate::persistence::model::{
-    CODE_REVIEW_PANE_KIND, GET_STARTED_PANE_KIND, NewTeamSettings, UserProfile,
-};
+use crate::persistence::model::{CODE_REVIEW_PANE_KIND, GET_STARTED_PANE_KIND};
 use crate::projects::{Project, ProjectId, Worktree, WorktreeId};
 use crate::safe_info;
 use crate::server::ids::ServerId;

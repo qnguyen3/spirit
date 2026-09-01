@@ -1,10 +1,8 @@
 use std::sync::Arc;
 
 use pathfinder_color::ColorU;
-use pathfinder_geometry::vector::vec2f;
 use warp_core::channel::ChannelState;
 use warp_core::context_flag::ContextFlag;
-use warp_core::ui::icons::Icon;
 use warp_errors::report_error;
 #[cfg(not(target_family = "wasm"))]
 use warp_server_client::iap::{IapCredentialsState, IapManager, IapManagerEvent};
@@ -16,25 +14,24 @@ use warpui::elements::{
 };
 use warpui::fonts::Weight;
 use warpui::platform::Cursor;
-use warpui::ui_components::button::{ButtonVariant, TextAndIcon, TextAndIconAlignment};
+use warpui::ui_components::button::ButtonVariant;
 use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 use warpui::{
     AppContext, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
-    ViewHandle, WeakViewHandle,
+    ViewHandle,
 };
 
+use super::SettingsSection;
 use super::settings_page::{
     HEADER_PADDING, MatchData, PageTitle, PageType, SettingsPageMeta, SettingsPageViewHandle,
-    SettingsWidget, render_customer_type_badge,
+    SettingsWidget,
 };
-use super::SettingsSection;
 use crate::appearance::Appearance;
+use crate::auth::AuthStateProvider;
 use crate::auth::auth_manager::{AuthManager, LoginGatedFeature};
 use crate::auth::auth_state::AuthState;
 use crate::auth::auth_view_modal::AuthViewVariant;
-use crate::auth::{AuthStateProvider, UserUid};
 use crate::autoupdate::{self, AutoupdateStage, AutoupdateState};
-use crate::server::ids::ServerId;
 use crate::workspace::WorkspaceAction;
 
 const PHOTO_SIZE: f32 = 40.;
@@ -73,7 +70,6 @@ pub enum MainSettingsPageEvent {
 }
 
 pub struct MainSettingsPageView {
-    self_handle: WeakViewHandle<Self>,
     page: PageType<Self>,
     auth_state: Arc<AuthState>,
 }
@@ -177,11 +173,7 @@ impl MainSettingsPageView {
 
         let page = PageType::new_uncategorized(widgets, Some(PageTitle::new("Account")));
 
-        MainSettingsPageView {
-            self_handle: ctx.handle(),
-            page,
-            auth_state,
-        }
+        MainSettingsPageView { page, auth_state }
     }
 
     fn handle_autoupdate_state_change(
@@ -195,10 +187,7 @@ impl MainSettingsPageView {
 
 #[derive(Default)]
 struct AccountWidgetStateHandles {
-    upgrade_link: MouseStateHandle,
     anonymous_user_sign_up_button: MouseStateHandle,
-    enterprise_contact_us_link: MouseStateHandle,
-    stripe_billing_portal_link: MouseStateHandle,
 }
 
 #[derive(Default)]
@@ -209,7 +198,7 @@ struct AccountWidget {
 impl AccountWidget {
     fn render_anonymous_account_info(
         &self,
-        auth_state: &AuthState,
+        _auth_state: &AuthState,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
         let button_styles = UiComponentStyles {
@@ -257,10 +246,10 @@ impl AccountWidget {
 
     fn render_account_info(
         &self,
-        view: &MainSettingsPageView,
+        _view: &MainSettingsPageView,
         profile_image_source: Option<&AssetSource>,
         auth_state: &AuthState,
-        app: &AppContext,
+        _app: &AppContext,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
         let mut user_info = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
@@ -333,7 +322,7 @@ impl AccountWidget {
             user_info.add_child(display_name);
         }
 
-        let mut row = Flex::row()
+        let row = Flex::row()
             .with_child(
                 Shrinkable::new(1.0, Align::new(user_info.finish()).left().finish()).finish(),
             )

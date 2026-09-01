@@ -384,7 +384,6 @@ const THEME_CHOOSER_RATIO: f32 = 3.5;
 pub(crate) const TAB_BAR_POSITION_ID: &str = "workspace_view:tab_bar";
 const WORKSPACE_SWITCHER_PILL_POSITION_ID: &str = "workspace_view:workspace_switcher_pill";
 const AGENT_INBOX_POSITION_ID: &str = "workspace_view:agent_inbox_button";
-const TEAM_SWITCHER_DOT_ALPHA: u8 = 204;
 
 /// Save position for the vertical tabs panel.
 /// HOA onboarding callouts anchor relative to this position, so whichever code

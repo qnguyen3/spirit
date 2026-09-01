@@ -16,7 +16,7 @@ use warp_completer::parsers::simple::top_level_command;
 use warp_editor::content::buffer::Buffer;
 use warp_editor::content::markdown::MarkdownStyle;
 use warp_util::path::EscapeChar;
-use warpui::{AppContext, SingletonEntity};
+use warpui::AppContext;
 
 use crate::code::editor::line::EditorLineLocation;
 use crate::code_review::agent_handoff::{AgentReviewCommentBatch, DiffSetHunk};

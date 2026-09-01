@@ -21,7 +21,7 @@ use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, OnceLock};
 use std::thread::JoinHandle;
 
-use chrono::{DateTime, Local, Utc};
+use chrono::{DateTime, Local};
 use instant::Instant;
 use lsp::supported_servers::LSPServerType;
 #[cfg(any(feature = "local_fs", feature = "integration_tests"))]
@@ -100,7 +100,6 @@ impl PersistedDataScope {
     fn command_history(self) -> bool {
         matches!(self, PersistedDataScope::Full)
     }
-
 }
 
 /// Initializes the persistence "subsystem".

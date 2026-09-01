@@ -8,7 +8,7 @@ use cfg_if::cfg_if;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use onboarding::{
-    AgentOnboardingEvent, AgentOnboardingView, OfferVariant, OnboardingAuthState, SelectedSettings,
+    AgentOnboardingEvent, AgentOnboardingView, OnboardingAuthState, SelectedSettings,
 };
 use parking_lot::Mutex;
 use pathfinder_geometry::rect::RectF;
@@ -74,7 +74,7 @@ use crate::terminal::shell::ShellType;
 use crate::terminal::view::cell_size_and_padding;
 use crate::themes::onboarding_theme_picker_themes;
 use crate::themes::theme::{AnsiColorIdentifier, Blend, Fill, ThemeKind, WarpThemeConfig};
-use crate::uri::{OpenSettingsArgs, url_reports_checkout_success};
+use crate::uri::OpenSettingsArgs;
 use crate::util::bindings::{self, is_binding_pty_compliant};
 use crate::util::traffic_lights::{TrafficLightData, TrafficLightMouseStates, traffic_light_data};
 use crate::window_settings::WindowSettings;
@@ -308,7 +308,6 @@ pub fn init(app: &mut AppContext) {
         RootView::toggle_maximize_window,
     );
     app.add_action("root_view:toggle_fullscreen", RootView::toggle_fullscreen);
-
 
     app.add_global_action(
         "root_view:open_settings_page_in_new_window",
@@ -1267,7 +1266,7 @@ impl NewWorkspaceSource {
         }
     }
 
-    pub fn team_uid(&self, ctx: &AppContext) -> Option<ServerId> {
+    pub fn team_uid(&self, _ctx: &AppContext) -> Option<ServerId> {
         let source_window_id = match self {
             Self::Empty {
                 previous_active_window,
@@ -1313,8 +1312,6 @@ enum AuthOnboardingTarget {
 
 #[derive(Clone)]
 struct AccountFirstLoginContext {
-    login_slide_view: ViewHandle<LoginSlideView>,
-    onboarding_view: ViewHandle<AgentOnboardingView>,
     target: AuthOnboardingTarget,
 }
 
@@ -1403,7 +1400,7 @@ impl RootView {
         workspace_setting: NewWorkspaceSource,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
-        let window_id = ctx.window_id();
+        let _window_id = ctx.window_id();
         let server_api_provider = ServerApiProvider::as_ref(ctx);
         let server_api = server_api_provider.get();
         let auth_state = AuthStateProvider::as_ref(ctx).get().clone();
@@ -1754,8 +1751,8 @@ impl RootView {
     fn account_first_login_context(&self, ctx: &AppContext) -> Option<AccountFirstLoginContext> {
         let AuthOnboardingState::LoginSlide {
             login_slide_view,
-            onboarding_view,
             target,
+            ..
         } = &self.auth_onboarding_state
         else {
             return None;
@@ -1764,8 +1761,6 @@ impl RootView {
             .as_ref(ctx)
             .is_account_first_onboarding()
             .then(|| AccountFirstLoginContext {
-                login_slide_view: login_slide_view.clone(),
-                onboarding_view: onboarding_view.clone(),
                 target: target.clone(),
             })
     }
@@ -1824,7 +1819,7 @@ impl RootView {
                 };
                 self.pending_tutorial = None;
                 self.pending_post_auth_onboarding_settings = None;
-                        self.pending_account_first_tutorial_after_settings = false;
+                self.pending_account_first_tutorial_after_settings = false;
                 ctx.emit(RootViewEvent::AuthOnboardingStateChanged);
                 self.focus(ctx);
                 ctx.notify();

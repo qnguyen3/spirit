@@ -9,7 +9,7 @@ use settings::{RespectUserSyncSetting, Setting, SupportedPlatforms, SyncToCloud}
 use warp_errors::report_error;
 use warp_graphql::mutations::update_user_settings::UpdateUserSettingsInput;
 pub use warp_terminal::model::secrets::RegexDisplayInfo;
-use warpui::{AppContext, Entity, ModelContext, SingletonEntity, UpdateModel};
+use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
 use crate::auth::AuthStateProvider;
 use crate::auth::auth_state::AuthState;
@@ -17,7 +17,6 @@ use crate::server::server_api::ServerApiProvider;
 #[cfg(any(test, feature = "test-util"))]
 use crate::server::server_api::auth::MockAuthClient;
 use crate::server::server_api::auth::{AuthClient, SyncedUserSettings};
-use crate::terminal::safe_mode_settings::SafeModeSettings;
 
 pub const CLOUD_CONVERSATION_STORAGE_ENABLED_DEFAULTS_KEY: &str = "CloudConversationStorageEnabled";
 
@@ -47,7 +46,6 @@ impl RegexDisplayInfo for CustomSecretRegex {
         self.name.as_deref()
     }
 }
-
 
 impl Display for CustomSecretRegex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

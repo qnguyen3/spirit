@@ -24,7 +24,6 @@ use super::user::User;
 use super::user_properties::UserProperties;
 use super::{AuthStateProvider, UserUid};
 use crate::autoupdate::AutoupdateState;
-use crate::persistence::ModelEvent;
 use crate::server::graphql::get_user_facing_error_message;
 use crate::server::server_api::ServerApi;
 use crate::server::server_api::auth::{
