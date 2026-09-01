@@ -15,26 +15,29 @@ use super::team::{DiscoverableTeam, MembershipRole, Team};
 #[cfg(test)]
 use super::workspace::WorkspaceMemberUsageInfo;
 use super::workspace::{
-    AdminEnablementSetting, EnterpriseSecretRegex, Workspace, WorkspaceUid,
+    AdminEnablementSetting, EnterpriseSecretRegex, UgcCollectionEnablementSetting, Workspace,
+    WorkspaceUid,
 };
-use cloud_objects::cloud_object::CloudObjectEventEntrypoint;
+use cloud_objects::cloud_object::{CloudObjectEventEntrypoint, Owner};
 
-use crate::auth::UserUid;
+use crate::auth::{AuthStateProvider, UserUid};
 use crate::channel::ChannelState;
 use crate::server::ids::ServerId;
 use crate::server::server_api::team::TeamClient;
-use crate::server::server_api::workspace::WorkspaceClient;
+use crate::server::server_api::workspace::{PurchaseAddonCreditsOutcome, WorkspaceClient};
 #[cfg(test)]
 use crate::server::server_api::{team::MockTeamClient, workspace::MockWorkspaceClient};
 use crate::settings::PrivacySettings;
-use crate::workspaces::workspace::PurchaseAddOnCreditsPolicy;
+use crate::workspaces::workspace::{
+    AiOverages, PurchaseAddOnCreditsPolicy, UsageBasedPricingSettings,
+};
 #[cfg(test)]
 use crate::workspaces::workspace::{
     BillingMetadata, CustomerType, WorkspaceMember, WorkspaceSettings,
 };
 pub(crate) mod billing_workspace_settings;
 pub(crate) mod team_workspace_settings;
-pub use team_workspace_settings::{TeamContext, TeamContextResolver};
+pub use team_workspace_settings::{TeamContext, TeamContextResolver, TeamScope};
 
 const STRIPE_SUBSCRIPTION_INTERVAL_PAGE_PREFIX: &str = "/upgrade";
 
@@ -62,13 +65,23 @@ pub enum UserWorkspacesEvent {
     JoinTeamWithTeamDiscoveryRejected(anyhow::Error),
     FetchDiscoverableTeamsSuccess(Vec<DiscoverableTeam>),
     FetchDiscoverableTeamsRejected(anyhow::Error),
+    TransferTeamOwnershipSuccess,
+    TransferTeamOwnershipRejected(anyhow::Error),
     SetTeamMemberRoleSuccess,
     SetTeamMemberRoleRejected(anyhow::Error),
     RemoveUserFromTeamSuccess,
     RemoveUserFromTeamRejected(anyhow::Error),
+    UpdateWorkspaceSettingsSuccess,
+    UpdateWorkspaceSettingsRejected(anyhow::Error),
+    AiOveragesUpdated,
+    PurchaseAddonCreditsSuccess,
     /// The purchase requires the user to complete checkout in the browser
     /// (no saved payment method). Credits arrive via webhook + polling after
     /// checkout completes.
+    PurchaseAddonCreditsCheckoutRequired {
+        checkout_url: String,
+    },
+    PurchaseAddonCreditsRejected(anyhow::Error),
     /// Fired whenever the set of teams the user is on changes.
     TeamsChanged,
     /// Fired when the selected workspace actually changes to a different one.
@@ -76,7 +89,6 @@ pub enum UserWorkspacesEvent {
     /// Fired when a single window's team assignment changes. Windows are independent, so
     /// subscribers that hold per-window state must only react to their own window.
     WindowTeamChanged {
-        #[allow(dead_code)]
         window_id: WindowId,
     },
     CodebaseContextEnablementChanged,
@@ -120,26 +132,21 @@ pub struct WorkspacesMetadataResponse {
 // independent queries.
 pub struct WorkspacesMetadataWithPricing {
     pub metadata: WorkspacesMetadataResponse,
-    #[allow(dead_code)]
     pub pricing_info: Option<warp_graphql::billing::PricingInfo>,
-}
-
-#[cfg(test)]
-#[derive(Debug)]
-pub enum SoleTeamError {
-    NoTeam,
-    MoreThanOneTeam {
-        #[allow(dead_code)]
-        team_uids: Vec<ServerId>,
-    },
 }
 
 pub struct CreateTeamResponse {
     pub workspace: Workspace,
-    #[allow(dead_code)]
     pub team: Team,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum SoleTeamError {
+    #[error("you are not on a team")]
+    NoTeam,
+    #[error("you are on {} teams, so no single team applies", .team_uids.len())]
+    MoreThanOneTeam { team_uids: Vec<ServerId> },
+}
 
 impl UserWorkspaces {
     #[cfg(test)]
@@ -206,9 +213,40 @@ impl UserWorkspaces {
         )
     }
 
+    pub fn warp_agent_cli_upgrade_link(user_id: Option<UserUid>) -> String {
+        let upgrade_link = user_id.map_or_else(
+            || {
+                format!(
+                    "{}{}",
+                    ChannelState::server_root_url().trim_end_matches('/'),
+                    STRIPE_SUBSCRIPTION_INTERVAL_PAGE_PREFIX
+                )
+            },
+            Self::upgrade_link,
+        );
+        format!("{upgrade_link}?source=warp-agent-cli")
+    }
+    pub fn admin_billing_link_for_team(team_uid: ServerId) -> String {
+        format!(
+            "{}/admin/{team_uid}/billing",
+            ChannelState::server_root_url().trim_end_matches('/')
+        )
+    }
+
+    pub fn admin_billing_link_for_default_team(&self, user_email: &str) -> Option<String> {
+        let team_uid = self.inherited_or_default_team_uid(None)?;
+        self.team_from_uid(team_uid)
+            .filter(|team| team.has_admin_permissions(user_email))
+            .map(|_| Self::admin_billing_link_for_team(team_uid))
+    }
+
     pub fn team_from_uid(&self, team_uid: ServerId) -> Option<&Team> {
         self.current_workspace()
             .and_then(|w| w.teams.iter().find(|t| t.uid == team_uid))
+    }
+
+    pub fn is_member_of_team(&self, team_uid: ServerId) -> bool {
+        self.team_from_uid(team_uid).is_some()
     }
 
     pub fn register_window(
@@ -237,8 +275,36 @@ impl UserWorkspaces {
             })
     }
 
+    pub fn set_team_for_window(
+        &mut self,
+        window_id: WindowId,
+        team_uid: ServerId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let window_team_uid = self.window_team_uids.entry(window_id).or_default();
+        if window_team_uid.is_none() {
+            *window_team_uid = Some(team_uid);
+            ctx.emit(UserWorkspacesEvent::WindowTeamChanged { window_id });
+            ctx.notify();
+        }
+    }
+
     pub fn team_uid_for_window(&self, window_id: WindowId) -> Option<ServerId> {
         self.window_team_uids.get(&window_id).copied().flatten()
+    }
+
+    pub fn switch_window_to_team(
+        &mut self,
+        window_id: WindowId,
+        team_uid: ServerId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if self.team_uid_for_window(window_id) == Some(team_uid) {
+            return;
+        }
+        self.window_team_uids.insert(window_id, Some(team_uid));
+        ctx.emit(UserWorkspacesEvent::WindowTeamChanged { window_id });
+        ctx.notify();
     }
 
     /// Returns `true` when the user belongs to more than one team in the current
@@ -300,14 +366,50 @@ impl UserWorkspaces {
         }
     }
 
+    pub fn team_from_uid_across_all_workspaces(&self, team_uid: ServerId) -> Option<&Team> {
+        self.workspaces
+            .iter()
+            .flat_map(|w| w.teams.iter())
+            .find(|t| t.uid == team_uid)
+    }
+
     pub fn workspace_from_uid(&self, workspace_uid: WorkspaceUid) -> Option<&Workspace> {
         self.workspaces.iter().find(|w| w.uid == workspace_uid)
+    }
+
+    pub fn workspace_from_uid_mut(
+        &mut self,
+        workspace_uid: WorkspaceUid,
+    ) -> Option<&mut Workspace> {
+        self.workspaces.iter_mut().find(|w| w.uid == workspace_uid)
     }
 
     // Checks if the team has capacity for another shared notebook for their current
     // billing tier, given their current notebook count and delinquency status.
     // Checks if the team has capacity for another shared workflow for their current
     // billing tier, given their current workflow count and delinquency status.
+    /// The user's single team in the current workspace.
+    ///
+    /// Having no workspace is reported as [`SoleTeamError::NoTeam`]: a user with no workspace
+    /// is on no team, and no caller can act differently on the distinction.
+    pub fn sole_team(&self) -> Result<&Team, SoleTeamError> {
+        let teams = self
+            .current_workspace()
+            .map(|workspace| workspace.teams.as_slice())
+            .unwrap_or_default();
+        match teams {
+            [] => Err(SoleTeamError::NoTeam),
+            [team] => Ok(team),
+            _ => Err(SoleTeamError::MoreThanOneTeam {
+                team_uids: teams.iter().map(|team| team.uid).collect(),
+            }),
+        }
+    }
+
+    pub fn sole_team_uid(&self) -> Result<ServerId, SoleTeamError> {
+        self.sole_team().map(|team| team.uid)
+    }
+
     /// Note that the workspace is populated with dummy data until the initial fetch
     /// completes (only workspace name/ID and workspace team's name/ID are cached in
     /// sqlite locally).
@@ -325,38 +427,9 @@ impl UserWorkspaces {
         self.user_purchase_policy = policy;
     }
 
-    /// The user's single team in the current workspace.
-    ///
-    /// Having no workspace is reported as [`SoleTeamError::NoTeam`]: a user with no workspace
-    /// is on no team, and no caller can act differently on the distinction.
-    #[cfg(test)]
-    pub fn sole_team_uid(&self) -> Result<ServerId, SoleTeamError> {
-        let teams = self
-            .current_workspace()
-            .map(|workspace| workspace.teams.as_slice())
-            .unwrap_or_default();
-        match teams {
-            [] => Err(SoleTeamError::NoTeam),
-            [team] => Ok(team.uid),
-            _ => Err(SoleTeamError::MoreThanOneTeam {
-                team_uids: teams.iter().map(|team| team.uid).collect(),
-            }),
-        }
-    }
-
-    #[cfg(test)]
-    pub fn set_team_for_window(
-        &mut self,
-        window_id: WindowId,
-        team_uid: ServerId,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let window_team_uid = self.window_team_uids.entry(window_id).or_default();
-        if window_team_uid.is_none() {
-            *window_team_uid = Some(team_uid);
-            ctx.emit(UserWorkspacesEvent::WindowTeamChanged { window_id });
-            ctx.notify();
-        }
+    pub fn current_workspace_mut(&mut self) -> Option<&mut Workspace> {
+        self.current_workspace_uid
+            .and_then(|workspace_uid| self.workspace_from_uid_mut(workspace_uid))
     }
 
     pub fn workspaces(&self) -> &Vec<Workspace> {
@@ -380,8 +453,26 @@ impl UserWorkspaces {
 
     // Returns a Vec of the user's active spaces, based on their
     // team membership.
+    pub fn total_teammates_in_joinable_teams(&self) -> i64 {
+        self.joinable_teams
+            .iter()
+            .map(|team| team.num_members)
+            .sum()
+    }
+
+    pub fn num_joinable_teams(&self) -> usize {
+        self.joinable_teams.len()
+    }
+
     // Returns the [`Owner`] for the user's personal drive. If the user is not authenticated, this
     // returns `None`.
+    pub fn personal_drive(&self, ctx: &AppContext) -> Option<Owner> {
+        AuthStateProvider::as_ref(ctx)
+            .get()
+            .user_id()
+            .map(|user_uid| Owner::User { user_uid })
+    }
+
     // Maps a [`Space`] into an [`Owner`], based on the user's team memberships. If the space
     // does not directly identify an owner (it's the space for shared objects), returns `None`.
     // Maps an [`Owner`] into a [`Space`], based on the user's team memberships.
@@ -392,6 +483,10 @@ impl UserWorkspaces {
         } else {
             false
         }
+    }
+
+    pub fn has_workspaces(&self) -> bool {
+        !self.workspaces.is_empty()
     }
 
     pub fn update_workspaces(&mut self, workspaces: Vec<Workspace>, ctx: &mut ModelContext<Self>) {
@@ -786,6 +881,33 @@ impl UserWorkspaces {
         );
     }
 
+    fn on_team_ownership_transferred(
+        &mut self,
+        result: Result<WorkspacesMetadataWithPricing>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        match result {
+            Err(err) => ctx.emit(UserWorkspacesEvent::TransferTeamOwnershipRejected(err)),
+            Ok(result) => {
+                self.on_workspaces_updated(Ok(result), ctx);
+                ctx.emit(UserWorkspacesEvent::TransferTeamOwnershipSuccess);
+            }
+        };
+        ctx.notify();
+    }
+
+    pub fn transfer_team_ownership(
+        &mut self,
+        new_owner_email: String,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let team_client = self.team_client.clone();
+        let _ = ctx.spawn(
+            async move { team_client.transfer_team_ownership(new_owner_email).await },
+            Self::on_team_ownership_transferred,
+        );
+    }
+
     fn on_team_member_role_set(
         &mut self,
         result: Result<WorkspacesMetadataWithPricing>,
@@ -905,6 +1027,162 @@ impl UserWorkspaces {
         );
     }
 
+    pub fn update_usage_based_pricing_settings(
+        &mut self,
+        team_uid: ServerId,
+        usage_based_pricing_enabled: bool,
+        max_monthly_spend_cents: Option<u32>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let workspace_client = self.workspace_client.clone();
+        let _ = ctx.spawn(
+            async move {
+                workspace_client
+                    .update_usage_based_pricing_settings(
+                        team_uid,
+                        usage_based_pricing_enabled,
+                        max_monthly_spend_cents,
+                    )
+                    .await
+            },
+            Self::on_update_workspace_metadata,
+        );
+    }
+
+    fn on_update_workspace_metadata(
+        &mut self,
+        result: Result<WorkspacesMetadataResponse>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        match result {
+            Ok(result) => {
+                let wrapped = WorkspacesMetadataWithPricing {
+                    metadata: result,
+                    pricing_info: None,
+                };
+                self.on_workspaces_updated(Ok(wrapped), ctx);
+                ctx.emit(UserWorkspacesEvent::UpdateWorkspaceSettingsSuccess);
+            }
+            Err(err) => {
+                let err_for_event = anyhow::anyhow!("{}", err);
+                self.on_workspaces_updated(Err(err), ctx);
+                ctx.emit(UserWorkspacesEvent::UpdateWorkspaceSettingsRejected(
+                    err_for_event,
+                ));
+            }
+        };
+        ctx.notify();
+    }
+
+    pub fn purchase_addon_credits(
+        &mut self,
+        team_uid: Option<ServerId>,
+        credits: i32,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let workspace_client = self.workspace_client.clone();
+        let _ = ctx.spawn(
+            async move {
+                workspace_client
+                    .purchase_addon_credits(team_uid, credits)
+                    .await
+            },
+            Self::on_purchase_addon_credits,
+        );
+    }
+
+    fn on_purchase_addon_credits(
+        &mut self,
+        result: Result<PurchaseAddonCreditsOutcome>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        match result {
+            Ok(PurchaseAddonCreditsOutcome::Completed(result)) => {
+                let wrapped = WorkspacesMetadataWithPricing {
+                    metadata: *result,
+                    pricing_info: None,
+                };
+                self.on_workspaces_updated(Ok(wrapped), ctx);
+                ctx.emit(UserWorkspacesEvent::PurchaseAddonCreditsSuccess);
+            }
+            Ok(PurchaseAddonCreditsOutcome::CheckoutRequired { checkout_url }) => {
+                ctx.emit(UserWorkspacesEvent::PurchaseAddonCreditsCheckoutRequired {
+                    checkout_url,
+                });
+            }
+            Err(err) => {
+                ctx.emit(UserWorkspacesEvent::PurchaseAddonCreditsRejected(
+                    anyhow::anyhow!(err),
+                ));
+            }
+        };
+        ctx.notify();
+    }
+
+    pub fn refresh_ai_overages(&mut self, ctx: &mut ModelContext<Self>) {
+        let workspace_client = self.workspace_client.clone();
+        let _ = ctx.spawn(
+            async move { workspace_client.refresh_ai_overages().await },
+            Self::on_refresh_ai_overages,
+        );
+    }
+
+    pub fn update_addon_credits_settings(
+        &mut self,
+        team_uid: ServerId,
+        auto_reload_enabled: Option<bool>,
+        max_monthly_spend_cents: Option<i32>,
+        selected_auto_reload_credit_denomination: Option<i32>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let workspace_client = self.workspace_client.clone();
+        let _ = ctx.spawn(
+            async move {
+                workspace_client
+                    .update_addon_credits_settings(
+                        team_uid,
+                        auto_reload_enabled,
+                        max_monthly_spend_cents,
+                        selected_auto_reload_credit_denomination,
+                    )
+                    .await
+            },
+            Self::on_update_workspace_metadata,
+        );
+    }
+
+    fn on_refresh_ai_overages(&mut self, result: Result<AiOverages>, ctx: &mut ModelContext<Self>) {
+        match result {
+            Ok(fresh_ai_overages) => {
+                // TODO: We really need to stop having duplicate billing metadata...
+                if let Some(workspace) = self.current_workspace_mut() {
+                    workspace.billing_metadata.ai_overages = Some(fresh_ai_overages.clone());
+                    for team in &mut workspace.teams {
+                        team.billing_metadata.ai_overages = Some(fresh_ai_overages.clone());
+                    }
+                }
+
+                ctx.emit(UserWorkspacesEvent::AiOveragesUpdated);
+                ctx.notify();
+            }
+            Err(e) => {
+                log::warn!("Failed to refresh AI overages for workspace: {e:?}");
+            }
+        }
+    }
+
+    pub fn usage_based_pricing_settings(&self) -> UsageBasedPricingSettings {
+        self.current_workspace()
+            .map(|workspace| workspace.settings.usage_based_pricing_settings.clone())
+            .unwrap_or_default()
+    }
+
+    pub fn is_telemetry_force_enabled(&self) -> bool {
+        self.current_workspace()
+            .map(|workspace| workspace.settings.telemetry_settings.force_enabled)
+            .unwrap_or(false)
+    }
+
     pub fn is_enterprise_secret_redaction_enabled(&self) -> bool {
         self.current_workspace()
             .map(|workspace| workspace.settings.secret_redaction_settings.enabled)
@@ -914,6 +1192,12 @@ impl UserWorkspaces {
     pub fn get_enterprise_secret_redaction_regex_list(&self) -> Vec<EnterpriseSecretRegex> {
         self.current_workspace()
             .map(|workspace| workspace.settings.secret_redaction_settings.regexes.clone())
+            .unwrap_or_default()
+    }
+
+    pub fn get_ugc_collection_enablement_setting(&self) -> UgcCollectionEnablementSetting {
+        self.current_workspace()
+            .map(|workspace| workspace.settings.ugc_collection_settings.setting.clone())
             .unwrap_or_default()
     }
 
@@ -929,6 +1213,37 @@ impl UserWorkspaces {
             .unwrap_or_default()
     }
 
+    pub fn is_anyone_with_link_sharing_enabled(&self) -> bool {
+        self.current_workspace()
+            .map(|workspace| {
+                workspace
+                    .settings
+                    .link_sharing_settings
+                    .anyone_with_link_sharing_enabled
+            })
+            .unwrap_or(true)
+    }
+
+    pub fn is_direct_link_sharing_enabled(&self) -> bool {
+        self.current_workspace()
+            .map(|workspace| {
+                workspace
+                    .settings
+                    .link_sharing_settings
+                    .direct_link_sharing_enabled
+            })
+            .unwrap_or(true)
+    }
+
+    /// Whether invite links are enabled for the current workspace. This is a
+    /// workspace-level setting; the teams-settings page reads it from here rather
+    /// than from the `Team` struct.
+    pub fn is_invite_link_enabled(&self) -> bool {
+        self.current_workspace()
+            .map(|workspace| workspace.settings.is_invite_link_enabled)
+            .unwrap_or(false)
+    }
+
     /// Whether the current workspace's team is discoverable. This is a
     /// workspace-level setting; the teams-settings page reads it from here rather
     /// than from the `Team` struct.
@@ -938,6 +1253,44 @@ impl UserWorkspaces {
             .unwrap_or(false)
     }
 
+    pub fn teams_allow_codebase_context(&self) -> AdminEnablementSetting {
+        let mut team_settings = self
+            .workspaces
+            .iter()
+            .flat_map(|workspace| workspace.teams.iter())
+            .map(|team| &team.settings.codebase_context.value)
+            .peekable();
+
+        if team_settings.peek().is_none() {
+            return self
+                .current_workspace()
+                .map(|workspace| workspace.settings.codebase_context_settings.setting.clone())
+                .unwrap_or_default();
+        }
+
+        // TODO(isaiah): Enforce codebase-indexing policy per team and window.
+        let mut respects_user_setting = false;
+        for setting in team_settings {
+            match setting {
+                AdminEnablementSetting::Enable => {}
+                AdminEnablementSetting::Disable => return AdminEnablementSetting::Disable,
+                AdminEnablementSetting::RespectUserSetting => respects_user_setting = true,
+            }
+        }
+
+        if respects_user_setting {
+            AdminEnablementSetting::RespectUserSetting
+        } else {
+            AdminEnablementSetting::Enable
+        }
+    }
+
+    pub fn team_disabling_codebase_context(&self) -> Option<&Team> {
+        self.workspaces
+            .iter()
+            .flat_map(|workspace| workspace.teams.iter())
+            .find(|team| team.settings.codebase_context.value == AdminEnablementSetting::Disable)
+    }
 }
 
 #[cfg(test)]

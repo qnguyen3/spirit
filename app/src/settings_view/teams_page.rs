@@ -1002,6 +1002,13 @@ impl TeamsPageView {
                 // Don't show toast, only log to sentry
                 report_error!(e);
             }
+            UserWorkspacesEvent::TransferTeamOwnershipSuccess => {
+                self.show_success("Successfully transferred team ownership", ctx);
+                ctx.notify();
+            }
+            UserWorkspacesEvent::TransferTeamOwnershipRejected(err) => {
+                self.show_error("Failed to transfer team ownership", Some(err), ctx);
+            }
             UserWorkspacesEvent::SetTeamMemberRoleSuccess => {
                 self.update_team_members_state(ctx);
                 self.show_success("Successfully updated team member role", ctx);
@@ -1019,6 +1026,24 @@ impl TeamsPageView {
                     Some(err),
                     ctx,
                 );
+            }
+            UserWorkspacesEvent::UpdateWorkspaceSettingsSuccess => {
+                // as of right now, this is only emitted on the billing & usage page
+            }
+            UserWorkspacesEvent::UpdateWorkspaceSettingsRejected(_) => {
+                // as of right now, this is only emitted on the billing & usage page
+            }
+            UserWorkspacesEvent::AiOveragesUpdated => {
+                // AI overages update doesn't affect teams page display
+            }
+            UserWorkspacesEvent::PurchaseAddonCreditsSuccess => {
+                // Addon credits purchase success is handled in billing_and_usage_page
+            }
+            UserWorkspacesEvent::PurchaseAddonCreditsCheckoutRequired { .. } => {
+                // Checkout handoff is handled by the surface that initiated the purchase
+            }
+            UserWorkspacesEvent::PurchaseAddonCreditsRejected(_) => {
+                // Addon credits purchase rejection is handled in billing_and_usage_page
             }
             UserWorkspacesEvent::CodebaseContextEnablementChanged => {}
             UserWorkspacesEvent::SunsettedToBuildDataUpdated => {
@@ -3831,6 +3856,56 @@ impl TeamsWidget {
             .finish(),
         )
         .with_padding_bottom(4.)
+        .finish()
+    }
+
+    fn render_plan_usage_header(&self, text: String, appearance: &Appearance) -> Box<dyn Element> {
+        Align::new(
+            appearance
+                .ui_builder()
+                .span(text)
+                .with_style(UiComponentStyles {
+                    font_family_id: Some(appearance.ui_font_family()),
+                    font_weight: Some(Weight::Light),
+                    font_color: Some(
+                        appearance
+                            .theme()
+                            .active_ui_text_color()
+                            .with_opacity(40)
+                            .into(),
+                    ),
+                    font_size: Some(13.),
+                    ..Default::default()
+                })
+                .build()
+                .finish(),
+        )
+        .left()
+        .finish()
+    }
+
+    fn render_plan_usage_text(&self, text: String, appearance: &Appearance) -> Box<dyn Element> {
+        Align::new(
+            appearance
+                .ui_builder()
+                .span(text)
+                .with_style(UiComponentStyles {
+                    font_family_id: Some(appearance.ui_font_family()),
+                    font_weight: Some(Weight::Light),
+                    font_color: Some(
+                        appearance
+                            .theme()
+                            .active_ui_text_color()
+                            .with_opacity(60)
+                            .into(),
+                    ),
+                    font_size: Some(20.),
+                    ..Default::default()
+                })
+                .build()
+                .finish(),
+        )
+        .left()
         .finish()
     }
 

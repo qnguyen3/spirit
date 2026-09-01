@@ -46,6 +46,10 @@ use warp_graphql::mutations::set_team_discoverability::{
 use warp_graphql::mutations::set_team_member_role::{
     SetTeamMemberRole, SetTeamMemberRoleInput, SetTeamMemberRoleResult, SetTeamMemberRoleVariables,
 };
+use warp_graphql::mutations::transfer_team_ownership::{
+    TransferTeamOwnership, TransferTeamOwnershipInput, TransferTeamOwnershipResult,
+    TransferTeamOwnershipVariables,
+};
 use warp_graphql::queries::get_discoverable_teams::{
     GetDiscoverableTeams, GetDiscoverableTeamsVariables,
 };
@@ -147,6 +151,10 @@ pub trait TeamClient: 'static + Send + Sync {
         discoverable: bool,
     ) -> Result<WorkspacesMetadataWithPricing>;
 
+    async fn transfer_team_ownership(
+        &self,
+        new_owner_email: String,
+    ) -> Result<WorkspacesMetadataWithPricing>;
 
     async fn set_team_member_role(
         &self,
@@ -651,6 +659,36 @@ impl TeamClient for ServerApi {
         }
     }
 
+    async fn transfer_team_ownership(
+        &self,
+        new_owner_email: String,
+    ) -> Result<WorkspacesMetadataWithPricing> {
+        let variables = TransferTeamOwnershipVariables {
+            input: TransferTeamOwnershipInput { new_owner_email },
+            request_context: get_request_context(),
+        };
+        let operation = TransferTeamOwnership::build(variables);
+        let result = self
+            .send_graphql_request(operation, None)
+            .await?
+            .transfer_team_ownership;
+
+        match result {
+            TransferTeamOwnershipResult::TransferTeamOwnershipOutput(output) => {
+                if !output.success {
+                    return Err(anyhow!("failed to transfer team ownership"));
+                } else {
+                    self.workspaces_metadata().await
+                }
+            }
+            TransferTeamOwnershipResult::UserFacingError(user_facing_error) => {
+                Err(anyhow!(get_user_facing_error_message(user_facing_error)))
+            }
+            TransferTeamOwnershipResult::Unknown => {
+                Err(anyhow!("unknown error while transferring team ownership"))
+            }
+        }
+    }
 
     async fn set_team_member_role(
         &self,

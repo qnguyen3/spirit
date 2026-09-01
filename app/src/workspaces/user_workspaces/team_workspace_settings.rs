@@ -22,7 +22,7 @@ use warpui::{AppContext, Entity, SingletonEntity, WeakViewHandle};
 use super::UserWorkspaces;
 use crate::server::ids::ServerId;
 use crate::workspaces::team::Team;
-use crate::workspaces::workspace::Workspace;
+use crate::workspaces::workspace::{TeamByoSettings, Workspace};
 
 mod sealed {
     pub trait Sealed {}
@@ -110,6 +110,47 @@ impl UserWorkspaces {
             .and_then(|team_uid| self.team_from_uid(team_uid))
     }
 
+    /// Whether `scope`'s team admins allows its members to use their own provider API keys.
+    ///
+    /// Without the managed BYOK/BYOE policy there is no team-level restriction, so this returns
+    /// true and the normal BYO entitlement applies.
+    pub fn are_member_byo_keys_allowed<S: TeamScope + ?Sized>(&self, scope: &S) -> bool {
+        !self.is_managed_byok_byoe_enabled()
+            || self
+                .team_byo_for_scope(scope)
+                .is_some_and(|team_byo| team_byo.first_party_enabled && team_byo.allow_user_keys)
+    }
+
+    /// [`Self::are_member_byo_endpoints_allowed`] across every team at once, for callers with no
+    /// window: id resolution and preference reconciliation act on state that follows the user
+    /// between teams and devices, so neither may turn on one arbitrarily elected team's policy.
+    pub fn is_byo_endpoint_enabled_for_any_team(&self, app: &AppContext) -> bool {
+        self.is_byo_endpoint_enabled(app) && self.any_team_allows_member_byo_endpoints()
+    }
+
+    /// Unlike [`Self::team_byo_for_scope`], several teams is not ambiguous here: any one
+    /// allowing is enough. No teams still falls back to the workspace's own policy.
+    fn any_team_allows_member_byo_endpoints(&self) -> bool {
+        if !self.is_managed_byok_byoe_enabled() {
+            return true;
+        }
+        fn allows(team_byo: &TeamByoSettings) -> bool {
+            team_byo.endpoints_enabled && team_byo.allow_user_endpoints
+        }
+        let mut teams = self
+            .workspaces
+            .iter()
+            .flat_map(|workspace| workspace.teams.iter())
+            .peekable();
+        if teams.peek().is_none() {
+            return self
+                .current_workspace()
+                .and_then(|workspace| workspace.settings.team_byo.as_ref())
+                .is_some_and(allows);
+        }
+        teams.any(|team| team.settings.team_byo.as_ref().is_some_and(allows))
+    }
+
     /// Resolves a per-team setting for `scope`: the scope's own team when it names one, otherwise
     /// `current_workspace().settings`.
     ///
@@ -130,6 +171,17 @@ impl UserWorkspaces {
             Some(_) => self.team_from_scope(scope).map_or(absent, from_team),
             None => self.current_workspace().map_or(absent, from_workspace),
         }
+    }
+
+    /// The `team_byo` policy that governs `scope`. See [`Self::scoped_or_workspace_setting`] for
+    /// the no-team fallback.
+    fn team_byo_for_scope<S: TeamScope + ?Sized>(&self, scope: &S) -> Option<&TeamByoSettings> {
+        self.scoped_or_workspace_setting(
+            scope,
+            |team| team.settings.team_byo.as_ref(),
+            |workspace| workspace.settings.team_byo.as_ref(),
+            None,
+        )
     }
 
     /// The remote-session command patterns configured by `scope`'s team. See
