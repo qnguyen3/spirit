@@ -233,7 +233,6 @@ pub enum TerminalAction {
     },
     DismissCodeToolbeltTooltip,
     /// Open the Environment Management pane.
-    OpenEnvironmentManagementPane,
     OpenInlineHistoryMenu,
     /// Toggle PTY recording for this session.
     ToggleSessionRecording,
@@ -410,7 +409,6 @@ impl fmt::Debug for TerminalAction {
             PickRepoToOpen => write!(f, "PickRepoToOpen"),
             OpenFilesPalette { .. } => write!(f, "OpenFilesPalette"),
             DismissCodeToolbeltTooltip => write!(f, "DismissCodeToolbeltTooltip"),
-            OpenEnvironmentManagementPane => write!(f, "OpenEnvironmentManagementPane"),
             OpenInlineHistoryMenu => write!(f, "OpenInlineHistoryMenu"),
             ToggleSessionRecording => write!(f, "ToggleSessionRecording"),
             Osc52AllowBlockedClipboardOperation => {

@@ -543,7 +543,6 @@ pub enum Event {
     },
     SignupAnonymousUser,
     OpenThemeChooser,
-    OpenEnvironmentManagementPane,
     OpenFilesPalette {
         source: PaletteSource,
     },

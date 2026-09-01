@@ -1264,7 +1264,6 @@ pub enum Event {
         /// The initial prompt body content.
         initial_content: Option<String>,
     },
-    OpenEnvironmentManagementPane,
     OpenFilesPalette {
         source: PaletteSource,
     },
@@ -1306,7 +1305,6 @@ pub enum Event {
 #[derive(Clone, Copy, Debug)]
 pub enum LeftPanelTargetView {
     FileTree,
-    WarpDrive,
 }
 
 #[derive(Clone)]
@@ -6737,11 +6735,6 @@ impl TerminalView {
         self.toggle_left_panel_file_tree(true, ctx);
     }
 
-    /// Open the Environment Management pane.
-    fn open_environment_management_pane(&mut self, ctx: &mut ViewContext<Self>) {
-        ctx.emit(Event::OpenEnvironmentManagementPane);
-    }
-
     fn reset_onboarding_blocks(&mut self, ctx: &mut ViewContext<Self>) {
         self.block_onboarding_active = false;
         self.onboarding_prompt_block = None;
@@ -10624,9 +10617,6 @@ impl TerminalView {
                     cli_agent: None,
                 }));
             }
-            InputEvent::OpenEnvironmentManagementPane => {
-                self.open_environment_management_pane(ctx);
-            }
             InputEvent::OpenFilesPalette { source } => {
                 ctx.emit(Event::OpenFilesPalette { source: *source })
             }
@@ -13734,7 +13724,6 @@ impl TypedActionView for TerminalView {
             | ToggleCodeReviewPane
             | OpenAddPromptPane
             | AddProjectAtCurrentDirectory
-            | OpenEnvironmentManagementPane
             | DismissCodeToolbeltTooltip
             | OpenInlineHistoryMenu
             | ToggleSessionRecording
@@ -14055,9 +14044,6 @@ impl TypedActionView for TerminalView {
                     focus_new_pane: true,
                     cli_agent: None,
                 }));
-            }
-            OpenEnvironmentManagementPane => {
-                self.open_environment_management_pane(ctx);
             }
             AddProjectAtCurrentDirectory => {
                 if let Some(current_dir) = self.pwd() {
