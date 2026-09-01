@@ -159,6 +159,11 @@ where
         });
     }
 
+    #[cfg(test)]
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+
     pub fn set_style(&mut self, style: UiComponentStyles) {
         self.style_override = Some(style);
     }

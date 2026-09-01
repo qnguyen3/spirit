@@ -40,7 +40,6 @@ fn account_first_settings_apply_ui_choices() {
         app.read(|ctx| {
             assert!(!*TabSettings::as_ref(ctx).use_vertical_tabs);
             assert!(*TabSettings::as_ref(ctx).show_code_review_button);
-            assert!(!*WarpDriveSettings::as_ref(ctx).enable_warp_drive);
             assert!(*CodeSettings::as_ref(ctx).show_project_explorer);
             assert!(!*CodeSettings::as_ref(ctx).show_global_search);
         });

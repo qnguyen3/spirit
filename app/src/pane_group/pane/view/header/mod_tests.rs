@@ -16,9 +16,7 @@ use crate::server::server_api::team::MockTeamClient;
 use crate::server::server_api::workspace::MockWorkspaceClient;
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
 use crate::test_util::settings::initialize_settings_for_tests;
-use crate::{
-    NetworkStatus, SyncQueue, TeamTesterStatus, UpdateManager, UserProfiles, UserWorkspaces,
-};
+use crate::{NetworkStatus, TeamTesterStatus, UserProfiles, UserWorkspaces};
 
 /// A dummy view that is also a backing pane view for testing purposes.
 struct TestView {
@@ -121,7 +119,6 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(TeamTesterStatus::new);
     app.add_singleton_model(|_| ServerApiProvider::new_for_test());
     app.add_singleton_model(|_| UserProfiles::new(Vec::new()));
-    app.add_singleton_model(|ctx| UpdateManager::new(None, Arc::new(MockObjectClient::new()), ctx));
     app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
 }

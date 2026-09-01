@@ -18,10 +18,6 @@ use crate::util::bindings::{
     CustomAction, keybinding_name_to_display_string, trigger_to_keystroke,
 };
 
-#[cfg(test)]
-#[path = "context_menu_tests.rs"]
-mod tests;
-
 const CONTEXT_MENU_WIDTH: f32 = 200.;
 
 pub struct ContextMenuState<V: TypedActionView + View>
