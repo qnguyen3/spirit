@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Duration;
