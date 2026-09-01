@@ -66,7 +66,6 @@ fn initialize_editor(
     app.add_singleton_model(RepoMetadataModel::new);
     app.add_singleton_model(FileSearchModel::new);
     app.add_singleton_model(NotebookKeybindings::new);
-    app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
 
     let team_client_mock = Arc::new(MockTeamClient::new());

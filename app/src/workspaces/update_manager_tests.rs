@@ -34,8 +34,6 @@ fn initialize_app(
             ctx,
         )
     });
-    app.add_singleton_model(SyncQueue::mock);
-    app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(|_| ObjectActions::new(vec![]));
     app.add_singleton_model(PrivacySettings::mock);
     app.add_singleton_model(|_| UserProfiles::new(vec![]));

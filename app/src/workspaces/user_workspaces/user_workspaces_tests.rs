@@ -103,8 +103,6 @@ fn initialize_app_with_auth(
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| SystemStats::new());
     app.add_singleton_model(TeamTesterStatus::new);
-    app.add_singleton_model(SyncQueue::mock);
-    app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(|ctx| {
         UserWorkspaces::mock(
             team_client.clone(),
@@ -114,7 +112,6 @@ fn initialize_app_with_auth(
         )
     });
     app.add_singleton_model(|ctx| TeamUpdateManager::new(team_client.clone(), None, ctx));
-    app.add_singleton_model(UpdateManager::mock);
     app.add_singleton_model(PrivacySettings::mock);
     app.add_singleton_model(|_| ServerApiProvider::new_for_test());
     app.add_singleton_model(|_| auth_state_provider);
@@ -1118,7 +1115,6 @@ fn test_spaces_for_window_orders_selected_team_shared_and_personal() {
 
     App::test((), |mut app| async move {
         initialize_window_team_test_app(&mut app, vec![workspace]);
-        app.add_singleton_model(CloudModel::mock);
         app.add_singleton_model(|_| AuthStateProvider::new_for_test());
 
         let window_id = WindowId::new();

@@ -94,7 +94,6 @@ fn model_from_markdown(
 
     // In some tests, we need to initialize CloudModel first to mock some server data. In those cases, avoid mocking it a second time.
     if should_initialize_cloud_model {
-        app.add_singleton_model(CloudModel::mock);
     }
 
     let (window, _) = app.add_window(WindowStyle::NotStealFocus, |ctx| {
@@ -1871,7 +1870,6 @@ fn mock_server_workflow(id: i64, app: &mut App) {
 fn test_interleaving_command_and_embedding() {
     App::test((), |mut app| async move {
         initialize_deps(&mut app);
-        app.add_singleton_model(CloudModel::mock);
 
         // IDs are padded to be length 22.
         mock_server_workflow(123, &mut app);

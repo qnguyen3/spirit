@@ -58,7 +58,6 @@ fn initialize_code_editor_app(app: &mut App) {
     app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
 
     // Add mocks required by rich text editor (used in the CommentEditor)
-    app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(|_| ActiveSession::default());
     app.add_singleton_model(NotebookKeybindings::new);
 

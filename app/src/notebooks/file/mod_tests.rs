@@ -47,7 +47,6 @@ fn init_app(app: &mut App) {
     app.add_singleton_model(FileSearchModel::new);
     app.add_singleton_model(FileModel::new);
     app.add_singleton_model(NotebookKeybindings::new);
-    app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(|_| ServerApiProvider::new_for_test());
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
     app.add_singleton_model(AuthManager::new_for_test);

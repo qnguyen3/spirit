@@ -16,11 +16,8 @@ fn account_first_settings_apply_ui_choices() {
     App::test((), |mut app| async move {
         initialize_settings_for_tests(&mut app);
         app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-        app.add_singleton_model(SyncQueue::mock);
         app.add_singleton_model(|_| NetworkStatus::new());
         app.add_singleton_model(TeamTesterStatus::mock);
-        app.add_singleton_model(UpdateManager::mock);
-        app.add_singleton_model(CloudModel::mock);
         app.add_singleton_model(PrivacySettings::mock);
         app.add_singleton_model(UserWorkspaces::default_mock);
 
