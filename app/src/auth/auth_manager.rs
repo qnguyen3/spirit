@@ -34,7 +34,6 @@ use crate::server::server_api::auth::{
 };
 use crate::settings::PrivacySettings;
 use crate::settings::cloud_preferences_syncer::CloudPreferencesSyncer;
-use crate::settings::initializer::SettingsInitializer;
 use crate::terminal::general_settings::GeneralSettings;
 #[cfg(target_family = "wasm")]
 use crate::uri::browser_url_handler::{parse_current_url, update_browser_url};
@@ -287,10 +286,6 @@ impl AuthManager {
                 self.complete_authentication(user.clone(), credentials, ctx);
 
                 self.set_needs_reauth(false, ctx);
-
-                SettingsInitializer::handle(ctx).update(ctx, |initializer, ctx| {
-                    initializer.handle_user_fetched(self.auth_state.clone(), ctx);
-                });
 
                 // Reset the initial-load condition so that any cloud preference
                 // sync waits for the *new* user's cloud objects rather than

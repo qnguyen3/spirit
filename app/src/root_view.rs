@@ -70,6 +70,7 @@ use crate::server::server_api::{ServerApi, ServerApiProvider, ServerTime};
 use crate::settings::cloud_preferences_syncer::{
     CloudPreferencesSyncer, CloudPreferencesSyncerEvent,
 };
+use crate::settings::initializer::SettingsInitializer;
 use crate::settings::{
     QuakeModeSettings, ThemeSettings, apply_account_first_onboarding_settings,
     apply_onboarding_settings,
@@ -1607,6 +1608,14 @@ impl RootView {
             server_time: None,
             workspace_setting,
         };
+
+        // First-run setting defaults are keyed on local onboarding, so a user who has already
+        // been through onboarding is never re-defaulted.
+        if !has_completed_local_onboarding(ctx) {
+            SettingsInitializer::handle(ctx).update(ctx, |initializer, ctx| {
+                initializer.apply_first_run_defaults(ctx)
+            });
+        }
 
         let auth_onboarding_state = if auth_state.is_logged_in() {
             AuthOnboardingState::Terminal(workspace_args.create_workspace(ctx))
