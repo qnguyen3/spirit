@@ -1,11 +1,10 @@
-use about_page::AboutPageView;
+use about_page::{AboutPageAction, AboutPageEvent, AboutPageView};
 use appearance_page::{AppearancePageAction, AppearanceSettingsPageView};
 use cli_agents_page::CLIAgentsPageView;
 use code_editor_review_page::{EditorAndCodeReviewPageAction, EditorAndCodeReviewPageView};
 use features_page::{FeaturesPageView, FeaturesSettingsPageEvent};
 use itertools::Itertools as _;
 use keybindings::KeybindingsView;
-use main_page::{MainPageAction, MainSettingsPageEvent, MainSettingsPageView};
 use nav::{SettingsNavItem, SettingsUmbrella};
 use pathfinder_geometry::vector::Vector2F;
 use privacy_page::{PrivacyPageView, PrivacyPageViewEvent};
@@ -62,7 +61,6 @@ mod directory_color_add_picker;
 pub(crate) mod features;
 mod features_page;
 pub mod keybindings;
-mod main_page;
 mod nav;
 pub mod pane_manager;
 mod privacy;
@@ -161,19 +159,34 @@ pub enum SettingsViewEvent {
     StartResize,
     CheckForUpdate,
     LaunchNetworkLogging,
-    SignupAnonymousUser,
     ShowToast {
         message: String,
         flavor: ToastFlavor,
     },
 }
 
+/// Slugs of settings pages that no longer exist. They stay in the parsing
+/// vocabulary so persisted sessions and existing `warpctrl surface.settings.open
+/// --page` callers land on the default page instead of failing.
+const RETIRED_SLUGS: &[&str] = &[
+    "Account",
+    "Billing and usage",
+    "Referrals",
+    "Shared blocks",
+    "Teams",
+    "Warp Drive",
+    "WarpDrive",
+    "Environments",
+    "CloudEnvironments",
+    "Oz Cloud API Keys",
+    "OzCloudAPIKeys",
+];
+
 /// Different navigation sections within the settings view
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub enum SettingsSection {
     About,
     #[default]
-    Account,
     Appearance,
     Features,
     Keybindings,
@@ -219,7 +232,6 @@ impl SettingsSection {
     pub fn slug(self) -> &'static str {
         match self {
             Self::About => "About",
-            Self::Account => "Account",
             Self::Appearance => "Appearance",
             Self::Features => "Features",
             Self::Keybindings => "Keyboard shortcuts",
@@ -241,7 +253,6 @@ impl SettingsSection {
     pub fn from_slug(slug: &str) -> Option<Self> {
         let section = match slug {
             "About" => Self::About,
-            "Account" => Self::Account,
             "Appearance" => Self::Appearance,
             "Features" => Self::Features,
             "Keyboard shortcuts" => Self::Keybindings,
@@ -250,6 +261,7 @@ impl SettingsSection {
             "Warpify" => Self::Warpify,
             "Third party CLI agents" | "ThirdPartyCLIAgents" => Self::ThirdPartyCLIAgents,
             "Editor and Code Review" | "EditorAndCodeReview" => Self::EditorAndCodeReview,
+            _ if RETIRED_SLUGS.contains(&slug) => Self::default(),
             _ => return None,
         };
         Some(section)
@@ -336,9 +348,6 @@ pub mod flags {
     pub const SYNTAX_HIGHLIGHTING_FLAG: &str = "syntax_highlighting";
     pub const SAME_LINE_PROMPT: &str = "Same_Line_Prompt_Enabled";
     pub const SAFE_MODE_FLAG: &str = "safe_mode";
-    pub const CLOUD_CONVERSATION_STORAGE_FLAG: &str = "Cloud_Conversation_Storage_Enabled";
-    pub const CLOUD_CONVERSATION_STORAGE_EDITABLE_FLAG: &str =
-        "Cloud_Conversation_Storage_Editable";
     pub const DIM_INACTIVE_PANES_FLAG: &str = "Dim_Inactive_Panes";
     pub const OPEN_WINDOWS_AT_CUSTOM_SIZE_FLAG: &str = "Open_Windows_At_Custom_Size";
     pub const WINDOW_BLUR_TEXTURE_FLAG: &str = "Window_Blur_Texture";
@@ -774,7 +783,7 @@ pub enum DebugSettingsAction {
 pub enum SettingsAction {
     SelectAndRefresh(SettingsSection),
     ToggleUmbrella(usize),
-    MainPageToggle(MainPageAction),
+    AboutPageToggle(AboutPageAction),
     AppearancePageToggle(AppearancePageAction),
     FeaturesPageToggle(FeaturesPageAction),
     PrivacyPageToggle(PrivacyPageAction),
@@ -919,7 +928,6 @@ fn next_stop_index(current: usize, len: usize, direction: CycleDirection) -> usi
 macro_rules! update_page {
     ($handle:expr_2021, $update:expr_2021, $ctx:expr_2021) => {
         match $handle {
-            SettingsPageViewHandle::Main(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Appearance(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Features(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Keybindings(handle) => $ctx.update_view(handle, $update),
@@ -966,12 +974,6 @@ impl SettingsView {
         let pane_configuration = ctx.add_model(|_ctx| PaneConfiguration::new("Settings"));
 
         let global_resource_handles = GlobalResourceHandlesProvider::as_ref(ctx).get().clone();
-        // Main settings page with accounts info
-        let main_page_handle = ctx.add_typed_action_view(MainSettingsPageView::new);
-        ctx.subscribe_to_view(&main_page_handle, |me, _, event, ctx| {
-            me.handle_main_page_event(event, ctx);
-        });
-
         // Appearance & themes page
         let appearance_page_handle = ctx.add_typed_action_view(AppearanceSettingsPageView::new);
         ctx.subscribe_to_view(&appearance_page_handle, |me, _, event, ctx| {
@@ -988,7 +990,10 @@ impl SettingsView {
         });
 
         // About page
-        let about_page_handle = ctx.add_view(AboutPageView::new);
+        let about_page_handle = ctx.add_typed_action_view(AboutPageView::new);
+        ctx.subscribe_to_view(&about_page_handle, |me, _, event, ctx| {
+            me.handle_about_page_event(event, ctx);
+        });
 
         // Third party CLI agents page, under the Agents umbrella
         let cli_agents_page_handle = ctx.add_view(|_| CLIAgentsPageView::new());
@@ -1045,7 +1050,6 @@ impl SettingsView {
         });
 
         let mut settings_pages = vec![
-            SettingsPage::new(main_page_handle),
             SettingsPage::new(cli_agents_page_handle),
             SettingsPage::new(editor_review_page_handle),
             SettingsPage::new(appearance_page_handle),
@@ -1066,7 +1070,7 @@ impl SettingsView {
         // Build sidebar nav items. Umbrellas group their subpages here and
         // nowhere else, so this list is the only place membership is declared.
         let mut nav_items = vec![
-            SettingsNavItem::Page(SettingsSection::Account),
+            SettingsNavItem::Page(SettingsSection::Appearance),
             SettingsNavItem::Umbrella(SettingsUmbrella::new(
                 "Agents",
                 vec![SettingsSection::ThirdPartyCLIAgents],
@@ -1075,7 +1079,6 @@ impl SettingsView {
                 "Code",
                 vec![SettingsSection::EditorAndCodeReview],
             )),
-            SettingsNavItem::Page(SettingsSection::Appearance),
             SettingsNavItem::Page(SettingsSection::Features),
             SettingsNavItem::Page(SettingsSection::Keybindings),
             SettingsNavItem::Page(SettingsSection::Warpify),
@@ -1096,7 +1099,7 @@ impl SettingsView {
 
         let initial_page = match page {
             Some(SettingsSection::Scripting) if !FeatureFlag::WarpControlCli.is_enabled() => {
-                SettingsSection::Account
+                SettingsSection::default()
             }
             other => other.unwrap_or_default(),
         };
@@ -1370,16 +1373,9 @@ impl SettingsView {
             .collect();
     }
 
-    fn handle_main_page_event(
-        &mut self,
-        event: &MainSettingsPageEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
+    fn handle_about_page_event(&mut self, event: &AboutPageEvent, ctx: &mut ViewContext<Self>) {
         match event {
-            MainSettingsPageEvent::CheckForUpdate => ctx.emit(SettingsViewEvent::CheckForUpdate),
-            MainSettingsPageEvent::SignupAnonymousUser => {
-                ctx.emit(SettingsViewEvent::SignupAnonymousUser)
-            }
+            AboutPageEvent::CheckForUpdate => ctx.emit(SettingsViewEvent::CheckForUpdate),
         }
     }
 
@@ -1545,7 +1541,6 @@ impl SettingsView {
 
     fn should_render_page(&self, settings_page: &SettingsPage, app: &AppContext) -> bool {
         match &settings_page.view_handle {
-            SettingsPageViewHandle::Main(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Keybindings(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Features(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Appearance(v) => v.as_ref(app).should_render(app),
@@ -2057,12 +2052,12 @@ impl TypedActionView for SettingsView {
                     ctx.notify();
                 }
             }
-            SettingsAction::MainPageToggle(main_page_action) => {
-                if let Some(main_page) = self.settings_page(SettingsSection::Account)
-                    && let SettingsPageViewHandle::Main(view) = &main_page.view_handle
+            SettingsAction::AboutPageToggle(about_page_action) => {
+                if let Some(about_page) = self.settings_page(SettingsSection::About)
+                    && let SettingsPageViewHandle::About(view) = &about_page.view_handle
                 {
                     view.update(ctx, |view, ctx| {
-                        view.handle_action(main_page_action, ctx);
+                        view.handle_action(about_page_action, ctx);
                     })
                 }
             }

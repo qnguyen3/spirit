@@ -52,6 +52,16 @@ pub fn initialize_settings_for_tests_with_mode(
     app.add_singleton_model(|ctx| AppExecutionMode::new(mode, is_sandboxed, ctx));
 
     app.update(init_and_register_user_preferences);
+    app.update(|ctx| {
+        use warp_core::user_preferences::GetUserPreferences as _;
+
+        // Tests exercise the app past first run; without this marker every window would open
+        // the first-run onboarding surfaces instead of a terminal.
+        let _ = ctx.private_user_preferences().write_value(
+            crate::root_view::HAS_COMPLETED_ONBOARDING_KEY,
+            serde_json::to_string(&true).expect("bool serializes to JSON"),
+        );
+    });
     app.add_singleton_model(|_ctx| SettingsManager::default());
     app.add_singleton_model(WarpConfig::mock);
     app.update(|ctx| {

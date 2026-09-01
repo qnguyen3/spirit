@@ -57,7 +57,6 @@ fn subpage_display_names_are_correct() {
 /// breaks the exhaustive match there, which is the prompt to add it here.
 const ALL_SECTIONS: &[SettingsSection] = &[
     SettingsSection::About,
-    SettingsSection::Account,
     SettingsSection::Appearance,
     SettingsSection::Features,
     SettingsSection::Keybindings,
@@ -73,7 +72,6 @@ fn all_sections_list_is_exhaustive() {
     fn is_listed(section: SettingsSection) -> bool {
         let known = match section {
             SettingsSection::About
-            | SettingsSection::Account
             | SettingsSection::Appearance
             | SettingsSection::Features
             | SettingsSection::Keybindings
@@ -164,7 +162,7 @@ const AGENT_SUBPAGES: &[SettingsSection] = &[SettingsSection::ThirdPartyCLIAgent
 /// sidebar ordering so tests exercise realistic nav orders.
 fn realistic_nav_items() -> Vec<SettingsNavItem> {
     vec![
-        SettingsNavItem::Page(SettingsSection::Account),
+        SettingsNavItem::Page(SettingsSection::About),
         SettingsNavItem::Umbrella(SettingsUmbrella::new("Agents", AGENT_SUBPAGES.to_vec())),
         SettingsNavItem::Page(SettingsSection::Warpify),
         SettingsNavItem::Umbrella(SettingsUmbrella::new(
@@ -194,13 +192,10 @@ fn collapsed_umbrella_is_a_single_nav_stop() {
     // All umbrellas default to collapsed.
     let stops = build_nav_stops(&nav_items, |_| true);
 
-    // Expect: Account, <Agents umbrella>, Warpify, <Code umbrella>,
-    // <Privacy umbrella>, Teams.
+    // Expect: About, <Agents umbrella>, Warpify, <Code umbrella>,
+    // <Privacy umbrella>, Appearance.
     assert_eq!(stops.len(), 6);
-    assert!(matches!(
-        stops[0],
-        NavStop::Section(SettingsSection::Account)
-    ));
+    assert!(matches!(stops[0], NavStop::Section(SettingsSection::About)));
     assert!(matches!(
         stops[1],
         NavStop::CollapsedUmbrella {
@@ -255,7 +250,7 @@ fn expanded_umbrella_produces_section_stop_per_subpage() {
     assert_eq!(
         sections,
         vec![
-            "Account",
+            "About",
             "ThirdPartyCLIAgents",
             "Warpify",
             "Umbrella@3",
@@ -308,7 +303,7 @@ fn filtered_out_top_level_page_is_skipped() {
     assert!(
         stops
             .iter()
-            .any(|s| matches!(s, NavStop::Section(SettingsSection::Account)))
+            .any(|s| matches!(s, NavStop::Section(SettingsSection::About)))
     );
 }
 
@@ -404,12 +399,12 @@ fn arrow_down_from_account_with_collapsed_agents_lands_on_first_subpage() {
     let nav_items = realistic_nav_items();
     let stops = build_nav_stops(&nav_items, |_| true);
 
-    // Pressing Down from Account should auto-expand Agents and select
+    // Pressing Down from About should auto-expand Agents and select
     // ThirdPartyCLIAgents, not skip over to Warpify.
     let next = simulate_cycle(
         &nav_items,
         &stops,
-        SettingsSection::Account,
+        SettingsSection::About,
         CycleDirection::Down,
     );
     assert_eq!(next, SettingsSection::ThirdPartyCLIAgents);

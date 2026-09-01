@@ -14,8 +14,6 @@ use warpui::{App, ModelHandle};
 use watcher::HomeDirectoryWatcher;
 
 use super::*;
-use crate::auth::AuthStateProvider;
-use crate::auth::auth_manager::AuthManager;
 use crate::changelog_model::ChangelogModel;
 use crate::context_chips::prompt::Prompt;
 use crate::launch_configs::launch_config::PaneMode;
@@ -59,8 +57,6 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| {
         ChangelogModel::new(std::sync::Arc::new(http_client::Client::new_for_test()))
     });
-    app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    app.add_singleton_model(AuthManager::new_for_test);
     app.add_singleton_model(|_ctx| PtySpawner::new_for_test());
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| SystemStats::new());

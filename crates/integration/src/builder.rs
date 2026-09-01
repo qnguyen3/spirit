@@ -48,10 +48,17 @@ impl Builder {
             builder = builder.with_real_display();
         }
 
+        // Integration tests exercise the app past first run; without this marker every
+        // window would open the first-run onboarding surfaces instead of a terminal.
+        let user_prefs = HashMap::from_iter([(
+            warp::root_view::HAS_COMPLETED_ONBOARDING_KEY.to_owned(),
+            serde_json::to_string(&true).expect("bool serializes to JSON"),
+        )]);
+
         Self {
             inner: builder,
             setup: None,
-            user_prefs: Default::default(),
+            user_prefs,
         }
     }
 

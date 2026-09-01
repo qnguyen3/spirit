@@ -12,11 +12,9 @@ use warp_core::SessionId;
 use warpui::{Entity, ModelContext, ModelHandle, SingletonEntity, WeakModelHandle};
 
 use super::pty_controller::{EventLoopSender, PtyController};
-use crate::auth::auth_state::AuthStateProvider;
 use crate::remote_server::auth_context::server_api_auth_context;
 use crate::remote_server::manager::{RemoteServerManager, RemoteServerManagerEvent};
 use crate::remote_server::ssh_transport::SshTransport;
-use crate::server::server_api::ServerApiProvider;
 use crate::terminal::model::session::{IsSSHWrapperSession, SessionInfo};
 use crate::terminal::model_events::{ModelEvent, ModelEventDispatcher};
 use crate::terminal::warpify::settings::{SshExtensionInstallMode, WarpifySettings};
@@ -224,7 +222,7 @@ impl<T: EventLoopSender> RemoteServerController<T> {
         }
         let transport = SshTransport::new(
             socket_path,
-            self.build_auth_context(ctx),
+            self.build_auth_context(),
             warp_owns_control_master,
         );
         self.did_install = false;
@@ -530,10 +528,8 @@ impl<T: EventLoopSender> RemoteServerController<T> {
     }
 
     /// Builds a fresh [`RemoteServerAuthContext`] for each connection attempt.
-    fn build_auth_context(&self, ctx: &ModelContext<Self>) -> Arc<RemoteServerAuthContext> {
-        let auth_state = AuthStateProvider::as_ref(ctx).get().clone();
-        let auth_client = ServerApiProvider::as_ref(ctx).get_auth_client();
-        Arc::new(server_api_auth_context(auth_state, auth_client))
+    fn build_auth_context(&self) -> Arc<RemoteServerAuthContext> {
+        Arc::new(server_api_auth_context())
     }
 
     fn connect_session_for_current_identity(
@@ -544,7 +540,7 @@ impl<T: EventLoopSender> RemoteServerController<T> {
         connection_label: String,
         ctx: &mut ModelContext<Self>,
     ) {
-        let auth_context = self.build_auth_context(ctx);
+        let auth_context = self.build_auth_context();
         let transport =
             SshTransport::new(socket_path, auth_context.clone(), warp_owns_control_master);
         RemoteServerManager::handle(ctx).update(ctx, |mgr, ctx| {

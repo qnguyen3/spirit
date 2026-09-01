@@ -7,7 +7,6 @@ pub enum PaletteSource {
     Keybinding,
     CtrlTab { shift_pressed_initially: bool },
     QuitModal,
-    LogOutModal,
     IntegrationTest,
     ConversationManager,
     ContextChip,

@@ -1,59 +1,41 @@
-use std::sync::Arc;
+use std::sync::OnceLock;
 
 use remote_server::auth::RemoteServerAuthContext;
 use warpui::r#async::BoxFuture;
 
-use crate::auth::auth_state::AuthState;
-use crate::server::server_api::auth::AuthClient;
+const IDENTITY_KEY_FILE: &str = "remote_server_identity";
 
 /// Builds the app-wide auth context used by remote-server connections.
-pub fn server_api_auth_context(
-    auth_state: Arc<AuthState>,
-    auth_client: Arc<dyn AuthClient>,
-) -> RemoteServerAuthContext {
-    let token_auth_state = auth_state.clone();
-    let token_auth_client = auth_client;
-    let identity_auth_state = auth_state.clone();
-    let user_id_auth_state = auth_state.clone();
-    let user_email_auth_state = auth_state;
-
-    let user_id = user_id_auth_state
-        .user_id()
-        .map(|uid| uid.as_string())
-        .unwrap_or_default();
-    let user_email = user_email_auth_state.user_email().unwrap_or_default();
-
+///
+/// The client is permanently logged out, so no bearer token is ever offered; the
+/// daemon is reached over the user's own SSH connection instead.
+pub fn server_api_auth_context() -> RemoteServerAuthContext {
     RemoteServerAuthContext::new(
-        move || -> BoxFuture<'static, Option<String>> {
-            if !use_authenticated_user_identity(&token_auth_state) {
-                return Box::pin(async { None });
-            }
-
-            let auth_client = token_auth_client.clone();
-            Box::pin(async move {
-                match auth_client.get_or_refresh_access_token().await {
-                    Ok(token) => token.bearer_token(),
-                    Err(_) => None,
-                }
-            })
-        },
-        move || remote_server_identity_key(&identity_auth_state),
-        user_id,
-        user_email,
+        || -> BoxFuture<'static, Option<String>> { Box::pin(async { None }) },
+        || remote_server_identity_key().to_owned(),
+        String::new(),
+        String::new(),
     )
 }
 
-fn use_authenticated_user_identity(auth_state: &AuthState) -> bool {
-    auth_state.is_logged_in() && !auth_state.is_user_anonymous().unwrap_or(true)
-}
+/// Stable, non-secret key partitioning the remote daemon's socket/PID directory.
+///
+/// Persisted locally so reconnects and relaunches address the same daemon.
+fn remote_server_identity_key() -> &'static str {
+    static IDENTITY_KEY: OnceLock<String> = OnceLock::new();
+    IDENTITY_KEY.get_or_init(|| {
+        let path = warp_core::paths::state_dir().join(IDENTITY_KEY_FILE);
+        if let Ok(existing) = std::fs::read_to_string(&path) {
+            let existing = existing.trim();
+            if !existing.is_empty() {
+                return existing.to_owned();
+            }
+        }
 
-fn remote_server_identity_key(auth_state: &AuthState) -> String {
-    if use_authenticated_user_identity(auth_state) {
-        auth_state
-            .user_id()
-            .map(|uid| uid.as_string())
-            .unwrap_or_else(|| auth_state.anonymous_id())
-    } else {
-        auth_state.anonymous_id()
-    }
+        let generated = uuid::Uuid::new_v4().to_string();
+        if let Err(err) = std::fs::write(&path, &generated) {
+            log::warn!("Unable to persist the remote-server identity key: {err:?}");
+        }
+        generated
+    })
 }

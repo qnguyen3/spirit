@@ -62,8 +62,8 @@ const MAX_BRANCH_COUNT_CAP: usize = 500;
 
 /// Unique identifier for a connected proxy session in daemon mode.
 pub type ConnectionId = uuid::Uuid;
+
 use super::protocol::RequestId;
-use crate::auth::auth_state::{AuthState, AuthStateProvider};
 use crate::code_review::git_actions;
 use crate::terminal::model::session::command_executor::{
     ExecuteCommandOptions, LocalCommandExecutor,
@@ -163,6 +163,43 @@ impl PendingFileOps {
     }
 }
 
+/// The connecting client's credentials and identity, delivered over the wire by
+/// `Initialize` and refreshed by `Authenticate`.
+///
+/// Empty values are authoritative: an empty token clears the bearer credential, and an
+/// empty user ID clears the daemon's record of who is connected.
+#[derive(Default)]
+pub(crate) struct ClientAuthContext {
+    bearer_token: Option<String>,
+    user_id: Option<String>,
+    user_email: Option<String>,
+}
+
+impl ClientAuthContext {
+    fn apply_initialize(&mut self, auth_token: String, user_id: String, user_email: String) {
+        self.set_bearer_token(auth_token);
+        if user_id.is_empty() {
+            self.user_id = None;
+            self.user_email = None;
+            return;
+        }
+        self.user_id = Some(user_id);
+        self.user_email = (!user_email.is_empty()).then_some(user_email);
+    }
+
+    fn set_bearer_token(&mut self, auth_token: String) {
+        self.bearer_token = (!auth_token.is_empty()).then_some(auth_token);
+    }
+
+    pub(crate) fn user_id(&self) -> Option<&str> {
+        self.user_id.as_deref()
+    }
+
+    pub(crate) fn user_email(&self) -> Option<&str> {
+        self.user_email.as_deref()
+    }
+}
+
 /// The top-level server-side orchestrator model.
 ///
 /// Receives `ClientMessage`s from connected proxy sessions and routes
@@ -197,8 +234,8 @@ pub struct ServerModel {
     executors: HashMap<SessionId, Arc<LocalCommandExecutor>>,
     /// Tracks in-flight file write/delete operations and handles cleanup.
     pending_file_ops: PendingFileOps,
-    /// Daemon-wide auth credentials and user identity.
-    auth_state: Arc<AuthState>,
+    /// Daemon-wide auth credentials and user identity, supplied by connecting clients.
+    client_auth: ClientAuthContext,
     /// Tracks open buffers, per-buffer connection sets, and pending async
     /// buffer requests (OpenBuffer, SaveBuffer).
     buffers: ServerBufferTracker,
@@ -251,7 +288,7 @@ impl ServerModel {
             host_id,
             executors: HashMap::new(),
             pending_file_ops: PendingFileOps::new(),
-            auth_state: AuthStateProvider::as_ref(ctx).get().clone(),
+            client_auth: ClientAuthContext::default(),
             buffers: ServerBufferTracker::new(),
             diff_states: ctx.add_model(|_| RemoteDiffStateManager::new()),
             host_scoped_requests: HashMap::new(),
@@ -1052,7 +1089,7 @@ impl ServerModel {
     /// Applies the auth token from an `Initialize` message.
     /// Extracted so unit tests can call it without a `ModelContext`.
     fn apply_initialize_auth(&mut self, msg: &Initialize) {
-        self.auth_state.apply_remote_server_auth_context(
+        self.client_auth.apply_initialize(
             msg.auth_token.clone(),
             msg.user_id.clone(),
             msg.user_email.clone(),
@@ -1062,12 +1099,11 @@ impl ServerModel {
     /// Handles `Authenticate` by replacing the daemon-wide credential.
     /// This is a notification — no response is sent.
     fn handle_authenticate(&mut self, msg: Authenticate) {
-        self.auth_state
-            .set_remote_server_bearer_token(msg.auth_token);
+        self.client_auth.set_bearer_token(msg.auth_token);
     }
 
     pub fn auth_token(&self) -> Option<String> {
-        self.auth_state.get_access_token_ignoring_validity()
+        self.client_auth.bearer_token.clone()
     }
 
     /// Handles `Abort` by cancelling the in-progress request it targets.

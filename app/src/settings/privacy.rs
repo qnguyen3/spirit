@@ -1,24 +1,14 @@
 use std::fmt::Display;
-use std::sync::Arc;
 
-use anyhow::Result;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use settings::macros::{define_settings_group, maybe_define_setting, register_settings_events};
-use settings::{RespectUserSyncSetting, Setting, SupportedPlatforms, SyncToCloud};
+use settings::macros::{maybe_define_setting, register_settings_events};
+use settings::{
+    ChangeEventReason, RespectUserSyncSetting, Setting, SupportedPlatforms, SyncToCloud,
+};
 use warp_errors::report_error;
-use warp_graphql::mutations::update_user_settings::UpdateUserSettingsInput;
 pub use warp_terminal::model::secrets::RegexDisplayInfo;
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
-
-use crate::auth::AuthStateProvider;
-use crate::auth::auth_state::AuthState;
-use crate::server::server_api::ServerApiProvider;
-#[cfg(any(test, feature = "test-util"))]
-use crate::server::server_api::auth::MockAuthClient;
-use crate::server::server_api::auth::{AuthClient, SyncedUserSettings};
-
-pub const CLOUD_CONVERSATION_STORAGE_ENABLED_DEFAULTS_KEY: &str = "CloudConversationStorageEnabled";
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[schemars(description = "A custom regex pattern for detecting and redacting secrets.")]
@@ -64,20 +54,6 @@ impl PartialEq for CustomSecretRegex {
 
 impl settings_value::SettingsValue for CustomSecretRegex {}
 
-define_settings_group!(CloudPrivacySettings, settings: [
-    is_cloud_conversation_storage_enabled: IsCloudConversationStorageEnabled {
-        type: bool,
-        default: true,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::No),
-        surface: settings::SettingSurfaces::ALL,
-        private: false,
-        storage_key: "CloudConversationStorageEnabled",
-        toml_path: "agents.cloud_conversation_storage_enabled",
-        description: "Whether conversations are stored in the cloud.",
-    },
-]);
-
 maybe_define_setting!(CustomSecretRegexList, group: PrivacySettings, {
     type: Vec<CustomSecretRegex>,
     default: Vec::new(),
@@ -100,9 +76,6 @@ maybe_define_setting!(HasInitializedDefaultSecretRegexes, group: PrivacySettings
 
 /// Singleton model for managing the user's privacy settings.
 pub struct PrivacySettings {
-    auth_state: Arc<AuthState>,
-    auth_client: Arc<dyn AuthClient>,
-    pub is_cloud_conversation_storage_enabled: bool,
     pub has_initialized_default_secret_regexes: HasInitializedDefaultSecretRegexes,
     /// List of user defined secret regexes.
     /// Enterprise-level secret regexes will always take precedence over user-level secrets,
@@ -129,104 +102,12 @@ impl PrivacySettings {
         );
     }
 
-    /// Returns a new PrivacySettings object initialized from locally cached values. Server-side
-    /// settings are fetched later via `fetch_or_update_settings`, which is called from
-    /// `on_user_fetched` after the user's auth state is established.
+    /// Returns a new PrivacySettings object initialized from locally cached values.
     fn new(ctx: &mut ModelContext<Self>) -> Self {
-        let auth_state = AuthStateProvider::as_ref(ctx).get().clone();
-        let auth_client = ServerApiProvider::as_ref(ctx).get_auth_client();
-
-        // Initialize from `CloudPrivacySettings`, which is the source of truth for these
-        // booleans.
-        let cloud_privacy = CloudPrivacySettings::as_ref(ctx);
-        let is_cloud_conversation_storage_enabled =
-            *cloud_privacy.is_cloud_conversation_storage_enabled.value();
-
-        // Listen for changes to the cloud model and update ourselves when they happen.
-        ctx.subscribe_to_model(&CloudPrivacySettings::handle(ctx), |me, _, event, ctx| {
-            let privacy_settings = CloudPrivacySettings::as_ref(ctx);
-            match event {
-                CloudPrivacySettingsChangedEvent::IsCloudConversationStorageEnabled { .. } => {
-                    me.set_is_cloud_conversation_storage_enabled(
-                        *privacy_settings
-                            .is_cloud_conversation_storage_enabled
-                            .value(),
-                        ctx,
-                    );
-                }
-            }
-        });
-
-        let user_secret_regex_list: CustomSecretRegexList =
-            CustomSecretRegexList::new_from_storage(ctx);
-        let has_initialized_default_secret_regexes: HasInitializedDefaultSecretRegexes =
-            HasInitializedDefaultSecretRegexes::new_from_storage(ctx);
-
         Self {
-            auth_state,
-            auth_client,
-            is_cloud_conversation_storage_enabled,
-            user_secret_regex_list,
-            has_initialized_default_secret_regexes,
-        }
-    }
-
-    pub fn refresh_to_default(&mut self) {
-        // TODO(zach): this seems incorrect - should we also update the values on disk?
-        self.is_cloud_conversation_storage_enabled = true;
-    }
-
-    /// Fetch the user's privacy settings from the server if any or update the server settings.
-    pub fn fetch_or_update_settings(&self, ctx: &mut ModelContext<Self>) {
-        let auth_client_clone = self.auth_client.clone();
-        let _ = ctx.spawn(
-            async move { auth_client_clone.get_user_settings().await },
-            Self::initialize_from_fetched_settings_or_update_settings,
-        );
-    }
-
-    /// Initializes state from the [`SyncedUserSettings`] fetched from the server, if any.
-    /// If there are no settings from the server, updates the server settings with local settings.
-    /// TODO: Make this a server-side db transaction.
-    fn initialize_from_fetched_settings_or_update_settings(
-        &mut self,
-        fetched_settings: Result<Option<SyncedUserSettings>>,
-        ctx: &mut ModelContext<PrivacySettings>,
-    ) {
-        match fetched_settings {
-            Ok(Some(fetched_settings)) => {
-                // Until the login experience stops hiding the telemetry settings,
-                // we assume that locally enabled telemetry is unintentional.
-                // As such, where settings differ, we respect whichever setting that is disabled.
-                self.overwrite_local_settings_if_cloud_disabled(fetched_settings, ctx);
-                // If any local setting is disabled, we have to update the server.
-                if !self.is_cloud_conversation_storage_enabled {
-                    self.update_server_with_local_settings(ctx);
-                }
-            }
-            Ok(None) => {
-                // This indicates the user had not logged in before.
-                log::info!("User has no synced privacy settings.");
-                self.update_server_with_local_settings(ctx);
-            }
-            Err(err) => {
-                report_error!(err.context("Failed to fetch user settings."));
-            }
-        }
-    }
-
-    fn overwrite_local_settings_if_cloud_disabled(
-        &mut self,
-        fetched_settings: SyncedUserSettings,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        if self.is_cloud_conversation_storage_enabled
-            && !fetched_settings.is_cloud_conversation_storage_enabled
-        {
-            self.set_is_cloud_conversation_storage_enabled(
-                fetched_settings.is_cloud_conversation_storage_enabled,
-                ctx,
-            );
+            user_secret_regex_list: CustomSecretRegexList::new_from_storage(ctx),
+            has_initialized_default_secret_regexes:
+                HasInitializedDefaultSecretRegexes::new_from_storage(ctx),
         }
     }
 
@@ -234,52 +115,9 @@ impl PrivacySettings {
     #[cfg(any(test, feature = "test-util"))]
     pub fn mock(_ctx: &mut ModelContext<Self>) -> Self {
         Self {
-            auth_state: Arc::new(AuthState::new_for_test()),
-            auth_client: Arc::new(MockAuthClient::new()),
-            is_cloud_conversation_storage_enabled: true,
             user_secret_regex_list: CustomSecretRegexList::new(None),
             has_initialized_default_secret_regexes: HasInitializedDefaultSecretRegexes::new(None),
         }
-    }
-
-    pub fn set_is_cloud_conversation_storage_enabled(
-        &mut self,
-        new_value: bool,
-        ctx: &mut ModelContext<PrivacySettings>,
-    ) {
-        let old_value = self.is_cloud_conversation_storage_enabled;
-        if new_value == old_value {
-            return;
-        }
-
-        self.is_cloud_conversation_storage_enabled = new_value;
-
-        CloudPrivacySettings::handle(ctx).update(ctx, |settings, ctx| {
-            log::info!("Setting is_cloud_conversation_storage_enabled to {new_value}");
-            let _ = settings
-                .is_cloud_conversation_storage_enabled
-                .set_value(new_value, ctx);
-        });
-
-        if self.auth_state.is_logged_in() {
-            let auth_client = self.auth_client.clone();
-            let _ = ctx.spawn(
-                async move {
-                    auth_client
-                        .set_is_cloud_conversation_storage_enabled(new_value)
-                        .await
-                },
-                |_, _, _| (),
-            );
-        }
-
-        ctx.emit(
-            PrivacySettingsChangedEvent::UpdateIsCloudConversationStorageEnabled {
-                old_value,
-                new_value,
-            },
-        );
-        ctx.notify();
     }
 
     pub fn remove_user_secret_regex(&mut self, idx: &usize, ctx: &mut ModelContext<Self>) {
@@ -365,40 +203,11 @@ impl PrivacySettings {
             }
         }
     }
-
-    /// Sends request(s) to update server-side user settings with current local values.
-    fn update_server_with_local_settings(&self, ctx: &mut ModelContext<Self>) {
-        if self.auth_state.is_logged_in() {
-            let auth_client = self.auth_client.clone();
-            let cloud_conversation_storage_enabled =
-                (!self.is_cloud_conversation_storage_enabled).then_some(false);
-            let _ = ctx.spawn(
-                async move {
-                    let result = auth_client
-                        .update_user_settings(UpdateUserSettingsInput {
-                            telemetry_enabled: None,
-                            cloud_conversation_storage_enabled,
-                        })
-                        .await;
-                    if let Err(err) = result {
-                        report_error!(
-                            err.context("Failed to update server with local privacy settings.")
-                        )
-                    }
-                },
-                |_, _, _| (),
-            );
-        }
-    }
 }
 
 /// Events emitted when PrivacySettings is updated.
 #[derive(Clone, Copy)]
 pub enum PrivacySettingsChangedEvent {
-    UpdateIsCloudConversationStorageEnabled {
-        old_value: bool,
-        new_value: bool,
-    },
     CustomSecretRegexList {
         change_event_reason: ChangeEventReason,
     },
@@ -412,7 +221,3 @@ impl Entity for PrivacySettings {
 }
 
 impl SingletonEntity for PrivacySettings {}
-
-#[cfg(test)]
-#[path = "privacy_tests.rs"]
-mod tests;

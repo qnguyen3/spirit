@@ -436,7 +436,6 @@ autoupdate = []
 supergrok = []
 agent_mode = []
 agent_onboarding = []
-account_first_onboarding = []
 ade_workspaces = []
 async_find = []
 changelog = []
@@ -517,7 +516,6 @@ default = [
     "force_classic_completions",
     "pluggable_notifications",
     "agent_onboarding",
-    "account_first_onboarding",
     "global_search",
     "cloud_conversations",
     "cloud_mode",
@@ -549,7 +547,6 @@ default = [
     "pinned_tabs",
     "agent_harness",
     "trim_trailing_blank_lines",
-    "skip_firebase_anonymous_user",
     "settings_file",
     "directory_tab_colors",
     "queue_slash_command",
@@ -779,7 +776,6 @@ pinned_tabs = []
 warp_control_cli = []
 agent_harness = []
 hoa_notifications = []
-skip_firebase_anonymous_user = []
 solo_user_byok = []
 billing_and_usage_page_v2 = []
 configurable_toolbar = []

@@ -6,13 +6,11 @@ use warp_core::ui::theme::color::internal_colors;
 use warp_errors::report_error;
 use warp_util::path::LineAndColumnArg;
 use warpui::elements::{
-    Align, ChildView, ConstrainedBox, Container, CrossAxisAlignment, DragBarSide, Element, Empty,
-    Flex, MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Resizable,
+    ChildView, ConstrainedBox, Container, CrossAxisAlignment, DragBarSide, Element, Empty, Flex,
+    MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Resizable,
     ResizableStateHandle, Shrinkable, resizable_state_handle,
 };
-use warpui::fonts::Weight;
 use warpui::platform::Cursor;
-use warpui::ui_components::button::ButtonVariant;
 use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 use warpui::{
     AppContext, Entity, FocusContext, ModelHandle, SingletonEntity, TypedActionView, View,
@@ -64,7 +62,6 @@ struct MouseStateHandles {
     project_explorer_button: MouseStateHandle,
     global_search_button: MouseStateHandle,
     source_control_button: MouseStateHandle,
-    sign_in_button: MouseStateHandle,
 }
 
 #[derive(Clone, Debug)]
@@ -72,23 +69,6 @@ pub enum LeftPanelAction {
     ProjectExplorer,
     GlobalSearch { entry_focus: GlobalSearchEntryFocus },
     SourceControl,
-    SignIn,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ToolPanelAvailability {
-    Available,
-    RequiresAccount,
-}
-
-impl ToolPanelView {
-    fn availability(self, _app: &AppContext) -> ToolPanelAvailability {
-        match self {
-            ToolPanelView::ProjectExplorer
-            | ToolPanelView::GlobalSearch { .. }
-            | ToolPanelView::SourceControl => ToolPanelAvailability::Available,
-        }
-    }
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -101,7 +81,6 @@ pub enum LeftPanelEvent {
         target: FileTarget,
         line_col: Option<LineAndColumnArg>,
     },
-    SignInRequested,
     SourceControlSelected,
 }
 
@@ -192,81 +171,6 @@ fn toolbelt_tooltip_keybinding(binding_names: &[&'static str], app: &AppContext)
 }
 
 impl LeftPanelView {
-    pub(crate) fn active_view_availability(&self, app: &AppContext) -> ToolPanelAvailability {
-        self.active_view.get().availability(app)
-    }
-
-    fn render_unavailable_panel(
-        &self,
-        appearance: &Appearance,
-        view: ToolPanelView,
-        availability: ToolPanelAvailability,
-    ) -> Box<dyn Element> {
-        let (title, description) = match (view, availability) {
-            (
-                ToolPanelView::ProjectExplorer
-                | ToolPanelView::GlobalSearch { .. }
-                | ToolPanelView::SourceControl,
-                ToolPanelAvailability::RequiresAccount,
-            )
-            | (_, ToolPanelAvailability::Available) => {
-                debug_assert!(false, "unexpected locked tool-panel state");
-                (
-                    "Feature unavailable",
-                    "This feature is currently unavailable.",
-                )
-            }
-        };
-        let theme = appearance.theme();
-        let title = appearance
-            .ui_builder()
-            .paragraph(title)
-            .with_style(UiComponentStyles {
-                font_size: Some(16.),
-                font_weight: Some(Weight::Semibold),
-                ..Default::default()
-            })
-            .build()
-            .finish();
-        let description = appearance
-            .ui_builder()
-            .paragraph(description)
-            .with_style(UiComponentStyles {
-                font_size: Some(13.),
-                font_color: Some(internal_colors::text_sub(
-                    theme,
-                    theme.background().into_solid(),
-                )),
-                ..Default::default()
-            })
-            .build()
-            .finish();
-        let mut content = Flex::column()
-            .with_main_axis_size(MainAxisSize::Min)
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_child(title)
-            .with_child(Container::new(description).with_margin_top(8.).finish());
-        if availability == ToolPanelAvailability::RequiresAccount {
-            let sign_in = appearance
-                .ui_builder()
-                .button(
-                    ButtonVariant::Accent,
-                    self.mouse_state_handles.sign_in_button.clone(),
-                )
-                .with_text_label("Sign in".to_string())
-                .build()
-                .on_click(|ctx, _, _| {
-                    ctx.dispatch_typed_action(LeftPanelAction::SignIn);
-                })
-                .finish();
-            content = content.with_child(Container::new(sign_in).with_margin_top(16.).finish());
-        }
-        let content = ConstrainedBox::new(content.finish())
-            .with_max_width(280.)
-            .finish();
-
-        Align::new(Container::new(content).with_uniform_padding(24.).finish()).finish()
-    }
     pub fn new(
         working_directories_model: ModelHandle<WorkingDirectoriesModel>,
         views: Vec<ToolPanelView>,
@@ -708,10 +612,6 @@ impl LeftPanelView {
     }
 
     pub fn focus_active_view_on_entry(&mut self, ctx: &mut ViewContext<Self>) {
-        if self.active_view_availability(ctx) != ToolPanelAvailability::Available {
-            ctx.focus_self();
-            return;
-        }
         match self.active_view.get() {
             ToolPanelView::ProjectExplorer => {
                 if let Some(file_tree_view) = self.active_file_tree_view(ctx) {
@@ -904,7 +804,6 @@ impl LeftPanelView {
                 LeftPanelAction::SourceControl => {
                     self.active_view.get() == ToolPanelView::SourceControl
                 }
-                LeftPanelAction::SignIn => false,
             };
         }
     }
@@ -999,9 +898,6 @@ impl LeftPanelView {
                 active_view_state::set(self, ToolPanelView::SourceControl, ctx);
                 ctx.emit(LeftPanelEvent::SourceControlSelected);
             }
-            LeftPanelAction::SignIn => {
-                ctx.emit(LeftPanelEvent::SignInRequested);
-            }
         }
     }
 
@@ -1064,9 +960,7 @@ impl View for LeftPanelView {
 
     fn on_focus(&mut self, focus_ctx: &FocusContext, ctx: &mut ViewContext<Self>) {
         // Focus the active tool panel view on-left-panel-focus.
-        if focus_ctx.is_self_focused()
-            && self.active_view_availability(ctx) == ToolPanelAvailability::Available
-        {
+        if focus_ctx.is_self_focused() {
             match self.active_view.get() {
                 ToolPanelView::ProjectExplorer => {
                     if let Some(view) = self.active_file_tree_view(ctx) {
@@ -1112,14 +1006,7 @@ impl View for LeftPanelView {
         };
 
         let active_view = self.active_view.get();
-        let availability = self.active_view_availability(app);
-        let content_area: Box<dyn Element> = if availability != ToolPanelAvailability::Available {
-            Shrinkable::new(
-                1.0,
-                self.render_unavailable_panel(appearance, active_view, availability),
-            )
-            .finish()
-        } else {
+        let content_area: Box<dyn Element> = {
             match active_view {
                 ToolPanelView::ProjectExplorer => match self.active_file_tree_view(app) {
                     Some(file_tree_view) => Shrinkable::new(

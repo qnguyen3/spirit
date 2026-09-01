@@ -1,6 +1,5 @@
 use pathfinder_color::ColorU;
 use ui_components::{Component as _, Options as _, button};
-use warp_core::features::FeatureFlag;
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::WarpTheme;
 use warp_core::ui::theme::color::internal_colors;
@@ -24,29 +23,16 @@ use crate::slides::{bottom_nav, layout, slide_content};
 
 #[derive(Debug, Clone)]
 pub enum ThemePickerSlideEvent {
-    ThemeSelected {
-        theme_name: String,
-    },
-    SyncWithOsToggled {
-        enabled: bool,
-    },
-    /// Emitted when the user clicks the "Privacy Settings" link on the terminal
-    /// intention theme slide. The parent orchestrator is expected to open the
-    /// privacy settings (e.g. via a LoginSlideView in privacy-only mode).
-    PrivacySettingsRequested,
+    ThemeSelected { theme_name: String },
+    SyncWithOsToggled { enabled: bool },
 }
 
 #[derive(Debug, Clone)]
 pub enum ThemePickerSlideAction {
-    SelectTheme {
-        index: usize,
-    },
+    SelectTheme { index: usize },
     ToggleSyncWithOs,
     BackClicked,
     NextClicked,
-    /// Dispatched when the user clicks the "Privacy Settings" link in the
-    /// terminal-intention disclaimer block below the theme options.
-    PrivacySettingsClicked,
 }
 
 const TOS_URL: &str = "https://www.warp.dev/terms-of-service";
@@ -64,7 +50,6 @@ pub struct ThemePickerSlide {
     sync_with_os: bool,
     sync_with_os_mouse: MouseStateHandle,
     tos_mouse_state: MouseStateHandle,
-    privacy_settings_mouse_state: MouseStateHandle,
     back_button: button::Button,
     next_button: button::Button,
     scroll_state: ClippedScrollStateHandle,
@@ -107,7 +92,6 @@ impl ThemePickerSlide {
             sync_with_os: false,
             sync_with_os_mouse: MouseStateHandle::default(),
             tos_mouse_state: MouseStateHandle::default(),
-            privacy_settings_mouse_state: MouseStateHandle::default(),
             back_button: button::Button::default(),
             next_button: button::Button::default(),
             scroll_state: ClippedScrollStateHandle::new(),
@@ -153,21 +137,12 @@ impl ThemePickerSlide {
             theme_options
         };
 
-        let mut content = vec![
+        let content = vec![
             self.render_header_text(appearance),
             theme_options_section,
             self.render_sync_with_os_section(appearance),
+            self.render_disclaimer_section(appearance),
         ];
-
-        // Add the Privacy Settings / Terms of Service disclaimer block below the
-        // theme options when the user won't hit the login slide afterwards. The
-        // flow skips the login slide (which surfaces the same links) unless Warp
-        // Drive is enabled — in that case the login slide will still run after
-        // the theme step and show the disclaimer, so duplicating it here is
-        // unnecessary.
-        if !FeatureFlag::AccountFirstOnboarding.is_enabled() {
-            content.push(self.render_disclaimer_section(appearance));
-        }
 
         slide_content::onboarding_slide_content(
             content,
@@ -258,14 +233,11 @@ impl ThemePickerSlide {
             },
         );
 
-        let account_first = FeatureFlag::AccountFirstOnboarding.is_enabled();
-        let next_label = if account_first { "Next" } else { "Get Warping" };
-
         let enter = Keystroke::parse("enter").unwrap_or_default();
         let next_button = self.next_button.render(
             appearance,
             button::Params {
-                content: button::Content::Label(next_label.into()),
+                content: button::Content::Label("Get Warping".into()),
                 theme: &button::themes::Primary,
                 options: button::Options {
                     keystroke: Some(enter),
@@ -277,11 +249,7 @@ impl ThemePickerSlide {
             },
         );
 
-        let (step_index, step_count) = if account_first {
-            self.onboarding_state.as_ref(app).progress()
-        } else {
-            (3, 4)
-        };
+        let (step_index, step_count) = self.onboarding_state.as_ref(app).progress();
 
         bottom_nav::onboarding_bottom_nav(
             appearance,
@@ -523,51 +491,15 @@ impl ThemePickerSlide {
         let sub_text_color = internal_colors::text_sub(theme, theme.background().into_solid());
         let ui_builder = appearance.ui_builder();
 
-        let disclaimer_styles = UiComponentStyles {
-            font_color: Some(sub_text_color),
-            font_size: Some(12.),
-            ..Default::default()
-        };
-        let link_styles = UiComponentStyles {
-            font_size: Some(12.),
-            ..Default::default()
-        };
-
-        // The disclaimer block is only rendered on the Terminal-without-Drive
-        // path (see `render_theme_picker_content`), where AI is not part of the
-        // selected onboarding settings; skip the "and AI features" wording.
-        let privacy_line = Flex::row()
-            .with_child(
-                ui_builder
-                    .span("If you'd like to opt out of analytics, you can adjust your ")
-                    .with_style(disclaimer_styles)
-                    .build()
-                    .finish(),
-            )
-            .with_child(
-                ui_builder
-                    .link(
-                        "Privacy Settings".into(),
-                        None,
-                        Some(Box::new(|ctx| {
-                            ctx.dispatch_typed_action(
-                                ThemePickerSlideAction::PrivacySettingsClicked,
-                            );
-                        })),
-                        self.privacy_settings_mouse_state.clone(),
-                    )
-                    .soft_wrap(false)
-                    .with_style(link_styles)
-                    .build()
-                    .finish(),
-            )
-            .finish();
-
         let tos_line = Flex::row()
             .with_child(
                 ui_builder
                     .span("By continuing, you agree to Warp's ")
-                    .with_style(disclaimer_styles)
+                    .with_style(UiComponentStyles {
+                        font_color: Some(sub_text_color),
+                        font_size: Some(12.),
+                        ..Default::default()
+                    })
                     .build()
                     .finish(),
             )
@@ -580,22 +512,16 @@ impl ThemePickerSlide {
                         self.tos_mouse_state.clone(),
                     )
                     .soft_wrap(false)
-                    .with_style(link_styles)
+                    .with_style(UiComponentStyles {
+                        font_size: Some(12.),
+                        ..Default::default()
+                    })
                     .build()
                     .finish(),
             )
             .finish();
 
-        Container::new(
-            Flex::column()
-                .with_main_axis_size(MainAxisSize::Min)
-                .with_cross_axis_alignment(CrossAxisAlignment::Start)
-                .with_child(privacy_line)
-                .with_child(Container::new(tos_line).with_margin_top(8.).finish())
-                .finish(),
-        )
-        .with_margin_top(24.)
-        .finish()
+        Container::new(tos_line).with_margin_top(24.).finish()
     }
 
     fn select_theme(&mut self, index: usize, ctx: &mut ViewContext<Self>) {
@@ -676,9 +602,6 @@ impl TypedActionView for ThemePickerSlide {
             }
             ThemePickerSlideAction::NextClicked => {
                 self.next(ctx);
-            }
-            ThemePickerSlideAction::PrivacySettingsClicked => {
-                ctx.emit(ThemePickerSlideEvent::PrivacySettingsRequested);
             }
         }
     }

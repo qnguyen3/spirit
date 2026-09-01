@@ -5,7 +5,6 @@ use warpui::{App, AppContext, Element, Entity, TypedActionView, View, ViewContex
 
 use super::{Event, OpenOverlay};
 use crate::NetworkStatus;
-use crate::auth::AuthStateProvider;
 use crate::menu::MenuItemFields;
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::pane_group::{BackingView, PaneConfiguration, PaneId, PaneView};
@@ -103,7 +102,6 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| ServerApiProvider::new_for_test());
     app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
-    app.add_singleton_model(|_| AuthStateProvider::new_for_test());
 }
 
 #[test]
