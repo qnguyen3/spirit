@@ -1447,7 +1447,6 @@ pub(crate) fn initialize_app(
     tab_configs::new_worktree_modal::init(ctx);
     tab_configs::params_modal::init(ctx);
     ui_components::keyboard_navigable_buttons::init(ctx);
-    settings_view::update_environment_form::init(ctx);
     context_chips::display_menu::init(ctx);
     context_chips::node_version_popup::init(ctx);
     coding_entrypoints::project_buttons::init(ctx);

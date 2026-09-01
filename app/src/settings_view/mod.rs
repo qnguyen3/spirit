@@ -64,8 +64,7 @@ mod cli_agents_page;
 mod code_editor_review_page;
 mod delete_environment_confirmation_dialog;
 mod directory_color_add_picker;
-pub(crate) mod environments_page;
-mod features;
+pub(crate) mod features;
 mod features_page;
 pub mod keybindings;
 mod main_page;
@@ -81,8 +80,7 @@ pub(crate) mod settings_page;
 mod tab_menu;
 mod teams_page;
 mod transfer_ownership_confirmation_modal;
-pub mod update_environment_form;
-mod warpify_page;
+pub mod warpify_page;
 
 #[cfg(not(target_family = "wasm"))]
 pub use cli_agents_page::cli_agent_settings_widget_id;

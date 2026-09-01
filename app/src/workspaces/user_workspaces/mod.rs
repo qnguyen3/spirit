@@ -19,7 +19,10 @@ use super::workspace::{
     AdminEnablementSetting, EnterpriseSecretRegex, UgcCollectionEnablementSetting, Workspace,
     WorkspaceUid,
 };
+use cloud_objects::cloud_object::{CloudObjectEventEntrypoint, ObjectType, Owner};
+
 use crate::auth::{AuthStateProvider, UserUid};
+use crate::workspaces::Space;
 use crate::channel::ChannelState;
 use crate::server::ids::ServerId;
 use crate::server::server_api::team::TeamClient;
@@ -426,9 +429,7 @@ impl UserWorkspaces {
         ctx: &AppContext,
         new_shared_notebooks: usize,
     ) -> bool {
-        let current_shared_notebooks = CloudModel::as_ref(ctx)
-            .active_notebooks_in_space(Space::Team { team_uid }, ctx)
-            .count();
+        let current_shared_notebooks = 0;
 
         let team = UserWorkspaces::as_ref(ctx).team_from_uid(team_uid);
         if let Some(team) = team {
@@ -463,9 +464,7 @@ impl UserWorkspaces {
         ctx: &AppContext,
         new_shared_workflows: usize,
     ) -> bool {
-        let current_shared_workflows = CloudModel::as_ref(ctx)
-            .active_workflows_in_space(Space::Team { team_uid }, ctx)
-            .count();
+        let current_shared_workflows = 0;
 
         let team = UserWorkspaces::as_ref(ctx).team_from_uid(team_uid);
         if let Some(team) = team {
@@ -595,11 +594,6 @@ impl UserWorkspaces {
             spaces.push(Space::Team { team_uid: team.uid });
         }
 
-        if FeatureFlag::SharedWithMe.is_enabled()
-            && CloudModel::as_ref(ctx).has_directly_shared_objects(self, ctx)
-        {
-            spaces.push(Space::Shared);
-        }
         spaces.push(Space::Personal);
 
         spaces

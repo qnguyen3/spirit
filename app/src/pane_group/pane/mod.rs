@@ -11,7 +11,6 @@
 pub(super) mod agent_picker_pane;
 pub(super) mod agent_picker_view;
 pub(super) mod code_pane;
-pub(crate) mod environment_management_pane;
 pub(super) mod file_pane;
 pub(super) mod get_started_pane;
 pub(super) mod get_started_view;
