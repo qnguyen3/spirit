@@ -1062,12 +1062,12 @@ impl BlockList {
                     if let Some(active_window_id) = app.windows().active_window()
                         && let Some(ssh_block) =
                             app.view_with_id::<WarpifySuccessBlock>(active_window_id, view_id)
-                        {
-                            let warpify_success_block = app.view(&ssh_block);
-                            if let Some(selected_text) = warpify_success_block.selected_text() {
-                                selected_texts.push(selected_text);
-                            }
+                    {
+                        let warpify_success_block = app.view(&ssh_block);
+                        if let Some(selected_text) = warpify_success_block.selected_text() {
+                            selected_texts.push(selected_text);
                         }
+                    }
                 }
 
                 // TODO: If `selected_texts` is empty, should we return `None` instead of `Some("")`?

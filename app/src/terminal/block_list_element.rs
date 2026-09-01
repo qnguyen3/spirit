@@ -3535,9 +3535,10 @@ impl Element for BlockListElement {
                     }
 
                     if is_block_hovered
-                        && let Some(overflow_icon) = self.overflow_menu_button.as_mut() {
-                            overflow_icon.paint(overflow_menu_button_origin, ctx, app);
-                        }
+                        && let Some(overflow_icon) = self.overflow_menu_button.as_mut()
+                    {
+                        overflow_icon.paint(overflow_menu_button_origin, ctx, app);
+                    }
 
                     // When a block has an active filter on it, we want the filter icon to show even when the block is not hovered over.
                     if let Some(filter_element) = self.filter_elements.get_mut(block_index) {

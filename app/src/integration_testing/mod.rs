@@ -57,3 +57,7 @@ pub fn create_file_with_contents(contents: impl AsRef<[u8]>, file_path: &std::pa
     std::io::Write::write_all(&mut file, contents.as_ref())
         .expect("Should be able to write to file");
 }
+
+pub fn workflows_dir() -> std::path::PathBuf {
+    crate::user_config::workflows_dir()
+}

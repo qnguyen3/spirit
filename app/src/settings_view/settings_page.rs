@@ -652,7 +652,6 @@ pub fn render_dropdown_item_label(
                 .into(),
         )
         .finish();
-    
 
     (if let Some(secondary_text) = secondary_text {
         let warp_theme = appearance.theme();
