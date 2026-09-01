@@ -18,6 +18,7 @@ use warpui::{AddSingletonModel, App, ViewHandle};
 use watcher::HomeDirectoryWatcher;
 
 use super::*;
+use crate::server::ids::ServerId;
 use crate::auth::github_auth_notifier::GitHubAuthNotifier;
 use crate::context_chips::prompt::Prompt;
 use crate::editor::Event;
