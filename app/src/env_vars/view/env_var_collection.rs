@@ -930,7 +930,7 @@ impl EnvVarCollectionView {
                 self.update_breadcrumbs(ctx);
                 ctx.notify()
             }
-            ActiveEnvVarCollectionDataEvent::CreatedOnServer(_) => {
+            ActiveEnvVarCollectionDataEvent::CreatedOnServer => {
                 self.update_breadcrumbs(ctx);
             }
             ActiveEnvVarCollectionDataEvent::TrashStatusChanged => {

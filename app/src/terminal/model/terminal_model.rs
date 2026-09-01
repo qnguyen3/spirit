@@ -1280,7 +1280,7 @@ impl TerminalModel {
         let outcome = match transition.action {
             LifecycleAction::StartActiveBlock => {
                 match kind {
-                    CommandStartKind::UserOrQueued | CommandStartKind::SharedSession => {
+                    CommandStartKind::UserOrQueued => {
                         self.block_list.start_active_block()
                     }
                     CommandStartKind::InBand => {

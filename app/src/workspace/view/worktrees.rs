@@ -23,7 +23,6 @@ use crate::projects::{Project, ProjectId, Worktree, WorktreeId, WorktreeKind};
 use crate::tab::TabData;
 use crate::view_components::DismissibleToast;
 use crate::workspace::ToastStack;
-use crate::workspace::close_session_confirmation_dialog::OpenDialogSource;
 
 #[derive(Clone)]
 pub(crate) struct WorktreeContext {
@@ -658,7 +657,6 @@ impl Workspace {
         if !indices.is_empty() {
             self.close_tabs(
                 indices.into_iter().rev(),
-                OpenDialogSource::CloseOtherTabs { tab_index: 0 },
                 true,
                 false,
                 ctx,
@@ -781,7 +779,6 @@ impl Workspace {
                     if !indices.is_empty() {
                         self.close_tabs(
                             indices.into_iter().rev(),
-                            OpenDialogSource::CloseOtherTabs { tab_index: 0 },
                             true,
                             false,
                             ctx,

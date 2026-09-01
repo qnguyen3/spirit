@@ -940,9 +940,7 @@ fn get_top_folder_trashed_ts(
     None
 }
 
-pub use cloud_object_client::{
-    ObjectDeleteResult, ObjectMetadataUpdateResult, ObjectPermissionsUpdateData,
-};
+pub use cloud_object_client::{ObjectDeleteResult, ObjectMetadataUpdateResult};
 pub use cloud_object_models::{
     ServerAmbientAgentEnvironment, ServerCloudObject, ServerEnvVarCollection, ServerFolder,
     ServerNotebook, ServerPreference, ServerScheduledAmbientAgent, ServerWorkflow,

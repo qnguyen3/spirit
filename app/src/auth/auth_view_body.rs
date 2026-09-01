@@ -420,7 +420,6 @@ impl AuthViewBody {
                 self.variant,
                 AuthViewVariant::RequireLoginCloseable
                     | AuthViewVariant::HitDriveObjectLimitCloseable
-                    | AuthViewVariant::ShareRequirementCloseable
             ) {
             AuthViewBodyAction::SignupAnonymousUser
         } else {
@@ -571,9 +570,6 @@ impl AuthViewBody {
             AuthViewVariant::HitDriveObjectLimitCloseable => {
                 "In order to create more objects in Warp Drive, please create an account."
             }
-            AuthViewVariant::ShareRequirementCloseable => {
-                "In order to share, please create an account."
-            }
             _ => "",
         };
 
@@ -600,8 +596,7 @@ impl AuthViewBody {
         let text = match self.variant {
             AuthViewVariant::Initial => "Welcome to Warp!",
             AuthViewVariant::RequireLoginCloseable
-            | AuthViewVariant::HitDriveObjectLimitCloseable
-            | AuthViewVariant::ShareRequirementCloseable => "Sign up for Warp",
+            | AuthViewVariant::HitDriveObjectLimitCloseable => "Sign up for Warp",
         };
 
         ui_builder
@@ -622,7 +617,6 @@ impl AuthViewBody {
             self.variant,
             AuthViewVariant::RequireLoginCloseable
                 | AuthViewVariant::HitDriveObjectLimitCloseable
-                | AuthViewVariant::ShareRequirementCloseable
         ) {
             let close_button = ui_builder
                 .close_button(
@@ -691,8 +685,7 @@ impl AuthViewBody {
                 }
             }
             AuthViewVariant::RequireLoginCloseable
-            | AuthViewVariant::HitDriveObjectLimitCloseable
-            | AuthViewVariant::ShareRequirementCloseable => {
+            | AuthViewVariant::HitDriveObjectLimitCloseable => {
                 vec![logo, header, force_login_disclaimer, sign_up_button]
             }
         }

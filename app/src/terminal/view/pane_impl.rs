@@ -1,6 +1,5 @@
 //! This module contains the implementation of `BackingView` for `TerminalView`, as well as
 //! business logic for integrating the terminal view with the pane infra (`crate::pane_group`).
-use settings::Setting as _;
 use warpui::elements::{ConstrainedBox, CrossAxisAlignment, Flex, MainAxisAlignment, MainAxisSize, ParentElement, Shrinkable};
 use warpui::prelude::Container;
 use warpui::text_layout::ClipConfig;

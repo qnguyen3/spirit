@@ -17,7 +17,9 @@ use super::*;
 use crate::auth::AuthManager;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::cloud_object::{CloudObject, CloudObjectGuest};
-use crate::drive::sharing::{SharingAccessLevel, Subject, UserKind};
+use cloud_objects::drive::sharing::{Subject, UserKind};
+
+use crate::drive::sharing::SharingAccessLevel;
 use crate::features::FeatureFlag;
 use crate::network::NetworkStatus;
 use crate::server::cloud_objects::update_manager::UpdateManager;

@@ -6,7 +6,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use enum_iterator::Sequence;
-use itertools::Itertools;
 use parking_lot::FairMutex;
 use pathfinder_color::ColorU;
 use vec1::Vec1;
@@ -100,8 +99,6 @@ impl Default for SelectionBorderWidth {
     }
 }
 
-const SHARED_SESSION_PARTICIPANT_SELECTION_BORDER_WIDTH: f32 = 1.5;
-
 const SNACKBAR_HOVER_OPACITY: Opacity = 60;
 
 // If the header is more than SNACKBAR_HEADER_MAX_RATIO percent of the entire
@@ -137,23 +134,12 @@ impl ScrollingAcceleration {
     }
 }
 
-enum SelectionCursorRenderLocation {
-    None,
-    Start,
-    End,
-}
-
 const OVERFLOW_BUTTON_ICON_PATH: &str = "bundled/svg/overflow.svg";
 /// The number of lines from the top of the blocklist where we should show the snackbar toggle
 /// button on mouse hover when the snackbar is collapsed.
 const SNACKBAR_TOGGLE_BUTTON_HOVER_LINES: f32 = 4.;
 const SNACKBAR_TOGGLE_BUTTON_WIDTH: f32 = 30.;
 const SNACKBAR_TOGGLE_BUTTON_HEIGHT: f32 = 16.;
-
-/// How far away from the right edge of the blocklist the selected block avatar should be
-const SELECTED_BLOCK_AVATAR_EDGE_OFFSET: f32 = 25.;
-/// Space between multiple avatars on a selected block.
-const SPACE_BETWEEN_SELECTED_BLOCK_AVATARS: f32 = 2.;
 
 const CLI_SUBAGENT_HORIZONTAL_MARGIN: f32 = 8.;
 const CLI_SUBAGENT_VERTICAL_MARGIN: f32 = 8.;
@@ -1926,7 +1912,6 @@ impl BlockListElement {
         origin: Vector2F,
         block_list: &BlockList,
         color: ColorU,
-        selection_cursor_render_location: SelectionCursorRenderLocation,
         ctx: &mut PaintContext,
     ) {
         let total_block_heights = block_list.block_heights().summary().height;
@@ -1974,35 +1959,6 @@ impl BlockListElement {
             color,
             ctx,
         );
-        match selection_cursor_render_location {
-            SelectionCursorRenderLocation::Start => {
-                let mut cursor_color = color;
-                cursor_color.a = crate::util::color::OPAQUE;
-                grid_renderer::render_selection_cursor(
-                    &start,
-                    &self.size_info,
-                    viewport.scroll_top_in_lines(),
-                    selection_origin,
-                    cursor_color,
-                    false,
-                    ctx,
-                );
-            }
-            SelectionCursorRenderLocation::End => {
-                let mut cursor_color = color;
-                cursor_color.a = crate::util::color::OPAQUE;
-                grid_renderer::render_selection_cursor(
-                    &end,
-                    &self.size_info,
-                    viewport.scroll_top_in_lines(),
-                    selection_origin,
-                    cursor_color,
-                    true,
-                    ctx,
-                );
-            }
-            _ => (),
-        }
         if rendered_snackbar_selection {
             // Rendering the snackbar creates a layer that we need to close.
             ctx.scene.stop_layer();
@@ -3800,7 +3756,6 @@ impl Element for BlockListElement {
                     origin,
                     block_list,
                     text_selection_color,
-                    SelectionCursorRenderLocation::None,
                     ctx,
                 );
             }

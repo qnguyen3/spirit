@@ -36,7 +36,7 @@ pub fn initialize_settings_for_tests_with_mode(
         EmacsBindingsSettings, FontSettings, GPUSettings, InputModeSettings, InputSettings,
         LocalControlSettings, NativePreferenceSettings, NewSessionSettings, PaneSettings,
         SameLinePromptBlockSettings, ScrollSettings, SelectionSettings,
-        SharedObjectLimitBannerSettings, SshSettings, ThemeSettings, VimBannerSettings,
+        SshSettings, ThemeSettings, VimBannerSettings,
         init_and_register_user_preferences,
     };
     use crate::terminal::BlockListSettings;
@@ -113,7 +113,6 @@ pub fn initialize_settings_for_tests_with_mode(
     ThemeSettings::register(app);
     UndoCloseSettings::register(app);
     VimBannerSettings::register(app);
-    SharedObjectLimitBannerSettings::register(app);
     WarpDriveSettings::register(app);
     WindowSettings::register(app);
     SharedSessionSettings::register(app);

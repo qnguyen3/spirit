@@ -37,7 +37,6 @@ use crate::auth::AuthStateProvider;
 use crate::auth::auth_manager::{AuthManager, LoginGatedFeature};
 use crate::auth::auth_state::AuthState;
 use crate::auth::auth_view_modal::AuthViewVariant;
-use crate::banner::BannerState;
 use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
 use crate::cloud_object::model::view::{CloudViewModel, CloudViewModelEvent, UpdateTimestamp};
 use crate::cloud_object::{CloudObject, CloudObjectEventEntrypoint, CloudObjectLocation, CloudObjectSyncStatus, GenericStringObjectFormat, JsonObjectType, NumInFlightRequests, ObjectType, Space};
@@ -50,7 +49,6 @@ use crate::network::NetworkStatus;
 use crate::server::cloud_objects::update_manager::{FetchSingleObjectOption, InitiatedBy, UpdateManager};
 use crate::server::ids::{ObjectUid, ServerId, SyncId};
 use crate::server::sync_queue::SyncQueue;
-use crate::settings::SharedObjectLimitBannerSettings;
 use crate::settings::app_installation_detection::{UserAppInstallDetectionSettings, UserAppInstallStatus};
 use crate::ui_components::blended_colors;
 use crate::ui_components::buttons::{highlight, icon_button};
@@ -152,9 +150,6 @@ const SORTING_BUTTON_TOOLTIP_LABEL: &str = "Sort by";
 
 const RETRY_BUTTON_TOOLTIP_LABEL: &str = "Retry sync";
 
-const SHARED_OBJECT_LIMIT_HIT_BANNER_LINE: &str =
-    "Upgrade for access to more notebooks, workflows, shared sessions, and AI credits.";
-
 const PAYMENT_ISSUE_BANNER_LINE_1: &str =
     "Shared objects have been restricted due to a subscription payment issue.";
 
@@ -197,15 +192,6 @@ pub enum DriveIndexSection {
     Space(Space),
     CreateATeam,
     JoinTeam,
-}
-
-/// Which "you've run out of <object>s on your plan" banner a dismiss action
-/// refers to. Mirrors the two [`ObjectType`] cases that render the banner, but
-/// is `PartialEq` so it can live inside [`DriveIndexAction`].
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum SharedObjectLimitBannerKind {
-    Notebook,
-    Workflow,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -329,11 +315,6 @@ pub enum DriveIndexAction {
     },
     SignupAnonymousUser,
     DismissPersonalObjectLimits,
-    /// Dismiss (and remember dismissing) the shared object limit banner shown
-    /// in the Warp Drive sidebar when a plan's notebook/workflow limit is hit.
-    DismissObjectLimitBanner {
-        banner_kind: SharedObjectLimitBannerKind,
-    },
     SetCurrentWorkspace(WorkspaceUid),
 }
 
@@ -445,8 +426,6 @@ struct MouseStateHandles {
     exit_trash_button_mouse_state: MouseStateHandle,
     join_team_button_mouse_state: MouseStateHandle,
     create_team_button_mouse_state: MouseStateHandle,
-    shared_object_limit_hit_banner_button_mouse_state: MouseStateHandle,
-    shared_object_limit_hit_banner_close_mouse_state: MouseStateHandle,
     payment_issue_banner_button_mouse_state: MouseStateHandle,
     anonymous_sign_up_button_mouse_state: MouseStateHandle,
     anonymous_object_limit_close_button_mouse_state: MouseStateHandle,
@@ -3555,40 +3534,6 @@ impl DriveIndex {
         ctx.notify();
     }
 
-    /// Whether the user has dismissed the shared object limit banner for the
-    /// given object type. Persisted across restarts via settings.
-    fn is_object_limit_banner_dismissed(
-        banner_kind: SharedObjectLimitBannerKind,
-        app: &AppContext,
-    ) -> bool {
-        SharedObjectLimitBannerSettings::handle(app).read(app, |settings, _| {
-            let state = match banner_kind {
-                SharedObjectLimitBannerKind::Notebook => *settings.notebook_limit_banner_state,
-                SharedObjectLimitBannerKind::Workflow => *settings.workflow_limit_banner_state,
-            };
-            state == BannerState::Dismissed
-        })
-    }
-
-    fn dismiss_object_limit_banner(
-        &mut self,
-        banner_kind: SharedObjectLimitBannerKind,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        SharedObjectLimitBannerSettings::handle(ctx).update(ctx, |settings, model_ctx| {
-            let result = match banner_kind {
-                SharedObjectLimitBannerKind::Notebook => settings
-                    .notebook_limit_banner_state
-                    .set_value(BannerState::Dismissed, model_ctx),
-                SharedObjectLimitBannerKind::Workflow => settings
-                    .workflow_limit_banner_state
-                    .set_value(BannerState::Dismissed, model_ctx),
-            };
-            report_if_error!(result);
-        });
-        ctx.notify();
-    }
-
     fn render_personal_limit_status(
         &self,
         appearance: &Appearance,
@@ -3840,133 +3785,6 @@ impl DriveIndex {
                     .finish(),
             )
             .finish()
-    }
-
-    fn render_shared_object_limit_hit_banner(
-        &self,
-        appearance: &Appearance,
-        team_uid: ServerId,
-        object_type: ObjectType,
-    ) -> Box<dyn Element> {
-        let theme = appearance.theme();
-        let background_color = theme.surface_2();
-
-        let highlight =
-            Highlight::new().with_properties(Properties::default().weight(Weight::Bold));
-
-        let banner_line_1 = format!("You've run out of {object_type}s on your plan.");
-        let body = Container::new(
-            appearance
-                .ui_builder()
-                .wrappable_text(
-                    format!("{banner_line_1} {SHARED_OBJECT_LIMIT_HIT_BANNER_LINE}"),
-                    true,
-                )
-                .with_highlights((0..banner_line_1.len()).collect::<Vec<_>>(), highlight)
-                .with_style(UiComponentStyles {
-                    font_size: Some(12.),
-                    font_color: Some(appearance.theme().main_text_color(background_color).into()),
-                    ..Default::default()
-                })
-                .build()
-                .finish(),
-        )
-        .with_margin_bottom(16.)
-        .finish();
-
-        let button = appearance
-            .ui_builder()
-            .button(
-                ButtonVariant::Accent,
-                self.mouse_state_handles
-                    .shared_object_limit_hit_banner_button_mouse_state
-                    .clone(),
-            )
-            .with_centered_text_label("Compare plans".into())
-            .with_style(UiComponentStyles {
-                font_size: Some(14.),
-                font_weight: Some(Weight::Light),
-                padding: Some(Coords {
-                    top: 8.,
-                    bottom: 8.,
-                    left: 12.,
-                    right: 12.,
-                }),
-                ..Default::default()
-            })
-            .build()
-            .with_cursor(Cursor::PointingHand)
-            .on_click(move |ctx, _, _| {
-                ctx.dispatch_typed_action(DriveIndexAction::ViewPlans { team_uid })
-            })
-            .finish();
-
-        let banner_kind = match object_type {
-            ObjectType::Notebook => SharedObjectLimitBannerKind::Notebook,
-            ObjectType::Workflow => SharedObjectLimitBannerKind::Workflow,
-            // No other object type renders this banner (see the visibility gate
-            // in `render`); fall back to the workflow variant defensively. Matched
-            // explicitly so a future `ObjectType` addition surfaces here at compile
-            // time instead of being silently treated as a workflow banner.
-            ObjectType::Folder | ObjectType::GenericStringObject(_) => {
-                SharedObjectLimitBannerKind::Workflow
-            }
-        };
-
-        let close_button = Hoverable::new(
-            self.mouse_state_handles
-                .shared_object_limit_hit_banner_close_mouse_state
-                .clone(),
-            move |_| {
-                ConstrainedBox::new(
-                    Icon::X
-                        .to_warpui_icon(appearance.theme().main_text_color(background_color))
-                        .finish(),
-                )
-                .with_width(12.)
-                .with_height(12.)
-                .finish()
-            },
-        )
-        .on_click(move |ctx, _, _| {
-            ctx.dispatch_typed_action(DriveIndexAction::DismissObjectLimitBanner { banner_kind })
-        })
-        .with_cursor(Cursor::PointingHand)
-        .finish();
-
-        // Pushes the close button to the top-right corner, matching other
-        // dismissible pop-ups in the sidebar.
-        let header = Flex::row()
-            .with_cross_axis_alignment(CrossAxisAlignment::Start)
-            .with_child(Shrinkable::new(1., Empty::new().finish()).finish())
-            .with_child(close_button)
-            .finish();
-
-        // Keep the existing message + CTA centered while the header stretches
-        // full width so the close affordance sits in the top-right corner.
-        let content = Flex::column()
-            .with_main_axis_alignment(MainAxisAlignment::Center)
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_child(body)
-            .with_child(button)
-            .finish();
-
-        Container::new(
-            Container::new(
-                Flex::column()
-                    .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-                    .with_child(header)
-                    .with_child(content)
-                    .finish(),
-            )
-            .with_background(background_color)
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
-            .with_uniform_padding(16.)
-            .finish(),
-        )
-        .with_uniform_padding(8.)
-        .with_border(Border::top(1.).with_border_color(background_color.into()))
-        .finish()
     }
 
     fn render_payment_issue_banner(
@@ -4805,32 +4623,6 @@ impl View for DriveIndex {
                     has_admin_permissions,
                     is_on_stripe_paid_plan,
                 ));
-            } else if UserWorkspaces::is_at_tier_limit_for_object_type(
-                team.uid,
-                ObjectType::Workflow,
-                app,
-            ) && !Self::is_object_limit_banner_dismissed(
-                SharedObjectLimitBannerKind::Workflow,
-                app,
-            ) {
-                drive.add_child(self.render_shared_object_limit_hit_banner(
-                    appearance,
-                    team.uid,
-                    ObjectType::Workflow,
-                ));
-            } else if UserWorkspaces::is_at_tier_limit_for_object_type(
-                team.uid,
-                ObjectType::Notebook,
-                app,
-            ) && !Self::is_object_limit_banner_dismissed(
-                SharedObjectLimitBannerKind::Notebook,
-                app,
-            ) {
-                drive.add_child(self.render_shared_object_limit_hit_banner(
-                    appearance,
-                    team.uid,
-                    ObjectType::Notebook,
-                ));
             }
         }
 
@@ -5229,9 +5021,6 @@ impl TypedActionView for DriveIndex {
             }
             DriveIndexAction::DismissPersonalObjectLimits => {
                 self.dismiss_personal_object_limit_status(ctx);
-            }
-            DriveIndexAction::DismissObjectLimitBanner { banner_kind } => {
-                self.dismiss_object_limit_banner(*banner_kind, ctx);
             }
             DriveIndexAction::SetCurrentWorkspace(workspace_uid) => {
                 TeamUpdateManager::handle(ctx).update(ctx, |manager, ctx| {

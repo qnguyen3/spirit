@@ -1,4 +1,4 @@
-pub use cloud_objects::drive::sharing::{SharingAccessLevel, Subject, UserKind};
+pub use cloud_objects::drive::sharing::SharingAccessLevel;
 
 /// Whether not a shared object's contents are editable by the current user.
 ///
