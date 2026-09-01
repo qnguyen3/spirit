@@ -1,3 +1,4 @@
+use cloud_object_models::Workflow;
 use warpui::integration::TestStep;
 use warpui::windowing::WindowManager;
 use warpui::{SingletonEntity, WindowId, async_assert};
@@ -11,7 +12,6 @@ use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::ids::{ClientId, SyncId};
 use crate::workflows::WorkflowViewMode;
 use crate::workflows::manager::WorkflowOpenSource;
-use crate::workflows::workflow::Workflow;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 
 /// Create a personal workflow and save its sync ID into the step data.

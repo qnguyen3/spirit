@@ -1,3 +1,4 @@
+use cloud_object_models::Workflow;
 use warpui::integration::TestStep;
 use warpui::{SingletonEntity, async_assert, async_assert_eq};
 
@@ -8,7 +9,6 @@ use crate::server::cloud_objects::listener::Listener;
 use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::ids::ClientId;
 use crate::util::bindings::keybinding_name_to_display_string;
-use crate::workflows::workflow::Workflow;
 use crate::workspaces::team::{Team, TeamVisibility};
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::workspaces::workspace::Workspace;
