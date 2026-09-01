@@ -903,7 +903,7 @@ impl TerminalModel {
             session_startup_path,
             ShellLaunchState::ShellSpawned {
                 available_shell: None,
-                display_name: ShellName::blank(),
+                display_name: crate::terminal::shell::ShellName::blank(),
                 shell_type: ShellType::Zsh,
             },
         );
