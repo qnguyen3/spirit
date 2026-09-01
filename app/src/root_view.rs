@@ -1501,12 +1501,16 @@ pub(crate) fn has_completed_local_onboarding(ctx: &AppContext) -> bool {
         .unwrap_or(false)
 }
 
-/// Persists the local onboarding-completed flag so we don't show onboarding again.
-fn mark_local_onboarding_completed(ctx: &AppContext) {
+/// Persists the local onboarding-completed flag so we don't show onboarding again, and applies
+/// the settings defaults that should only ever take effect for a brand-new install.
+fn mark_local_onboarding_completed(ctx: &mut AppContext) {
     let _ = ctx.private_user_preferences().write_value(
         HAS_COMPLETED_ONBOARDING_KEY,
         serde_json::to_string(&true).expect("bool serializes to JSON"),
     );
+    SettingsInitializer::handle(ctx).update(ctx, |initializer, ctx| {
+        initializer.apply_first_run_defaults(ctx)
+    });
 }
 
 /// Whether auth and onboarding have completed and we should render the `Workspace`.
@@ -1608,14 +1612,6 @@ impl RootView {
             server_time: None,
             workspace_setting,
         };
-
-        // First-run setting defaults are keyed on local onboarding, so a user who has already
-        // been through onboarding is never re-defaulted.
-        if !has_completed_local_onboarding(ctx) {
-            SettingsInitializer::handle(ctx).update(ctx, |initializer, ctx| {
-                initializer.apply_first_run_defaults(ctx)
-            });
-        }
 
         let auth_onboarding_state = if auth_state.is_logged_in() {
             AuthOnboardingState::Terminal(workspace_args.create_workspace(ctx))
