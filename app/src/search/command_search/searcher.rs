@@ -33,12 +33,6 @@ pub enum CommandSearchItemAction {
 
     /// The user accepted a workflow search item.
     AcceptWorkflow(AcceptedWorkflow),
-
-    /// The user accepted the notebook search item.
-    AcceptNotebook(SyncId),
-
-    /// The user accepted an EVC search item.
-    AcceptEnvVarCollection(Box<CloudEnvVarCollection>),
 }
 
 #[cfg(test)]

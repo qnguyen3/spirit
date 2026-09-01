@@ -1681,11 +1681,7 @@ impl PaneGroup {
             }
         }
 
-        // Finds the active pane type outof (NotebookPane, TerminalPane)
-        // and extracts selected text from it.
-        let text = if let Some(pane) = self.downcast_pane_by_id::<NotebookPane>(focused_pane_id) {
-            pane.notebook_view(ctx).as_ref(ctx).selected_text(ctx)
-        } else {
+        let text = {
             match self.terminal_view_from_pane_id(focused_pane_id, ctx) {
                 Some(terminal_view) => {
                     // NOTE: We currently don't have a way to track recency of selection events.
@@ -2346,21 +2342,6 @@ impl PaneGroup {
         ctx.emit(Event::TerminalViewStateChanged);
         ctx.emit(Event::AppStateChanged);
         pane_content
-    }
-
-    pub fn notebook_pane_by_pane_id(&self, pane_id: Option<PaneId>) -> Option<&NotebookPane> {
-        self.downcast_pane_by_id(pane_id?)
-    }
-
-    pub fn env_var_collection_pane_by_pane_id(
-        &self,
-        pane_id: Option<PaneId>,
-    ) -> Option<&EnvVarCollectionPane> {
-        self.downcast_pane_by_id(pane_id?)
-    }
-
-    pub fn workflow_pane_by_pane_id(&self, pane_id: Option<PaneId>) -> Option<&WorkflowPane> {
-        self.downcast_pane_by_id(pane_id?)
     }
 
     pub fn code_pane_by_id(&self, pane_id: PaneId) -> Option<&CodePane> {

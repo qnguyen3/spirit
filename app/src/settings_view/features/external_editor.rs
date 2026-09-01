@@ -240,12 +240,7 @@ impl View for ExternalEditorView {
             "Choose an editor to open file links",
             None,
             None,
-            LocalOnlyIconState::for_setting(
-                OpenFileEditor::storage_key(),
-                OpenFileEditor::sync_to_cloud(),
-                &mut self.local_only_icon_states.borrow_mut(),
-                app,
-            ),
+            LocalOnlyIconState::Hidden,
             None,
             &self.editor_dropdown,
         );
@@ -255,12 +250,7 @@ impl View for ExternalEditorView {
             "Choose an editor to open files from Source control, project explorer, and global search",
             None,
             None,
-            LocalOnlyIconState::for_setting(
-                OpenCodePanelsFileEditor::storage_key(),
-                OpenCodePanelsFileEditor::sync_to_cloud(),
-                &mut self.local_only_icon_states.borrow_mut(),
-                app,
-            ),
+            LocalOnlyIconState::Hidden,
             None,
             &self.code_panels_editor_dropdown,
         );
@@ -270,12 +260,7 @@ impl View for ExternalEditorView {
             "Choose a layout to open files in Warp",
             None,
             None,
-            LocalOnlyIconState::for_setting(
-                OpenFileLayout::storage_key(),
-                OpenFileLayout::sync_to_cloud(),
-                &mut self.local_only_icon_states.borrow_mut(),
-                app,
-            ),
+            LocalOnlyIconState::Hidden,
             None,
             &self.layout_dropdown,
         );
@@ -289,12 +274,7 @@ impl View for ExternalEditorView {
             column.add_child(render_body_item::<ExternalEditorAction>(
                 TABBED_FILE_VIEWER_TOGGLE_HEADER.into(),
                 None,
-                LocalOnlyIconState::for_setting(
-                    PreferTabbedEditorView::storage_key(),
-                    PreferTabbedEditorView::sync_to_cloud(),
-                    &mut self.local_only_icon_states.borrow_mut(),
-                    app,
-                ),
+                LocalOnlyIconState::Hidden,
                 ToggleState::Enabled,
                 appearance,
                 appearance
@@ -324,12 +304,7 @@ impl View for ExternalEditorView {
                 secondary_text: None,
                 tooltip_override_text: None,
             }),
-            LocalOnlyIconState::for_setting(
-                PreferMarkdownViewer::storage_key(),
-                PreferMarkdownViewer::sync_to_cloud(),
-                &mut self.local_only_icon_states.borrow_mut(),
-                app,
-            ),
+            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             appearance

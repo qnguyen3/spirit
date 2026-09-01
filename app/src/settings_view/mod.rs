@@ -60,8 +60,8 @@ mod about_page;
 mod admin_actions;
 mod appearance_page;
 mod cli_agents_page;
+mod cloud_action_confirmation_dialog;
 mod code_editor_review_page;
-mod delete_environment_confirmation_dialog;
 mod directory_color_add_picker;
 pub(crate) mod features;
 mod features_page;
@@ -76,7 +76,6 @@ mod privacy_page;
 mod scripting_page;
 mod settings_file_footer;
 pub(crate) mod settings_page;
-mod tab_menu;
 mod teams_page;
 mod transfer_ownership_confirmation_modal;
 pub mod warpify_page;
@@ -84,7 +83,6 @@ pub mod warpify_page;
 #[cfg(not(target_family = "wasm"))]
 pub use cli_agents_page::cli_agent_settings_widget_id;
 pub use features_page::FeaturesPageAction;
-pub use main_page::handle_experiment_change;
 pub use privacy_page::PrivacyPageAction;
 pub use settings_page::{
     AdditionalInfo, InputListItem, LocalOnlyIconState, ToggleState, render_body_item_label,
@@ -391,7 +389,6 @@ pub mod flags {
     pub const ERROR_UNDERLINING_FLAG: &str = "error_underlining";
     pub const SYNTAX_HIGHLIGHTING_FLAG: &str = "syntax_highlighting";
     pub const SAME_LINE_PROMPT: &str = "Same_Line_Prompt_Enabled";
-    pub const SETTINGS_SYNC_FLAG: &str = "settings_sync";
     pub const SAFE_MODE_FLAG: &str = "safe_mode";
     pub const CLOUD_CONVERSATION_STORAGE_FLAG: &str = "Cloud_Conversation_Storage_Enabled";
     pub const CLOUD_CONVERSATION_STORAGE_EDITABLE_FLAG: &str =
@@ -529,7 +526,6 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
     context: &ContextPredicate,
     builder: fn(SettingsAction) -> T,
 ) {
-    main_page::init_actions_from_parent_view(app, context, builder);
     appearance_page::init_actions_from_parent_view(app, context, builder);
     features_page::init_actions_from_parent_view(app, context, builder);
     warpify_page::init_actions_from_parent_view(app, context, builder);
@@ -1054,11 +1050,6 @@ impl SettingsView {
 
         // Third party CLI agents page, under the Agents umbrella
         let cli_agents_page_handle = ctx.add_view(|_| CLIAgentsPageView::new());
-
-        // Environments page
-        ctx.subscribe_to_view(&environments_page_handle, |me, _, event, ctx| {
-            me.handle_environments_page_event(event, ctx);
-        });
 
         // Keybindings page
         let keybindings_handle = ctx.add_typed_action_view(KeybindingsView::new);

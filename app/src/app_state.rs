@@ -165,7 +165,6 @@ pub enum LeafContents {
     Terminal(TerminalPaneSnapshot),
     Notebook(NotebookPaneSnapshot),
     Code(CodePaneSnapShot),
-    EnvironmentManagement(EnvironmentManagementPaneSnapshot),
     Settings(SettingsPaneSnapshot),
     CodeReview(CodeReviewPaneSnapshot),
     /// The in-app network log pane. Not persisted across restarts because the
@@ -195,7 +194,6 @@ impl LeafContents {
             LeafContents::NetworkLog
             // Environment management panes are opened on-demand via workspace
             // actions and have no persistable state.
-            | LeafContents::EnvironmentManagement(_)
             | LeafContents::AgentPicker => false,
             LeafContents::Terminal(_)
             | LeafContents::Notebook(_)
@@ -241,11 +239,6 @@ pub enum CodePaneSnapShot {
         /// The full `CodeSource` for this pane, serialized as JSON in the DB.
         source: Option<CodeSource>,
     },
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct EnvironmentManagementPaneSnapshot {
-    pub mode: EnvironmentsPage,
 }
 
 #[derive(Clone, Debug, PartialEq)]

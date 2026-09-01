@@ -608,12 +608,7 @@ impl SettingsWidget for SSHWidget {
                 render_body_item::<WarpifyPageAction>(
                     "Warpify SSH Sessions".into(),
                     None,
-                    LocalOnlyIconState::for_setting(
-                        EnableSshWarpification::storage_key(),
-                        EnableSshWarpification::sync_to_cloud(),
-                        &mut self.local_only_icon_tooltip_states.borrow_mut(),
-                        app,
-                    ),
+                    LocalOnlyIconState::Hidden,
                     ToggleState::Enabled,
                     appearance,
                     ui_builder
@@ -644,12 +639,7 @@ impl SettingsWidget for SSHWidget {
                         "Install SSH extension",
                         Some(SSH_EXTENSION_INSTALL_MODE_DESCRIPTION),
                         None,
-                        LocalOnlyIconState::for_setting(
-                            SshExtensionInstallModeSetting::storage_key(),
-                            SshExtensionInstallModeSetting::sync_to_cloud(),
-                            &mut self.local_only_icon_tooltip_states.borrow_mut(),
-                            app,
-                        ),
+                        LocalOnlyIconState::Hidden,
                         label_color_override,
                         &view.ssh_extension_install_mode_dropdown,
                     ))
@@ -670,12 +660,7 @@ impl SettingsWidget for SSHWidget {
                 column.add_child(render_body_item::<WarpifyPageAction>(
                     "Reuse existing SSH ControlMaster".into(),
                     None,
-                    LocalOnlyIconState::for_setting(
-                        ReuseExistingSshControlMaster::storage_key(),
-                        ReuseExistingSshControlMaster::sync_to_cloud(),
-                        &mut self.local_only_icon_tooltip_states.borrow_mut(),
-                        app,
-                    ),
+                    LocalOnlyIconState::Hidden,
                     enable_ssh_warpification.into(),
                     appearance,
                     ui_builder

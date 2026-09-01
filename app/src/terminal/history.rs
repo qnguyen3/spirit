@@ -69,14 +69,7 @@ impl From<crate::persistence::model::Command> for PersistedCommand {
                     .map(SessionId::from)
             }),
             git_branch: command.git_branch,
-            workflow_id: command.cloud_workflow_id.and_then(|workflow_id| {
-                if let Some(client_id) = ClientId::from_hash(workflow_id.as_str()) {
-                    Some(SyncId::ClientId(client_id))
-                } else {
-                    WorkflowId::from_hash(workflow_id.as_str())
-                        .map(|id| SyncId::ServerId(id.into()))
-                }
-            }),
+            workflow_id: None,
             workflow_command: command.workflow_command,
             is_agent_executed: command.is_agent_executed.unwrap_or(false),
         }
@@ -339,19 +332,11 @@ impl HistoryEntry {
     }
 
     /// Returns an `Option` containing the workflow linked to this command, if any.
-    ///
-    /// First looks up the workflow using `self.workflow_id`, then falls back to looking up the
-    /// workflow using `self.workflow_command`, if any.
     pub fn linked_workflow(&self, app: &AppContext) -> Option<Workflow> {
-        match (&self.workflow_id, &self.workflow_command) {
-            (Some(workflow_id), _) => CloudModel::as_ref(app)
-                .get_workflow(workflow_id)
-                .map(|workflow| (&workflow.model().data).into()),
-            (_, Some(workflow_command)) => LocalWorkflows::as_ref(app)
-                .workflow_with_command(app, workflow_command)
-                .map(|(_, workflow)| workflow.clone()),
-            _ => None,
-        }
+        let workflow_command = self.workflow_command.as_ref()?;
+        LocalWorkflows::as_ref(app)
+            .workflow_with_command(app, workflow_command)
+            .map(|(_, workflow)| workflow.clone())
     }
 
     /// Indicates that at least one of the optional rich history fields is Some.

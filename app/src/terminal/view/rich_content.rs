@@ -92,9 +92,6 @@ impl RichContent {
 /// `RichContent` view-specific metadata required for rendering in the `BlocklistElement`.
 #[derive(Clone, Debug)]
 pub enum RichContentMetadata {
-    EnvVarCollectionBlock {
-        env_var_collection_block_handle: ViewHandle<EnvVarCollectionBlock>,
-    },
     SshRemoteServerChoiceBlock {
         handle: ViewHandle<SshRemoteServerChoiceView>,
     },

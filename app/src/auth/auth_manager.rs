@@ -277,7 +277,7 @@ impl AuthManager {
                 let FetchUserResult {
                     user_output,
                     credentials,
-                    from_refresh,
+                    ..
                 } = fetch_user_result;
                 let UserProperties { user } = user_output.into();
 
@@ -285,26 +285,11 @@ impl AuthManager {
 
                 self.set_needs_reauth(false, ctx);
 
-                // Reset the initial-load condition so that any cloud preference
-                // sync waits for the *new* user's cloud objects rather than
-                // resolving immediately against stale data from a prior session.
-                // Only do this for non-refresh fetches (login/signup), not for
-                // token refreshes where the user identity hasn't changed.
-                if !from_refresh {
-                    UpdateManager::handle(ctx).update(ctx, |manager, _| {
-                        manager.reset_initial_load();
-                    });
-                }
-
                 // Now that we have a user, start polling for team and cloud object information.
                 // The polling loop's first tick fires immediately, so there is no need for a
                 // separate out-of-band refresh here.
                 TeamTesterStatus::handle(ctx).update(ctx, |model, ctx| {
                     model.initiate_data_pollers(false, ctx);
-                });
-
-                CloudPreferencesSyncer::handle(ctx).update(ctx, |model, ctx| {
-                    model.handle_user_fetched(self.auth_state.clone(), ctx)
                 });
 
                 if !user.is_user_anonymous() {

@@ -16,6 +16,8 @@ use super::user_workspaces::{
 };
 use super::workspace::WorkspaceUid;
 use crate::auth::AuthStateProvider;
+use cloud_objects::cloud_object::CloudObjectEventEntrypoint;
+
 use crate::network::{NetworkStatus, NetworkStatusEvent, NetworkStatusKind};
 use crate::persistence::ModelEvent;
 use crate::server::ids::ServerId;
@@ -318,7 +320,7 @@ impl TeamUpdateManager {
                         .context("Error leaving team")
                 },
                 move |me, result, ctx| {
-                    me.on_team_left(team_uid, result, ctx);
+                    me.on_team_left(result, ctx);
                 },
             );
         } else {
@@ -329,7 +331,6 @@ impl TeamUpdateManager {
 
     fn on_team_left(
         &mut self,
-        left_team_uid: ServerId,
         result: Result<WorkspacesMetadataWithPricing>,
         ctx: &mut ModelContext<Self>,
     ) {
@@ -359,14 +360,6 @@ impl TeamUpdateManager {
 
                 // Update sqlite
                 self.save_to_db([ModelEvent::UpsertWorkspaces { workspaces }]);
-
-                // Remove objects owned by the team that was left.
-                UpdateManager::handle(ctx).update(ctx, |update_manager, ctx| {
-                    // We first remove team objects from local state so that they're not shown to the user.
-                    // Then, refresh all objects to fetch any that were independently shared.
-                    update_manager.remove_team_objects(left_team_uid, ctx);
-                    update_manager.refresh_updated_objects(ctx);
-                });
 
                 ctx.emit(TeamUpdateManagerEvent::LeaveSuccess);
             }

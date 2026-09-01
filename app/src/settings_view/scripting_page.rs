@@ -287,12 +287,7 @@ impl SettingsWidget for LocalControlModeWidget {
         render_body_item::<ScriptingSettingsPageAction>(
             "warpctrl CLI".into(),
             None,
-            LocalOnlyIconState::for_setting(
-                LocalControlModeSetting::storage_key(),
-                LocalControlModeSetting::sync_to_cloud(),
-                &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                app,
-            ),
+            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             ChildView::new(&view.local_control_mode_dropdown).finish(),

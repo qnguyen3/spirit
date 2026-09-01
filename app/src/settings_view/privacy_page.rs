@@ -1123,12 +1123,7 @@ impl SettingsWidget for SecretRedactionWidget {
         let ui_builder = appearance.ui_builder();
         let is_enterprise_enabled = privacy_settings.is_enterprise_secret_redaction_enabled();
 
-        let local_only_icon_state = LocalOnlyIconState::for_setting(
-            SafeModeEnabled::storage_key(),
-            SafeModeEnabled::sync_to_cloud(),
-            &mut view.local_only_icon_tooltip_states.borrow_mut(),
-            app,
-        );
+        let local_only_icon_state = LocalOnlyIconState::Hidden;
 
         let secret_redaction_title_row = Container::new(
             Flex::row()
@@ -1187,12 +1182,7 @@ impl SettingsWidget for SecretRedactionWidget {
 
         if *safe_mode_settings.safe_mode_enabled {
             // Add the secret display mode dropdown
-            let local_only_icon_state = LocalOnlyIconState::for_setting(
-                SecretDisplayModeSetting::storage_key(),
-                SecretDisplayModeSetting::sync_to_cloud(),
-                &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                app,
-            );
+            let local_only_icon_state = LocalOnlyIconState::Hidden;
 
             // Create the label with local-only icon if needed
             let label_with_icon = super::settings_page::render_dropdown_item_label(

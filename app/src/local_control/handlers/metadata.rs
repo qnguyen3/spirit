@@ -133,7 +133,6 @@ pub(crate) enum SurfaceDestination {
     CommandSearch,
     ThemePicker,
     Keybindings,
-    WarpDrive,
     ResourceCenter,
     CodeReview,
     ProjectExplorer,
@@ -152,7 +151,6 @@ impl SurfaceDestination {
         Self::CommandSearch,
         Self::ThemePicker,
         Self::Keybindings,
-        Self::WarpDrive,
         Self::ResourceCenter,
         Self::CodeReview,
         Self::ProjectExplorer,
@@ -171,7 +169,6 @@ impl SurfaceDestination {
             Self::CommandSearch => "command_search",
             Self::ThemePicker => "theme_picker",
             Self::Keybindings => "keybindings",
-            Self::WarpDrive => "warp_drive",
             Self::ResourceCenter => "resource_center",
             Self::CodeReview => "code_review",
             Self::ProjectExplorer => "project_explorer",
@@ -307,10 +304,6 @@ pub(crate) fn surface_unavailable_reason(
         | SurfaceDestination::ThemePicker
         | SurfaceDestination::Keybindings
         | SurfaceDestination::ResourceCenter => None,
-        SurfaceDestination::WarpDrive if !WarpDriveSettings::is_warp_drive_enabled(ctx) => {
-            Some("Warp Drive is disabled")
-        }
-        SurfaceDestination::WarpDrive => None,
         SurfaceDestination::CodeReview | SurfaceDestination::RightPanel
             if !cfg!(feature = "local_fs") =>
         {
@@ -339,8 +332,7 @@ pub(crate) fn surface_unavailable_reason(
             if surface_unavailable_reason(SurfaceDestination::ProjectExplorer, ctx).is_some()
                 && surface_unavailable_reason(SurfaceDestination::GlobalSearch, ctx).is_some()
                 && surface_unavailable_reason(SurfaceDestination::ConversationList, ctx)
-                    .is_some()
-                && surface_unavailable_reason(SurfaceDestination::WarpDrive, ctx).is_some() =>
+                    .is_some() =>
         {
             Some("the left panel has no available views")
         }

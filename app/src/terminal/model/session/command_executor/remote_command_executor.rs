@@ -9,7 +9,8 @@ use itertools::Itertools as _;
 
 use super::shared::shell_escape_single_quotes;
 use super::{CommandExecutor, CommandOutput, ExecuteCommandOptions};
-use crate::terminal::shell::Shell;
+
+use crate::terminal::shell::{Shell, serialize_variables_for_shell};
 
 /// `CommandExecutor` implementation that executes the given `command` in a forked process
 /// that establishes a one-off SSH session with the same remote host as the active SSH session
@@ -45,12 +46,11 @@ impl CommandExecutor for RemoteCommandExecutor {
         // ssh connection. That's why we explicitly set the path and cwd as part of command_str.
         let mut command_str = String::new();
         if let Some(environment_variables) = environment_variables {
-            let env_vars = environment_variables
-                .into_iter()
-                .map(|(key, value)| (key, EnvVarValue::Constant(value)))
-                .collect_vec();
+            let env_vars = environment_variables.into_iter().collect_vec();
             let env_vars_str = serialize_variables_for_shell(
-                env_vars.iter().map(|(key, value)| (key.as_str(), value)),
+                env_vars
+                    .iter()
+                    .map(|(key, value)| (key.as_str(), value.as_str())),
                 shell.shell_type(),
             );
             command_str.push_str(&env_vars_str);

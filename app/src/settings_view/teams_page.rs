@@ -39,7 +39,6 @@ use super::settings_page::{
     MatchData, PageType, SettingsPageMeta, SettingsPageViewHandle, SettingsWidget, render_banner,
     render_cta_banner, render_customer_type_badge, render_separator, render_sub_header,
 };
-use super::tab_menu::Tabs;
 use super::transfer_ownership_confirmation_modal::{
     TransferOwnershipConfirmationEvent, TransferOwnershipConfirmationModal,
 };
@@ -64,6 +63,12 @@ use crate::view_components::{
 use crate::word_block_editor::{ChipEditorState, WordBlockEditorView, WordBlockEditorViewEvent};
 use crate::workspace::WorkspaceAction;
 use crate::workspaces::team::{DiscoverableTeam, MembershipRole, Team, TeamDeleteDisabledReason};
+use cloud_objects::cloud_object::CloudObjectEventEntrypoint;
+
+use super::cloud_action_confirmation_dialog::{
+    CloudActionConfirmationDialog, CloudActionConfirmationDialogEvent,
+    CloudActionConfirmationDialogVariant,
+};
 use crate::workspaces::update_manager::{TeamUpdateManager, TeamUpdateManagerEvent};
 use crate::workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent};
 use crate::workspaces::workspace::{BillingMetadata, CustomerType, DelinquencyStatus, Workspace};
@@ -332,16 +337,6 @@ impl std::fmt::Display for TeamsInviteOption {
     }
 }
 
-impl Tabs for TeamsInviteOption {
-    fn action_on_click(&self, selection: TeamsInviteOption) -> TeamsPageAction {
-        TeamsPageAction::ChangeInviteViewOption(selection)
-    }
-
-    fn label(&self, _team: &Team, _cloud_model: &CloudModel) -> String {
-        self.tab_name()
-    }
-}
-
 /// What's blocking the team from growing right now. Resolved by
 /// `grow_team_warning`; consumed by `render_grow_team_warning_alert` and
 /// `grow_team_warning_cta`. Priority order is delinquency > over-cap > at-cap.
@@ -481,7 +476,6 @@ pub struct TeamsPageView {
     // Note that rather than storing just the current workspace, we're storing the entire
     // ModelHandle<UserWorkspaces>. That's because eventually we'll be handling more than one workspace.
     user_workspaces: ModelHandle<UserWorkspaces>,
-    cloud_model: ModelHandle<CloudModel>,
     invite_view: TeamsInviteOption,
     team_members_mouse_states: Vec<ItemMouseStates>,
     team_approved_domains_mouse_states: Vec<ItemMouseStates>,
@@ -708,12 +702,6 @@ impl TeamsPageView {
             ctx.notify();
         });
 
-        let cloud_model = CloudModel::handle(ctx);
-        ctx.observe(&cloud_model, |me, _, ctx| {
-            me.update_team_members_state(ctx);
-            me.update_approved_domains_state(ctx);
-        });
-
         let appearance = Appearance::as_ref(ctx);
         let font_size = appearance.ui_font_size();
         let create_team_editor = Self::editor(
@@ -849,7 +837,6 @@ impl TeamsPageView {
                 num_chips: 0,
             },
             user_workspaces,
-            cloud_model,
             invite_view: TeamsInviteOption::default(),
             team_members_mouse_states,
             team_approved_domains_mouse_states,
@@ -995,11 +982,6 @@ impl TeamsPageView {
                 self.show_error("Failed to toggle team discoverability", Some(err), ctx);
             }
             UserWorkspacesEvent::JoinTeamWithTeamDiscoverySuccess => {
-                // Force refresh of Warp Drive objects after joining a team
-                UpdateManager::handle(ctx).update(ctx, move |update_manager, ctx| {
-                    update_manager.refresh_updated_objects(ctx);
-                });
-
                 let message = self
                     .user_workspaces
                     .as_ref(ctx)
@@ -1486,7 +1468,6 @@ impl TeamsPageView {
                 ctx,
             );
         });
-        ctx.dispatch_typed_action(&WorkspaceAction::OpenWarpDrive);
     }
 
     fn set_team_member_role(
@@ -2192,7 +2173,6 @@ impl TeamsWidget {
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
-        let cloud_model = view.cloud_model.as_ref(app);
         let current_user_email = view.auth_state.user_email().unwrap_or_default();
         let has_admin_permissions = team_metadata.has_admin_permissions(&current_user_email);
         let is_owner = team_metadata.has_owner_permissions(&current_user_email);
@@ -2217,29 +2197,6 @@ impl TeamsWidget {
             view,
             appearance,
         ));
-
-        // has_plan_limit will be true if the team has any shared object policy that
-        // is not unlimited.
-        let has_plan_limit = team_metadata
-            .billing_metadata
-            .tier
-            .shared_notebooks_policy
-            .map(|policy| !policy.is_unlimited)
-            .unwrap_or_else(|| false)
-            || team_metadata
-                .billing_metadata
-                .tier
-                .shared_workflows_policy
-                .map(|policy| !policy.is_unlimited)
-                .unwrap_or_else(|| false);
-        if has_plan_limit {
-            // Render plan usage and limits
-            main_content.add_child(
-                Container::new(self.render_plan_usage(team_metadata, cloud_model, appearance, app))
-                    .with_padding_top(CONTENT_SEPARATION_PADDING)
-                    .finish(),
-            )
-        }
 
         // 2) Horizontal separator
         main_content.add_child(
@@ -2563,76 +2520,6 @@ impl TeamsWidget {
         );
 
         billing_links.finish()
-    }
-
-    fn render_plan_usage(
-        &self,
-        team: &Team,
-        cloud_model: &CloudModel,
-        appearance: &Appearance,
-        app: &AppContext,
-    ) -> Box<dyn Element> {
-        let mut section = Flex::column();
-        let sub_header_text = match team.billing_metadata.customer_type {
-            CustomerType::Free => "Free plan usage limits",
-            _ => "Plan usage limits",
-        };
-        section.add_child(self.render_subsection_header(sub_header_text.into(), appearance));
-
-        let mut shared_objects_usage_row =
-            Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
-
-        if let Some(policy) = team.billing_metadata.tier.shared_notebooks_policy
-            && !policy.is_unlimited
-        {
-            let mut shared_notebooks_column = Flex::column();
-            shared_notebooks_column
-                .add_child(self.render_plan_usage_header("Shared Notebooks".into(), appearance));
-            let num_shared_notebooks = cloud_model
-                .active_notebooks_in_space(Space::Team { team_uid: team.uid }, app)
-                .count();
-            shared_notebooks_column.add_child(
-                Container::new(self.render_plan_usage_text(
-                    format!("{}/{}", num_shared_notebooks, policy.limit),
-                    appearance,
-                ))
-                .with_margin_top(4.)
-                .finish(),
-            );
-            shared_objects_usage_row.add_child(
-                Container::new(shared_notebooks_column.finish())
-                    .with_margin_right(64.)
-                    .finish(),
-            );
-        }
-
-        if let Some(policy) = team.billing_metadata.tier.shared_workflows_policy
-            && !policy.is_unlimited
-        {
-            let mut shared_workflows_column = Flex::column();
-            shared_workflows_column
-                .add_child(self.render_plan_usage_header("Shared Workflows".into(), appearance));
-            let num_shared_workflows = cloud_model
-                .active_workflows_in_space(Space::Team { team_uid: team.uid }, app)
-                .count();
-            shared_workflows_column.add_child(
-                Container::new(self.render_plan_usage_text(
-                    format!("{}/{}", num_shared_workflows, policy.limit),
-                    appearance,
-                ))
-                .with_margin_top(4.)
-                .finish(),
-            );
-            shared_objects_usage_row.add_child(shared_workflows_column.finish());
-        }
-
-        section.add_child(
-            Container::new(shared_objects_usage_row.finish())
-                .with_margin_top(16.)
-                .finish(),
-        );
-
-        section.finish()
     }
 
     fn render_team_invitation_section(

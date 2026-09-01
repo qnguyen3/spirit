@@ -129,7 +129,6 @@ struct ButtonMouseStates {
     view_context: MouseStateHandle,
     edit_cloud_workflow: MouseStateHandle,
     reset_command: MouseStateHandle,
-    add_env_var_collection: MouseStateHandle,
 }
 
 impl WorkflowsMoreInfoView {
@@ -175,18 +174,6 @@ impl WorkflowsMoreInfoView {
             .arguments()
             .get(*self.selected_workflow_state.currently_selected_argument)
             .cloned()
-    }
-
-    pub fn set_environment_variables_selection(
-        &mut self,
-        env_vars_id: Option<SyncId>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if let Some(dropdown) = self.environment_variables_dropdown.as_ref() {
-            dropdown.update(ctx, |dropdown, ctx| {
-                dropdown.set_selected_env_vars(env_vars_id, ctx)
-            });
-        }
     }
 
     fn render_collapse_button(&self, appearance: &Appearance) -> Box<dyn Element> {
@@ -482,89 +469,6 @@ impl WorkflowsMoreInfoView {
         )
     }
 
-    fn render_environment_variables_selection(
-        &self,
-        appearance: &Appearance,
-        app: &AppContext,
-    ) -> Option<Box<dyn Element>> {
-        let span = Container::new(
-            Align::new(
-                appearance
-                    .ui_builder()
-                    .span(ENV_VAR_SPAN.to_string())
-                    .with_style(UiComponentStyles {
-                        font_size: Some(ENV_VAR_SPAN_FONT_SIZE),
-                        ..Default::default()
-                    })
-                    .build()
-                    .finish(),
-            )
-            .left()
-            .finish(),
-        )
-        .with_vertical_margin(ENV_VAR_SPAN_VERTICAL_MARGIN)
-        .with_margin_right(ENV_VAR_HORIZONTAL_MARGIN)
-        .finish();
-
-        let environment_variables_dropdown = self.environment_variables_dropdown.as_ref()?;
-        let dropdown_element = if environment_variables_dropdown.as_ref(app).has_env_vars(app) {
-            ChildView::new(environment_variables_dropdown).finish()
-        } else {
-            Align::new(
-                ConstrainedBox::new(
-                    appearance
-                        .ui_builder()
-                        .button(
-                            ButtonVariant::Secondary,
-                            self.button_mouse_states.add_env_var_collection.clone(),
-                        )
-                        .with_centered_text_label(NEW_ENV_VAR_BUTTON_LABEL.to_owned())
-                        .build()
-                        .on_click(|ctx, _, _| {
-                            // Create envvars in personal drive for max extensibility (can be moved
-                            // to any team/workspace)
-                            ctx.dispatch_typed_action(
-                                WorkspaceAction::CreatePersonalEnvVarCollection,
-                            )
-                        })
-                        .finish(),
-                )
-                .with_height(ENV_VAR_BUTTON_HEIGHT)
-                .finish(),
-            )
-            .finish()
-        };
-
-        let env_var_dropdown = Container::new(dropdown_element)
-            .with_vertical_margin(ENV_VAR_RIGHT_ELEMENT_VERTICAL_MARGIN)
-            .finish();
-
-        Some(
-            ConstrainedBox::new(
-                Stack::new()
-                    .with_child(
-                        Rect::new()
-                            .with_background_color(appearance.theme().surface_1().into())
-                            .finish(),
-                    )
-                    .with_child(
-                        Container::new(
-                            Flex::row()
-                                .with_main_axis_size(MainAxisSize::Max)
-                                .with_child(span)
-                                .with_child(env_var_dropdown)
-                                .finish(),
-                        )
-                        .with_horizontal_margin(ENV_VAR_HORIZONTAL_MARGIN)
-                        .finish(),
-                    )
-                    .finish(),
-            )
-            .with_height(ENV_VAR_ROW_HEIGHT)
-            .finish(),
-        )
-    }
-
     fn render_info_box(
         &self,
         appearance: &Appearance,
@@ -651,13 +555,6 @@ impl WorkflowsMoreInfoView {
             .finish();
 
         let mut children = vec![workflow_container];
-
-        if self.workflow.should_show_env_var_selection()
-            && let Some(environment_variables_selection) =
-                self.render_environment_variables_selection(appearance, app)
-        {
-            children.push(Clipped::new(environment_variables_selection).finish());
-        }
 
         if !self.show_shift_tab_treatment {
             children.push(self.render_command_edited_menu(appearance));
@@ -915,14 +812,11 @@ where
 }
 
 #[derive(Debug)]
-pub enum WorkflowsInfoBoxViewEvent {
-    PrefixCommandWithEnvironmentVariables(Option<SyncId>),
-}
+pub enum WorkflowsInfoBoxViewEvent {}
 
 #[derive(Debug, Clone)]
 pub enum WorkflowsInfoBoxViewAction {
     CollapseOrExpand,
-    SelectEnvironmentVariables(Option<SyncId>),
 }
 
 impl Entity for WorkflowsMoreInfoView {
@@ -937,8 +831,6 @@ impl TypedActionView for WorkflowsMoreInfoView {
             WorkflowsInfoBoxViewAction::CollapseOrExpand => {
                 self.info_box_expanded = !self.info_box_expanded
             }
-            WorkflowsInfoBoxViewAction::SelectEnvironmentVariables(env_vars) => ctx
-                .emit(WorkflowsInfoBoxViewEvent::PrefixCommandWithEnvironmentVariables(*env_vars)),
         }
     }
 }

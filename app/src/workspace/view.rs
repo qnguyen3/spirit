@@ -1359,9 +1359,6 @@ impl Workspace {
                 self.current_workspace_state.is_auth_override_modal_open = false;
                 ctx.notify();
             }
-            AuthOverrideWarningModalEvent::BulkExport => {
-                self.export_all_warp_drive_objects(ctx);
-            }
         }
     }
 
@@ -12818,21 +12815,6 @@ impl Workspace {
                             ctx.notify();
                         });
                     }
-                    AcceptNotebook(sync_id) => {
-                        self.open_notebook(
-                            &NotebookSource::Existing(*sync_id),
-                            &OpenWarpDriveObjectSettings::default(),
-                            ctx,
-                            true,
-                        );
-                    }
-                    AcceptEnvVarCollection(env_var_collection) => {
-                        self.invoke_environment_variables(
-                            (**env_var_collection).clone(),
-                            false,
-                            ctx,
-                        );
-                    }
                 }
             }
             Resize => {
@@ -16239,11 +16221,6 @@ impl Workspace {
 
         if *input_settings.syntax_highlighting.value() {
             context.set.insert(flags::SYNTAX_HIGHLIGHTING_FLAG);
-        }
-
-        let cloud_preferences_settings = CloudPreferencesSettings::as_ref(app);
-        if *cloud_preferences_settings.settings_sync_enabled.value() {
-            context.set.insert(flags::SETTINGS_SYNC_FLAG);
         }
 
         if *block_list_settings

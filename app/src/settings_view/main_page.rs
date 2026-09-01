@@ -51,69 +51,13 @@ const PHOTO_SIZE: f32 = 40.;
 const REGULAR_TEXT_FONT_SIZE: f32 = 12.;
 const VERTICAL_MARGIN: f32 = 24.;
 const LOG_OUT_TEXT: &str = "Log out";
-lazy_static! {
-    static ref SETTINGS_SYNC_BINDINGS_ADDED: Arc<Mutex<bool>> = Default::default();
-}
 
-pub fn init_actions_from_parent_view<T: Action + Clone>(
-    app: &mut AppContext,
-    context: &ContextPredicate,
-    builder: fn(SettingsAction) -> T,
-) {
-    let mut toggle_binding_pairs = Vec::new();
-    maybe_add_settings_sync_toggle_binding(app, context, builder, &mut toggle_binding_pairs);
-
-    // Add other bindings here in the future.
-
-    ToggleSettingActionPair::add_toggle_setting_action_pairs_as_bindings(toggle_binding_pairs, app);
-}
-
-fn maybe_add_settings_sync_toggle_binding<T: Action + Clone>(
-    app: &mut AppContext,
-    context: &ContextPredicate,
-    builder: fn(SettingsAction) -> T,
-    toggle_binding_pairs: &mut Vec<ToggleSettingActionPair<T>>,
-) {
-    let mut lock = SETTINGS_SYNC_BINDINGS_ADDED
-        .lock()
-        .expect("settings sync bindings lock poisoned");
-    if !*lock {
-        *lock = true;
-        toggle_binding_pairs.push(
-            ToggleSettingActionPair::new(
-                "settings sync",
-                builder(SettingsAction::MainPageToggle(
-                    MainPageAction::ToggleSettingsSync,
-                )),
-                context,
-                flags::SETTINGS_SYNC_FLAG,
-            )
-            .is_supported_on_current_platform(
-                CloudPreferencesSettings::as_ref(app)
-                    .settings_sync_enabled
-                    .is_supported_on_current_platform(),
-            ),
-        );
-    }
-}
-
-pub fn handle_experiment_change(app: &mut AppContext) {
-    let mut toggle_binding_pairs: Vec<ToggleSettingActionPair<WorkspaceAction>> = Vec::new();
-    maybe_add_settings_sync_toggle_binding(
-        app,
-        &id!("Workspace"),
-        WorkspaceAction::DispatchToSettingsTab,
-        &mut toggle_binding_pairs,
-    );
-    ToggleSettingActionPair::add_toggle_setting_action_pairs_as_bindings(toggle_binding_pairs, app);
-}
 
 #[derive(Debug, Clone)]
 pub enum MainPageAction {
     Relaunch,
     DownloadUpdate,
     CheckForUpdate,
-    ToggleSettingsSync,
     Upgrade {
         team_uid: Option<ServerId>,
         user_id: UserUid,
@@ -132,7 +76,7 @@ impl MainPageAction {
         use MainPageAction::*;
         matches!(
             self,
-            Upgrade { .. } | GenerateStripeBillingPortalLink { .. } | ToggleSettingsSync,
+            Upgrade { .. } | GenerateStripeBillingPortalLink { .. },
         )
     }
 }
@@ -143,7 +87,6 @@ impl From<&MainPageAction> for LoginGatedFeature {
         match val {
             Upgrade { .. } => "Upgrade Plan",
             GenerateStripeBillingPortalLink { .. } => "Generate Stripe Billing Portal Link",
-            ToggleSettingsSync => "Toggle Settings Sync",
             _ => "Unknown reason",
         }
     }
@@ -198,18 +141,6 @@ impl TypedActionView for MainSettingsPageView {
                 ctx.emit(MainSettingsPageEvent::CheckForUpdate);
                 ctx.notify();
             }
-            MainPageAction::ToggleSettingsSync => {
-                let _new_value =
-                    CloudPreferencesSettings::handle(ctx).update(ctx, |prefs_settings, ctx| {
-                        report_if_error!(
-                            prefs_settings
-                                .settings_sync_enabled
-                                .toggle_and_save_value(ctx)
-                        );
-                        *prefs_settings.settings_sync_enabled
-                    });
-                ctx.notify();
-            }
             MainPageAction::Upgrade { team_uid, user_id } => match team_uid {
                 Some(team_uid) => {
                     ctx.open_url(&UserWorkspaces::upgrade_link_for_team(*team_uid));
@@ -258,10 +189,6 @@ impl MainSettingsPageView {
             Self::handle_autoupdate_state_change,
         );
 
-        ctx.subscribe_to_model(&CloudPreferencesSettings::handle(ctx), |_, _, _, ctx| {
-            ctx.notify();
-        });
-
         let auth_manager_handle = AuthManager::handle(ctx);
         ctx.subscribe_to_model(&auth_manager_handle, |_, _, _, ctx| {
             ctx.notify();
@@ -271,8 +198,6 @@ impl MainSettingsPageView {
             Box::new(AccountWidget::default()),
             Box::new(DividerWidget {}),
         ];
-
-        widgets.push(Box::new(SettingsSyncWidget::default()));
 
         #[cfg(not(target_family = "wasm"))]
         if IapManager::as_ref(ctx).is_enabled() {
@@ -669,65 +594,6 @@ impl SettingsWidget for DividerWidget {
                 .with_border(Border::bottom(1.).with_border_fill(appearance.theme().outline()))
                 .finish(),
         )
-        .with_margin_top(VERTICAL_MARGIN)
-        .finish()
-    }
-}
-
-#[derive(Default)]
-struct SettingsSyncWidget {
-    tooltip_state: MouseStateHandle,
-    switch_state: SwitchStateHandle,
-}
-
-impl SettingsWidget for SettingsSyncWidget {
-    type View = MainSettingsPageView;
-
-    fn search_terms(&self) -> &str {
-        "settings sync"
-    }
-
-    fn should_render(&self, app: &AppContext) -> bool {
-        !AuthStateProvider::as_ref(app)
-            .get()
-            .is_anonymous_or_logged_out()
-    }
-
-    fn render(
-        &self,
-        _view: &Self::View,
-        appearance: &Appearance,
-        app: &AppContext,
-    ) -> Box<dyn Element> {
-        let preferences_settings = CloudPreferencesSettings::as_ref(app);
-
-        let label_info = AdditionalInfo {
-            mouse_state: self.tooltip_state.clone(),
-            on_click_action: Some(MainPageAction::OpenUrl(
-                "https://docs.warp.dev/terminal/more-features/settings-sync".into(),
-            )),
-            secondary_text: None,
-            tooltip_override_text: None,
-        };
-
-        Container::new(render_body_item::<MainPageAction>(
-            "Settings sync".to_string(),
-            Some(label_info),
-            // Cloud prefs are always synced, so no need to show the local-only icon.
-            LocalOnlyIconState::Hidden,
-            ToggleState::Enabled,
-            appearance,
-            appearance
-                .ui_builder()
-                .switch(self.switch_state.clone())
-                .check(*preferences_settings.settings_sync_enabled.value())
-                .build()
-                .on_click(move |ctx, _, _| {
-                    ctx.dispatch_typed_action(MainPageAction::ToggleSettingsSync)
-                })
-                .finish(),
-            None,
-        ))
         .with_margin_top(VERTICAL_MARGIN)
         .finish()
     }
