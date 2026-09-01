@@ -53,9 +53,6 @@ pub enum OpenSettingsArgs {
     },
 }
 
-/// Source query parameter value indicating auth was initiated from cloud agent setup.
-/// Used to skip opening settings page after GitHub auth completes.
-pub const CLOUD_SETUP_SOURCE: &str = "cloud_setup";
 
 /// Query parameter the web checkout confirmation page appends to the desktop
 /// hand-off to report that the purchase went through. It is the shared

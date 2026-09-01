@@ -4811,64 +4811,6 @@ impl Input {
         self.completions_abort_handle = Some(abort_handle);
     }
 
-    /// When the command finishes running, update the input suggestions menu with the suggestions.
-    fn handle_enum_completion_results(
-        &mut self,
-        results: anyhow::Result<Vec<String>>,
-        editor_snapshot_when_completer_was_ran: EditorSnapshot,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        let current_editor_model = self
-            .editor
-            .read(ctx, |editor, ctx| editor.snapshot_model(ctx));
-
-        let buffer_text = self.editor.as_ref(ctx).buffer_text(ctx);
-        // If the editor has changed since the completions trigger was hit-- noop since the
-        // suggestions are no longer valid. Note that we purposely ignore attributes such as text
-        // styles for the purposes of this check (we only care about the buffer text content and
-        // the cursor selections state).
-        if buffer_text != editor_snapshot_when_completer_was_ran.text()
-            || current_editor_model.selections()
-                != editor_snapshot_when_completer_was_ran.selections()
-        {
-            return;
-        }
-
-        let (variants, status) = match results {
-            Ok(variants) => (variants, DynamicEnumSuggestionStatus::Success),
-            Err(e) => {
-                log::warn!("Failed to generate dynamic enum suggestions: {e:?}");
-                (vec![], DynamicEnumSuggestionStatus::Failure)
-            }
-        };
-
-        self.input_suggestions.update(ctx, |input, ctx| {
-            input.set_enum_variants(variants.clone(), ctx);
-        });
-
-        if let InputSuggestionsMode::DynamicWorkflowEnumSuggestions {
-            menu_position,
-            selected_ranges,
-            cursor_point,
-            command,
-            ..
-        } = self.suggestions_mode_model.as_ref(ctx).mode()
-        {
-            let updated_mode = InputSuggestionsMode::DynamicWorkflowEnumSuggestions {
-                dynamic_enum_status: status,
-                suggestions: variants,
-                menu_position: *menu_position,
-                selected_ranges: selected_ranges.clone(),
-                cursor_point: *cursor_point,
-                command: command.clone(),
-            };
-            self.suggestions_mode_model.update(ctx, |model, ctx| {
-                model.set_mode(updated_mode, ctx);
-            });
-        }
-
-        ctx.notify();
-    }
 
     fn path_separators(&self, ctx: &AppContext) -> PathSeparators {
         self.active_session(ctx)

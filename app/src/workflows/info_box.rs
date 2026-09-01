@@ -40,16 +40,6 @@ const KEYBOARD_SHORTCUT_PADDING: f32 = 15.;
 const COLLAPSED_BUTTON_VERTICAL_PADDING: f32 = 5.;
 const COLLAPSED_BUTTON_HORIZONTAL_PADDING: f32 = 9.;
 
-/// Environment variables row
-const ENV_VAR_SPAN_FONT_SIZE: f32 = 14.;
-const ENV_VAR_ROW_HEIGHT: f32 = 50.;
-const ENV_VAR_DROPDOWN_WIDTH: f32 = 225.;
-const ENV_VAR_HORIZONTAL_MARGIN: f32 = 20.;
-const ENV_VAR_RIGHT_ELEMENT_VERTICAL_MARGIN: f32 = 5.;
-const ENV_VAR_SPAN_VERTICAL_MARGIN: f32 = 15.;
-const ENV_VAR_BUTTON_HEIGHT: f32 = 30.;
-const ENV_VAR_SPAN: &str = "Environment variables";
-const NEW_ENV_VAR_BUTTON_LABEL: &str = "New environment variables";
 
 /// Scale factor the title should be from the user's current font size.
 const TITLE_FONT_SIZE_SCALE_FACTOR: f32 = 1.12;

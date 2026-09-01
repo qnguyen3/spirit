@@ -413,11 +413,6 @@ const BRACKETED_PASTE_SUFFIX: &str = "\x1b[201~";
 
 /// Duration before we consider a session to have failed bootstrapping.
 const BOOTSTRAP_FAILED_DURATION: Duration = Duration::from_secs(7);
-/// Duration before we consider a session invoked from an env vars object to
-/// have failed bootstrapping. The longer duration is meant to account for
-/// a user needing to type in one or many secret manager passwords
-/// during the bootstrap period.
-const ENV_VAR_BOOTSTRAP_FAILED_DURATION: Duration = Duration::from_secs(60);
 /// How long the slow-bootstrap banner stays visible after it first appears
 /// before it auto-dismisses. The banner used to persist until the user
 /// dismissed it manually or bootstrap finished, but in workflows where

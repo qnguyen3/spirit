@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::rc::Rc;
 
 use pathfinder_color::ColorU;
 use warp_core::ui::appearance::Appearance;
@@ -8,7 +7,7 @@ use warpui::elements::{
     Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Expanded, Flex, FormattedTextElement, MainAxisAlignment, MainAxisSize, ParentElement, Radius, Shrinkable, Text,
 };
 use warpui::fonts::FamilyId;
-use warpui::{AppContext, Element, EventContext, SingletonEntity};
+use warpui::{AppContext, Element, SingletonEntity};
 
 use crate::ui_components::blended_colors;
 use crate::ui_components::inline_action_icons::icon_size;
@@ -18,8 +17,6 @@ pub const INLINE_ACTION_HORIZONTAL_PADDING: f32 = 16.;
 pub const INLINE_ACTION_HEADER_VERTICAL_PADDING: f32 = 10.;
 pub const ICON_MARGIN: f32 = 8.;
 
-pub type OnToggleExpandedCallback = Rc<dyn Fn(&mut EventContext) + 'static>;
-pub type OnRightClickCallback = Rc<dyn Fn(&mut EventContext) + 'static>;
 
 #[derive(Clone)]
 pub struct HeaderConfig {

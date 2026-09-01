@@ -37,7 +37,6 @@ pub enum FilterableDropdownEvent {
 
 #[derive(Default, Debug, PartialEq)]
 pub enum FilterableDropdownOrientation {
-    Up,
     #[default]
     Down,
 }

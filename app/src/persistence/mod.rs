@@ -109,10 +109,6 @@ impl PersistedDataScope {
         self != PersistedDataScope::CodebaseIndicesOnly
     }
 
-    /// Pending object actions, which only the GUI consumes.
-    fn gui_only_data(self) -> bool {
-        matches!(self, PersistedDataScope::Full)
-    }
 }
 
 /// Initializes the persistence "subsystem".

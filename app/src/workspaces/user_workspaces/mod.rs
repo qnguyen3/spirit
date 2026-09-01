@@ -26,12 +26,12 @@ use crate::workspaces::Space;
 use crate::channel::ChannelState;
 use crate::server::ids::ServerId;
 use crate::server::server_api::team::TeamClient;
-use crate::server::server_api::workspace::{PurchaseAddonCreditsOutcome, WorkspaceClient};
+use crate::server::server_api::workspace::WorkspaceClient;
 #[cfg(test)]
 use crate::server::server_api::{team::MockTeamClient, workspace::MockWorkspaceClient};
 use crate::settings::PrivacySettings;
 use crate::workspaces::workspace::{
-    AiOverages, PurchaseAddOnCreditsPolicy, UsageBasedPricingSettings,
+    PurchaseAddOnCreditsPolicy, UsageBasedPricingSettings,
 };
 #[cfg(test)]
 use crate::workspaces::workspace::{
@@ -142,13 +142,6 @@ pub struct CreateTeamResponse {
     pub team: Team,
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum SoleTeamError {
-    #[error("you are not on a team")]
-    NoTeam,
-    #[error("you are on {} teams, so no single team applies", .team_uids.len())]
-    MoreThanOneTeam { team_uids: Vec<ServerId> },
-}
 
 impl UserWorkspaces {
     #[cfg(test)]
@@ -490,28 +483,6 @@ impl UserWorkspaces {
             // If the team is not found, then allow it to go through by default (should still be enforced server-side)
             true
         }
-    }
-
-    /// The user's single team in the current workspace.
-    ///
-    /// Having no workspace is reported as [`SoleTeamError::NoTeam`]: a user with no workspace
-    /// is on no team, and no caller can act differently on the distinction.
-    pub fn sole_team(&self) -> Result<&Team, SoleTeamError> {
-        let teams = self
-            .current_workspace()
-            .map(|workspace| workspace.teams.as_slice())
-            .unwrap_or_default();
-        match teams {
-            [] => Err(SoleTeamError::NoTeam),
-            [team] => Ok(team),
-            _ => Err(SoleTeamError::MoreThanOneTeam {
-                team_uids: teams.iter().map(|team| team.uid).collect(),
-            }),
-        }
-    }
-
-    pub fn sole_team_uid(&self) -> Result<ServerId, SoleTeamError> {
-        self.sole_team().map(|team| team.uid)
     }
 
     /// Note that the workspace is populated with dummy data until the initial fetch
@@ -1050,33 +1021,6 @@ impl UserWorkspaces {
         );
     }
 
-    fn on_team_ownership_transferred(
-        &mut self,
-        result: Result<WorkspacesMetadataWithPricing>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match result {
-            Err(err) => ctx.emit(UserWorkspacesEvent::TransferTeamOwnershipRejected(err)),
-            Ok(result) => {
-                self.on_workspaces_updated(Ok(result), ctx);
-                ctx.emit(UserWorkspacesEvent::TransferTeamOwnershipSuccess);
-            }
-        };
-        ctx.notify();
-    }
-
-    pub fn transfer_team_ownership(
-        &mut self,
-        new_owner_email: String,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let team_client = self.team_client.clone();
-        let _ = ctx.spawn(
-            async move { team_client.transfer_team_ownership(new_owner_email).await },
-            Self::on_team_ownership_transferred,
-        );
-    }
-
     fn on_team_member_role_set(
         &mut self,
         result: Result<WorkspacesMetadataWithPricing>,
@@ -1196,28 +1140,6 @@ impl UserWorkspaces {
         );
     }
 
-    pub fn update_usage_based_pricing_settings(
-        &mut self,
-        team_uid: ServerId,
-        usage_based_pricing_enabled: bool,
-        max_monthly_spend_cents: Option<u32>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let workspace_client = self.workspace_client.clone();
-        let _ = ctx.spawn(
-            async move {
-                workspace_client
-                    .update_usage_based_pricing_settings(
-                        team_uid,
-                        usage_based_pricing_enabled,
-                        max_monthly_spend_cents,
-                    )
-                    .await
-            },
-            Self::on_update_workspace_metadata,
-        );
-    }
-
     fn on_update_workspace_metadata(
         &mut self,
         result: Result<WorkspacesMetadataResponse>,
@@ -1241,103 +1163,6 @@ impl UserWorkspaces {
             }
         };
         ctx.notify();
-    }
-
-    pub fn purchase_addon_credits(
-        &mut self,
-        team_uid: Option<ServerId>,
-        credits: i32,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let workspace_client = self.workspace_client.clone();
-        let _ = ctx.spawn(
-            async move {
-                workspace_client
-                    .purchase_addon_credits(team_uid, credits)
-                    .await
-            },
-            Self::on_purchase_addon_credits,
-        );
-    }
-
-    fn on_purchase_addon_credits(
-        &mut self,
-        result: Result<PurchaseAddonCreditsOutcome>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match result {
-            Ok(PurchaseAddonCreditsOutcome::Completed(result)) => {
-                let wrapped = WorkspacesMetadataWithPricing {
-                    metadata: *result,
-                    pricing_info: None,
-                };
-                self.on_workspaces_updated(Ok(wrapped), ctx);
-                ctx.emit(UserWorkspacesEvent::PurchaseAddonCreditsSuccess);
-            }
-            Ok(PurchaseAddonCreditsOutcome::CheckoutRequired { checkout_url }) => {
-                ctx.emit(UserWorkspacesEvent::PurchaseAddonCreditsCheckoutRequired {
-                    checkout_url,
-                });
-            }
-            Err(err) => {
-                ctx.emit(UserWorkspacesEvent::PurchaseAddonCreditsRejected(
-                    anyhow::anyhow!(err),
-                ));
-            }
-        };
-        ctx.notify();
-    }
-
-    pub fn refresh_ai_overages(&mut self, ctx: &mut ModelContext<Self>) {
-        let workspace_client = self.workspace_client.clone();
-        let _ = ctx.spawn(
-            async move { workspace_client.refresh_ai_overages().await },
-            Self::on_refresh_ai_overages,
-        );
-    }
-
-    pub fn update_addon_credits_settings(
-        &mut self,
-        team_uid: ServerId,
-        auto_reload_enabled: Option<bool>,
-        max_monthly_spend_cents: Option<i32>,
-        selected_auto_reload_credit_denomination: Option<i32>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let workspace_client = self.workspace_client.clone();
-        let _ = ctx.spawn(
-            async move {
-                workspace_client
-                    .update_addon_credits_settings(
-                        team_uid,
-                        auto_reload_enabled,
-                        max_monthly_spend_cents,
-                        selected_auto_reload_credit_denomination,
-                    )
-                    .await
-            },
-            Self::on_update_workspace_metadata,
-        );
-    }
-
-    fn on_refresh_ai_overages(&mut self, result: Result<AiOverages>, ctx: &mut ModelContext<Self>) {
-        match result {
-            Ok(fresh_ai_overages) => {
-                // TODO: We really need to stop having duplicate billing metadata...
-                if let Some(workspace) = self.current_workspace_mut() {
-                    workspace.billing_metadata.ai_overages = Some(fresh_ai_overages.clone());
-                    for team in &mut workspace.teams {
-                        team.billing_metadata.ai_overages = Some(fresh_ai_overages.clone());
-                    }
-                }
-
-                ctx.emit(UserWorkspacesEvent::AiOveragesUpdated);
-                ctx.notify();
-            }
-            Err(e) => {
-                log::warn!("Failed to refresh AI overages for workspace: {e:?}");
-            }
-        }
     }
 
     pub fn usage_based_pricing_settings(&self) -> UsageBasedPricingSettings {

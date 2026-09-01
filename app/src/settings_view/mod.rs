@@ -40,8 +40,7 @@ use warpui::{
 use crate::GlobalResourceHandlesProvider;
 use crate::appearance::Appearance;
 use crate::editor::{
-    EditorView, Event as EditorEvent, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions,
-    TextColors, TextOptions,
+    EditorView, Event as EditorEvent, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions, TextOptions,
 };
 use crate::menu::{self, Menu, MenuItem, MenuItemFields};
 use crate::pane_group::focus_state::PaneFocusHandle;
@@ -172,14 +171,6 @@ pub fn nav_subpage_position_id(section: SettingsSection) -> String {
     format!("settings_nav_subpage:{section:?}")
 }
 
-pub(super) fn editor_text_colors(appearance: &Appearance) -> TextColors {
-    let theme = appearance.theme();
-    TextColors {
-        default_color: theme.active_ui_text_color(),
-        disabled_color: theme.disabled_ui_text_color(),
-        hint_color: theme.disabled_ui_text_color(),
-    }
-}
 
 /// Small inline pill rendered next to a settings label to mark a feature as beta.
 /// Used for experimental features (i.e. AsyncFind) that are enabled for Friends of Warp (i.e. Dogfood/Preview) and toggleable by others.
