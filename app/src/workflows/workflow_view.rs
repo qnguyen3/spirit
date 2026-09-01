@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use alias_bar::{AliasBar, AliasBarEvent};
 use argument_editor::{ArgumentEditorRow, DEFAULT_ARGUMENT_PREFIX};
+use cloud_object_models::{Argument, Workflow};
 use env_var_selector::{EnvVarSelector, EnvVarSelectorEvent};
 use itertools::Itertools;
 use pathfinder_color::ColorU;
@@ -86,7 +87,6 @@ use crate::util::bindings::CustomAction;
 use crate::view_components::{DismissibleToast, ToastType};
 use crate::workflows::CloudWorkflow;
 use crate::workflows::arguments::ArgumentsState;
-use crate::workflows::workflow::{Argument, Workflow};
 use crate::workspace::ToastStack;
 
 mod alias_argument_selector;
@@ -701,7 +701,8 @@ impl WorkflowView {
         let workflow_description = workflow_data.description().cloned().unwrap_or_default();
         let workflow_content = workflow_data.content();
 
-        self.command_display_data = WorkflowCommandDisplayData::new_from_workflow(workflow_data);
+        self.command_display_data =
+            WorkflowCommandDisplayData::new_from_workflow(&workflow_data.into());
 
         if let ContainerConfiguration::Pane(pane_config) = &mut self.container_configuration {
             pane_config.update(ctx, |pane_config, ctx| {
@@ -1179,7 +1180,7 @@ impl WorkflowView {
                     let text_editor = type_selector.text_editor.as_ref(ctx);
 
                     workflow_arg_type_helpers::extract_typed_argument_from_selector(
-                        argument,
+                        &argument.into(),
                         description,
                         type_selector,
                         text_editor,
@@ -1417,7 +1418,7 @@ impl WorkflowView {
                 });
             } else {
                 ctx.emit(WorkflowViewEvent::RunWorkflow {
-                    workflow: Arc::new(WorkflowType::Local(new_workflow)),
+                    workflow: Arc::new(WorkflowType::Local((&new_workflow).into())),
                     argument_override: None,
                 })
             }

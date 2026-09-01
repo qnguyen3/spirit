@@ -8,6 +8,7 @@ use chrono::{DateTime, Utc};
 #[cfg(test)]
 pub use cloud_object_client::GetCloudObjectResponse;
 pub use cloud_object_client::InitialLoadResponse;
+use cloud_object_models::Workflow;
 use futures::channel::oneshot::{self, Receiver};
 use futures::stream::AbortHandle;
 use itertools::Itertools;
@@ -64,7 +65,6 @@ use crate::server::sync_queue::{
     CreationFailureReason, GenericStringObjectToCreate, QueueItem, SyncQueue, SyncQueueEvent,
 };
 use crate::settings::cloud_preferences::Preference;
-use crate::workflows::workflow::Workflow;
 use crate::workflows::workflow_enum::{CloudWorkflowEnum, CloudWorkflowEnumModel, WorkflowEnum};
 use crate::workflows::{CloudWorkflowModel, WorkflowId};
 use crate::workspaces::team_tester::{TeamTesterStatus, TeamTesterStatusEvent};

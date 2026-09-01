@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 
+use cloud_object_models::Workflow;
 use itertools::Itertools;
 use pathfinder_color::ColorU;
 use warp_core::features::FeatureFlag;
@@ -31,7 +32,6 @@ use crate::editor::{
 use crate::pane_group::PaneEvent;
 use crate::ui_components::buttons::icon_button;
 use crate::ui_components::icons::Icon;
-use crate::workflows::workflow::Workflow;
 use crate::workspace::WorkspaceAction;
 
 const ARGUMENT_INPUT_HEIGHT: f32 = 30.;

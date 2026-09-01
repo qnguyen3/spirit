@@ -154,7 +154,7 @@ impl WorkflowsMoreInfoView {
             command_with_replaced_arguments,
             argument_index_to_char_range_map,
             ..
-        } = compute_workflow_display_data(workflow.as_workflow());
+        } = compute_workflow_display_data(&workflow.as_workflow());
 
         let environment_variables_dropdown = (!workflow.as_workflow().is_agent_mode_workflow())
             .then(|| {
@@ -190,14 +190,15 @@ impl WorkflowsMoreInfoView {
     /// Gets the currently selected argument if it exists and the parameter
     /// tabbing has been enabled. Returns none if the user has deleted a parameter
     /// highlight and therefore disabled argument cycling.
-    pub fn selected_argument(&self) -> Option<&Argument> {
+    pub fn selected_argument(&self) -> Option<Argument> {
         if !self.selected_workflow_state.argument_cycling_enabled {
             return None;
         }
-        let workflow = self.workflow.as_workflow();
-        workflow
+        self.workflow
+            .as_workflow()
             .arguments()
             .get(*self.selected_workflow_state.currently_selected_argument)
+            .cloned()
     }
 
     pub fn set_environment_variables_selection(
@@ -286,7 +287,7 @@ impl WorkflowsMoreInfoView {
                 Shrinkable::new(
                     1.,
                     Container::new(self.render_argument_and_description(
-                        arg,
+                        &arg,
                         false,
                         WrapText::No,
                         appearance,

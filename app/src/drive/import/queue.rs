@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use cloud_object_models::Workflow;
 use warp_errors::report_error;
 use warpui::{Entity, ModelContext, SingletonEntity};
 
@@ -12,7 +13,6 @@ use crate::server::cloud_objects::update_manager::{
     InitiatedBy, ObjectOperation, OperationSuccessType, UpdateManager, UpdateManagerEvent,
 };
 use crate::server::ids::{ClientId, SyncId};
-use crate::workflows::workflow::Workflow;
 use crate::workflows::workflow_enum::WorkflowEnum;
 
 pub(super) enum ImportQueueEvent {

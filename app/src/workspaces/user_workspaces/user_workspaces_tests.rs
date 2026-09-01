@@ -2,6 +2,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Duration;
 
+use cloud_object_models::Workflow;
 use cloud_objects::drive::sharing::{Subject, UserKind};
 use mockall::Sequence;
 use regex::Regex;
@@ -65,7 +66,6 @@ use crate::server::server_api::team::{MockTeamClient, TeamClient};
 use crate::server::sync_queue::SyncQueue;
 use crate::settings::CodeSettings;
 use crate::system::SystemStats;
-use crate::workflows::workflow::Workflow;
 use crate::workflows::{CloudWorkflow, CloudWorkflowModel};
 use crate::workspaces::gql_convert::PLACEHOLDER_WORKSPACE_UID;
 use crate::workspaces::team::{Team, TeamMember, TeamVisibility};

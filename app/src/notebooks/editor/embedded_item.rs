@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
 
+use cloud_object_models::Workflow;
 use itertools::Itertools;
 use markdown_parser::html_parser::WARP_EMBED_ATTRIBUTE_NAME;
 use pathfinder_color::ColorU;
@@ -33,7 +34,6 @@ use crate::drive::DriveObjectType;
 use crate::drive::cloud_object_styling::warp_drive_icon_color;
 use crate::server::ids::{HashableId, ToServerId};
 use crate::ui_components::icons::Icon;
-use crate::workflows::workflow::Workflow;
 use crate::workflows::{CloudWorkflow, WorkflowId};
 
 // Spacing for the embedded workflow card.

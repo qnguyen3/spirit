@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use cloud_object_models::ArgumentType;
 use warp_core::ui::appearance::Appearance;
 use warp_editor::editor::NavigationKey;
 use warpui::elements::ChildView;
@@ -17,7 +18,6 @@ use crate::editor::{
 };
 use crate::server::ids::SyncId;
 use crate::view_components::{Dropdown, DropdownItem};
-use crate::workflows::workflow::ArgumentType;
 use crate::workflows::workflow_enum::EnumVariants;
 
 /// Width of the argument editor in alias mode.

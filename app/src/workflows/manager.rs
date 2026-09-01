@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
+use cloud_object_models::Workflow;
 use warpui::{Entity, EntityId, ModelContext, ModelHandle, SingletonEntity};
 
 use super::CloudWorkflowModel;
-use super::workflow::Workflow;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::cloud_object::{GenericCloudObject, Owner};
 use crate::drive::OpenWarpDriveObjectSettings;

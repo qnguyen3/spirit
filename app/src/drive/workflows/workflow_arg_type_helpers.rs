@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use cloud_object_models::{Argument, ArgumentType};
 use warp_errors::report_error;
 use warpui::{AppContext, SingletonEntity, ViewHandle};
 
@@ -10,7 +11,6 @@ use crate::cloud_object::{CloudObjectEventEntrypoint, Owner};
 use crate::editor::EditorView;
 use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::ids::SyncId;
-use crate::workflows::workflow::{Argument, ArgumentType};
 use crate::workflows::workflow_enum::WorkflowEnum;
 
 #[derive(Debug, Clone)]

@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use cloud_object_client::MockObjectClient;
-use cloud_object_models::JsonSerializer;
+use cloud_object_models::{Argument, ArgumentType, JsonSerializer, Workflow};
 use futures_lite::future;
 use settings::{RespectUserSyncSetting, SyncToCloud};
 use warp_graphql::scalars::time::ServerTimestamp;
@@ -44,7 +44,6 @@ use crate::server::ids::{
 };
 use crate::server::sync_queue::SyncQueue;
 use crate::settings::{CloudPreferenceModel, Preference};
-use crate::workflows::workflow::{Argument, ArgumentType, Workflow};
 use crate::workflows::workflow_enum::{
     CloudWorkflowEnum, CloudWorkflowEnumModel, EnumVariants, WorkflowEnum,
 };

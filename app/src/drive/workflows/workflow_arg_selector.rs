@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use cloud_object_models::ArgumentType;
 use itertools::Itertools;
 use strum::IntoEnumIterator;
 use strum_macros::{EnumIter, IntoStaticStr};
@@ -32,7 +33,6 @@ use crate::editor::{
 use crate::server::ids::SyncId;
 use crate::ui_components::buttons::{highlight, icon_button};
 use crate::ui_components::icons::{self, Icon};
-use crate::workflows::workflow::ArgumentType;
 
 const ARGUMENT_DEFAULT_VALUE_PLACEHOLDER_TEXT: &str = "Default value (optional)";
 const ARGUMENT_EDITOR_FONT_SIZE: f32 = 14.;

@@ -3,6 +3,7 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use chrono::Utc;
+use cloud_object_models::Workflow;
 use futures::prelude::*;
 use itertools::Itertools;
 use markdown_parser::markdown_parser::RUNNABLE_BLOCK_MARKDOWN_LANG;
@@ -49,7 +50,6 @@ use crate::server::server_api::workspace::MockWorkspaceClient;
 use crate::settings::FontSettings;
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
 use crate::test_util::settings::initialize_settings_for_tests;
-use crate::workflows::workflow::Workflow;
 use crate::workflows::{CloudWorkflow, CloudWorkflowModel, WorkflowId};
 use crate::workspace::ActiveSession;
 use crate::{GlobalResourceHandles, GlobalResourceHandlesProvider, UserWorkspaces};

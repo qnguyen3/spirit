@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use chrono::Utc;
 use cloud_object_client::MockObjectClient;
+use cloud_object_models::Workflow;
 use instant::Instant;
 use settings::manager::SettingsManager;
 use warp_graphql::object_permissions::AccessLevel;
@@ -30,7 +31,6 @@ use crate::server::server_api::workspace::MockWorkspaceClient;
 use crate::server::sync_queue::SyncQueue;
 use crate::settings::PrivacySettings;
 use crate::system::SystemStats;
-use crate::workflows::workflow::Workflow;
 use crate::workflows::{CloudWorkflowModel, WorkflowId};
 use crate::workspaces::team::{Team, TeamVisibility};
 use crate::workspaces::team_tester::TeamTesterStatus;

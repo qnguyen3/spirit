@@ -1804,7 +1804,7 @@ impl Input {
                 {
                     // TODO(ben): We should include the chosen env vars in the history
                     // entry.
-                    let env_vars = workflow_type.as_workflow().default_env_vars();
+                    let env_vars = workflow_type.default_env_vars();
                     self.insert_workflow_into_input(
                         workflow_type,
                         WorkflowSelectionSource::UpArrowHistory,
@@ -2637,7 +2637,7 @@ impl Input {
         argument_override: Option<HashMap<String, String>>,
         ctx: &mut ViewContext<Input>,
     ) {
-        let env_vars = workflow_type.as_workflow().default_env_vars();
+        let env_vars = workflow_type.default_env_vars();
         self.insert_workflow_into_input(
             workflow_type,
             workflow_selection_source,
@@ -2656,7 +2656,7 @@ impl Input {
         workflow_selection_source: WorkflowSelectionSource,
         ctx: &mut ViewContext<Input>,
     ) {
-        let env_vars = workflow_type.as_workflow().default_env_vars();
+        let env_vars = workflow_type.default_env_vars();
         self.insert_workflow_into_input(
             workflow_type,
             workflow_selection_source,
@@ -2677,7 +2677,7 @@ impl Input {
         // if let Some(history_command) = history_command {
         if let Some(display_data) = compute_workflow_display_data_for_history_command(
             history_command,
-            workflow_type.as_workflow(),
+            &workflow_type.as_workflow(),
         ) {
             CommandMatchesWorkflowTemplate::Yes(display_data)
         } else {
@@ -2747,11 +2747,11 @@ impl Input {
             None => {
                 let data = if let Some(arguments_to_override) = argument_overrides {
                     compute_workflow_display_data_with_overrides(
-                        workflow_type.as_workflow(),
+                        &workflow_type.as_workflow(),
                         arguments_to_override,
                     )
                 } else {
-                    compute_workflow_display_data(workflow_type.as_workflow())
+                    compute_workflow_display_data(&workflow_type.as_workflow())
                 };
                 (data.command_with_replaced_arguments.clone(), Some(data))
             }
@@ -2762,7 +2762,6 @@ impl Input {
                 command_with_replaced_arguments,
                 replaced_ranges,
                 argument_index_to_highlight_index_map,
-                argument_index_to_object_id_map,
                 ..
             }) => {
                 let text_style_ranges = replaced_ranges
@@ -2786,20 +2785,6 @@ impl Input {
                     );
                 });
 
-                // Get enum variants
-                let cloud_model = CloudModel::as_ref(ctx);
-                let enum_variants_map = argument_index_to_object_id_map
-                    .iter()
-                    .filter_map(|(index, object_id)| {
-                        cloud_model
-                            .get_workflow_enum(object_id)
-                            .map(|workflow_enum| {
-                                workflow_enum.model().string_model.variants.clone()
-                            })
-                            .map(|variants| (*index, variants))
-                    })
-                    .collect();
-
                 self.workflows_state.selected_workflow_state = Some(SelectedWorkflowState {
                     more_info_view: self.create_workflows_info_view(
                         workflow_type.clone(),
@@ -2807,7 +2792,7 @@ impl Input {
                         ctx,
                     ),
                     argument_index_to_highlight_index: argument_index_to_highlight_index_map,
-                    argument_index_to_enum_variants: enum_variants_map,
+                    argument_index_to_enum_variants: HashMap::new(),
                     workflow_type,
                     workflow_selection_source,
                     should_show_more_info_view,
@@ -3197,7 +3182,7 @@ impl Input {
                         {
                             // TODO(ben): We should include the chosen env vars in the history
                             // entry.
-                            let env_vars = workflow_type.as_workflow().default_env_vars();
+                            let env_vars = workflow_type.default_env_vars();
                             self.insert_workflow_into_input(
                                 workflow_type,
                                 WorkflowSelectionSource::UpArrowHistory,

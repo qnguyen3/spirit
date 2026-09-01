@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use cloud_object_models::{Argument, Workflow};
 use warp_core::ui::appearance::Appearance;
 use warpui::platform::WindowStyle;
 use warpui::{App, ViewHandle};
@@ -14,7 +15,6 @@ use crate::server::server_api::team::MockTeamClient;
 use crate::server::server_api::workspace::MockWorkspaceClient;
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
 use crate::test_util::settings::initialize_settings_for_tests;
-use crate::workflows::workflow::{Argument, Workflow};
 
 fn initialize_app(app: &mut App) {
     initialize_settings_for_tests(app);

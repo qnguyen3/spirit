@@ -1,3 +1,4 @@
+use cloud_object_models::Workflow;
 use cloud_objects::cloud_object::ServerPermissions;
 use warp_core::ui::appearance::Appearance;
 use warpui::platform::WindowStyle;
@@ -24,7 +25,6 @@ use crate::server::server_api::ServerApiProvider;
 use crate::server::sync_queue::{QueueItem, SyncQueue};
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
 use crate::test_util::settings::initialize_settings_for_tests;
-use crate::workflows::workflow::Workflow;
 use crate::workflows::{CloudWorkflow, CloudWorkflowModel};
 use crate::workspaces::team_tester::TeamTesterStatus;
 use crate::workspaces::user_profiles::UserProfiles;

@@ -36,7 +36,6 @@ lazy_static! {
             warp_workflows::Shell::Bash,
             warp_workflows::Shell::Fish,
         ],
-        environment_variables: None,
     };
     static ref WORKFLOW_MULTIPLE_INSTANCES_SAME_PARAMETER: Workflow = Workflow::Command {
         name: "Echo my name 3 times".to_owned(),
@@ -57,7 +56,6 @@ lazy_static! {
             warp_workflows::Shell::Bash,
             warp_workflows::Shell::Fish,
         ],
-        environment_variables: None,
     };
     static ref WORKFLOW_NO_PARAMETERS: Workflow = Workflow::Command {
         name: "Print numbers 1 to 13".to_owned(),
@@ -73,7 +71,6 @@ lazy_static! {
             warp_workflows::Shell::Fish,
             warp_workflows::Shell::Zsh,
         ],
-        environment_variables: None,
     };
     static ref WORKFLOW_WITH_ESCAPES: Workflow = Workflow::Command {
         name: "Workflow with escaped arguments".to_owned(),
@@ -104,7 +101,6 @@ lazy_static! {
             warp_workflows::Shell::Bash,
             warp_workflows::Shell::Fish,
         ],
-        environment_variables: None,
     };
     static ref WORKFLOW_WITH_DUPLICATES_AND_ESCAPES: Workflow = Workflow::Command {
         name: "Workflow with escaped arguments".to_owned(),
@@ -129,7 +125,6 @@ lazy_static! {
             warp_workflows::Shell::Bash,
             warp_workflows::Shell::Fish,
         ],
-        environment_variables: None,
     };
 
     static ref WORKFLOW_WITH_MULTIBYTE_CHARS: Workflow = Workflow::Command {
@@ -155,7 +150,6 @@ lazy_static! {
             warp_workflows::Shell::Bash,
             warp_workflows::Shell::Fish,
         ],
-        environment_variables: None,
     };
 }
 

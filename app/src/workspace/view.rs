@@ -14401,7 +14401,7 @@ impl Workspace {
             return;
         };
         let source = WorkflowOpenSource::NewFromWorkflow {
-            workflow: workflow.into(),
+            workflow: Box::new((&workflow).into()),
             owner,
             initial_folder_id: None,
         };

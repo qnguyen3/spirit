@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use ordered_float::OrderedFloat;
 use warpui::elements::{
     Border, Clipped, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Flex, Highlight,
@@ -31,7 +33,7 @@ pub struct WorkflowSearchItem {
 }
 
 impl WorkflowSearchItem {
-    fn workflow_data(&self) -> &Workflow {
+    fn workflow_data(&self) -> Cow<'_, Workflow> {
         match &self.identity {
             WorkflowIdentity::Local(workflow_type) => workflow_type.as_workflow(),
         }

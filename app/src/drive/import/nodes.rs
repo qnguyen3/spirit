@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use async_recursion::async_recursion;
+use cloud_object_models::Workflow;
 use futures_lite::StreamExt;
 use pathfinder_color::ColorU;
 use warp_errors::report_error;
@@ -25,7 +26,6 @@ use crate::server::ids::ClientId;
 use crate::themes::theme::Fill;
 use crate::ui_components::icons::Icon;
 use crate::workflows::export_workflow::export_deserialize;
-use crate::workflows::workflow::Workflow;
 use crate::workflows::workflow_enum::WorkflowEnum;
 
 #[cfg(test)]

@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
+use cloud_object_models::{Argument, Workflow};
 use itertools::Itertools;
 use pathfinder_geometry::vector::vec2f;
 use string_offset::CharOffset;
@@ -54,7 +55,6 @@ use crate::ui_components::icons::{self, ICON_DIMENSIONS, Icon};
 use crate::ui_components::menu_button::{MenuDirection, icon_button_with_context_menu};
 use crate::workflows::CloudWorkflow;
 use crate::workflows::arguments::ArgumentsState;
-use crate::workflows::workflow::{Argument, Workflow};
 
 const BREADCRUMBS_VERTICAL_MARGIN: f32 = 6.;
 const MODAL_WIDTH: f32 = 900.;
@@ -754,7 +754,7 @@ impl WorkflowModal {
                     let text_editor = type_selector.text_editor.as_ref(ctx);
 
                     workflow_arg_type_helpers::extract_typed_argument_from_selector(
-                        argument,
+                        &argument.into(),
                         description,
                         type_selector,
                         text_editor,

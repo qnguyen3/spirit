@@ -1,5 +1,6 @@
 use chrono::Utc;
 use cloud_object_client::MockObjectClient;
+use cloud_object_models::Workflow;
 use itertools::Itertools;
 use warpui::{AddSingletonModel, App};
 
@@ -16,7 +17,6 @@ use crate::server::server_api::workspace::{MockWorkspaceClient, WorkspaceClient}
 use crate::server::sync_queue::SyncQueue;
 use crate::settings::PrivacySettings;
 use crate::system::SystemStats;
-use crate::workflows::workflow::Workflow;
 use crate::workflows::{CloudWorkflow, CloudWorkflowModel, WorkflowId};
 use crate::workspaces::team::Team;
 use crate::workspaces::user_profiles::UserProfiles;

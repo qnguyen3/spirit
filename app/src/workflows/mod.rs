@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::sync::Arc;
 
 pub use cloud_object_models::{CloudWorkflow, CloudWorkflowModel, WorkflowId};
@@ -157,12 +158,14 @@ pub enum WorkflowType {
 }
 
 impl WorkflowType {
-    pub fn as_workflow(&self) -> &Workflow {
+    /// The contained [`Workflow`]. Cloud workflows are converted on access through the temporary
+    /// bridge, so this borrows for every other variant and allocates only for `Cloud`.
+    pub fn as_workflow(&self) -> Cow<'_, Workflow> {
         match self {
-            WorkflowType::Local(workflow) => workflow,
-            WorkflowType::AIGenerated { workflow, .. } => workflow,
-            WorkflowType::Cloud(workflow) => &workflow.model().data,
-            WorkflowType::Notebook(workflow) => workflow,
+            WorkflowType::Local(workflow) => Cow::Borrowed(workflow),
+            WorkflowType::AIGenerated { workflow, .. } => Cow::Borrowed(workflow),
+            WorkflowType::Cloud(workflow) => Cow::Owned((&workflow.model().data).into()),
+            WorkflowType::Notebook(workflow) => Cow::Borrowed(workflow),
         }
     }
 
@@ -171,8 +174,19 @@ impl WorkflowType {
         match self {
             WorkflowType::Local(workflow) => workflow,
             WorkflowType::AIGenerated { workflow, .. } => workflow,
-            WorkflowType::Cloud(workflow) => workflow.model().data.clone(),
+            WorkflowType::Cloud(workflow) => (&workflow.model().data).into(),
             WorkflowType::Notebook(workflow) => workflow,
+        }
+    }
+
+    /// The env var collection a cloud workflow defaults to, if any. Local workflows never carry
+    /// one; the field only exists on the cloud model.
+    pub fn default_env_vars(&self) -> Option<SyncId> {
+        match self {
+            WorkflowType::Cloud(workflow) => workflow.model().data.default_env_vars(),
+            WorkflowType::Local(_)
+            | WorkflowType::AIGenerated { .. }
+            | WorkflowType::Notebook(_) => None,
         }
     }
 

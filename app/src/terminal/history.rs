@@ -347,7 +347,7 @@ impl HistoryEntry {
         match (&self.workflow_id, &self.workflow_command) {
             (Some(workflow_id), _) => CloudModel::as_ref(app)
                 .get_workflow(workflow_id)
-                .map(|workflow| workflow.model().data.clone()),
+                .map(|workflow| (&workflow.model().data).into()),
             (_, Some(workflow_command)) => LocalWorkflows::as_ref(app)
                 .workflow_with_command(app, workflow_command)
                 .map(|(_, workflow)| workflow.clone()),

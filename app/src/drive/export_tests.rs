@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use cloud_object_models::Workflow;
 use futures::channel::oneshot;
 use parking_lot::Mutex;
 use tempfile::TempDir;
@@ -17,7 +18,6 @@ use crate::cloud_object::{
 use crate::drive::CloudObjectTypeAndId;
 use crate::notebooks::{CloudNotebook, CloudNotebookModel, NotebookId};
 use crate::server::ids::SyncId;
-use crate::workflows::workflow::Workflow;
 use crate::workflows::{CloudWorkflow, CloudWorkflowModel, WorkflowId};
 use crate::workspace::ToastStack;
 use crate::workspaces::user_workspaces::UserWorkspaces;

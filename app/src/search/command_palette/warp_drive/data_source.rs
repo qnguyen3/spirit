@@ -611,7 +611,7 @@ impl WarpDriveSearcher for FuzzyWarpDriveSearcher {
                 };
                 FuzzyMatchWorkflowResult::try_match(
                     query,
-                    &cloud_workflow.model().data,
+                    &(&cloud_workflow.model().data).into(),
                     cloud_workflow.breadcrumbs(app).as_str(),
                 )
                 .map(|match_result| WorkflowSearchItem {

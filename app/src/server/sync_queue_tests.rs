@@ -5,6 +5,7 @@ use std::sync::Arc;
 use anyhow::anyhow;
 use chrono::{DateTime, Duration, Utc};
 use cloud_object_client::MockObjectClient;
+use cloud_object_models::{Argument, ArgumentType, Workflow};
 use cloud_objects::cloud_object::ServerPermissions;
 use firebase::FirebaseError;
 use itertools::Itertools;
@@ -33,7 +34,6 @@ use crate::server::sync_queue::{
 };
 use crate::system::SystemStats;
 use crate::workflows::CloudWorkflowModel;
-use crate::workflows::workflow::{Argument, ArgumentType, Workflow};
 use crate::workflows::workflow_enum::{CloudWorkflowEnumModel, EnumVariants, WorkflowEnum};
 use crate::{NetworkStatus, QueueItem, SyncQueue};
 

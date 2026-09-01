@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::SyncSender;
 
 use chrono::{DateTime, Duration, Utc};
+use cloud_object_models::Workflow;
 use itertools::Itertools;
 use rand::Rng;
 use warp_core::features::FeatureFlag;
@@ -27,7 +28,6 @@ use crate::notebooks::CloudNotebook;
 use crate::persistence::ModelEvent;
 use crate::server::ids::{ClientId, HashableId, ObjectUid, ServerId, SyncId, ToServerId};
 use crate::settings::cloud_preferences::{CloudPreference, CloudPreferenceModel};
-use crate::workflows::workflow::Workflow;
 use crate::workflows::workflow_enum::{CloudWorkflowEnum, CloudWorkflowEnumModel, WorkflowEnum};
 use crate::workflows::{CloudWorkflow, CloudWorkflowModel};
 use crate::workspaces::user_workspaces::UserWorkspaces;

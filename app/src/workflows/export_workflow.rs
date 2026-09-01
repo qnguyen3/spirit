@@ -3,6 +3,7 @@ use std::fmt;
 use std::result::Result;
 use std::str::FromStr;
 
+use cloud_object_models::{Argument, ArgumentType, Workflow};
 use serde::de::{self, MapAccess, Visitor};
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -11,7 +12,6 @@ use strum::VariantNames as _;
 use strum_macros::{Display, EnumString, VariantNames};
 use warpui::{AppContext, SingletonEntity};
 
-use super::workflow::{Argument, ArgumentType, Workflow};
 use super::workflow_enum::{EnumVariants, WorkflowEnum};
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::server::ids::{ClientId, SyncId};
