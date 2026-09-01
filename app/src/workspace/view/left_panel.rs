@@ -1031,21 +1031,13 @@ impl LeftPanelView {
     pub fn handle_action_with_force_open(
         &mut self,
         action: &LeftPanelAction,
-        force_open: bool,
         ctx: &mut ViewContext<Self>,
     ) {
         match action {
             LeftPanelAction::ProjectExplorer => {
                 active_view_state::set(self, ToolPanelView::ProjectExplorer, ctx);
-                if force_open {
-                } else {
-                }
             }
             LeftPanelAction::GlobalSearch { entry_focus } => {
-                let was_active = self.active_view.get()
-                    == ToolPanelView::GlobalSearch {
-                        entry_focus: *entry_focus,
-                    };
                 active_view_state::set(
                     self,
                     ToolPanelView::GlobalSearch {
@@ -1053,15 +1045,9 @@ impl LeftPanelView {
                     },
                     ctx,
                 );
-                if !was_active {}
             }
             LeftPanelAction::WarpDrive => {
                 active_view_state::set(self, ToolPanelView::WarpDrive, ctx);
-                if self.active_view_availability(ctx) == ToolPanelAvailability::Available {
-                    if force_open {
-                    } else {
-                    }
-                }
             }
             LeftPanelAction::SourceControl => {
                 active_view_state::set(self, ToolPanelView::SourceControl, ctx);
@@ -1121,7 +1107,7 @@ impl TypedActionView for LeftPanelView {
     type Action = LeftPanelAction;
 
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
-        self.handle_action_with_force_open(action, false, ctx);
+        self.handle_action_with_force_open(action, ctx);
     }
 }
 

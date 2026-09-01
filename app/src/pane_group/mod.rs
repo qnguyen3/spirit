@@ -2291,16 +2291,16 @@ impl PaneGroup {
                 participant_id,
                 dont_show_again,
             } => {
-                if *dont_show_again {
-                    if let Err(e) = SessionSettings::handle(ctx).update(ctx, |settings, ctx| {
+                if *dont_show_again
+                    && let Err(e) = SessionSettings::handle(ctx).update(ctx, |settings, ctx| {
                         settings
                             .should_confirm_shared_session_edit_access
                             .set_value(false, ctx)
-                    }) {
-                        report_error!(e.context(
-                            "Failed to set should_confirm_shared_session_edit_access setting to false"
-                        ));
-                    }
+                    })
+                {
+                    report_error!(e.context(
+                        "Failed to set should_confirm_shared_session_edit_access setting to false"
+                    ));
                 }
 
                 let Some(terminal_view) = self.terminal_view_from_pane_id(*terminal_pane_id, ctx)

@@ -371,7 +371,7 @@ fn test_tools_panel_preferences_activate_after_signup() {
                 "the stored preference should keep the locked Warp Drive entry visible"
             );
             workspace.left_panel_view.update(ctx, |left_panel, ctx| {
-                left_panel.handle_action_with_force_open(&LeftPanelAction::WarpDrive, false, ctx);
+                left_panel.handle_action_with_force_open(&LeftPanelAction::WarpDrive, ctx);
                 assert_eq!(
                     left_panel.active_view_availability(ctx),
                     left_panel::ToolPanelAvailability::RequiresAccount
@@ -424,7 +424,7 @@ fn test_tools_panel_preferences_activate_after_signup() {
             assert!(!workspace.auth_state.is_anonymous_or_logged_out());
             assert!(WarpDriveSettings::is_warp_drive_enabled(ctx));
             workspace.left_panel_view.update(ctx, |left_panel, ctx| {
-                left_panel.handle_action_with_force_open(&LeftPanelAction::WarpDrive, false, ctx);
+                left_panel.handle_action_with_force_open(&LeftPanelAction::WarpDrive, ctx);
                 assert_eq!(
                     left_panel.active_view_availability(ctx),
                     left_panel::ToolPanelAvailability::Available
@@ -4552,7 +4552,7 @@ fn test_tools_panel_warp_drive_toggle_updates_available_views() {
                 "Warp Drive should be an available tools-panel tab by default"
             );
             workspace.left_panel_view.update(ctx, |lp, ctx| {
-                lp.handle_action_with_force_open(&LeftPanelAction::WarpDrive, false, ctx);
+                lp.handle_action_with_force_open(&LeftPanelAction::WarpDrive, ctx);
             });
             assert_eq!(
                 workspace.left_panel_view.as_ref(ctx).active_view(),
@@ -4605,7 +4605,7 @@ fn test_tools_panel_warp_drive_toggle_updates_available_views() {
                 "Re-enabling the setting should restore Warp Drive to the tools panel"
             );
             workspace.left_panel_view.update(ctx, |lp, ctx| {
-                lp.handle_action_with_force_open(&LeftPanelAction::WarpDrive, false, ctx);
+                lp.handle_action_with_force_open(&LeftPanelAction::WarpDrive, ctx);
             });
             assert_eq!(
                 workspace.left_panel_view.as_ref(ctx).active_view(),

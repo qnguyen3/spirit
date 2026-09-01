@@ -326,7 +326,7 @@ impl LoginSlideView {
             ctx.notify();
         });
 
-        let view = Self {
+        Self {
             theme_visual_path: resolve_visual_path(theme_name, use_vertical_tabs),
             step: match source {
                 LoginSlideSource::OnboardingFlow | LoginSlideSource::AccountFirstOnboarding => {
@@ -358,11 +358,7 @@ impl LoginSlideView {
             scroll_state: ClippedScrollStateHandle::new(),
             close_login_notification_mouse_state: MouseStateHandle::default(),
             highlighted_hyperlink_state: HighlightedHyperlink::default(),
-        };
-
-        if matches!(source, LoginSlideSource::AccountFirstOnboarding) {}
-
-        view
+        }
     }
 
     // ------------------------------------------------------------------
@@ -401,7 +397,6 @@ impl LoginSlideView {
         _action: &str,
         _ctx: &mut ViewContext<Self>,
     ) {
-        if matches!(self.source, LoginSlideSource::AccountFirstOnboarding) {}
     }
 
     fn handle_pasted_auth_url(&mut self, pasted_url: String, ctx: &mut ViewContext<Self>) {
@@ -445,7 +440,6 @@ impl LoginSlideView {
         self.send_account_first_action("create_account", "continue_signup", ctx);
         self.last_login_failure_reason = None;
         self.step = LoginStep::BrowserOpen;
-        if matches!(self.source, LoginSlideSource::AccountFirstOnboarding) {}
         AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
             let sign_up_url = auth_manager.sign_up_url();
             ctx.open_url(&sign_up_url);

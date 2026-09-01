@@ -456,7 +456,7 @@ impl fmt::Debug for TerminalAction {
             ClearMarkedText => write!(f, "ClearMarkedText"),
             ShowInitializationBlock => write!(f, "ShowInitializationBlock"),
             ShowWarpifySettings => write!(f, "ShowWarpifySettings"),
-            ToggleCodeReviewPane { .. } => write!(f, "ToggleCodeReviewPane"),
+            ToggleCodeReviewPane => write!(f, "ToggleCodeReviewPane"),
             AddProjectAtCurrentDirectory => write!(f, "AddProjectAtCurrentDirectory"),
             OpenAddPromptPane => write!(f, "OpenAddPromptPane"),
             PickRepoToOpen => write!(f, "PickRepoToOpen"),

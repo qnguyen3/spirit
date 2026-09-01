@@ -1682,7 +1682,6 @@ impl SettingsView {
         if self.settings_page(section).is_none() {
             return;
         }
-        let previous_section = self.current_settings_page;
 
         ctx.enable_key_bindings_dispatching();
 
@@ -1701,7 +1700,6 @@ impl SettingsView {
             self.clear_search_query(ctx);
         }
         self.current_settings_page = section;
-        if previous_section != section && section == SettingsSection::CloudEnvironments {}
 
         // Every subpage renders its own backing page directly, so navigating
         // to one only needs to auto-expand the umbrella containing it.

@@ -9064,8 +9064,6 @@ impl Workspace {
     ) {
         match event {
             TabConfigParamsModalEvent::Submit { config, params } => {
-                let should_track_existing_config_open =
-                    self.pending_session_config_replacement.is_none();
                 let worktree_name = self.maybe_generate_worktree_name(config);
                 self.open_tab_config_with_params(
                     config.as_ref().clone(),
@@ -9073,7 +9071,6 @@ impl Workspace {
                     worktree_name.as_deref(),
                     ctx,
                 );
-                if should_track_existing_config_open {}
                 self.close_tab_config_params_modal(ctx);
                 self.complete_pending_session_config_replacement(ctx);
 
@@ -11345,14 +11342,7 @@ impl Workspace {
             TabMovement::Left | TabMovement::Right => return,
         };
 
-        // `hop_tab_to_index` keeps the same tab active across the move, so we
-        // only capture whether the moved tab was the active one for telemetry.
-        let moving_active_tab = index == self.active_tab_index;
         self.hop_tab_to_index(index, target, ctx);
-
-        if moving_active_tab {
-        } else {
-        }
     }
 
     /// How to render the tab bar.
@@ -13195,7 +13185,7 @@ impl Workspace {
                             LeftPanelTargetView::FileTree => LeftPanelAction::ProjectExplorer,
                             LeftPanelTargetView::WarpDrive => LeftPanelAction::WarpDrive,
                         };
-                        left_panel.handle_action_with_force_open(&action, *force_open, ctx);
+                        left_panel.handle_action_with_force_open(&action, ctx);
                     });
                 }
             }
@@ -13414,8 +13404,6 @@ impl Workspace {
                 .map_or_else(MenuPositioning::default, |input_handle| {
                     input_handle.read(ctx, |input, ctx| input.menu_positioning(ctx))
                 });
-
-            if !self.current_workspace_state.is_command_search_open {}
 
             // Make sure we close any already-open input suggestions panel.
             if let Some(input_handle) = &active_input_handle {
@@ -18206,7 +18194,7 @@ impl Workspace {
 
         if self.active_tab_pane_group().as_ref(ctx).left_panel_open {
             self.left_panel_view.update(ctx, |left_panel, ctx| {
-                left_panel.handle_action_with_force_open(action, false, ctx);
+                left_panel.handle_action_with_force_open(action, ctx);
                 left_panel.focus_active_view_on_entry(ctx);
             });
         }

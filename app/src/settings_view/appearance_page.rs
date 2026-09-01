@@ -578,8 +578,8 @@ impl TypedActionView for AppearanceSettingsPageView {
             }
             SetNotebookFontSize => self.set_notebook_font_size(ctx),
             SetLineHeight => self.set_line_height_ratio(ctx),
-            SetOpacity(value) => self.set_opacity(*value, true, ctx),
-            SetBlur(value) => self.set_blur(*value, true, ctx),
+            SetOpacity(value) => self.set_opacity(*value, ctx),
+            SetBlur(value) => self.set_blur(*value, ctx),
             SetFontFamily(name) => self.set_font_family(name, ctx),
             SetThinStrokes(value) => self.set_thin_strokes(value, ctx),
             SetEnforceMinimumContrast(value) => {
@@ -633,8 +633,8 @@ impl TypedActionView for AppearanceSettingsPageView {
             SetAppIcon(new_icon) => self.set_app_icon(*new_icon, ctx),
             ToggleShowDockIcon => self.toggle_show_dock_icon(ctx),
             SetCursorType(cursor_display_type) => self.set_cursor_type(*cursor_display_type, ctx),
-            OpacitySliderDragged(val) => self.set_opacity(*val, false, ctx),
-            BlurSliderDragged(val) => self.set_blur(*val, false, ctx),
+            OpacitySliderDragged(val) => self.set_opacity(*val, ctx),
+            BlurSliderDragged(val) => self.set_blur(*val, ctx),
             OpenUrl(url) => {
                 ctx.open_url(url);
             }
@@ -1800,13 +1800,7 @@ impl AppearanceSettingsPageView {
         }
     }
 
-    fn set_opacity(
-        &mut self,
-        opacity_value: f32,
-        should_set_defaults: bool,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if should_set_defaults {}
+    fn set_opacity(&mut self, opacity_value: f32, ctx: &mut ViewContext<Self>) {
         WindowSettings::handle(ctx).update(ctx, |window_settings, ctx| {
             report_if_error!(
                 window_settings
@@ -1817,14 +1811,7 @@ impl AppearanceSettingsPageView {
         ctx.notify();
     }
 
-    fn set_blur(
-        &mut self,
-        blur_value: f32,
-        should_set_defaults: bool,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if should_set_defaults {}
-
+    fn set_blur(&mut self, blur_value: f32, ctx: &mut ViewContext<Self>) {
         ctx.windows()
             .set_all_windows_background_blur_radius(blur_value as u8);
 
@@ -1861,16 +1848,16 @@ impl AppearanceSettingsPageView {
         let appearance = Appearance::as_ref(ctx);
         let current_line_height = appearance.ui_builder().line_height_ratio();
 
-        if (current_line_height - new_line_height).abs() > f32::EPSILON {
-            if (MIN_LINE_SPACING..=MAX_LINE_SPACING).contains(&new_line_height) {
-                FontSettings::handle(ctx).update(ctx, |font_settings, ctx| {
-                    report_if_error!(
-                        font_settings
-                            .line_height_ratio
-                            .set_value(new_line_height, ctx)
-                    );
-                });
-            }
+        if (current_line_height - new_line_height).abs() > f32::EPSILON
+            && (MIN_LINE_SPACING..=MAX_LINE_SPACING).contains(&new_line_height)
+        {
+            FontSettings::handle(ctx).update(ctx, |font_settings, ctx| {
+                report_if_error!(
+                    font_settings
+                        .line_height_ratio
+                        .set_value(new_line_height, ctx)
+                );
+            });
         }
     }
 

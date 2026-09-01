@@ -28,7 +28,6 @@ use crate::code::language_server_shutdown_manager::LanguageServerShutdownManager
 #[cfg(feature = "local_fs")]
 use crate::persistence::ModelEvent;
 #[cfg(feature = "local_fs")]
-#[cfg(feature = "local_fs")]
 use crate::server::server_api::ServerApiProvider;
 use crate::terminal::TerminalView;
 #[cfg(feature = "local_fs")]

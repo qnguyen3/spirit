@@ -994,8 +994,6 @@ impl TerminalView {
                 },
                 ctx,
             );
-        } else {
-            return;
         }
     }
 

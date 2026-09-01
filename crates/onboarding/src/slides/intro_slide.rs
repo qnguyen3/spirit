@@ -1,7 +1,6 @@
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use ui_components::{Component as _, Options as _, button};
-use warp_core::features::FeatureFlag;
 use warp_core::ui::Icon;
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::color::internal_colors;
@@ -123,8 +122,6 @@ impl View for IntroSlide {
 
 impl IntroSlide {
     fn get_started_clicked(&mut self, ctx: &mut ViewContext<Self>) {
-        if FeatureFlag::AccountFirstOnboarding.is_enabled() {}
-
         self.onboarding_state.update(ctx, |model, ctx| {
             model.next(ctx);
         });

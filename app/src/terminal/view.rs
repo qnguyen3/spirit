@@ -2945,12 +2945,7 @@ impl TerminalView {
                             );
                         }
                     }
-                    RemoteServerManagerEvent::SessionDisconnected {
-                        session_id,
-                        exit_status: _,
-                        was_reconnect_attempt,
-                        ..
-                    } => {
+                    RemoteServerManagerEvent::SessionDisconnected { session_id, .. } => {
                         let (_remote_os, _remote_arch) = RemoteServerManager::handle(ctx)
                             .as_ref(ctx)
                             .platform_for_session(*session_id)
@@ -2961,9 +2956,6 @@ impl TerminalView {
                                 )
                             })
                             .unwrap_or((None, None));
-                        if *was_reconnect_attempt {
-                        } else {
-                        }
                     }
                     RemoteServerManagerEvent::SessionDeregistered { session_id } => {
                         // Clean up any stale SSH remote-server choice block if the
@@ -4949,7 +4941,6 @@ impl TerminalView {
     ) {
         if action == VimModeBannerAction::Enable {
             self.enable_vim_keybindings(ctx);
-        } else {
         }
         self.remove_vim_mode_banner(ctx);
         VimBannerSettings::handle(ctx).update(ctx, |banner_settings, model_ctx| {
@@ -10351,10 +10342,6 @@ impl TerminalView {
     fn show_find_bar(&mut self, ctx: &mut ViewContext<Self>) {
         let model = self.model.lock();
         let inverted_blocklist = self.is_inverted_blocklist(ctx);
-        // Emit a telemetry event depending on whether the find bar is opened in blocklist or alt screen.
-        if model.is_alt_screen_active() {
-        } else {
-        }
         self.find_bar.update(ctx, |view, ctx| {
             let semantic_selection = SemanticSelection::as_ref(ctx);
             if let Some(selected) =
@@ -11464,15 +11451,6 @@ impl TerminalView {
             );
             return;
         };
-
-        let model = self.model.lock();
-        let previous_filter = model.get_filter_on_block(active_filter_editor_block_index);
-        if (previous_filter.is_none()
-            || previous_filter
-                .is_some_and(|previous_filter| !previous_filter.is_active_and_nonempty()))
-            && block_filter_query.is_active_and_nonempty()
-        {}
-        drop(model);
 
         self.update_block_filter_for_block(
             active_filter_editor_block_index,

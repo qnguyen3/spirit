@@ -2676,18 +2676,9 @@ impl CodeReviewView {
             return;
         };
 
-        let is_existing = model.read(ctx, |batch, _| {
-            batch.get_review_comment_by_id(comment.id).is_some()
-        });
-
         model.update(ctx, move |batch, ctx| {
             batch.upsert_comment(comment.clone(), ctx);
         });
-
-        // Telemetry: record whether this was a new comment or an edit.
-        if is_existing {
-        } else {
-        }
 
         ctx.focus_self();
     }
@@ -3482,7 +3473,9 @@ impl CodeReviewView {
             fallback_count,
         } = Self::relocate_comments(comments, state, &repo_path, ctx);
 
-        if fallback_count > 0 {}
+        if fallback_count > 0 {
+            log::info!("Relocated {fallback_count} review comments to a fallback target");
+        }
 
         if !newly_imported_ids.is_empty() {
             let (_active_count, _outdated_count) = relocated_comments
