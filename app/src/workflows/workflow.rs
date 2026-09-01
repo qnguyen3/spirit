@@ -205,89 +205,6 @@ impl From<warp_workflows::Workflow> for Workflow {
     }
 }
 
-/// Temporary bridge from the cloud workflow model, for the code paths where cloud and local
-/// workflows still meet. Delete along with the cloud workflow model in Phase 5.
-impl From<&cloud_object_models::Workflow> for Workflow {
-    fn from(workflow: &cloud_object_models::Workflow) -> Self {
-        match workflow {
-            cloud_object_models::Workflow::AgentMode {
-                name,
-                query,
-                description,
-                arguments,
-            } => Workflow::AgentMode {
-                name: name.clone(),
-                query: query.clone(),
-                description: description.clone(),
-                arguments: arguments.iter().map(Argument::from).collect(),
-            },
-            cloud_object_models::Workflow::Command {
-                name,
-                command,
-                tags,
-                description,
-                arguments,
-                source_url,
-                author,
-                author_url,
-                shells,
-                ..
-            } => Workflow::Command {
-                name: name.clone(),
-                command: command.clone(),
-                tags: tags.clone(),
-                description: description.clone(),
-                arguments: arguments.iter().map(Argument::from).collect(),
-                source_url: source_url.clone(),
-                author: author.clone(),
-                author_url: author_url.clone(),
-                shells: shells.clone(),
-            },
-        }
-    }
-}
-
-/// Temporary bridge to the cloud workflow model. Delete along with it in Phase 5.
-impl From<&Workflow> for cloud_object_models::Workflow {
-    fn from(workflow: &Workflow) -> Self {
-        match workflow {
-            Workflow::AgentMode {
-                name,
-                query,
-                description,
-                arguments,
-            } => cloud_object_models::Workflow::AgentMode {
-                name: name.clone(),
-                query: query.clone(),
-                description: description.clone(),
-                arguments: arguments.iter().map(Into::into).collect(),
-            },
-            Workflow::Command {
-                name,
-                command,
-                tags,
-                description,
-                arguments,
-                source_url,
-                author,
-                author_url,
-                shells,
-            } => cloud_object_models::Workflow::Command {
-                name: name.clone(),
-                command: command.clone(),
-                tags: tags.clone(),
-                description: description.clone(),
-                arguments: arguments.iter().map(Into::into).collect(),
-                source_url: source_url.clone(),
-                author: author.clone(),
-                author_url: author_url.clone(),
-                shells: shells.clone(),
-                environment_variables: None,
-            },
-        }
-    }
-}
-
 /// A named, user-supplied value substituted into a workflow's command or query.
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq, Hash, Default)]
 pub struct Argument {
@@ -306,30 +223,6 @@ impl From<warp_workflows::Argument> for Argument {
             arg_type: ArgumentType::Text,
             description: arg.description,
             default_value: arg.default_value,
-        }
-    }
-}
-
-/// Temporary bridge from the cloud argument model. Delete along with it in Phase 5.
-impl From<&cloud_object_models::Argument> for Argument {
-    fn from(arg: &cloud_object_models::Argument) -> Self {
-        Argument {
-            name: arg.name.clone(),
-            arg_type: ArgumentType::Text,
-            description: arg.description.clone(),
-            default_value: arg.default_value.clone(),
-        }
-    }
-}
-
-/// Temporary bridge to the cloud argument model. Delete along with it in Phase 5.
-impl From<&Argument> for cloud_object_models::Argument {
-    fn from(arg: &Argument) -> Self {
-        cloud_object_models::Argument {
-            name: arg.name.clone(),
-            arg_type: cloud_object_models::ArgumentType::Text,
-            description: arg.description.clone(),
-            default_value: arg.default_value.clone(),
         }
     }
 }

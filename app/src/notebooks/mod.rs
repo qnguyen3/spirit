@@ -4,7 +4,6 @@ pub mod file;
 pub mod link;
 mod styles;
 
-pub use cloud_object_models::NotebookId;
 use serde::{Deserialize, Serialize};
 use warpui::AppContext;
 

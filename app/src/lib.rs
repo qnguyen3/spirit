@@ -112,7 +112,6 @@ use terminal::keys_settings::KeysSettings;
 #[cfg(all(not(target_family = "wasm"), feature = "local_tty"))]
 use terminal::local_shell::LocalShellState;
 pub use util::bindings::cmd_or_ctrl_shift;
-use warp_cli::GlobalOptions;
 #[cfg(feature = "local_fs")]
 use watcher::HomeDirectoryWatcher;
 
@@ -202,32 +201,12 @@ use crate::workspace::{
 /// Our embedded application assets.
 pub static ASSETS: warp_assets::Assets = warp_assets::Assets;
 
-fn is_unsupported_agent_command(command: &warp_cli::CliCommand) -> bool {
-    matches!(
-        command,
-        warp_cli::CliCommand::Agent(_)
-            | warp_cli::CliCommand::HarnessSupport(_)
-            | warp_cli::CliCommand::MCP(_)
-            | warp_cli::CliCommand::Run(_)
-            | warp_cli::CliCommand::Runner(_)
-            | warp_cli::CliCommand::Schedule(_)
-    )
-}
-
 /// Launch mode for how to start up Warp.
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum LaunchMode {
     /// Run the regular GUI application.
     App { args: warp_cli::AppArgs },
 
-    /// Run the Warp command-line SDK.
-    CommandLine {
-        command: warp_cli::CliCommand,
-        global_options: GlobalOptions,
-        debug: bool,
-        /// Whether this CLI invocation is running in a sandboxed environment.
-        is_sandboxed: bool,
-    },
     /// Run a test - this may be an integration test or an eval.
     Test {
         driver: Box<Option<TestDriver>>,
@@ -253,8 +232,7 @@ impl LaunchMode {
     fn args(&self) -> Cow<'_, warp_cli::AppArgs> {
         match self {
             LaunchMode::App { args, .. } => Cow::Borrowed(args),
-            LaunchMode::CommandLine { .. }
-            | LaunchMode::Test { .. }
+            LaunchMode::Test { .. }
             | LaunchMode::RemoteServerProxy
             | LaunchMode::RemoteServerDaemon { .. } => Cow::Owned(warp_cli::AppArgs::default()),
         }
@@ -268,7 +246,6 @@ impl LaunchMode {
                 ..
             } => *is_integration_test,
             LaunchMode::App { .. }
-            | LaunchMode::CommandLine { .. }
             | LaunchMode::RemoteServerProxy
             | LaunchMode::RemoteServerDaemon { .. } => false,
         }
@@ -278,7 +255,6 @@ impl LaunchMode {
     fn secure_storage_service_name<'a>(&self, data_domain: &'a str) -> Cow<'a, str> {
         match self {
             LaunchMode::App { .. }
-            | LaunchMode::CommandLine { .. }
             | LaunchMode::Test { .. }
             | LaunchMode::RemoteServerProxy
             | LaunchMode::RemoteServerDaemon { .. } => Cow::Borrowed(data_domain),
@@ -289,7 +265,6 @@ impl LaunchMode {
         match self {
             LaunchMode::Test { driver, .. } => driver.take(),
             LaunchMode::App { .. }
-            | LaunchMode::CommandLine { .. }
             | LaunchMode::RemoteServerProxy
             | LaunchMode::RemoteServerDaemon { .. } => None,
         }
@@ -306,7 +281,6 @@ impl LaunchMode {
     fn execution_mode(&self) -> ExecutionMode {
         match self {
             LaunchMode::App { .. } => ExecutionMode::App,
-            LaunchMode::CommandLine { .. } => ExecutionMode::Sdk,
             LaunchMode::Test { .. } => ExecutionMode::App,
             // RemoteServerProxy is a thin byte bridge; Sdk is the closest match.
             LaunchMode::RemoteServerProxy => ExecutionMode::Sdk,
@@ -316,19 +290,12 @@ impl LaunchMode {
     }
 
     fn is_sandboxed(&self) -> bool {
-        match self {
-            LaunchMode::CommandLine { is_sandboxed, .. } => *is_sandboxed,
-            LaunchMode::App { .. }
-            | LaunchMode::Test { .. }
-            | LaunchMode::RemoteServerProxy
-            | LaunchMode::RemoteServerDaemon { .. } => false,
-        }
+        false
     }
 
     /// Returns `true` if Warp should run headlessly, without a visible UI.
     fn is_headless(&self) -> bool {
         match self {
-            LaunchMode::CommandLine { .. } => true,
             LaunchMode::RemoteServerProxy | LaunchMode::RemoteServerDaemon { .. } => true,
             LaunchMode::App { .. } | LaunchMode::Test { .. } => false,
         }
@@ -348,8 +315,7 @@ impl LaunchMode {
     pub(crate) fn crash_recovery_enabled(&self) -> bool {
         match self {
             LaunchMode::App { .. } => true,
-            LaunchMode::CommandLine { .. }
-            | LaunchMode::Test { .. }
+            LaunchMode::Test { .. }
             | LaunchMode::RemoteServerProxy
             | LaunchMode::RemoteServerDaemon { .. } => false,
         }
@@ -359,7 +325,6 @@ impl LaunchMode {
     pub(crate) fn needs_profiling(&self) -> bool {
         match self {
             LaunchMode::App { .. }
-            | LaunchMode::CommandLine { .. }
             | LaunchMode::Test { .. }
             | LaunchMode::RemoteServerDaemon { .. }
             | LaunchMode::RemoteServerProxy => true,
@@ -369,13 +334,6 @@ impl LaunchMode {
     /// Log destination for this mode.
     fn log_destination(&self) -> Option<LogDestination> {
         match self {
-            LaunchMode::CommandLine { debug, .. } => {
-                if *debug {
-                    Some(LogDestination::Stderr)
-                } else {
-                    Some(LogDestination::File)
-                }
-            }
             // Proxy must log to stderr because stdout is the protocol channel.
             LaunchMode::RemoteServerProxy => Some(LogDestination::Stderr),
             LaunchMode::RemoteServerDaemon { .. } => Some(LogDestination::File),
@@ -386,9 +344,9 @@ impl LaunchMode {
     fn log_frontend(&self) -> LogFrontend {
         match self {
             LaunchMode::App { .. } | LaunchMode::Test { .. } => LogFrontend::Gui,
-            LaunchMode::CommandLine { .. }
-            | LaunchMode::RemoteServerProxy
-            | LaunchMode::RemoteServerDaemon { .. } => LogFrontend::Cli,
+            LaunchMode::RemoteServerProxy | LaunchMode::RemoteServerDaemon { .. } => {
+                LogFrontend::Cli
+            }
         }
     }
 }
@@ -446,24 +404,6 @@ pub fn run() -> Result<()> {
     // Parse command-line arguments.
     let args = warp_cli::Args::from_env();
 
-    // Server URL overrides are only honored on internal dev channels. Release channels silently
-    // ignore `--server-root-url` / `--ws-server-url` / `--session-sharing-server-url` (and their
-    // `WARP_*` env-var equivalents) so shipped builds can't be redirected away from their
-    // baked-in server URLs. See `Channel::allows_server_url_overrides`.
-    if ChannelState::channel().allows_server_url_overrides() {
-        if let Some(url) = args.server_root_url()
-            && let Err(e) = ChannelState::override_server_root_url(url.to_owned())
-        {
-            eprintln!("Error: Invalid server root URL: {e:#}");
-        }
-
-        if let Some(url) = args.ws_server_url()
-            && let Err(e) = ChannelState::override_ws_server_url(url.to_owned())
-        {
-            eprintln!("Error: Invalid websocket server URL: {e:#}");
-        }
-    }
-
     if let Some(command) = args.command() {
         #[cfg(windows)]
         if command.prints_to_stdout() {
@@ -474,24 +414,6 @@ pub fn run() -> Result<()> {
             warp_cli::Command::Worker(worker) => return run_worker_command(worker),
             warp_cli::Command::Completions { shell } => {
                 return warp_cli::completions::generate_to_stdout(*shell);
-            }
-            warp_cli::Command::CommandLine(cmd) => {
-                if is_unsupported_agent_command(cmd.as_ref()) {
-                    return Err(anyhow!(
-                        "`warp {}` is not supported in Spirit. Launch a third-party CLI agent with New Agent instead.",
-                        cmd.as_str_for_tracing()
-                    ));
-                }
-
-                return run_internal(LaunchMode::CommandLine {
-                    command: cmd.as_ref().clone(),
-                    global_options: GlobalOptions {
-                        output_format: args.output_format(),
-                        api_key: args.api_key().cloned(),
-                    },
-                    debug: args.debug(),
-                    is_sandboxed: false,
-                });
             }
             warp_cli::Command::DumpDebugInfo => {
                 return debug_dump::run();
@@ -930,10 +852,9 @@ pub(crate) fn initialize_app(
                 identity_key: identity_key.clone(),
             }
         }
-        LaunchMode::App { .. }
-        | LaunchMode::CommandLine { .. }
-        | LaunchMode::RemoteServerProxy
-        | LaunchMode::Test { .. } => persistence::PersistenceScope::App,
+        LaunchMode::App { .. } | LaunchMode::RemoteServerProxy | LaunchMode::Test { .. } => {
+            persistence::PersistenceScope::App
+        }
     };
     // Only read the subsets of persisted data this launch mode actually
     // consumes; loading everything is expensive on large databases.
@@ -941,10 +862,9 @@ pub(crate) fn initialize_app(
         LaunchMode::RemoteServerDaemon { .. } => {
             persistence::PersistedDataScope::CodebaseIndicesOnly
         }
-        LaunchMode::App { .. }
-        | LaunchMode::CommandLine { .. }
-        | LaunchMode::RemoteServerProxy
-        | LaunchMode::Test { .. } => persistence::PersistedDataScope::Full,
+        LaunchMode::App { .. } | LaunchMode::RemoteServerProxy | LaunchMode::Test { .. } => {
+            persistence::PersistedDataScope::Full
+        }
     };
     let (sqlite_data, writer_handles) =
         persistence::initialize(persistence_scope, persisted_data_scope);
@@ -1725,16 +1645,6 @@ fn launch(ctx: &mut warpui::AppContext, app_state: Option<AppState>, launch_mode
                 });
                 maybe_register_app_as_login_item(ctx);
             }
-        }
-        #[cfg_attr(target_family = "wasm", allow(unused_variables))]
-        LaunchMode::CommandLine {
-            command,
-            global_options,
-            ..
-        } => {
-            let _ = (command, global_options, ctx);
-            eprintln!("CLI agent commands are not supported by this build");
-            std::process::exit(1);
         }
         // Proxy should never reach launch() — it's a thin byte bridge.
         LaunchMode::RemoteServerProxy => {

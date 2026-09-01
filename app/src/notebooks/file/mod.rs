@@ -760,7 +760,6 @@ impl FileNotebookView {
                         .map(|location| format!("Command from {}", location.name))
                 });
                 let source = workflow.source.unwrap_or(WorkflowSource::Notebook {
-                    notebook_id: None,
                     location: NotebookLocation::LocalFile,
                 });
                 ctx.emit(FileNotebookEvent::RunWorkflow {

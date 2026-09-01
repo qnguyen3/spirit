@@ -23,11 +23,6 @@ pub fn update_browser_url(url: Option<Url>, force_redirect: bool) {
                 )
                 .unwrap_or_else(|_| {
                     report_error!("Failed to replace browser state");
-                    crate::platform::wasm::emit_event(
-                        crate::platform::wasm::WarpEvent::ErrorLogged {
-                            error: String::from("Failed to replace browser state"),
-                        },
-                    );
                 });
         } else {
             report_error!("Failed to get gloo history while trying to update browser url");

@@ -26,7 +26,6 @@ console_error_panic_hook = { version = "0.1.6" }
 js-sys = "0.3.63"
 wasm-bindgen.workspace = true
 web-sys.workspace = true
-warp_web_event_bus.workspace = true
 
 [target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
 tempfile.workspace = true

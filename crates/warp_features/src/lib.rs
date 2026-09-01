@@ -157,9 +157,6 @@ pub enum FeatureFlag {
     /// Enables prediction of Agent Mode queries.
     PredictAMQueries,
 
-    /// Enables full source code embedding of repos when using codebase context.
-    FullSourceCodeEmbedding,
-
     /// If enabled, command palette searches will use Tantivy search instead of the default fuzzy search.
     UseTantivySearch,
 
@@ -171,15 +168,6 @@ pub enum FeatureFlag {
 
     /// UNIX shells running "natively" on Windows via MSYS2.
     MSYS2Shells,
-
-    /// Enables cross-repo codebase context.
-    CrossRepoContext,
-
-    /// Persist codebase indices to disk.
-    CodebaseIndexPersistence,
-
-    /// Show speed bump when enabling codebase indexing.
-    CodebaseIndexSpeedbump,
 
     /// Enables inline review comments on specific lines of code.
     ContextLineReviewComments,
@@ -238,9 +226,6 @@ pub enum FeatureFlag {
     /// Enables the one-time modal on app startup for existing users for the Code launch.
     CodeLaunchModal,
 
-    /// Enables API key management UI in settings
-    APIKeyManagement,
-
     /// Enables attaching diff sets (multiple hunks from multiple files) as context in Agent Mode.
     DiffSetAsContext,
 
@@ -259,26 +244,11 @@ pub enum FeatureFlag {
     /// Enables asynchronous find in terminal, running search on a background thread.
     AsyncFind,
 
-    /// Enables the ambient agents command-line interface.
-    AmbientAgentsCommandLine,
-
     /// Enables inline code review functionality
     InlineCodeReview,
 
-    /// Enables cloud environments management via CLI.
-    CloudEnvironments,
-
     /// Enables the local docker sandbox entrypoints in the client.
     LocalDockerSandbox,
-
-    /// Enables the provider command for linking third-party services.
-    ProviderCommand,
-
-    /// Enables the integration command for managing agent integrations.
-    IntegrationCommand,
-
-    /// Enables the artifact command for uploading and downloading CLI artifacts.
-    ArtifactCommand,
 
     /// Enables rendering Mermaid diagrams in markdown notebooks.
     MarkdownMermaid,
@@ -307,24 +277,12 @@ pub enum FeatureFlag {
     /// Agent Management View.
     AgentManagementView,
 
-    /// Enables scheduled ambient agents.
-    ScheduledAmbientAgents,
-
     AgentView,
 
     /// Enables the inline history menu for quickly accessing previous commands and conversations.
     InlineHistoryMenu,
 
     VoiceInput,
-
-    /// Enables cloud mode functionality for ambient agents.
-    CloudMode,
-
-    /// Enables Warp Managed Secrets functionality.
-    WarpManagedSecrets,
-
-    /// Enables cloud conversation loading via the CLI --conversation flag.
-    CloudConversations,
 
     /// Enables configuring header toolbar item order, side placement, and visibility.
     ConfigurableToolbar,
@@ -338,9 +296,6 @@ pub enum FeatureFlag {
 
     /// When enabled, we expose LSP as a tool to the agent
     LSPAsATool,
-
-    /// Enables Oz identity federation commands.
-    OzIdentityFederation,
 
     /// Updated tab styling (background colors, border, close button positioning, margins).
     NewTabStyling,
@@ -381,10 +336,6 @@ pub enum FeatureFlag {
     /// from code review + code editor for House Of Agents work
     HoaCodeReview,
 
-    /// Enables the `--harness` flag for `oz agent run`, allowing external agent
-    /// CLIs (e.g. `claude`) to execute prompts instead of Warp's agent harness.
-    AgentHarness,
-
     /// Enables the upgraded CLI agent session tracking and notifications infrastructure.
     HOANotifications,
 
@@ -394,14 +345,8 @@ pub enum FeatureFlag {
     /// Enables Warp local control through the standalone warpctrl CLI.
     WarpControlCli,
 
-    /// When enabled, solo users (not on a team) can use BYO API keys.
-    SoloUserByok,
-
     /// Replaces the in-block warpification banner with a warpify footer.
     WarpifyFooter,
-
-    /// Enables conversation retrieval via the CLI (oz run conversation get, oz run get --conversation).
-    ConversationApi,
 
     /// Enables commit, push, and create-PR actions in the code review panel.
     GitOperationsInCodeReview,
@@ -415,14 +360,9 @@ pub enum FeatureFlag {
     /// for command execution.
     SshRemoteServer,
 
-    /// Redux of the setup/initial user query UI for cloud mode.
-    CloudModeSetupV2,
-
     /// Enables summary mode in vertical tabs, showing condensed tab summaries
     /// instead of individual pane rows.
     VerticalTabsSummaryMode,
-
-    CloudModeInputV2,
 
     /// Enables the code review view for remote sessions.
     RemoteCodeReview,
@@ -442,17 +382,6 @@ pub enum FeatureFlag {
     /// procedurally as cell-filling rectangles instead of from the font,
     /// eliminating seams between adjacent box-drawing cells in the terminal.
     BoxDrawingGlyphs,
-
-    /// Enables cloud agent runner selection: the `oz runner` CRUD commands
-    /// for managing runners via the CLI, and the Runner dropdown in the
-    /// orchestration (`run_agents`) confirmation card and plan-card config
-    /// block for choosing a runner when starting remote child agents.
-    CloudAgentRunners,
-
-    /// Accepts well-known non-UUID managed MCP ids (e.g. `"linear"`) as
-    /// `warp_id` values in MCP configs and as bare identifiers in CLI
-    /// `--mcp` arguments, resolved server-side at run setup.
-    WellKnownMcpIds,
 
     /// Observes Ctrl-C (`0x03`) written to a terminal with a working, rich-status-capable CLI agent
     /// session (e.g. Claude Code). Arms a short grace window; if no further
@@ -498,14 +427,9 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::ContextLineReviewComments,
     FeatureFlag::RunGeneratorsWithCmdExe,
     FeatureFlag::Projects,
-    FeatureFlag::ProviderCommand,
     FeatureFlag::FileAndDiffSetComments,
     // These are enabled via 100% experiment on prod warp-server,
     // but we need to enable here for dogfood builds.
-    FeatureFlag::CrossRepoContext,
-    FeatureFlag::CodebaseIndexPersistence,
-    FeatureFlag::FullSourceCodeEmbedding,
-    FeatureFlag::CodebaseIndexSpeedbump,
     // End manually enabled Code features.
     FeatureFlag::EditableMarkdownMermaid,
     FeatureFlag::CodeReviewScrollPreservation,
@@ -601,9 +525,6 @@ impl FeatureFlag {
         // ** ONLY Preview-exclusive features should be added to this list! **
         match self {
             CodeReviewFind => Some("Enables the find bar in the code review pane."),
-            CloudEnvironments => {
-                Some("Enables creating and managing Warp Environments via the CLI.")
-            }
             GlobalSearch => Some("Enables global search in the left panel"),
             MarkdownTables => {
                 Some("Enables rendering and interaction support for markdown tables in notebooks.")

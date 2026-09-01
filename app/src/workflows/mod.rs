@@ -12,7 +12,7 @@ pub mod workflow;
 
 pub use categories::{CategoriesView, CategoriesViewEvent, WorkflowsViewAction};
 
-use crate::notebooks::{NotebookId, NotebookLocation};
+use crate::notebooks::NotebookLocation;
 
 pub fn init(app: &mut AppContext) {
     categories::init(app);
@@ -24,7 +24,6 @@ pub enum WorkflowSource {
     Local,
     Project,
     Notebook {
-        notebook_id: Option<NotebookId>,
         location: NotebookLocation,
     },
 
