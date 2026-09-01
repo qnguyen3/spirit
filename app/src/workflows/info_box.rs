@@ -23,7 +23,6 @@ use warpui::{
     ViewHandle,
 };
 
-use super::CloudWorkflow;
 use super::command_parser::{
     WorkflowArgumentIndex, WorkflowDisplayData, compute_workflow_display_data,
 };
