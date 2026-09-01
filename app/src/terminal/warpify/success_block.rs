@@ -261,7 +261,7 @@ impl WarpifySuccessBlock {
         let selected_text = auto_warpify_snippet.selected_text.clone();
 
         // TODO(Simon): Implement full selection and copying functionality for the WarpifySuccessBlock.
-        // Look to the `EnvVarCollectionBlock` for the existing implementation paradigm. We don't
+        // Look to the SSH remote-server choice block for the existing implementation paradigm. We don't
         // yet have a robust way of ensuring that every aspect of text selection is implemented
         // properly, so be extra careful not to miss any details!
         let output_grid = SelectableArea::new(

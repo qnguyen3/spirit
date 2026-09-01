@@ -6,7 +6,6 @@ pub enum PaletteSource {
     PrefixChange,
     Keybinding,
     CtrlTab { shift_pressed_initially: bool },
-    WarpDrive,
     QuitModal,
     LogOutModal,
     IntegrationTest,

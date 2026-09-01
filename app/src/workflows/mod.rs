@@ -35,7 +35,6 @@ pub enum WorkflowSource {
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, Eq, PartialEq, Hash, PartialOrd)]
 pub enum WorkflowSelectionSource {
-    WarpDrive,
     CommandPalette,
     UniversalSearch,
     Voltron,

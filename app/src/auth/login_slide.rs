@@ -1,6 +1,5 @@
 use std::cell::Cell;
 
-use onboarding::WARP_DRIVE_FEATURES;
 use onboarding::components::feature_optout_dialog::{
     FeatureOptOutDialog, render_feature_optout_dialog,
 };
@@ -90,10 +89,6 @@ pub fn init(app: &mut AppContext) {
 impl LoginPurpose {
     fn copy(self) -> (&'static str, &'static str) {
         match self {
-            LoginPurpose::WarpDrive => (
-                "Get started with Warp Drive",
-                "Connect your account to save and share notebooks, workflows, and more across devices.",
-            ),
             LoginPurpose::AccountFirst => (
                 "Create an account",
                 "Access AI, run cloud agents, collaborate with teammates, and sync settings across devices.",
@@ -179,7 +174,6 @@ enum LoginSlideOverlay {
 /// creates an account.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum LoginPurpose {
-    WarpDrive,
     AccountFirst,
 }
 
@@ -501,10 +495,7 @@ impl LoginSlideView {
     }
 
     fn login_purpose(&self) -> LoginPurpose {
-        if matches!(self.source, LoginSlideSource::AccountFirstOnboarding) {
-            return LoginPurpose::AccountFirst;
-        }
-        LoginPurpose::WarpDrive
+        LoginPurpose::AccountFirst
     }
 
     fn render_select_auth_content(&self, appearance: &Appearance) -> Vec<Box<dyn Element>> {
@@ -696,7 +687,6 @@ impl LoginSlideView {
 
         let cmd_enter = Keystroke::parse("cmdorctrl-enter").unwrap_or_default();
         let skip_label = match self.login_purpose() {
-            LoginPurpose::WarpDrive => "Disable Warp Drive",
             LoginPurpose::AccountFirst => "Skip",
         };
         let skip_keystroke = if matches!(self.login_purpose(), LoginPurpose::AccountFirst) {
@@ -1002,12 +992,6 @@ impl LoginSlideView {
             &'static [&'static str],
             &'static str,
         ) = match self.login_purpose() {
-            LoginPurpose::WarpDrive => (
-                "Are you sure you want to disable Warp Drive?",
-                "Warp Drive lets you save workflows and knowledge across devices and share them with your team. By continuing, you won't have access to the following features:",
-                WARP_DRIVE_FEATURES,
-                "Enable Warp Drive",
-            ),
             LoginPurpose::AccountFirst => (
                 "Continue without signing in?",
                 "Without an account, you won't have access to Warp's AI features. Sign in anytime to unlock agents and other AI features.",

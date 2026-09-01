@@ -1456,7 +1456,6 @@ impl SettingsView {
             MainSettingsPageEvent::SignupAnonymousUser => {
                 ctx.emit(SettingsViewEvent::SignupAnonymousUser)
             }
-            _ => (),
         }
     }
 
