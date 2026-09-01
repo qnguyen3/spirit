@@ -76,7 +76,7 @@ impl PartialEq for CustomSecretRegex {
 
 impl settings_value::SettingsValue for CustomSecretRegex {}
 
-define_settings_group!(WarpDrivePrivacySettings, settings: [
+define_settings_group!(CloudPrivacySettings, settings: [
     is_cloud_conversation_storage_enabled: IsCloudConversationStorageEnabled {
         type: bool,
         default: true,
@@ -154,20 +154,20 @@ impl PrivacySettings {
         let auth_state = AuthStateProvider::as_ref(ctx).get().clone();
         let auth_client = ServerApiProvider::as_ref(ctx).get_auth_client();
 
-        // Initialize from `WarpDrivePrivacySettings`, which is the source of truth for these
+        // Initialize from `CloudPrivacySettings`, which is the source of truth for these
         // booleans.
-        let warp_drive_privacy = WarpDrivePrivacySettings::as_ref(ctx);
-        let is_cloud_conversation_storage_enabled = *warp_drive_privacy
+        let cloud_privacy = CloudPrivacySettings::as_ref(ctx);
+        let is_cloud_conversation_storage_enabled = *cloud_privacy
             .is_cloud_conversation_storage_enabled
             .value();
 
         // Listen for changes to the cloud model and update ourselves when they happen.
         ctx.subscribe_to_model(
-            &WarpDrivePrivacySettings::handle(ctx),
+            &CloudPrivacySettings::handle(ctx),
             |me, _, event, ctx| {
-                let privacy_settings = WarpDrivePrivacySettings::as_ref(ctx);
+                let privacy_settings = CloudPrivacySettings::as_ref(ctx);
                 match event {
-                    WarpDrivePrivacySettingsChangedEvent::IsCloudConversationStorageEnabled {
+                    CloudPrivacySettingsChangedEvent::IsCloudConversationStorageEnabled {
                         ..
                     } => {
                         me.set_is_cloud_conversation_storage_enabled(
@@ -335,7 +335,7 @@ impl PrivacySettings {
 
         self.is_cloud_conversation_storage_enabled = new_value;
 
-        WarpDrivePrivacySettings::handle(ctx).update(ctx, |settings, ctx| {
+        CloudPrivacySettings::handle(ctx).update(ctx, |settings, ctx| {
             log::info!("Setting is_cloud_conversation_storage_enabled to {new_value}");
             let _ = settings
                 .is_cloud_conversation_storage_enabled

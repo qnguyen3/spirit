@@ -165,9 +165,7 @@ impl ThemePickerSlide {
         // Drive is enabled — in that case the login slide will still run after
         // the theme step and show the disclaimer, so duplicating it here is
         // unnecessary.
-        let state = self.onboarding_state.as_ref(app);
-        let warp_drive_enabled = state.ui_customization().show_warp_drive;
-        if !FeatureFlag::AccountFirstOnboarding.is_enabled() && !warp_drive_enabled {
+        if !FeatureFlag::AccountFirstOnboarding.is_enabled() {
             content.push(self.render_disclaimer_section(appearance));
         }
 

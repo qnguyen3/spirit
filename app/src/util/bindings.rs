@@ -766,7 +766,6 @@ pub enum BindingGroup {
     KeyboardShortcuts,
     AutoUpdate,
     Notifications,
-    EnvVarCollection,
     Terminal,
     Workspaces,
 }
@@ -784,7 +783,6 @@ impl BindingGroup {
             Self::Close => "close",
             Self::AutoUpdate => "autoupdate",
             Self::Notifications => "notifications",
-            Self::EnvVarCollection => "env_var_collections",
             Self::Terminal => "terminal",
             Self::Workspaces => "workspaces",
         }

@@ -511,8 +511,8 @@ fn open_launch_config(arg: &OpenLaunchConfigArg, ctx: &mut AppContext) {
     }
 }
 
-fn requires_post_onboarding_login(is_logged_in: bool, warp_drive_enabled: bool) -> bool {
-    !is_logged_in && (FeatureFlag::AccountFirstOnboarding.is_enabled() || warp_drive_enabled)
+fn requires_post_onboarding_login(is_logged_in: bool) -> bool {
+    !is_logged_in && FeatureFlag::AccountFirstOnboarding.is_enabled()
 }
 /// Replaces the settings and tutorial snapshots consumed when post-auth
 /// onboarding eventually completes.
@@ -2148,10 +2148,8 @@ impl RootView {
                 let is_logged_in = AuthStateProvider::as_ref(ctx).get().is_logged_in();
                 // Account-first always presents account creation to logged-out users.
                 // The fallback flow only requires login for account-backed settings.
-                let warp_drive_enabled = selected_settings.is_warp_drive_enabled();
                 // With old onboarding, we ask user to log in before onboarding, so don't do it after onboarding completes.
-                let requires_login =
-                    requires_post_onboarding_login(is_logged_in, warp_drive_enabled);
+                let requires_login = requires_post_onboarding_login(is_logged_in);
 
                 if requires_login {
                     refresh_pending_onboarding_choices(

@@ -18,7 +18,7 @@ use super::{
     FontSettingsChangedEvent, GPUSettings, InputBoxType, InputModeSettings, InputSettings,
     LocalControlSettings, NewSessionSettings, PaneSettings, SameLinePromptBlockSettings,
     ScrollSettings, SelectionSettings, SshSettings, ThemeSettings, VimBannerSettings,
-    WarpDrivePrivacySettings,
+    CloudPrivacySettings,
 };
 use crate::banner::BannerState;
 use crate::resource_center::TipsCompleted;
@@ -75,7 +75,7 @@ pub fn register_all_settings(ctx: &mut AppContext) {
     ThemeSettings::register(ctx);
     AccessibilitySettings::register(ctx);
     NativePreferenceSettings::register(ctx);
-    WarpDrivePrivacySettings::register(ctx);
+    CloudPrivacySettings::register(ctx);
     UserAppInstallDetectionSettings::register(ctx);
     AppIconSettings::register(ctx);
     AppEditorSettings::register(ctx);

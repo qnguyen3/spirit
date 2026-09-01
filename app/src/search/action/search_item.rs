@@ -187,7 +187,6 @@ impl SearchItemIcon for BindingGroup {
             Self::KeyboardShortcuts => Icon::Keyboard,
             Self::AutoUpdate => Icon::AutoUpdate,
             Self::Notifications => Icon::Bell,
-            Self::EnvVarCollection => Icon::EnvVarCollection,
             Self::Terminal => Icon::Terminal,
             Self::Workspaces => Icon::Folder,
         }
@@ -205,8 +204,7 @@ impl SearchItemIcon for BindingGroup {
             | Self::Workspaces
             | Self::Notifications
             | Self::Workflow
-            | Self::Notebooks
-            | Self::EnvVarCollection => appearance.theme().foreground().into_solid(),
+            | Self::Notebooks => appearance.theme().foreground().into_solid(),
         }
     }
 }

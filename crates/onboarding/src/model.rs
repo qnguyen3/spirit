@@ -9,7 +9,6 @@ pub struct UICustomizationSettings {
     pub show_conversation_history: bool,
     pub show_project_explorer: bool,
     pub show_global_search: bool,
-    pub show_warp_drive: bool,
     pub show_code_review_button: bool,
 }
 
@@ -21,7 +20,6 @@ impl UICustomizationSettings {
             show_conversation_history: false,
             show_project_explorer: false,
             show_global_search: false,
-            show_warp_drive: false,
             show_code_review_button: false,
         }
     }
@@ -29,7 +27,7 @@ impl UICustomizationSettings {
     /// Returns true if any visible tools-panel sub-setting is enabled. The
     /// conversation-history chip is hidden, so it does not count.
     pub fn tools_panel_enabled(&self) -> bool {
-        self.show_project_explorer || self.show_global_search || self.show_warp_drive
+        self.show_project_explorer || self.show_global_search
     }
 }
 
@@ -48,12 +46,6 @@ pub struct SelectedSettings {
 }
 
 impl SelectedSettings {
-    pub fn is_warp_drive_enabled(&self) -> bool {
-        self.ui_customization
-            .as_ref()
-            .map(|ui| ui.show_warp_drive)
-            .unwrap_or(false)
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -219,7 +211,6 @@ impl OnboardingStateModel {
         self.ui_customization.show_conversation_history = enabled;
         self.ui_customization.show_project_explorer = enabled;
         self.ui_customization.show_global_search = enabled;
-        self.ui_customization.show_warp_drive = enabled;
         ctx.notify();
     }
 
@@ -248,14 +239,6 @@ impl OnboardingStateModel {
             return;
         }
         self.ui_customization.show_global_search = value;
-        ctx.notify();
-    }
-
-    pub(crate) fn set_show_warp_drive(&mut self, value: bool, ctx: &mut ModelContext<Self>) {
-        if self.ui_customization.show_warp_drive == value {
-            return;
-        }
-        self.ui_customization.show_warp_drive = value;
         ctx.notify();
     }
 
