@@ -515,8 +515,6 @@ default = [
     "warp_managed_secrets",
     "classic_completions",
     "force_classic_completions",
-    "team_api_keys",
-    "named_agents",
     "pluggable_notifications",
     "agent_onboarding",
     "account_first_onboarding",
@@ -723,7 +721,6 @@ command_correction_key = []
 full_source_code_embedding = []
 use_tantivy_search = []
 agent_management_popup = []
-simulate_github_unauthed = []
 usage_based_pricing = []
 code_find_replace = []
 command_palette_file_search = []
@@ -760,8 +757,6 @@ revert_to_checkpoints = []
 agent_view = []
 warp_managed_secrets = []
 cloud_conversations = []
-team_api_keys = []
-named_agents = []
 classic_completions = []
 cloud_mode = []
 force_classic_completions = []

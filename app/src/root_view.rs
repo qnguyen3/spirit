@@ -57,7 +57,6 @@ use crate::launch_configs::launch_config;
 use crate::pane_group::{NewTerminalOptions, PanesLayout};
 use crate::persistence::ModelEvent;
 use crate::projects::host::ProjectHost;
-use crate::server::ids::ServerId;
 use crate::server::server_api::auth::UserAuthenticationError;
 use crate::server::server_api::{ServerApi, ServerApiProvider, ServerTime};
 use crate::settings::initializer::SettingsInitializer;
@@ -1215,10 +1214,6 @@ pub enum NewWorkspaceSource {
     NotebookFromFilePath {
         file_path: Option<PathBuf>,
     },
-    /// Opens a new window pre-scoped to a specific team, chosen via the title-bar team switcher.
-    TeamSwitched {
-        team_uid: ServerId,
-    },
     /// A tab is being transferred from another window via the transferable views framework.
     /// The workspace will create a placeholder tab, which will be replaced by the transferred
     /// PaneGroup after window creation.
@@ -1264,33 +1259,6 @@ impl NewWorkspaceSource {
             }
             _ => false,
         }
-    }
-
-    pub fn team_uid(&self, _ctx: &AppContext) -> Option<ServerId> {
-        let source_window_id = match self {
-            Self::Empty {
-                previous_active_window,
-                ..
-            } => *previous_active_window,
-            Self::TransferredTab {
-                source_window_id, ..
-            } => Some(*source_window_id),
-            Self::FromTemplate { .. }
-            | Self::Session { .. }
-            | Self::NotebookFromFilePath { .. } => None,
-            Self::TeamSwitched { team_uid } => return Some(*team_uid),
-            Self::Restored {
-                window_snapshot, ..
-            } => {
-                if let Some(team_uid) = window_snapshot.team_uid {
-                    return Some(team_uid);
-                }
-                None
-            }
-        };
-
-        let _ = source_window_id;
-        None
     }
 }
 

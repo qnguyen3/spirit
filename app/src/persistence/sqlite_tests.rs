@@ -20,7 +20,6 @@ use crate::code::editor_management::CodeSource;
 use crate::persistence::model::{Project as ProjectRow, ProjectWorktree as WorktreeRow};
 use crate::persistence::{BlockCompleted, ModelEvent, PersistedDataScope, PersistenceScope};
 use crate::projects::{Project, ProjectId, ProjectKind, Worktree, WorktreeId, WorktreeKind};
-use crate::server::ids::ServerId;
 use crate::tab::SelectedTabColor;
 use crate::terminal::ShellLaunchData;
 use crate::terminal::model::block::SerializedBlock;
@@ -337,7 +336,6 @@ fn test_terminal_window_snapshot(vertical_tabs_panel_open: bool) -> WindowSnapsh
             }],
         }],
         active_screen_index: 0,
-        team_uid: None,
         bounds: None,
         fullscreen_state: Default::default(),
         quake_mode: false,
@@ -384,32 +382,6 @@ fn test_sqlite_round_trips_vertical_tabs_panel_open() {
 }
 
 #[test]
-fn test_sqlite_round_trips_window_team_uid() {
-    let tempdir = tempfile::tempdir().expect("tempdir should be created");
-    let database_path = tempdir.path().join("warp.sqlite");
-    let mut conn = setup_database(&database_path).expect("database should initialize");
-    let team_uid = ServerId::from(123);
-    let mut assigned_window = test_terminal_window_snapshot(false);
-    assigned_window.team_uid = Some(team_uid);
-
-    let app_state = AppState {
-        windows: vec![assigned_window, test_terminal_window_snapshot(true)],
-        active_window_index: Some(0),
-        block_lists: Default::default(),
-    };
-
-    save_app_state(&mut conn, &app_state).expect("app state should save");
-
-    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
-        .expect("app state should load")
-        .app_state
-        .expect("app state should be present for the full scope");
-
-    assert_eq!(restored.windows[0].team_uid, Some(team_uid));
-    assert_eq!(restored.windows[1].team_uid, None);
-}
-
-#[test]
 fn test_sqlite_round_trips_custom_vertical_tabs_title() {
     let tempdir = tempfile::tempdir().expect("tempdir should be created");
     let database_path = tempdir.path().join("warp.sqlite");
@@ -447,7 +419,6 @@ fn test_sqlite_round_trips_custom_vertical_tabs_title() {
                 tab_groups: vec![],
             }],
             active_screen_index: 0,
-            team_uid: None,
             bounds: None,
             fullscreen_state: Default::default(),
             quake_mode: false,
@@ -527,7 +498,6 @@ fn test_sqlite_round_trips_code_pane_with_multiple_tabs() {
                 tab_groups: vec![],
             }],
             active_screen_index: 0,
-            team_uid: None,
             bounds: None,
             fullscreen_state: Default::default(),
             quake_mode: false,
@@ -644,7 +614,6 @@ fn test_sqlite_round_trips_tab_groups() {
                 }],
             }],
             active_screen_index: 0,
-            team_uid: None,
             bounds: None,
             fullscreen_state: Default::default(),
             quake_mode: false,
@@ -793,7 +762,6 @@ fn test_sqlite_round_trips_pinned_state() {
                 ],
             }],
             active_screen_index: 0,
-            team_uid: None,
             bounds: None,
             fullscreen_state: Default::default(),
             quake_mode: false,
@@ -1125,7 +1093,6 @@ fn test_multi_screen_window(screens: Vec<ProjectScreenSnapshot>, active: usize) 
     WindowSnapshot {
         screens,
         active_screen_index: active,
-        team_uid: None,
         bounds: None,
         fullscreen_state: Default::default(),
         quake_mode: false,

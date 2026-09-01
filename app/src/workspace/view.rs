@@ -2729,13 +2729,6 @@ impl Workspace {
                 );
                 self.check_and_trigger_onboarding(ctx);
             }
-            NewWorkspaceSource::TeamSwitched { .. } => {
-                self.configure_empty_workspace(
-                    None, /* previous_active_window */
-                    None, /* shell */
-                    ctx,
-                );
-            }
             NewWorkspaceSource::NotebookFromFilePath { file_path } => {
                 self.add_tab_for_file_notebook(file_path, ctx);
             }
@@ -2839,7 +2832,6 @@ impl Workspace {
             NewWorkspaceSource::Empty { .. }
             | NewWorkspaceSource::FromTemplate { .. }
             | NewWorkspaceSource::Session { .. }
-            | NewWorkspaceSource::TeamSwitched { .. }
             | NewWorkspaceSource::NotebookFromFilePath { .. } => should_default_open,
         }
     }
@@ -8750,7 +8742,6 @@ impl Workspace {
         WindowSnapshot {
             screens: vec![self.screen_snapshot(window_id, app)],
             active_screen_index: 0,
-            team_uid: None,
             bounds: window_bounds,
             fullscreen_state: window_fullscreen_state,
             quake_mode,

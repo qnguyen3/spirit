@@ -53,7 +53,6 @@ use crate::persistence::block_list::get_all_restored_blocks;
 use crate::persistence::model::{CODE_REVIEW_PANE_KIND, GET_STARTED_PANE_KIND};
 use crate::projects::{Project, ProjectId, Worktree, WorktreeId};
 use crate::safe_info;
-use crate::server::ids::ServerId;
 use crate::settings_view::SettingsSection;
 use crate::suggestions::ignored_suggestions_model::SuggestionType;
 use crate::tab::SelectedTabColor;
@@ -705,7 +704,7 @@ fn save_app_state(conn: &mut SqliteConnection, app_state: &AppState) -> Result<(
                 vertical_tabs_panel_open: Some(window.vertical_tabs_panel_open),
                 fullscreen_state: window.fullscreen_state as i32,
                 agent_management_filters: None,
-                team_uid: window.team_uid.map(Into::into),
+                team_uid: None,
                 active_project_id,
             };
             diesel::insert_into(schema::windows::dsl::windows)
@@ -1841,9 +1840,6 @@ fn read_sqlite_data(
                     WindowSnapshot {
                         screens,
                         active_screen_index,
-                        team_uid: window.team_uid.and_then(|persisted_team_uid| {
-                            ServerId::try_from(persisted_team_uid).ok()
-                        }),
                         quake_mode: window.quake_mode,
                         bounds,
                         universal_search_width: window.universal_search_width,

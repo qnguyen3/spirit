@@ -326,9 +326,6 @@ pub enum FeatureFlag {
     /// Enables Warp Managed Secrets functionality.
     WarpManagedSecrets,
 
-    /// Enables team API key creation in the API key management UI.
-    TeamApiKeys,
-
     /// Enables cloud conversation loading via the CLI --conversation flag.
     CloudConversations,
 
@@ -341,11 +338,6 @@ pub enum FeatureFlag {
     /// Enables pluggable notifications via OSC 9 and OSC 777 escape sequences.
     /// External programs can trigger system and in-app notifications.
     PluggableNotifications,
-
-    /// Dev-only: simulate a GitHub-unauthed user in the Environments page flow.
-    ///
-    /// This is intended for developer testing and should have no effect in release builds.
-    SimulateGithubUnauthed,
 
     /// When enabled, we expose LSP as a tool to the agent
     LSPAsATool,
@@ -439,12 +431,6 @@ pub enum FeatureFlag {
     VerticalTabsSummaryMode,
 
     CloudModeInputV2,
-
-    /// Enables creating API keys scoped to named agents in the API key
-    /// management UI. When enabled the "Team" option in the key-type
-    /// selector is replaced with "Agent" and users can pick which agent
-    /// identity the key authenticates as.
-    NamedAgents,
 
     /// Enables the code review view for remote sessions.
     RemoteCodeReview,

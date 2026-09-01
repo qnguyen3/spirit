@@ -10,7 +10,6 @@ use warpui::{AppContext, SingletonEntity as _};
 use crate::code::editor_management::CodeSource;
 use crate::projects::{ProjectId, WorktreeId};
 use crate::root_view::quake_mode_window_id;
-use crate::server::ids::ServerId;
 use crate::settings_view::SettingsSection;
 use crate::tab::SelectedTabColor;
 use crate::terminal::ShellLaunchData;
@@ -34,7 +33,6 @@ pub struct PaneUuid(pub Vec<u8>);
 pub struct WindowSnapshot {
     pub screens: Vec<ProjectScreenSnapshot>,
     pub active_screen_index: usize,
-    pub team_uid: Option<ServerId>,
     pub bounds: Option<RectF>,
     pub fullscreen_state: FullscreenState,
     pub quake_mode: bool,

@@ -55,7 +55,6 @@ fn three_screen_snapshot() -> WindowSnapshot {
             },
         ],
         active_screen_index: 2,
-        team_uid: None,
         bounds: None,
         fullscreen_state: Default::default(),
         quake_mode: false,
