@@ -19,5 +19,3 @@ pub fn green_check_icon(appearance: &Appearance) -> warpui::elements::Icon {
         AnsiColorIdentifier::Green.to_ansi_color(&appearance.theme().terminal_colors().normal),
     )
 }
-
-

@@ -9,7 +9,6 @@ use futures::future::join_all;
 use itertools::Itertools;
 use warpui::{App, SingletonEntity};
 
-
 /// Clears the cloud model of all non-welcome objects in the user's personal space.
 /// Returns a future that resolves when the cloud model is cleared.
 pub fn clear_cloud_model(app: &mut App) -> Pin<Box<dyn Future<Output = ()> + Send>> {

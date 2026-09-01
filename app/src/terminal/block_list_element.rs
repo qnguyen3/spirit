@@ -133,7 +133,6 @@ const LINEAR_SCROLLING: ScrollingAcceleration = ScrollingAcceleration::Polynomia
 /// have a height that extends down to the bottom of the window when there's a horizontal scroll bar, which messes with the on-hover behavior.
 const BLOCK_HOVER_BUTTON_HEIGHT: f32 = 28.;
 
-
 enum ScrollingAcceleration {
     Polynomial(f32),
 }
@@ -1069,7 +1068,6 @@ impl BlockListElement {
             })
             .finish(),
         );
-
 
         self
     }

@@ -19,8 +19,7 @@ pub(super) mod network_log_pane;
 pub(super) mod settings_pane;
 pub(super) mod terminal_pane;
 pub mod view;
-pub 
-use std::any::Any;
+pub use std::any::Any;
 use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};

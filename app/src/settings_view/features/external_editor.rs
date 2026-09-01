@@ -1,4 +1,3 @@
-
 use settings::{Setting, ToggleableSetting};
 use warp_core::features::FeatureFlag;
 use warp_errors::report_if_error;
@@ -12,8 +11,7 @@ use crate::settings_view::settings_page::{
     AdditionalInfo, ToggleState, render_body_item, render_dropdown_item,
 };
 use crate::util::file::external_editor::settings::{
-    EditorChoice, EditorLayout,
-    PreferMarkdownViewer, PreferTabbedEditorView,
+    EditorChoice, EditorLayout, PreferMarkdownViewer, PreferTabbedEditorView,
 };
 use crate::util::file::external_editor::{EditorSettings, SUPPORTED_EDITORS};
 use crate::view_components::{Dropdown, DropdownItem};

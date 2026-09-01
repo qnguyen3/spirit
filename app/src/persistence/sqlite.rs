@@ -45,10 +45,9 @@ use super::{
 };
 use crate::app_state::{
     AppState, BranchSnapshot, CodePaneSnapShot, CodePaneTabSnapshot, CodeReviewPaneSnapshot,
-    LeafContents, LeafSnapshot, LeftPanelSnapshot,
-    NotebookPaneSnapshot, PaneFlex, PaneNodeSnapshot, ProjectScreenSnapshot, RightPanelSnapshot,
-    SettingsPaneSnapshot, SplitDirection, TabGroupSnapshot, TabSnapshot, TerminalPaneSnapshot,
-    WindowSnapshot,
+    LeafContents, LeafSnapshot, LeftPanelSnapshot, NotebookPaneSnapshot, PaneFlex,
+    PaneNodeSnapshot, ProjectScreenSnapshot, RightPanelSnapshot, SettingsPaneSnapshot,
+    SplitDirection, TabGroupSnapshot, TabSnapshot, TerminalPaneSnapshot, WindowSnapshot,
 };
 use crate::auth::UserUid;
 use crate::auth::auth_manager::PersistedCurrentUserInformation;
@@ -57,8 +56,7 @@ use crate::code::editor_management::CodeSource;
 use crate::persisted_workspace::EnablementState;
 use crate::persistence::block_list::get_all_restored_blocks;
 use crate::persistence::model::{
-    CODE_REVIEW_PANE_KIND, GET_STARTED_PANE_KIND, NewTeamSettings,
-    UserProfile,
+    CODE_REVIEW_PANE_KIND, GET_STARTED_PANE_KIND, NewTeamSettings, UserProfile,
 };
 use crate::projects::{Project, ProjectId, Worktree, WorktreeId};
 use crate::safe_info;
@@ -1747,9 +1745,11 @@ fn read_node(conn: &mut SqliteConnection, node: model::PaneNode) -> Result<PaneN
 
                     // Cloud notebooks are gone; only file-backed notebook panes restore.
                     match notebook_pane.local_path.map(decode_path) {
-                        Some(path) => LeafContents::Notebook(
-                            NotebookPaneSnapshot::LocalFileNotebook { path: Some(path) },
-                        ),
+                        Some(path) => {
+                            LeafContents::Notebook(NotebookPaneSnapshot::LocalFileNotebook {
+                                path: Some(path),
+                            })
+                        }
                         None => LeafContents::Terminal(TerminalPaneSnapshot {
                             uuid: Uuid::new_v4().as_bytes().to_vec(),
                             cwd: None,
@@ -1813,15 +1813,13 @@ fn read_node(conn: &mut SqliteConnection, node: model::PaneNode) -> Result<PaneN
                 | AMBIENT_AGENT_PANE_KIND
                 | EXECUTION_PROFILE_EDITOR_PANE_KIND
                 | WORKFLOW_PANE_KIND
-                | ENV_VAR_COLLECTION_PANE_KIND => {
-                    LeafContents::Terminal(TerminalPaneSnapshot {
-                        uuid: Uuid::new_v4().as_bytes().to_vec(),
-                        cwd: None,
-                        is_active: false,
-                        is_read_only: false,
-                        shell_launch_data: None,
-                    })
-                }
+                | ENV_VAR_COLLECTION_PANE_KIND => LeafContents::Terminal(TerminalPaneSnapshot {
+                    uuid: Uuid::new_v4().as_bytes().to_vec(),
+                    cwd: None,
+                    is_active: false,
+                    is_read_only: false,
+                    shell_launch_data: None,
+                }),
                 CODE_REVIEW_PANE_KIND => {
                     let code_review_pane = schema::code_review_panes::dsl::code_review_panes
                         .find(node.id)

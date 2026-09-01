@@ -31,11 +31,11 @@ pub fn initialize_settings_for_tests_with_mode(
     use crate::settings::manager::SettingsManager;
     use crate::settings::{
         AccessibilitySettings, AliasExpansionSettings, AppEditorSettings, BlockVisibilitySettings,
-        ChangelogSettings, CodeSettings, DebugSettings,
-        EmacsBindingsSettings, FontSettings, GPUSettings, InputModeSettings, InputSettings,
-        LocalControlSettings, NativePreferenceSettings, NewSessionSettings, PaneSettings,
-        SameLinePromptBlockSettings, ScrollSettings, SelectionSettings, SshSettings, ThemeSettings,
-        VimBannerSettings, init_and_register_user_preferences,
+        ChangelogSettings, CodeSettings, DebugSettings, EmacsBindingsSettings, FontSettings,
+        GPUSettings, InputModeSettings, InputSettings, LocalControlSettings,
+        NativePreferenceSettings, NewSessionSettings, PaneSettings, SameLinePromptBlockSettings,
+        ScrollSettings, SelectionSettings, SshSettings, ThemeSettings, VimBannerSettings,
+        init_and_register_user_preferences,
     };
     use crate::terminal::BlockListSettings;
     use crate::terminal::general_settings::GeneralSettings;

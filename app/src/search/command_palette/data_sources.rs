@@ -249,4 +249,3 @@ impl DataSourceStore {
 impl Entity for DataSourceStore {
     type Event = ();
 }
-

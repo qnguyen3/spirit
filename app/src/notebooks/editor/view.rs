@@ -2574,7 +2574,6 @@ impl RichTextEditorView {
             && !matches!(self.ongoing_mouse_state, OngoingMouseEvent::Selecting)
             && !self.is_block_insertion_menu_open()
     }
-
 }
 
 impl Entity for RichTextEditorView {

@@ -802,7 +802,9 @@ first command
 More text
 ```
 echo command
-```"#, &mut app);
+```"#,
+            &mut app,
+        );
         // Wait for layout and syntax highlighting, to reduce flakiness.
         finish_highlighting(&model_handle, 2, &mut Default::default(), &mut app).await;
         let clipboard_content = "pasteboard";
@@ -830,8 +832,8 @@ echo command
 fn test_markdown_block_conversion() {
     App::test((), |mut app| async move {
         initialize_deps(&mut app);
-        let editor = model_from_markdown(
-            "This is a list:\n1. First\n2. Second\n3. Third", &mut app);
+        let editor =
+            model_from_markdown("This is a list:\n1. First\n2. Second\n3. Third", &mut app);
 
         editor.update(&mut app, |editor, ctx| {
             assert_eq!(
@@ -861,8 +863,8 @@ fn test_markdown_block_conversion() {
 fn test_conversion_preserves_indent_level() {
     App::test((), |mut app| async move {
         initialize_deps(&mut app);
-        let editor = model_from_markdown(
-            "1. Level 1\n    1. Level 2\n        1. Level 3", &mut app);
+        let editor =
+            model_from_markdown("1. Level 1\n    1. Level 2\n        1. Level 3", &mut app);
         editor.update(&mut app, |editor, ctx| {
             assert_eq!(
                 editor.debug_buffer(ctx),
@@ -1071,8 +1073,7 @@ fn test_ordered_list_renumbering() {
 fn test_select_paragraph() {
     App::test((), |mut app| async move {
         initialize_deps(&mut app);
-        let editor = model_from_markdown(
-            "First line\nSecond line\n```\nCode block\n```", &mut app);
+        let editor = model_from_markdown("First line\nSecond line\n```\nCode block\n```", &mut app);
 
         // Select the second line of text.
         editor.update(&mut app, |editor, ctx| {
@@ -1124,8 +1125,7 @@ fn test_select_paragraph() {
 fn test_select_line_out_of_bounds() {
     App::test((), |mut app| async move {
         initialize_deps(&mut app);
-        let editor = model_from_markdown(
-            "First line\nSecond line\n```\nCode block\n```", &mut app);
+        let editor = model_from_markdown("First line\nSecond line\n```\nCode block\n```", &mut app);
 
         // Ensure there's an initial selection.
         editor.update(&mut app, |editor, ctx| editor.cursor_at(4.into(), ctx));
@@ -1159,8 +1159,7 @@ fn test_select_line_out_of_bounds() {
 fn test_select_line_in_block() {
     App::test((), |mut app| async move {
         initialize_deps(&mut app);
-        let editor = model_from_markdown(
-            "```\nFirst line\nSecond line\nThird line\n```", &mut app);
+        let editor = model_from_markdown("```\nFirst line\nSecond line\nThird line\n```", &mut app);
 
         // Select one of the code block lines.
         editor.update(&mut app, |editor, ctx| {
@@ -1492,7 +1491,9 @@ fn test_cursor_to_command_selection() {
 A command
 ```
 
-Text"#, &mut app);
+Text"#,
+            &mut app,
+        );
         layout_model(&mut app, &model_handle).await;
 
         model_handle.update(&mut app, |model, ctx| {
@@ -1523,7 +1524,9 @@ fn semantic_selection_clears_command_selection_and_opposite() {
 A command
 ```
 
-Text"#, &mut app);
+Text"#,
+            &mut app,
+        );
         layout_model(&mut app, &model_handle).await;
 
         model_handle.update(&mut app, |model, ctx| {
@@ -1559,7 +1562,9 @@ git checkout
 More text
 ```
 cargo run
-```"#, &mut app);
+```"#,
+            &mut app,
+        );
 
         finish_highlighting(&model_handle, 2, &mut seen_futures, &mut app).await;
         model_handle.update(&mut app, |model, ctx| {
@@ -1617,7 +1622,9 @@ git checkout
 a
 ```
 cargo run
-```"#, &mut app);
+```"#,
+            &mut app,
+        );
 
         finish_highlighting(&model_handle, 2, &mut seen_futures, &mut app).await;
         model_handle.update(&mut app, |model, ctx| {
@@ -1654,7 +1661,9 @@ First command
 More text
 ```
 Second command
-```"#, &mut app);
+```"#,
+            &mut app,
+        );
         layout_model(&mut app, &model_handle).await;
 
         // From the first line of text, we can't select a command above, but we can select a command below.
@@ -1715,7 +1724,9 @@ First command
 More text
 ```
 Second command
-```"#, &mut app);
+```"#,
+            &mut app,
+        );
         layout_model(&mut app, &model_handle).await;
 
         // Clearing command selections should put a cursor at the end of the selected command.
@@ -1751,7 +1762,9 @@ First command
 More text
 ```
 Second command
-```"#, &mut app);
+```"#,
+            &mut app,
+        );
         layout_model(&mut app, &model_handle).await;
 
         model_handle.update(&mut app, |model, ctx| {
@@ -1778,7 +1791,6 @@ Second command
         });
     });
 }
-
 
 #[test]
 fn test_toggle_style_at_cursor() {
@@ -2010,7 +2022,9 @@ fn test_backspace_with_command_selection() {
 ```
 command
 ```
-More text"#, &mut app);
+More text"#,
+            &mut app,
+        );
         // Ensure the code block is highlighted to prevent flakiness.
         finish_highlighting(&model_handle, 1, &mut highlighting_futures, &mut app).await;
 
@@ -2058,7 +2072,9 @@ fn test_delete_with_mermaid_command_selection() {
         let _flag = FeatureFlag::MarkdownMermaid.override_enabled(true);
         let _editable_flag = FeatureFlag::EditableMarkdownMermaid.override_enabled(true);
         let model_handle = model_from_markdown(
-            "Text\n```mermaid\ngraph TD\nA --> B\n```\nMore text", &mut app);
+            "Text\n```mermaid\ngraph TD\nA --> B\n```\nMore text",
+            &mut app,
+        );
         layout_model(&mut app, &model_handle).await;
 
         model_handle.update(&mut app, |model, ctx| {
@@ -2425,8 +2441,8 @@ fn test_cut_mermaid_code_block_uses_fenced_markdown_plain_text() {
         initialize_deps(&mut app);
         let _flag = FeatureFlag::MarkdownMermaid.override_enabled(true);
         let _editable_flag = FeatureFlag::EditableMarkdownMermaid.override_enabled(true);
-        let model_handle = model_from_markdown(
-            "Text\n```mermaid\ngraph TD\nA --> B\n```\n* List", &mut app);
+        let model_handle =
+            model_from_markdown("Text\n```mermaid\ngraph TD\nA --> B\n```\n* List", &mut app);
         layout_model(&mut app, &model_handle).await;
 
         model_handle.update(&mut app, |model, ctx| {
@@ -2461,8 +2477,8 @@ fn test_copy_mermaid_code_block_adds_html_without_image_clipboard_data() {
         initialize_deps(&mut app);
         let _flag = FeatureFlag::MarkdownMermaid.override_enabled(true);
         let _editable_flag = FeatureFlag::EditableMarkdownMermaid.override_enabled(true);
-        let model_handle = model_from_markdown(
-            "Text\n```mermaid\ngraph TD\nA --> B\n```\n* List", &mut app);
+        let model_handle =
+            model_from_markdown("Text\n```mermaid\ngraph TD\nA --> B\n```\n* List", &mut app);
         layout_model(&mut app, &model_handle).await;
 
         model_handle.update(&mut app, |model, ctx| {
@@ -2495,8 +2511,7 @@ fn test_copy_selection_with_markdown_image_omits_image_clipboard_data() {
     App::test((), |mut app| async move {
         initialize_deps(&mut app);
 
-        let model_handle =
-            model_from_markdown("Before\n![Alt text](diagram.png)\nAfter", &mut app);
+        let model_handle = model_from_markdown("Before\n![Alt text](diagram.png)\nAfter", &mut app);
         layout_model(&mut app, &model_handle).await;
 
         model_handle.update(&mut app, |model, ctx| {
@@ -2707,8 +2722,8 @@ fn test_insert_block_after_single_cursor() {
 fn test_multiselect_markdown_block_conversion() {
     App::test((), |mut app| async move {
         initialize_deps(&mut app);
-        let editor = model_from_markdown(
-            "This is a list:\n1. First\n2. Second\n3. Third", &mut app);
+        let editor =
+            model_from_markdown("This is a list:\n1. First\n2. Second\n3. Third", &mut app);
 
         editor.update(&mut app, |editor, ctx| {
             assert_eq!(
@@ -2740,8 +2755,8 @@ fn test_multiselect_markdown_block_conversion() {
 fn test_multiselect_inline_markdown() {
     App::test((), |mut app| async move {
         initialize_deps(&mut app);
-        let editor = model_from_markdown(
-            "This is a list:\n1. First\n2. Second\n3. Third", &mut app);
+        let editor =
+            model_from_markdown("This is a list:\n1. First\n2. Second\n3. Third", &mut app);
 
         editor.update(&mut app, |editor, ctx| {
             assert_eq!(
@@ -2774,7 +2789,9 @@ fn test_multiselect_pasting() {
     App::test((), |mut app| async move {
         initialize_deps(&mut app);
         let editor = model_from_markdown(
-            "First text\nSecond line\nThird line\n```\ncode\n```", &mut app);
+            "First text\nSecond line\nThird line\n```\ncode\n```",
+            &mut app,
+        );
         finish_highlighting(&editor, 1, &mut HashSet::new(), &mut app).await;
 
         editor.update(&mut app, |editor, ctx| {

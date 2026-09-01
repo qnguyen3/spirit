@@ -24,13 +24,10 @@ use warpui::{
 };
 
 use super::settings_page::{
-    HEADER_PADDING, MatchData, PageTitle, PageType,
-    SettingsPageMeta, SettingsPageViewHandle, SettingsWidget,
-    render_customer_type_badge,
+    HEADER_PADDING, MatchData, PageTitle, PageType, SettingsPageMeta, SettingsPageViewHandle,
+    SettingsWidget, render_customer_type_badge,
 };
-use super::{
-    SettingsSection, plan_header_presentation,
-};
+use super::{SettingsSection, plan_header_presentation};
 use crate::appearance::Appearance;
 use crate::auth::auth_manager::{AuthManager, LoginGatedFeature};
 use crate::auth::auth_state::AuthState;
@@ -47,7 +44,6 @@ const PHOTO_SIZE: f32 = 40.;
 const REGULAR_TEXT_FONT_SIZE: f32 = 12.;
 const VERTICAL_MARGIN: f32 = 24.;
 const LOG_OUT_TEXT: &str = "Log out";
-
 
 #[derive(Debug, Clone)]
 pub enum MainPageAction {

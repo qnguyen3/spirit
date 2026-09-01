@@ -99,9 +99,8 @@ impl View for ZeroState {
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
-        let mut flex = Flex::column().with_child(
-            self.render_filter_chips(appearance, Self::valid_query_filters()),
-        );
+        let mut flex = Flex::column()
+            .with_child(self.render_filter_chips(appearance, Self::valid_query_filters()));
 
         let zero_state_items = self.items.as_ref(app).render(app);
         flex.add_child(Shrinkable::new(1., zero_state_items).finish());

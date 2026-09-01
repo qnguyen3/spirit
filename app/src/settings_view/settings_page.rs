@@ -574,13 +574,7 @@ pub fn render_body_item<T: Clone + Action>(
     description_text: Option<String>,
 ) -> Box<dyn Element> {
     build_toggle_element(
-        render_body_item_label(
-            label_text,
-            None,
-            additional_info,
-                toggle_state,
-            appearance,
-        ),
+        render_body_item_label(label_text, None, additional_info, toggle_state, appearance),
         child_element,
         appearance,
         description_text,
@@ -1271,7 +1265,6 @@ impl<V: warpui::View> PageType<V> {
             }
         }
     }
-
 
     /// Apply the filter we saved from the last matching of the search query to return only the
     /// relevant results.

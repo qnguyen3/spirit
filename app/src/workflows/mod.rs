@@ -1,4 +1,3 @@
-
 use serde::{Deserialize, Serialize};
 use warpui::AppContext;
 
@@ -88,7 +87,4 @@ impl WorkflowType {
             WorkflowType::Notebook(workflow) => workflow,
         }
     }
-
 }
-
-

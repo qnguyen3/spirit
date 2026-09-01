@@ -3,6 +3,7 @@ use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use cloud_objects::cloud_object::CloudObjectEventEntrypoint;
 use email_address::EmailAddress;
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -35,6 +36,10 @@ use warpui::{
 
 use super::SettingsSection;
 use super::admin_actions::AdminActions;
+use super::cloud_action_confirmation_dialog::{
+    CloudActionConfirmationDialog, CloudActionConfirmationDialogEvent,
+    CloudActionConfirmationDialogVariant,
+};
 use super::settings_page::{
     MatchData, PageType, SettingsPageMeta, SettingsPageViewHandle, SettingsWidget, render_banner,
     render_cta_banner, render_customer_type_badge, render_separator, render_sub_header,
@@ -62,12 +67,6 @@ use crate::view_components::{
 };
 use crate::word_block_editor::{ChipEditorState, WordBlockEditorView, WordBlockEditorViewEvent};
 use crate::workspaces::team::{DiscoverableTeam, MembershipRole, Team, TeamDeleteDisabledReason};
-use cloud_objects::cloud_object::CloudObjectEventEntrypoint;
-
-use super::cloud_action_confirmation_dialog::{
-    CloudActionConfirmationDialog, CloudActionConfirmationDialogEvent,
-    CloudActionConfirmationDialogVariant,
-};
 use crate::workspaces::update_manager::{TeamUpdateManager, TeamUpdateManagerEvent};
 use crate::workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent};
 use crate::workspaces::workspace::{BillingMetadata, CustomerType, DelinquencyStatus, Workspace};

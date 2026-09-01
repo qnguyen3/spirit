@@ -108,7 +108,6 @@ impl PersistedDataScope {
     fn user_profiles(self) -> bool {
         self != PersistedDataScope::CodebaseIndicesOnly
     }
-
 }
 
 /// Initializes the persistence "subsystem".

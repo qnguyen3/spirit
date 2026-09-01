@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Result;
+use cloud_objects::cloud_object::{CloudObjectEventEntrypoint, Owner};
 use warp_core::settings::ChangeEventReason;
 use warp_errors::report_error;
 use warpui::{
@@ -20,8 +21,6 @@ use super::workspace::{
     AdminEnablementSetting, EnterpriseSecretRegex, UgcCollectionEnablementSetting, Workspace,
     WorkspaceUid,
 };
-use cloud_objects::cloud_object::{CloudObjectEventEntrypoint, Owner};
-
 use crate::auth::{AuthStateProvider, UserUid};
 use crate::channel::ChannelState;
 use crate::server::ids::ServerId;

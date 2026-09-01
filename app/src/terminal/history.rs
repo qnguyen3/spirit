@@ -12,9 +12,9 @@ use super::model::block::{Block, SerializedBlock};
 use super::shell::ShellType;
 use crate::terminal::model::session::{Session, SessionId};
 use crate::util::dedupe_from_last;
+use crate::workflows::WorkflowType;
 use crate::workflows::local_workflows::LocalWorkflows;
 use crate::workflows::workflow::Workflow;
-use crate::workflows::WorkflowType;
 
 mod up_arrow;
 pub use up_arrow::UpArrowHistoryConfig;

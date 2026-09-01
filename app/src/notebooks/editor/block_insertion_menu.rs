@@ -1,4 +1,3 @@
-
 use serde::{Deserialize, Serialize};
 use warp_editor::content::text::BufferBlockItem;
 use warpui::elements::{

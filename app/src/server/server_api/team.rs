@@ -1,5 +1,6 @@
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
+use cloud_objects::cloud_object::CloudObjectEventEntrypoint;
 use cynic::{MutationBuilder, QueryBuilder};
 #[cfg(test)]
 use mockall::{automock, predicate::*};
@@ -59,8 +60,6 @@ use warp_graphql::queries::get_workspaces_metadata_for_user::{
 
 use super::ServerApi;
 use crate::auth::UserUid;
-use cloud_objects::cloud_object::CloudObjectEventEntrypoint;
-
 use crate::server::graphql::{get_request_context, get_user_facing_error_message};
 use crate::server::ids::ServerId;
 use crate::workspaces::team::{DiscoverableTeam, MembershipRole};

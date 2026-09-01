@@ -53,7 +53,6 @@ pub enum OpenSettingsArgs {
     },
 }
 
-
 /// Query parameter the web checkout confirmation page appends to the desktop
 /// hand-off to report that the purchase went through. It is the shared
 /// convention across every product the web can sell (a subscription plan or a

@@ -415,15 +415,12 @@ impl AuthViewBody {
             ..hover_button_style
         };
 
-        let on_click_action = if is_anonymous
-            && matches!(
-                self.variant,
-                AuthViewVariant::RequireLoginCloseable
-            ) {
-            AuthViewBodyAction::SignupAnonymousUser
-        } else {
-            AuthViewBodyAction::Signup
-        };
+        let on_click_action =
+            if is_anonymous && matches!(self.variant, AuthViewVariant::RequireLoginCloseable) {
+                AuthViewBodyAction::SignupAnonymousUser
+            } else {
+                AuthViewBodyAction::Signup
+            };
 
         ui_builder
             .button_with_custom_styles(
@@ -608,10 +605,7 @@ impl AuthViewBody {
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
             .with_child(logo);
 
-        if matches!(
-            self.variant,
-            AuthViewVariant::RequireLoginCloseable
-        ) {
+        if matches!(self.variant, AuthViewVariant::RequireLoginCloseable) {
             let close_button = ui_builder
                 .close_button(
                     24.,

@@ -456,7 +456,6 @@ where
         ctx.notify();
     }
 
-
     pub fn set_top_bar_max_width(&mut self, max_width: f32) {
         self.top_bar_max_width = max_width;
     }

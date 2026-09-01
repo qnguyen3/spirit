@@ -4113,10 +4113,9 @@ impl TypedPane<'_> {
                 .as_ref(app)
                 .contains_unsaved_changes(app)
                 .then(|| "Unsaved".to_string()),
-            TypedPane::Terminal(_)
-            | TypedPane::File
-            | TypedPane::Settings
-            | TypedPane::Other => None,
+            TypedPane::Terminal(_) | TypedPane::File | TypedPane::Settings | TypedPane::Other => {
+                None
+            }
         }
     }
 
@@ -4390,10 +4389,7 @@ impl<'a> PaneProps<'a> {
                 self.display_title_override.as_deref(),
                 app,
             ),
-            TypedPane::Code(_)
-            | TypedPane::File
-            | TypedPane::Settings
-            | TypedPane::Other => {
+            TypedPane::Code(_) | TypedPane::File | TypedPane::Settings | TypedPane::Other => {
                 non_terminal_search_text_fragments(self.generated_or_tab_title(), &self.subtitle)
             }
         };

@@ -18,10 +18,7 @@ use super::settings_page::{
     MatchData, PageTitle, PageType, SettingsPageMeta, SettingsPageViewHandle, SettingsWidget,
     render_body_item, render_dropdown_item,
 };
-use super::{
-    SettingsAction, SettingsSection, ToggleSettingActionPair, ToggleState,
-    flags,
-};
+use super::{SettingsAction, SettingsSection, ToggleSettingActionPair, ToggleState, flags};
 use crate::appearance::Appearance;
 use crate::settings::{AppEditorSettings, CodeEditorLineNumberMode, CodeSettings};
 use crate::terminal::general_settings::GeneralSettings;

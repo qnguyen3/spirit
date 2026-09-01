@@ -33,10 +33,9 @@ use warpui::{
 
 use super::directory_color_add_picker::{DirectoryColorAddPicker, DirectoryColorAddPickerEvent};
 use super::settings_page::{
-    AdditionalInfo, CONTENT_FONT_SIZE, Category, HEADER_PADDING, MatchData,
-    PageType, SettingsPageEvent, SettingsPageMeta, SettingsPageViewHandle, SettingsWidget,
-    ToggleState, build_reset_button, render_body_item, render_body_item_label,
-    render_dropdown_item,
+    AdditionalInfo, CONTENT_FONT_SIZE, Category, HEADER_PADDING, MatchData, PageType,
+    SettingsPageEvent, SettingsPageMeta, SettingsPageViewHandle, SettingsWidget, ToggleState,
+    build_reset_button, render_body_item, render_body_item_label, render_dropdown_item,
 };
 use super::{SettingsAction, SettingsSection, ToggleSettingActionPair, flags};
 use crate::appearance::{Appearance, AppearanceEvent};
@@ -53,11 +52,10 @@ use crate::gpu_state::{GPUState, GPUStateEvent};
 use crate::prompt::editor_modal::OpenSource as PromptEditorOpenSource;
 use crate::settings::app_icon::{AppIcon, AppIconSettings};
 use crate::settings::{
-    AppEditorSettings, CodeSettings, CursorBlink, CursorDisplayType,
-    DEFAULT_MONOSPACE_FONT_NAME, EnforceMinimumContrast, FontSettings,
-    FontSettingsChangedEvent, GPUSettings, InputBoxType, InputModeSettings,
-    InputSettings, InputSettingsChangedEvent, MonospaceFontName, PaneSettings, ThemeSettings, active_theme_kind,
-    respect_system_theme,
+    AppEditorSettings, CodeSettings, CursorBlink, CursorDisplayType, DEFAULT_MONOSPACE_FONT_NAME,
+    EnforceMinimumContrast, FontSettings, FontSettingsChangedEvent, GPUSettings, InputBoxType,
+    InputModeSettings, InputSettings, InputSettingsChangedEvent, MonospaceFontName, PaneSettings,
+    ThemeSettings, active_theme_kind, respect_system_theme,
 };
 use crate::terminal::block_list_viewport::InputMode;
 use crate::terminal::blockgrid_element::BlockGridElement;
@@ -65,12 +63,8 @@ use crate::terminal::ligature_settings::LigatureSettings;
 use crate::terminal::model::ObfuscateSecrets;
 use crate::terminal::model::blockgrid::BlockGrid;
 use crate::terminal::session_settings::SessionSettings;
-use crate::terminal::settings::{
-    AltScreenPaddingMode, SpacingMode, TerminalSettings,
-};
-use crate::terminal::{
-    BlockListSettings, SizeInfo,
-};
+use crate::terminal::settings::{AltScreenPaddingMode, SpacingMode, TerminalSettings};
+use crate::terminal::{BlockListSettings, SizeInfo};
 use crate::themes;
 use crate::themes::theme::{self, RespectSystemTheme, SelectedSystemThemes, ThemeKind, WarpTheme};
 use crate::themes::theme_chooser::ThemeChooserMode;
@@ -86,8 +80,8 @@ use crate::window_settings::{
 use crate::workspace::WorkspaceAction;
 use crate::workspace::header_toolbar_editor::HeaderToolbarInlineEditor;
 use crate::workspace::tab_settings::{
-    DirectoryTabColor, TabCloseButtonPosition,
-    TabSettings, TabSettingsChangedEvent, WorkspaceDecorationVisibility, canonical_directory_key,
+    DirectoryTabColor, TabCloseButtonPosition, TabSettings, TabSettingsChangedEvent,
+    WorkspaceDecorationVisibility, canonical_directory_key,
 };
 
 const FONT_SIZE_INPUT_BOX_WIDTH: f32 = 80.;

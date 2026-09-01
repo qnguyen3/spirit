@@ -4811,7 +4811,6 @@ impl Input {
         self.completions_abort_handle = Some(abort_handle);
     }
 
-
     fn path_separators(&self, ctx: &AppContext) -> PathSeparators {
         self.active_session(ctx)
             .map(|session| session.path_separators())

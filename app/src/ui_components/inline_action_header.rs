@@ -4,7 +4,8 @@ use pathfinder_color::ColorU;
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::color::internal_colors;
 use warpui::elements::{
-    Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Expanded, Flex, FormattedTextElement, MainAxisAlignment, MainAxisSize, ParentElement, Radius, Shrinkable, Text,
+    Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Expanded, Flex,
+    FormattedTextElement, MainAxisAlignment, MainAxisSize, ParentElement, Radius, Shrinkable, Text,
 };
 use warpui::fonts::FamilyId;
 use warpui::{AppContext, Element, SingletonEntity};
@@ -16,7 +17,6 @@ use crate::ui_components::inline_action_icons::icon_size;
 pub const INLINE_ACTION_HORIZONTAL_PADDING: f32 = 16.;
 pub const INLINE_ACTION_HEADER_VERTICAL_PADDING: f32 = 10.;
 pub const ICON_MARGIN: f32 = 8.;
-
 
 #[derive(Clone)]
 pub struct HeaderConfig {
@@ -161,5 +161,4 @@ impl HeaderConfig {
             )
             .finish()
     }
-
 }

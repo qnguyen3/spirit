@@ -266,9 +266,7 @@ fn realistic_nav_items() -> Vec<SettingsNavItem> {
         )),
         SettingsNavItem::Umbrella(SettingsUmbrella::new(
             "Cloud platform",
-            vec![
-                SettingsSection::WarpCloudAgentAPIKeys,
-            ],
+            vec![SettingsSection::WarpCloudAgentAPIKeys],
         )),
         SettingsNavItem::Page(SettingsSection::Teams),
     ]

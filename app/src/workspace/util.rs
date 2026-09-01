@@ -112,9 +112,7 @@ pub struct WorkspaceState {
 
 impl WorkspaceState {
     pub fn is_any_non_terminal_view_open(&self) -> bool {
-        self.is_any_modal_open()
-            || self.is_theme_chooser_open
-            || self.is_ai_assistant_panel_open
+        self.is_any_modal_open() || self.is_theme_chooser_open || self.is_ai_assistant_panel_open
     }
 
     pub fn is_any_non_palette_modal_open(&self) -> bool {

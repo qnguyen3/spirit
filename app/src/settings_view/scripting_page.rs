@@ -12,8 +12,8 @@ use warpui::ui_components::components::UiComponent;
 use warpui::{AppContext, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle};
 
 use super::settings_page::{
-    MatchData, PageTitle, PageType, SettingsPageMeta, SettingsPageViewHandle,
-    SettingsWidget, render_body_item,
+    MatchData, PageTitle, PageType, SettingsPageMeta, SettingsPageViewHandle, SettingsWidget,
+    render_body_item,
 };
 use super::{SettingsSection, ToggleState};
 use crate::appearance::Appearance;

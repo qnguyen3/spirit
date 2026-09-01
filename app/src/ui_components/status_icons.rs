@@ -43,7 +43,6 @@ pub fn yellow_stop_icon(appearance: &Appearance) -> warpui::elements::Icon {
     )
 }
 
-
 #[derive(Clone, Copy)]
 pub enum StatusColorStyle {
     /// Foreground-blend colors (`ansi_fg`) used by the regular status badge.

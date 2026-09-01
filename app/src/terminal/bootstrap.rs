@@ -11,7 +11,6 @@ use super::{
     warpify::settings::{PIPENV_SUBSHELL_COMMAND_REGEX, POETRY_SUBSHELL_COMMAND_REGEX},
 };
 use crate::terminal::session_settings::SessionSettings;
-
 use crate::terminal::shell::ShellType;
 
 #[cfg(feature = "local_fs")]

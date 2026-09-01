@@ -30,4 +30,3 @@ pub const OUT_OF_BAND_REQUEST_RETRY_STRATEGY: RetryOption = RetryOption::exponen
     3,                          /* max retry count */
 )
 .with_jitter(0.5 /* max_jitter_percentage */);
-

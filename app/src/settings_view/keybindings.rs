@@ -20,8 +20,8 @@ use warpui::{
 
 use super::SettingsSection;
 use super::settings_page::{
-    MatchData, PageType, SettingsPageMeta, SettingsPageViewHandle,
-    SettingsWidget, render_sub_header,
+    MatchData, PageType, SettingsPageMeta, SettingsPageViewHandle, SettingsWidget,
+    render_sub_header,
 };
 use crate::appearance::Appearance;
 use crate::editor::{

@@ -499,7 +499,6 @@ impl AuthManager {
         };
     }
 
-
     pub fn initiate_anonymous_user_linking(&self, ctx: &mut ModelContext<Self>) {
         let auth_client = self.auth_client.clone();
         let _ = ctx.spawn(

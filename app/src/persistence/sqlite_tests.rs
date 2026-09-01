@@ -18,9 +18,7 @@ use crate::app_state::{
 };
 use crate::auth::UserUid;
 use crate::code::editor_management::CodeSource;
-use crate::persistence::model::{
-    Project as ProjectRow, ProjectWorktree as WorktreeRow,
-};
+use crate::persistence::model::{Project as ProjectRow, ProjectWorktree as WorktreeRow};
 use crate::persistence::{BlockCompleted, ModelEvent, PersistedDataScope, PersistenceScope};
 use crate::projects::{Project, ProjectId, ProjectKind, Worktree, WorktreeId, WorktreeKind};
 use crate::server::ids::ServerId;

@@ -9,7 +9,6 @@ use itertools::Itertools as _;
 
 use super::shared::shell_escape_single_quotes;
 use super::{CommandExecutor, CommandOutput, ExecuteCommandOptions};
-
 use crate::terminal::shell::{Shell, serialize_variables_for_shell};
 
 /// `CommandExecutor` implementation that executes the given `command` in a forked process

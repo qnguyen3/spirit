@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::sync::mpsc::SyncSender;
 
 use anyhow::{Context, Result};
+use cloud_objects::cloud_object::CloudObjectEventEntrypoint;
 use futures::channel::oneshot::{self, Receiver};
 use futures::stream::AbortHandle;
 use warp_errors::{report_error, report_if_error};
@@ -16,8 +17,6 @@ use super::user_workspaces::{
 };
 use super::workspace::WorkspaceUid;
 use crate::auth::AuthStateProvider;
-use cloud_objects::cloud_object::CloudObjectEventEntrypoint;
-
 use crate::network::{NetworkStatus, NetworkStatusEvent, NetworkStatusKind};
 use crate::persistence::ModelEvent;
 use crate::server::ids::ServerId;
