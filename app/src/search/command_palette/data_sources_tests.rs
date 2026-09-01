@@ -13,7 +13,6 @@ use super::*;
 use crate::auth::{AuthStateProvider, UserUid};
 use crate::features::FeatureFlag;
 use crate::network::NetworkStatus;
-use crate::notebooks::manager::NotebookManager;
 use crate::notebooks::{CloudNotebookModel, NotebookId};
 use crate::search::data_source::Query;
 use crate::server::ids::SyncId::{self};

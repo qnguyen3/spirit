@@ -30,7 +30,6 @@ use crate::editor::{
 };
 use crate::keyboard::{UserDefinedKeybinding, write_custom_keybinding};
 use crate::search_bar::SearchBar;
-use crate::settings::CloudPreferencesSettings;
 use crate::themes;
 use crate::util::bindings::{
     CommandBinding, filter_bindings_including_keystroke, reset_keybinding_to_default,

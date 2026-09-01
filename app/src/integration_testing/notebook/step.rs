@@ -7,7 +7,6 @@ use warpui::windowing::WindowManager;
 use warpui::{App, SingletonEntity, ViewHandle, WindowId, async_assert};
 
 use crate::integration_testing::view_getters::{notebook_view, workspace_view};
-use crate::notebooks::manager::NotebookSource;
 use crate::server::ids::{ClientId, SyncId};
 use crate::workspaces::user_workspaces::UserWorkspaces;
 

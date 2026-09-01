@@ -7,7 +7,6 @@ use super::open_workflow_count;
 use crate::integration_testing::view_getters::workspace_view;
 use crate::server::ids::{ClientId, SyncId};
 use crate::workflows::WorkflowViewMode;
-use crate::workflows::manager::WorkflowOpenSource;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 
 /// Create a personal workflow and save its sync ID into the step data.

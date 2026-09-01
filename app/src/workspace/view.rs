@@ -163,7 +163,6 @@ use crate::menu::{
 use crate::modal::{Modal, ModalEvent, ModalViewState};
 use crate::network::{NetworkStatus, NetworkStatusEvent};
 use crate::notebooks::CloudNotebook;
-use crate::notebooks::manager::{NotebookManager, NotebookSource};
 use crate::notification::NotificationContext;
 use crate::palette::{PaletteMode, PaletteSource};
 use crate::pane_group::pane::ActionOrigin;
@@ -214,7 +213,6 @@ use crate::settings::{
     MonospaceFontSize, NewSessionSettings, PaneSettings, PrivacySettings, SelectionSettings,
     Settings, SshSettings, ThemeSettings, active_theme_kind, respect_system_theme,
 };
-use crate::settings_view::environments_page::EnvironmentsPage;
 use crate::settings_view::keybindings::{KeybindingChangedEvent, KeybindingChangedNotifier};
 use crate::settings_view::pane_manager::SettingsPaneManager;
 use crate::settings_view::{SettingsSection, SettingsView, SettingsViewEvent, flags};
@@ -312,7 +310,6 @@ use crate::view_components::callout_bubble::{
 };
 use crate::view_components::{DismissibleToast, DismissibleToastStack, ToastLink};
 use crate::window_settings::{WindowSettings, WindowSettingsChangedEvent, ZoomLevel};
-use crate::workflows::manager::{WorkflowManager, WorkflowOpenSource};
 use crate::workflows::workflow::Workflow;
 use crate::workflows::{CloudWorkflow, WorkflowSelectionSource, WorkflowType, WorkflowViewMode};
 use crate::workspace::action::CommandSearchOptions;

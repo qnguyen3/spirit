@@ -27,13 +27,11 @@ use warpui::modals::{AlertDialogWithCallbacks, ModalButton};
 use warpui::{AppContext, SingletonEntity};
 
 use crate::code::editor_management::{CodeEditorStatus, CodeEditorSummary};
-use crate::notebooks::manager::NotebookManager;
 use crate::palette::{PaletteMode, PaletteSource};
 use crate::root_view::RootView;
 use crate::session_management::{RunningSessionSummary, SessionNavigationData};
 use crate::settings::{CloudPreferencesSettings, PrivacySettings};
 use crate::terminal::general_settings::GeneralSettings;
-use crate::workflows::manager::WorkflowManager;
 use crate::workspace::{Workspace, WorkspaceAction};
 use crate::workspaces::update_manager::TeamUpdateManager;
 use crate::{

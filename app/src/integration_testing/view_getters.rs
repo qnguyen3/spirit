@@ -21,7 +21,6 @@ use crate::terminal::input::Input;
 use crate::themes::theme_chooser::ThemeChooser;
 use crate::view_components::find::{Find, FindEvent, FindModel};
 use crate::workflows::CategoriesView;
-use crate::workflows::workflow_view::WorkflowView;
 use crate::workspace::Workspace;
 
 /// This identifier is useful when you'd like to weakly identify a terminal view

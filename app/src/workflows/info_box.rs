@@ -27,7 +27,6 @@ use super::command_parser::{
     WorkflowArgumentIndex, WorkflowDisplayData, compute_workflow_display_data,
 };
 use super::workflow::Argument;
-use super::workflow_view::env_var_selector::{EnvVarSelector, EnvVarSelectorEvent};
 use crate::appearance::Appearance;
 use crate::server::ids::SyncId;
 use crate::settings::InputModeSettings;

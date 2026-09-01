@@ -22,7 +22,6 @@ use crate::context_chips::prompt::Prompt;
 use crate::launch_configs::launch_config::PaneMode;
 use crate::network::NetworkStatus;
 use crate::notebooks::editor::keys::NotebookKeybindings;
-use crate::notebooks::manager::NotebookManager;
 use crate::notebooks::notebook::NotebookView;
 use crate::persisted_workspace::PersistedWorkspace;
 use crate::resource_center::TipsCompleted;
