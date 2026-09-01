@@ -194,7 +194,7 @@ use crate::workflows::info_box::{
 };
 use crate::workflows::local_workflows::LocalWorkflows;
 use crate::workflows::workflow_enum::EnumVariants;
-use crate::workflows::{self, WorkflowSelectionSource, WorkflowSource, WorkflowType};
+use crate::workflows::{self, WorkflowSelectionSource, WorkflowType};
 use crate::workspace::sync_inputs::SyncedInputState;
 use crate::workspace::{CommandSearchOptions, InitContent, ToastStack, WorkspaceAction};
 use crate::workspaces::user_workspaces::UserWorkspaces;
@@ -751,7 +751,6 @@ struct SelectedWorkflowState {
     /// Map of arguments with enum variants to those variants, which are used as suggested inputs to the argument.
     argument_index_to_enum_variants: HashMap<WorkflowArgumentIndex, EnumVariants>,
 
-    workflow_source: WorkflowSource,
     workflow_type: WorkflowType,
     workflow_selection_source: WorkflowSelectionSource,
 
@@ -1799,7 +1798,7 @@ impl Input {
                 command,
                 linked_workflow_data,
             } => {
-                if let Some((workflow_type, workflow_source)) = linked_workflow_data
+                if let Some(workflow_type) = linked_workflow_data
                     .as_ref()
                     .and_then(|linked_workflow_data| linked_workflow_data.linked_workflow(ctx))
                 {
@@ -1808,7 +1807,6 @@ impl Input {
                     let env_vars = workflow_type.as_workflow().default_env_vars();
                     self.insert_workflow_into_input(
                         workflow_type,
-                        workflow_source,
                         WorkflowSelectionSource::UpArrowHistory,
                         None,
                         Some(command),
@@ -2596,13 +2594,9 @@ impl Input {
                 self.focus_input_box(ctx);
                 self.close_voltron(ctx);
             }
-            workflows::CategoriesViewEvent::WorkflowSelected {
-                workflow,
-                workflow_source,
-            } => {
+            workflows::CategoriesViewEvent::WorkflowSelected { workflow } => {
                 self.show_workflows_info_box_on_workflow_selection(
                     *workflow.clone(),
-                    *workflow_source,
                     WorkflowSelectionSource::Voltron,
                     None,
                     ctx,
@@ -2639,7 +2633,6 @@ impl Input {
     pub fn show_workflows_info_box_on_workflow_selection(
         &mut self,
         workflow_type: WorkflowType,
-        workflow_source: WorkflowSource,
         workflow_selection_source: WorkflowSelectionSource,
         argument_override: Option<HashMap<String, String>>,
         ctx: &mut ViewContext<Input>,
@@ -2647,7 +2640,6 @@ impl Input {
         let env_vars = workflow_type.as_workflow().default_env_vars();
         self.insert_workflow_into_input(
             workflow_type,
-            workflow_source,
             workflow_selection_source,
             argument_override,
             None,
@@ -2661,14 +2653,12 @@ impl Input {
         &mut self,
         history_command: &str,
         workflow_type: WorkflowType,
-        workflow_source: WorkflowSource,
         workflow_selection_source: WorkflowSelectionSource,
         ctx: &mut ViewContext<Input>,
     ) {
         let env_vars = workflow_type.as_workflow().default_env_vars();
         self.insert_workflow_into_input(
             workflow_type,
-            workflow_source,
             workflow_selection_source,
             None,
             Some(history_command),
@@ -2711,7 +2701,6 @@ impl Input {
     fn insert_workflow_into_input(
         &mut self,
         workflow_type: WorkflowType,
-        workflow_source: WorkflowSource,
         workflow_selection_source: WorkflowSelectionSource,
         argument_overrides: Option<HashMap<String, String>>,
         history_command: Option<&str>,
@@ -2819,7 +2808,6 @@ impl Input {
                     ),
                     argument_index_to_highlight_index: argument_index_to_highlight_index_map,
                     argument_index_to_enum_variants: enum_variants_map,
-                    workflow_source,
                     workflow_type,
                     workflow_selection_source,
                     should_show_more_info_view,
@@ -2842,7 +2830,6 @@ impl Input {
                     ),
                     argument_index_to_highlight_index: HashMap::new(),
                     argument_index_to_enum_variants: HashMap::new(),
-                    workflow_source,
                     workflow_type,
                     workflow_selection_source,
                     should_show_more_info_view,
@@ -3201,18 +3188,18 @@ impl Input {
                 let mode = self.suggestions_mode_model.as_ref(ctx).mode().clone();
                 match &mode {
                     InputSuggestionsMode::HistoryUp { .. } => {
-                        if let Some((workflow_type, workflow_source)) = selected_item
-                            .linked_workflow_data()
-                            .and_then(|linked_workflow_data| {
-                                linked_workflow_data.linked_workflow(ctx)
-                            })
+                        if let Some(workflow_type) =
+                            selected_item
+                                .linked_workflow_data()
+                                .and_then(|linked_workflow_data| {
+                                    linked_workflow_data.linked_workflow(ctx)
+                                })
                         {
                             // TODO(ben): We should include the chosen env vars in the history
                             // entry.
                             let env_vars = workflow_type.as_workflow().default_env_vars();
                             self.insert_workflow_into_input(
                                 workflow_type,
-                                workflow_source,
                                 WorkflowSelectionSource::UpArrowHistory,
                                 None,
                                 Some(selected_item.text()),
@@ -3310,7 +3297,6 @@ impl Input {
         if let Some(state) = self.workflows_state.selected_workflow_state.take() {
             self.insert_workflow_into_input(
                 state.workflow_type,
-                state.workflow_source,
                 state.workflow_selection_source,
                 None,
                 None,
@@ -5911,14 +5897,11 @@ impl Input {
                 if let Some(alias) = WorkflowAliases::as_ref(ctx).match_alias(&command_string) {
                     if let Some(workflow) = CloudModel::as_ref(ctx).get_workflow(&alias.workflow_id)
                     {
-                        let owner = workflow.clone().permissions.owner.into();
-
                         let workflow_type = WorkflowType::Cloud(Box::new(workflow.clone()));
                         let env_vars = alias.env_vars.or(workflow.model().data.default_env_vars());
 
                         self.insert_workflow_into_input(
                             workflow_type,
-                            owner,
                             WorkflowSelectionSource::Alias,
                             alias.arguments,
                             None,

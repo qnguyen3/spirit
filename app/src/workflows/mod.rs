@@ -50,14 +50,8 @@ pub enum WorkflowSource {
     Global,
     Local,
     Project,
-    Team {
-        team_uid: ServerId,
-    },
-    PersonalCloud,
-    WarpAI,
     Notebook {
         notebook_id: Option<NotebookId>,
-        team_uid: Option<ServerId>,
         location: NotebookLocation,
     },
 

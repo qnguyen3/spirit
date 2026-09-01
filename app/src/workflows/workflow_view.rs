@@ -35,7 +35,7 @@ use warpui::{
 
 use super::aliases::WorkflowAliases;
 use super::command_parser::WorkflowCommandDisplayData;
-use super::{CloudWorkflowModel, WorkflowSource, WorkflowType, WorkflowViewMode};
+use super::{CloudWorkflowModel, WorkflowType, WorkflowViewMode};
 use crate::FeatureFlag;
 use crate::appearance::Appearance;
 use crate::cloud_object::breadcrumbs::ContainingObject;
@@ -48,7 +48,6 @@ use crate::drive::cloud_object_styling::warp_drive_icon_color;
 use crate::drive::drive_helpers::has_feature_gated_anonymous_user_reached_workflow_limit;
 use crate::drive::items::WarpDriveItemId;
 use crate::drive::sharing::{ContentEditability, SharingAccessLevel};
-use crate::workflows::arguments::ArgumentsState;
 use crate::drive::workflows::enum_creation_dialog::{
     EnumCreationDialog, EnumCreationDialogEvent, WorkflowEnumData,
 };
@@ -86,6 +85,7 @@ use crate::uri::web_intent_parser::open_url_on_desktop;
 use crate::util::bindings::CustomAction;
 use crate::view_components::{DismissibleToast, ToastType};
 use crate::workflows::CloudWorkflow;
+use crate::workflows::arguments::ArgumentsState;
 use crate::workflows::workflow::{Argument, Workflow};
 use crate::workspace::ToastStack;
 
@@ -217,7 +217,6 @@ pub enum WorkflowViewEvent {
     ViewInWarpDrive(WarpDriveItemId),
     RunWorkflow {
         workflow: Arc<WorkflowType>,
-        source: WorkflowSource,
         argument_override: Option<HashMap<String, String>>,
     },
 }
@@ -1412,30 +1411,21 @@ impl WorkflowView {
             if let Some(cloud_workflow) = self.get_cloud_workflow(ctx) {
                 let mut cloned_cloud_workflow = cloud_workflow.clone();
                 cloned_cloud_workflow.set_model(CloudWorkflowModel::new(new_workflow));
-                if let Some(owner) = self.owner {
-                    ctx.emit(WorkflowViewEvent::RunWorkflow {
-                        workflow: Arc::new(WorkflowType::Cloud(Box::new(cloned_cloud_workflow))),
-                        source: owner.into(),
-                        argument_override: None,
-                    });
-                };
-            } else if let Some(owner) = self.owner {
+                ctx.emit(WorkflowViewEvent::RunWorkflow {
+                    workflow: Arc::new(WorkflowType::Cloud(Box::new(cloned_cloud_workflow))),
+                    argument_override: None,
+                });
+            } else {
                 ctx.emit(WorkflowViewEvent::RunWorkflow {
                     workflow: Arc::new(WorkflowType::Local(new_workflow)),
-                    source: owner.into(),
                     argument_override: None,
                 })
             }
         } else if let Some(workflow) = self.get_cloud_workflow(ctx) {
-            if let Some(owner) = self.owner {
-                ctx.emit(WorkflowViewEvent::RunWorkflow {
-                    workflow: Arc::new(WorkflowType::Cloud(Box::new(workflow))),
-                    source: owner.into(),
-                    argument_override: Some(self.command_display_data.get_argument_values()),
-                });
-            } else {
-                log::warn!("Invalid space for workflow");
-            }
+            ctx.emit(WorkflowViewEvent::RunWorkflow {
+                workflow: Arc::new(WorkflowType::Cloud(Box::new(workflow))),
+                argument_override: Some(self.command_display_data.get_argument_values()),
+            });
         } else {
             log::warn!("No valid workflow id. Can't run workflow");
         }

@@ -84,10 +84,9 @@ impl PaneContent for FilePane {
         ctx.subscribe_to_view(
             &self.file_view(ctx),
             move |pane_group, _, event, ctx| match event {
-                FileNotebookEvent::RunWorkflow { workflow, source } => {
+                FileNotebookEvent::RunWorkflow { workflow, .. } => {
                     ctx.emit(crate::pane_group::Event::RunWorkflow {
                         workflow: workflow.clone(),
-                        workflow_source: *source,
                         workflow_selection_source: WorkflowSelectionSource::Notebook,
                         argument_override: None,
                     });

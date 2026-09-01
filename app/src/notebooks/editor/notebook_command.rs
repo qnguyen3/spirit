@@ -48,7 +48,6 @@ use super::{NotebookWorkflow, rich_text_styles};
 use crate::ASSETS;
 use crate::appearance::Appearance;
 use crate::completer::SessionAgnosticContext;
-use crate::workflows::arguments::ArgumentsState;
 use crate::editor::InteractionState;
 use crate::features::FeatureFlag;
 use crate::menu::MenuItemFields;
@@ -67,6 +66,7 @@ use crate::util::color::{ContrastingColor, MinimumAllowedContrast};
 use crate::view_components::Dropdown;
 use crate::view_components::dropdown::DropdownAction;
 use crate::workflows::WorkflowType;
+use crate::workflows::arguments::ArgumentsState;
 use crate::workflows::workflow::Workflow;
 use crate::workspace::WorkspaceAction;
 

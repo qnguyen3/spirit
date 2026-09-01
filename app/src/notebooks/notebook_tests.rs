@@ -274,7 +274,6 @@ echo hello
                     ))),
                     source: WorkflowSource::Notebook {
                         notebook_id: None,
-                        team_uid: None,
                         location: NotebookLocation::PersonalCloud,
                     },
                 }),

@@ -15,7 +15,7 @@ use crate::drive::items::WarpDriveItemId;
 use crate::server::ids::SyncId;
 use crate::workflows::manager::{WorkflowManager, WorkflowOpenSource};
 use crate::workflows::workflow_view::{WorkflowView, WorkflowViewEvent};
-use crate::workflows::{WorkflowSelectionSource, WorkflowSource, WorkflowType, WorkflowViewMode};
+use crate::workflows::{WorkflowSelectionSource, WorkflowType, WorkflowViewMode};
 use crate::workspaces::user_workspaces::UserWorkspaces;
 
 pub struct WorkflowPane {
@@ -187,9 +187,8 @@ fn handle_workflow_event(
         WorkflowViewEvent::ViewInWarpDrive(id) => view_in_warp_drive(*id, ctx),
         WorkflowViewEvent::RunWorkflow {
             workflow,
-            source,
             argument_override,
-        } => run_workflow(workflow.clone(), *source, argument_override.clone(), ctx),
+        } => run_workflow(workflow.clone(), argument_override.clone(), ctx),
         WorkflowViewEvent::UpdatedWorkflow(_id) => {
             log::warn!("Updates not yet handled in pane")
         }
@@ -201,13 +200,11 @@ fn handle_workflow_event(
 
 fn run_workflow(
     workflow: Arc<WorkflowType>,
-    workflow_source: WorkflowSource,
     argument_override: Option<HashMap<String, String>>,
     ctx: &mut ViewContext<PaneGroup>,
 ) {
     ctx.emit(crate::pane_group::Event::RunWorkflow {
         workflow,
-        workflow_source,
         argument_override,
         workflow_selection_source: WorkflowSelectionSource::WorkflowView,
     });

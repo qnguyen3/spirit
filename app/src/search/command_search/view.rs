@@ -26,7 +26,7 @@ use warpui::{
 use super::env_var_collections::EnvVarCollectionDataSource;
 use super::history::history_data_source_for_session;
 use super::notebooks::notebooks_data_source;
-use super::workflows::{WorkflowsDataSource, cloud_workflows_data_source};
+use super::workflows::WorkflowsDataSource;
 use super::zero_state::{CommandSearchZeroStateEvent, CommandSearchZeroStateView};
 use crate::appearance::Appearance;
 use crate::completer::SessionContext;
@@ -197,7 +197,7 @@ impl CommandSearchView {
         session_context: Option<SessionContext>,
         ctx: &mut ViewContext<Self>,
     ) {
-        let window_id = ctx.window_id();
+        let _window_id = ctx.window_id();
         self.mixer.update(ctx, |mixer, ctx| {
             mixer.reset(ctx);
 
@@ -208,17 +208,6 @@ impl CommandSearchView {
                 mixer.add_sync_source(
                     WorkflowsDataSource::new(session_context.as_ref(), ctx),
                     HashSet::from([QueryFilter::Workflows]),
-                );
-
-                mixer.add_async_source(
-                    cloud_workflows_data_source(window_id),
-                    HashSet::from([QueryFilter::Workflows]),
-                    AddAsyncSourceOptions {
-                        debounce_interval: Some(Duration::from_millis(50)),
-                        run_in_zero_state: true,
-                        run_when_unfiltered: true,
-                    },
-                    ctx,
                 );
 
                 mixer.add_async_source(

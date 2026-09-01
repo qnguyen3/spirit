@@ -10,15 +10,13 @@ use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
 use super::model::block::{Block, SerializedBlock};
 use super::shell::ShellType;
-use crate::cloud_object::Space;
 use crate::cloud_object::model::persistence::CloudModel;
-use crate::cloud_object::model::view::CloudViewModel;
 use crate::server::ids::{ClientId, HashableId as _, SyncId};
 use crate::terminal::model::session::{Session, SessionId};
 use crate::util::dedupe_from_last;
 use crate::workflows::local_workflows::LocalWorkflows;
 use crate::workflows::workflow::Workflow;
-use crate::workflows::{WorkflowId, WorkflowSource, WorkflowType};
+use crate::workflows::{WorkflowId, WorkflowType};
 
 mod up_arrow;
 pub use up_arrow::UpArrowHistoryConfig;
@@ -208,9 +206,6 @@ pub struct History {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LinkedWorkflowData {
-    /// The history entry is linked to a `CloudWorkflow` by its ID.
-    Id(SyncId),
-
     /// The history entry is linked to a local `Workflow` by its command.
     ///
     /// Local workflows are not keyed by any common ID.
@@ -218,34 +213,12 @@ pub enum LinkedWorkflowData {
 }
 
 impl LinkedWorkflowData {
-    /// Returns the WorkflowType and WorkflowSource corresponding to this `LinkedWorkflowData`, if
-    /// any.
-    pub fn linked_workflow(&self, ctx: &AppContext) -> Option<(WorkflowType, WorkflowSource)> {
+    /// Returns the [`WorkflowType`] corresponding to this `LinkedWorkflowData`, if any.
+    pub fn linked_workflow(&self, ctx: &AppContext) -> Option<WorkflowType> {
         match self {
-            LinkedWorkflowData::Id(id) => {
-                let cloud_model = CloudModel::as_ref(ctx);
-                let workflow = cloud_model.get_workflow(id);
-                let workflow_source = match CloudViewModel::as_ref(ctx).object_space(&id.uid(), ctx)
-                {
-                    Some(Space::Team { team_uid }) => WorkflowSource::Team { team_uid },
-                    _ => WorkflowSource::PersonalCloud,
-                };
-                workflow.map(|workflow| {
-                    (
-                        WorkflowType::Cloud(Box::new(workflow.clone())),
-                        workflow_source,
-                    )
-                })
-            }
-            LinkedWorkflowData::Command(workflow_command) => {
-                if let Some((workflow_source, workflow)) = LocalWorkflows::as_ref(ctx)
-                    .workflow_with_command(ctx, workflow_command.as_str())
-                {
-                    Some((WorkflowType::Local(workflow.clone()), workflow_source))
-                } else {
-                    None
-                }
-            }
+            LinkedWorkflowData::Command(workflow_command) => LocalWorkflows::as_ref(ctx)
+                .workflow_with_command(ctx, workflow_command.as_str())
+                .map(|(_, workflow)| WorkflowType::Local(workflow.clone())),
         }
     }
 }
@@ -411,13 +384,9 @@ impl HistoryEntry {
     /// Returns `LinkedWorkflowData` referring to the workflow used to create this history command,
     /// if any.
     pub fn linked_workflow_data(&self) -> Option<LinkedWorkflowData> {
-        match (&self.workflow_id, &self.workflow_command) {
-            (Some(workflow_id), _) => Some(LinkedWorkflowData::Id(*workflow_id)),
-            (_, Some(workflow_command)) => {
-                Some(LinkedWorkflowData::Command(workflow_command.clone()))
-            }
-            _ => None,
-        }
+        self.workflow_command
+            .as_ref()
+            .map(|workflow_command| LinkedWorkflowData::Command(workflow_command.clone()))
     }
 }
 

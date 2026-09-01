@@ -29,7 +29,6 @@ use warpui::{
 use super::WorkflowSource;
 use super::workflow::Workflow;
 use crate::appearance::Appearance;
-use crate::cloud_object::model::persistence::CloudModel;
 use crate::editor::Event as EditorEvent;
 use crate::themes::theme::{self, Blend, WarpTheme};
 use crate::user_config::{WarpConfig, WarpConfigUpdateEvent};
@@ -249,7 +248,6 @@ pub enum CategoriesViewEvent {
     WorkflowSelected {
         // use pointer to box to fix clippy error on size difference between variants
         workflow: Box<WorkflowType>,
-        workflow_source: WorkflowSource,
     },
 }
 
@@ -731,10 +729,9 @@ impl CategoriesView {
     }
 
     fn select_workflow_item(&mut self, index: usize, ctx: &mut ViewContext<Self>) {
-        if let Some((workflow, workflow_type)) = self.workflow_by_filtered_index(index) {
+        if let Some((workflow, _)) = self.workflow_by_filtered_index(index) {
             ctx.emit(CategoriesViewEvent::WorkflowSelected {
                 workflow: Box::new(workflow.clone()),
-                workflow_source: workflow_type,
             });
 
             self.close(ctx);

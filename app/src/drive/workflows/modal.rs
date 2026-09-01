@@ -24,7 +24,6 @@ use warpui::{
     ViewContext, ViewHandle,
 };
 
-use crate::workflows::arguments::ArgumentsState;
 use super::enum_creation_dialog::{EnumCreationDialog, EnumCreationDialogEvent, WorkflowEnumData};
 use super::workflow_arg_selector::{
     WorkflowArgSelector, WorkflowArgSelectorEvent, WorkflowArgSelectorStyles,
@@ -54,6 +53,7 @@ use crate::ui_components::dialog::{Dialog, dialog_styles};
 use crate::ui_components::icons::{self, ICON_DIMENSIONS, Icon};
 use crate::ui_components::menu_button::{MenuDirection, icon_button_with_context_menu};
 use crate::workflows::CloudWorkflow;
+use crate::workflows::arguments::ArgumentsState;
 use crate::workflows::workflow::{Argument, Workflow};
 
 const BREADCRUMBS_VERTICAL_MARGIN: f32 = 6.;

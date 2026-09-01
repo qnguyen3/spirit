@@ -94,7 +94,7 @@ impl SyncDataSource for WorkflowsDataSource {
             .clone()
             .into_iter()
             .filter(|(source, _)| *source != WorkflowSource::Global || include_global_workflows)
-            .flat_map(move |(source, workflows)| {
+            .flat_map(move |(_, workflows)| {
                 workflows.into_iter().filter_map(
                     move |workflow| -> Option<QueryResult<Self::Action>> {
                         FuzzyMatchWorkflowResult::try_match(query_str, &workflow, "").map(
@@ -103,7 +103,6 @@ impl SyncDataSource for WorkflowsDataSource {
                                     identity: WorkflowIdentity::Local(Box::new(
                                         WorkflowType::Local(workflow),
                                     )),
-                                    source,
                                     fuzzy_matched_workflow: match_result,
                                 }
                                 .into()

@@ -333,9 +333,7 @@ use crate::view_components::{DismissibleToast, DismissibleToastStack, ToastLink}
 use crate::window_settings::{WindowSettings, WindowSettingsChangedEvent, ZoomLevel};
 use crate::workflows::manager::{WorkflowManager, WorkflowOpenSource};
 use crate::workflows::workflow::Workflow;
-use crate::workflows::{
-    CloudWorkflow, WorkflowSelectionSource, WorkflowSource, WorkflowType, WorkflowViewMode,
-};
+use crate::workflows::{CloudWorkflow, WorkflowSelectionSource, WorkflowType, WorkflowViewMode};
 use crate::workspace::action::CommandSearchOptions;
 use crate::workspace::agent_inbox::{
     AgentInboxModel, AgentInboxView, AgentInboxViewEvent, InboxItem, InboxItemFields,
@@ -12115,13 +12113,11 @@ impl Workspace {
             }
             pane_group::Event::RunWorkflow {
                 workflow,
-                workflow_source,
                 workflow_selection_source,
                 argument_override,
             } => {
                 self.run_workflow_in_active_input(
                     workflow,
-                    *workflow_source,
                     *workflow_selection_source,
                     argument_override.clone(),
                     TerminalSessionFallbackBehavior::default(),
@@ -13319,10 +13315,8 @@ impl Workspace {
         fallback_behavior: TerminalSessionFallbackBehavior,
         ctx: &mut ViewContext<Self>,
     ) {
-        let owner = workflow.clone().permissions.owner.into();
         self.run_workflow_in_active_input(
             &WorkflowType::Cloud(Box::new(workflow.clone())),
-            owner,
             workflow_selection_source,
             None,
             fallback_behavior,
@@ -13442,7 +13436,6 @@ impl Workspace {
     fn run_workflow_in_active_input(
         &mut self,
         workflow: &WorkflowType,
-        workflow_source: WorkflowSource,
         workflow_selection_source: WorkflowSelectionSource,
         argument_override: Option<HashMap<String, String>>,
         fallback_behavior: TerminalSessionFallbackBehavior,
@@ -13468,7 +13461,6 @@ impl Workspace {
             terminal_input.update(ctx, |input, ctx| {
                 input.show_workflows_info_box_on_workflow_selection(
                     workflow.clone(),
-                    workflow_source,
                     workflow_selection_source,
                     argument_override,
                     ctx,
@@ -13564,13 +13556,12 @@ impl Workspace {
 
                         if let Some(linked_workflow_data) = linked_workflow_data {
                             active_input_handle.update(ctx, |input, ctx| {
-                                if let Some((workflow_type, workflow_source)) =
+                                if let Some(workflow_type) =
                                     linked_workflow_data.linked_workflow(ctx)
                                 {
                                     input.show_workflow_info_box_for_history_command(
                                         command.as_str(),
                                         workflow_type,
-                                        workflow_source,
                                         WorkflowSelectionSource::UniversalSearch,
                                         ctx,
                                     );
@@ -13586,31 +13577,11 @@ impl Workspace {
                         });
                     }
                     AcceptWorkflow(accepted) => {
-                        let (workflow, workflow_source) = match accepted {
-                            AcceptedWorkflow::Cloud { id, source } => {
-                                let Some(cloud_workflow) =
-                                    CloudModel::as_ref(ctx).get_workflow(id).cloned()
-                                else {
-                                    self.toast_stack.update(ctx, |view, ctx| {
-                                        view.add_ephemeral_toast(
-                                            DismissibleToast::error(
-                                                "This workflow is no longer available.".to_string(),
-                                            ),
-                                            ctx,
-                                        );
-                                    });
-                                    return;
-                                };
-                                (WorkflowType::Cloud(Box::new(cloud_workflow)), *source)
-                            }
-                            AcceptedWorkflow::Local {
-                                workflow, source, ..
-                            } => ((**workflow).clone(), *source),
-                        };
+                        let AcceptedWorkflow::Local { workflow } = accepted;
+                        let workflow = (**workflow).clone();
                         active_input_handle.update(ctx, |input, ctx| {
                             input.show_workflows_info_box_on_workflow_selection(
                                 workflow,
-                                workflow_source,
                                 WorkflowSelectionSource::UniversalSearch,
                                 None,
                                 ctx,
@@ -18965,12 +18936,10 @@ impl TypedActionView for Workspace {
             ),
             RunWorkflow {
                 workflow,
-                workflow_source,
                 workflow_selection_source,
                 argument_override,
             } => self.run_workflow_in_active_input(
                 workflow,
-                *workflow_source,
                 *workflow_selection_source,
                 argument_override.clone(),
                 TerminalSessionFallbackBehavior::default(),
