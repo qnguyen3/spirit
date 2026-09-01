@@ -24,7 +24,7 @@ use warpui::{
     ViewContext, ViewHandle,
 };
 
-use super::arguments::ArgumentsState;
+use crate::workflows::arguments::ArgumentsState;
 use super::enum_creation_dialog::{EnumCreationDialog, EnumCreationDialogEvent, WorkflowEnumData};
 use super::workflow_arg_selector::{
     WorkflowArgSelector, WorkflowArgSelectorEvent, WorkflowArgSelectorStyles,

@@ -11,6 +11,7 @@ use anyhow::Result;
 use workflow::Workflow;
 
 pub mod aliases;
+pub mod arguments;
 pub mod command_parser;
 pub mod export_workflow;
 pub mod info_box;
