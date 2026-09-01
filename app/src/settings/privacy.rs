@@ -11,11 +11,8 @@ use warp_graphql::mutations::update_user_settings::UpdateUserSettingsInput;
 pub use warp_terminal::model::secrets::RegexDisplayInfo;
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity, UpdateModel};
 
-use super::cloud_preferences_syncer::CloudPreferencesSyncer;
 use crate::auth::AuthStateProvider;
 use crate::auth::auth_state::AuthState;
-use crate::cloud_object::model::persistence::CloudModel;
-use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::server_api::ServerApiProvider;
 #[cfg(any(test, feature = "test-util"))]
 use crate::server::server_api::auth::MockAuthClient;

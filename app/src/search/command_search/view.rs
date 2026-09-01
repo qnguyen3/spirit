@@ -23,14 +23,11 @@ use warpui::{
     ViewContext, ViewHandle, WeakViewHandle,
 };
 
-use super::env_var_collections::EnvVarCollectionDataSource;
 use super::history::history_data_source_for_session;
-use super::notebooks::notebooks_data_source;
 use super::workflows::WorkflowsDataSource;
 use super::zero_state::{CommandSearchZeroStateEvent, CommandSearchZeroStateView};
 use crate::appearance::Appearance;
 use crate::completer::SessionContext;
-use crate::drive::settings::WarpDriveSettings;
 use crate::search::QueryFilter;
 use crate::search::command_search::searcher::{CommandSearchItemAction, CommandSearchMixer};
 use crate::search::mixer::AddAsyncSourceOptions;

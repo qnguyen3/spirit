@@ -26,9 +26,6 @@ use crate::ui_components::icons::Icon;
 use crate::util::color::{ContrastingColor, MinimumAllowedContrast};
 use crate::workflows::{CloudWorkflow, WorkflowSource, WorkflowType};
 
-mod block_insertion_menu;
-mod embedded_item;
-mod embedding_model;
 mod find_bar;
 mod interaction_state_model;
 pub mod keys;

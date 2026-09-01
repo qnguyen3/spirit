@@ -53,7 +53,6 @@ use super::view::{
 use super::warpify::render::{draw_flag_pole, render_subshell_flag};
 use super::{HEIGHT_FUDGE_FACTOR_LINES, TerminalModel, heights_approx_eq};
 use crate::appearance::Appearance;
-use crate::drive::settings::WarpDriveSettings;
 use crate::features::FeatureFlag;
 use crate::pane_group::SplitPaneState;
 use crate::settings::{DebugSettings, EnforceMinimumContrast, PrivacySettings, TerminalSpacing};

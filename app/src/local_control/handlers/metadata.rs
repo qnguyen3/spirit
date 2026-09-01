@@ -15,7 +15,6 @@ use settings::Setting as _;
 use warp_core::channel::ChannelState;
 use warpui::{AppContext, ModelContext, SingletonEntity, ViewHandle, WindowId};
 
-use crate::drive::settings::WarpDriveSettings;
 use crate::features::FeatureFlag;
 use crate::local_control::LocalControlBridge;
 use crate::local_control::resolver::{reject_target_families, require_active_window_id_for_action};

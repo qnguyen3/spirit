@@ -6,8 +6,6 @@ use warp_core::features::FeatureFlag;
 use warpui::keymap::BindingId;
 use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity, WindowId};
 
-use super::warp_drive;
-use crate::drive::settings::WarpDriveSettings;
 use crate::search::QueryFilter;
 use crate::search::action::CommandBindingDataSource;
 use crate::search::binding_source::BindingSource;

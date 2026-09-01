@@ -1,7 +1,6 @@
 pub mod auth;
 pub mod integrations;
 pub mod managed_secrets;
-pub mod object;
 pub mod team;
 pub mod workspace;
 

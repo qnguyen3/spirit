@@ -48,19 +48,12 @@ use crate::auth::auth_manager::{AuthManager, LoginGatedFeature};
 use crate::auth::auth_state::AuthState;
 use crate::auth::auth_view_modal::AuthViewVariant;
 use crate::auth::{AuthStateProvider, UserUid};
-use crate::cloud_object::model::persistence::CloudModel;
-use crate::cloud_object::{CloudObjectEventEntrypoint, Space};
-use crate::drive::cloud_action_confirmation_dialog::{
-    CloudActionConfirmationDialog, CloudActionConfirmationDialogEvent,
-    CloudActionConfirmationDialogVariant,
-};
 use crate::editor::{
     EditorView, Event as EditorEvent, InteractionState, SingleLineEditorOptions, TextOptions,
 };
 use crate::menu::{self, Menu, MenuItem, MenuItemFields};
 use crate::modal::{Modal, ModalEvent, ModalViewState};
 use crate::network::NetworkStatus;
-use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::ids::ServerId;
 use crate::themes;
 use crate::themes::theme::Blend;

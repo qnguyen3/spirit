@@ -24,7 +24,6 @@ use warpui::{App, Element, Entity, SingletonEntity, TypedActionView, View, ViewH
 use super::{EditorViewAction, LayoutAffectingAssetLoad, RichTextEditorConfig, RichTextEditorView};
 use crate::appearance::Appearance;
 use crate::auth::AuthStateProvider;
-use crate::cloud_object::model::persistence::CloudModel;
 use crate::editor::InteractionState;
 use crate::features::FeatureFlag;
 use crate::notebooks::editor::keys::NotebookKeybindings;

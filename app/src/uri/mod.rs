@@ -18,8 +18,6 @@ use warpui::{AppContext, SingletonEntity as _, TypedActionView, WindowId};
 
 use self::docker::open_docker_container;
 use crate::auth::github_auth_notifier::GitHubAuthNotifier;
-use crate::cloud_object::ObjectType;
-use crate::drive::{OpenWarpDriveObjectArgs, OpenWarpDriveObjectSettings};
 use crate::features::FeatureFlag;
 use crate::launch_configs::launch_config::LaunchConfig;
 use crate::root_view::{OpenLaunchConfigArg, open_new_window_get_handles};

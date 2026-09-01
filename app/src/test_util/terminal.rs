@@ -13,16 +13,12 @@ use crate::auth::AuthStateProvider;
 use crate::auth::auth_manager::AuthManager;
 use crate::auth::github_auth_notifier::GitHubAuthNotifier;
 use crate::changelog_model::ChangelogModel;
-use crate::cloud_object::model::persistence::CloudModel;
 use crate::code_review::git_repo_model::GitRepoModels;
 use crate::context_chips::prompt::Prompt;
 use crate::network::NetworkStatus;
 use crate::persisted_workspace::PersistedWorkspace;
 use crate::search::files::model::FileSearchModel;
-use crate::server::cloud_objects::listener::Listener;
-use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::server_api::ServerApiProvider;
-use crate::server::sync_queue::SyncQueue;
 use crate::settings::PrivacySettings;
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
 #[cfg(feature = "local_fs")]

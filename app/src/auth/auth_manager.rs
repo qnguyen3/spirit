@@ -25,7 +25,6 @@ use super::user_properties::UserProperties;
 use super::{AuthStateProvider, UserUid};
 use crate::autoupdate::AutoupdateState;
 use crate::persistence::ModelEvent;
-use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::graphql::get_user_facing_error_message;
 use crate::server::server_api::ServerApi;
 use crate::server::server_api::auth::{
@@ -33,7 +32,6 @@ use crate::server::server_api::auth::{
     UserAuthenticationError,
 };
 use crate::settings::PrivacySettings;
-use crate::settings::cloud_preferences_syncer::CloudPreferencesSyncer;
 use crate::terminal::general_settings::GeneralSettings;
 #[cfg(target_family = "wasm")]
 use crate::uri::browser_url_handler::{parse_current_url, update_browser_url};

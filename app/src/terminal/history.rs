@@ -10,13 +10,12 @@ use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
 use super::model::block::{Block, SerializedBlock};
 use super::shell::ShellType;
-use crate::cloud_object::model::persistence::CloudModel;
 use crate::server::ids::{ClientId, HashableId as _, SyncId};
 use crate::terminal::model::session::{Session, SessionId};
 use crate::util::dedupe_from_last;
 use crate::workflows::local_workflows::LocalWorkflows;
 use crate::workflows::workflow::Workflow;
-use crate::workflows::{WorkflowId, WorkflowType};
+use crate::workflows::WorkflowType;
 
 mod up_arrow;
 pub use up_arrow::UpArrowHistoryConfig;

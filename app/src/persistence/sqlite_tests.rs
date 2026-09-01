@@ -20,7 +20,6 @@ use crate::app_state::{
     ProjectScreenSnapshot, TabGroupSnapshot, TabSnapshot, TerminalPaneSnapshot, WindowSnapshot,
 };
 use crate::auth::UserUid;
-use crate::cloud_object::{CloudObjectPermissions, Owner};
 use crate::code::editor_management::CodeSource;
 use crate::notebooks::{CloudNotebook, CloudNotebookModel};
 use crate::persistence::model::{

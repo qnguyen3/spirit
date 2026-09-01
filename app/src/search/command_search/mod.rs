@@ -1,6 +1,4 @@
-mod env_var_collections;
 mod history;
-mod notebooks;
 pub mod searcher;
 pub mod settings;
 pub mod view;

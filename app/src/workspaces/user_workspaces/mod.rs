@@ -21,8 +21,6 @@ use super::workspace::{
 };
 use crate::auth::{AuthStateProvider, UserUid};
 use crate::channel::ChannelState;
-use crate::cloud_object::model::persistence::CloudModel;
-use crate::cloud_object::{CloudObjectEventEntrypoint, ObjectType, Owner, Space};
 use crate::server::ids::ServerId;
 use crate::server::server_api::team::TeamClient;
 use crate::server::server_api::workspace::{PurchaseAddonCreditsOutcome, WorkspaceClient};

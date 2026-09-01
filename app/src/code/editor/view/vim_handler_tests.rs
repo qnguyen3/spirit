@@ -23,7 +23,6 @@ use warpui::{
 };
 
 use crate::auth::AuthStateProvider;
-use crate::cloud_object::model::persistence::CloudModel;
 use crate::code::editor::find::view::CodeEditorFind;
 use crate::code::editor::view::{CodeEditorRenderOptions, CodeEditorView, CodeEditorViewAction};
 use crate::editor::{EditorAction, EditorView};

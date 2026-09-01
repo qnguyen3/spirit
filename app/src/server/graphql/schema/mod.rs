@@ -7,11 +7,6 @@ use warp_graphql::mutations::update_generic_string_object::{
 };
 use warp_graphql::object::ObjectUpdateSuccess;
 
-use crate::cloud_object::{
-    RevisionAndLastEditor, ServerAmbientAgentEnvironment, ServerEnvVarCollection, ServerFolder,
-    ServerObject, ServerPreference, ServerScheduledAmbientAgent, ServerWorkflowEnum, TryFromGql,
-    UpdateCloudObjectResult,
-};
 use crate::server::graphql::get_user_facing_error_message;
 
 fn boxed_rejected_generic_string_object<T>(

@@ -30,8 +30,6 @@ use super::command_parser::{
 use super::workflow::Argument;
 use super::workflow_view::env_var_selector::{EnvVarSelector, EnvVarSelectorEvent};
 use crate::appearance::Appearance;
-use crate::cloud_object::CloudObjectMetadataExt;
-use crate::cloud_object::model::actions::{ObjectActionType, ObjectActions};
 use crate::server::ids::SyncId;
 use crate::settings::InputModeSettings;
 use crate::terminal::block_list_viewport::InputMode;

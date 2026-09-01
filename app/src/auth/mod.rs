@@ -26,14 +26,10 @@ use warp_errors::{report_error, report_if_error};
 use warpui::modals::{AlertDialogWithCallbacks, ModalButton};
 use warpui::{AppContext, SingletonEntity};
 
-use crate::cloud_object::model::persistence::CloudModel;
 use crate::code::editor_management::{CodeEditorStatus, CodeEditorSummary};
-use crate::env_vars::manager::EnvVarCollectionManager;
 use crate::notebooks::manager::NotebookManager;
 use crate::palette::{PaletteMode, PaletteSource};
 use crate::root_view::RootView;
-use crate::server::cloud_objects::update_manager::UpdateManager;
-use crate::server::sync_queue::SyncQueue;
 use crate::session_management::{RunningSessionSummary, SessionNavigationData};
 use crate::settings::{CloudPreferencesSettings, PrivacySettings};
 use crate::terminal::general_settings::GeneralSettings;

@@ -11,7 +11,6 @@ mod autoupdate;
 mod banner;
 mod changelog_model;
 mod chip_configurator;
-mod cloud_object;
 mod code;
 mod code_review;
 mod coding_entrypoints;
@@ -24,11 +23,8 @@ mod context_chips;
 mod crash_recovery;
 mod debug_dump;
 mod default_terminal;
-mod drive;
 #[cfg(windows)]
 mod dynamic_libraries;
-mod env_vars;
-mod external_secrets;
 #[cfg(target_family = "wasm")]
 mod font_fallback;
 mod global_resource_handles;
@@ -175,7 +171,6 @@ use warpui::platform::app::{ApproveTerminateResult, TerminationRequestSource};
 use warpui::windowing::state::ApplicationStage;
 use warpui::{App, AppContext, Event, SingletonEntity, WindowId};
 use window_settings::WindowSettings;
-use workflows::manager::WorkflowManager;
 use workspace::sync_inputs::SyncedInputState;
 
 use self::features::FeatureFlag;
@@ -183,23 +178,15 @@ use crate::app_state::AppState;
 use crate::auth::github_auth_notifier::GitHubAuthNotifier;
 use crate::autoupdate::{AutoupdateState, RelaunchModel};
 use crate::changelog_model::ChangelogModel;
-use crate::cloud_object::model::actions::{ObjectAction, ObjectActions};
-use crate::cloud_object::model::persistence::CloudModel;
-use crate::cloud_object::model::view::CloudViewModel;
 use crate::code::global_buffer_model::GlobalBufferModel;
 #[cfg(feature = "local_fs")]
 use crate::code::language_server_shutdown_manager::LanguageServerShutdownManager;
 use crate::context_chips::prompt::Prompt;
 use crate::default_terminal::DefaultTerminal;
-use crate::drive::CloudObjectTypeAndId;
-use crate::drive::export::ExportManager;
-use crate::env_vars::manager::EnvVarCollectionManager;
 pub use crate::global_resource_handles::{GlobalResourceHandles, GlobalResourceHandlesProvider};
 use crate::gpu_state::GPUState;
 use crate::network::NetworkStatus;
-use crate::notebooks::CloudNotebook;
 use crate::notebooks::editor::keys::NotebookKeybindings;
-use crate::notebooks::manager::NotebookManager;
 use crate::notification::NotificationContext;
 use crate::palette::PaletteMode;
 use crate::persisted_workspace::PersistedWorkspace;
@@ -208,11 +195,7 @@ use crate::projects::registry::ProjectRegistryModel;
 use crate::root_view::{
     OpenFromRestoredArg, OpenPath, quake_mode_window_id, quake_mode_window_is_open,
 };
-use crate::server::cloud_objects::listener::Listener;
-use crate::server::cloud_objects::update_manager::UpdateManager;
-use crate::server::sync_queue::{QueueItem, SyncQueue};
 use crate::session_management::{RunningSessionSummary, SessionNavigationData};
-use crate::settings::cloud_preferences_syncer::initialize_cloud_preferences_syncer;
 use crate::settings::manager::SettingsManager;
 use crate::settings::{AccessibilitySettings, ScrollSettings, SelectionSettings};
 use crate::settings_view::DisplayCount;
@@ -228,7 +211,6 @@ use crate::user_config::WarpConfig;
 use crate::util::bindings::is_binding_cross_platform;
 use crate::vim_registers::VimRegisters;
 use crate::warp_managed_paths_watcher::{WarpManagedPathsWatcher, ensure_warp_watch_roots_exist};
-use crate::workflows::aliases::WorkflowAliases;
 use crate::workflows::local_workflows::LocalWorkflows;
 use crate::workspace::{
     ActiveSession, NotificationOrigin, PaneViewLocator, ToastStack, Workspace, WorkspaceAction,
@@ -1465,12 +1447,9 @@ pub(crate) fn initialize_app(
     tab_configs::new_worktree_modal::init(ctx);
     tab_configs::params_modal::init(ctx);
     ui_components::keyboard_navigable_buttons::init(ctx);
-    drive::index::init(ctx);
     settings_view::update_environment_form::init(ctx);
-    env_vars::env_var_collection_block::init(ctx);
     context_chips::display_menu::init(ctx);
     context_chips::node_version_popup::init(ctx);
-    env_vars::view::env_var_collection::init(ctx);
     coding_entrypoints::project_buttons::init(ctx);
     if FeatureFlag::CodeReviewSaveChanges.is_enabled() {
         code_review::init(ctx);
@@ -1500,61 +1479,9 @@ pub(crate) fn initialize_app(
     #[cfg(feature = "local_fs")]
     ctx.add_singleton_model(|_| LanguageServerShutdownManager::new());
 
-    let notebooks = cloud_objects
-        .iter()
-        .filter_map(|object| {
-            let notebook: Option<&CloudNotebook> = object.into();
-            notebook
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-
-    let mut all_queue_items = Vec::new();
-    let objects_with_pending_changes = cloud_objects
-        .iter()
-        .filter(|object| object.metadata().has_pending_content_changes())
-        .cloned()
-        .collect::<Vec<_>>();
-    all_queue_items.extend(QueueItem::from_cached_objects(
-        objects_with_pending_changes.into_iter(),
-    ));
-
-    let cloud_model = ctx.add_singleton_model(|_ctx| {
-        CloudModel::new(
-            persistence_writer.sender(),
-            cloud_objects,
-            time_of_next_force_object_refresh,
-        )
-    });
-
-    let unsynced_actions: Vec<(CloudObjectTypeAndId, ObjectAction)> = object_actions
-        .iter()
-        .filter(|action| action.is_pending())
-        .filter_map(|action| {
-            cloud_model.read(ctx, |model, _| {
-                let object = model.get_by_uid(&action.uid);
-                object.map(|o| (o.cloud_object_type_and_id(), action.clone()))
-            })
-        })
-        .collect::<Vec<_>>();
-
-    all_queue_items.extend(QueueItem::from_unsynced_actions(
-        unsynced_actions.into_iter(),
-    ));
-
-    ctx.add_singleton_model(|ctx| {
-        SyncQueue::new(
-            all_queue_items,
-            server_api_provider.as_ref(ctx).get_cloud_objects_client(),
-            ctx,
-        )
-    });
-
     ctx.add_singleton_model(|_| CLIAgentSessionsModel::new());
     ctx.add_singleton_model(|_| workspace::AgentInboxModel::default());
     ctx.add_singleton_model(|_| UserProfiles::new(restored_user_profiles));
-
-    ctx.add_singleton_model(|_| ObjectActions::new(object_actions));
 
     ctx.add_singleton_model(|_| AudibleBell::new());
 
@@ -1570,43 +1497,13 @@ pub(crate) fn initialize_app(
         )
     });
 
-    ctx.add_singleton_model(|ctx| {
-        UpdateManager::new(
-            persistence_writer.sender(),
-            server_api_provider.as_ref(ctx).get_cloud_objects_client(),
-            ctx,
-        )
-    });
-
-    let toml_file_path = settings::user_preferences_toml_file_path();
-    ctx.add_singleton_model(move |ctx| {
-        initialize_cloud_preferences_syncer(
-            toml_file_path,
-            startup_toml_parse_error_for_syncer.as_deref(),
-            ctx,
-        )
-    });
-
     // LogManager must be registered before any subsystem (e.g. LSP) that creates file-based loggers.
     ctx.add_singleton_model(|_| simple_logger::manager::LogManager::new());
 
-    // CloudViewModel subscribes to UpdateManager so that it can be notified when objects are
-    // created on the server.
-    ctx.add_singleton_model(CloudViewModel::new);
-
-    ctx.add_singleton_model(ExportManager::new);
-    ctx.add_singleton_model(|ctx| NotebookManager::new(notebooks, ctx));
     ctx.add_singleton_model(|_| CodeManager::default());
     ctx.add_singleton_model(|_| OpenedFilesModel::new());
     ctx.add_singleton_model(NotebookKeybindings::new);
     ctx.add_singleton_model(|_| ActiveSession::default());
-    ctx.add_singleton_model(|ctx| {
-        Listener::new(
-            server_api_provider.as_ref(ctx).get_cloud_objects_client(),
-            ctx,
-        )
-    });
-
     #[cfg(all(not(target_family = "wasm"), feature = "local_tty"))]
     {
         ctx.add_singleton_model(LocalShellState::new);
@@ -1686,9 +1583,6 @@ pub(crate) fn initialize_app(
     // Add a singleton model for resizable modals whose size should be persisted through restarts.
     ctx.add_singleton_model(|_| ResizableData::default());
 
-    ctx.add_singleton_model(EnvVarCollectionManager::new);
-    ctx.add_singleton_model(WorkflowManager::new);
-
     AutoupdateState::register(ctx, Arc::new(http_client::Client::new()));
 
     ctx.add_singleton_model(LocalWorkflows::new);
@@ -1710,12 +1604,6 @@ pub(crate) fn initialize_app(
     ctx.add_singleton_model(move |_| persistence_writer);
 
     ctx.add_singleton_model(move |_| IgnoredSuggestionsModel::new(persisted_ignored_suggestions));
-
-    // Subscribe WorkflowAliases to the UpdateManager so that it can be notified when objects are
-    // trashed.
-    WorkflowAliases::handle(ctx).update(ctx, |aliases, ctx| {
-        aliases.connect(ctx);
-    });
 
     #[cfg(not(target_family = "wasm"))]
     if launch_mode.should_start_local_http_server() {
@@ -1777,12 +1665,6 @@ pub(crate) fn app_callbacks(is_integration_test: bool) -> warpui::platform::AppC
             ctx.dispatch_global_action("root_view:update_quake_mode_state", &update_quake_mode_arg);
         })),
         on_will_terminate: Some(Box::new(move |ctx| {
-            NotebookManager::handle(ctx).update(ctx, |manager, ctx| {
-                // Notebooks are only saved periodically, so ensure that any pending changes have
-                // been sent to the writer thread before terminating.
-                manager.close_notebooks(ctx);
-            });
-
             PersistenceWriter::handle(ctx).update(ctx, |writer, _ctx| {
                 writer.terminate();
             });

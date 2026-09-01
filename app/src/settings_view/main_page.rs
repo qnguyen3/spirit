@@ -42,7 +42,6 @@ use crate::auth::auth_view_modal::AuthViewVariant;
 use crate::auth::{AuthStateProvider, UserUid};
 use crate::autoupdate::{self, AutoupdateStage, AutoupdateState};
 use crate::server::ids::ServerId;
-use crate::settings::cloud_preferences::CloudPreferencesSettings;
 use crate::workspace::WorkspaceAction;
 use crate::workspaces::update_manager::TeamUpdateManager;
 use crate::workspaces::user_workspaces::UserWorkspaces;

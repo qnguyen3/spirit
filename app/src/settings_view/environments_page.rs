@@ -41,21 +41,10 @@ use super::update_environment_form::{
 use super::{SettingsSection, editor_text_colors};
 use crate::appearance::Appearance;
 use crate::auth::AuthStateProvider;
-use crate::cloud_object::model::generic_string_model::StringModel;
-use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
-use crate::cloud_object::{
-    CloudModelType as _, CloudObjectLocation, CloudObjectLookup as _, GenericStringObjectFormat,
-    GenericStringObjectUniqueKey, JsonObjectType, ObjectType, Owner, Revision, Space,
-};
-use crate::drive::CloudObjectTypeAndId;
 use crate::editor::{
     EditorView, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions, TextOptions,
 };
-use crate::server::cloud_objects::update_manager::{
-    InitiatedBy, ObjectOperation, OperationSuccessType, UpdateManager, UpdateManagerEvent,
-};
 use crate::server::ids::{ClientId, ServerId, SyncId};
-use crate::server::sync_queue::QueueItem;
 use crate::themes::theme::Fill as ThemeFill;
 use crate::ui_components::blended_colors;
 use crate::ui_components::buttons::icon_button_with_color;

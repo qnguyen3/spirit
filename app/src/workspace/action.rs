@@ -16,9 +16,6 @@ use super::tab_settings::{
     VerticalTabsTabItemMode, VerticalTabsViewMode,
 };
 use super::view::WorkspaceBanner;
-use crate::auth::auth_manager::LoginGatedFeature;
-use crate::drive::CloudObjectTypeAndId;
-use crate::drive::items::WarpDriveItemId;
 use crate::palette::{PaletteMode, PaletteSource};
 use crate::projects::WorktreeId;
 use crate::prompt::editor_modal::OpenSource as PromptEditorOpenSource;
@@ -305,7 +302,6 @@ pub enum WorkspaceAction {
     ToggleErrorUnderlining,
     ToggleSyntaxHighlighting,
     CheckForUpdate,
-    ExportAllWarpDriveObjects,
     SetA11yVerbosityLevel(AccessibilityVerbosity),
     ToggleNotifications,
     ToggleTabColor {
@@ -325,16 +321,6 @@ pub enum WorkspaceAction {
     ToggleUserMenu,
     ToggleKeybindingsPage,
     ShowCommandSearch(CommandSearchOptions),
-    CreatePersonalNotebook,
-    ImportToPersonalDrive,
-    ImportToTeamDrive,
-    CreateTeamNotebook,
-    CreatePersonalWorkflow,
-    CreateTeamWorkflow,
-    CreatePersonalFolder,
-    CreateTeamFolder,
-    CreateTeamEnvVarCollection,
-    CreatePersonalEnvVarCollection,
     ToggleMouseReporting,
     ToggleScrollReporting,
     ToggleFocusReporting,
@@ -353,15 +339,8 @@ pub enum WorkspaceAction {
         cursor_position: Vector2F,
     },
     DropGroup,
-    /// Toggles the left panel. In Code Mode V1 this toggles Warp Drive.
-    /// In Code Mode V2 this toggles the left panel which contains both the project explorer and
-    /// Warp Drive. This happens as explicit action from the user.
+    /// Toggles the left panel. This happens as an explicit action from the user.
     ToggleLeftPanel,
-    /// Toggles directly to the Warp Drive tab of the left panel in Code Mode V2
-    ToggleWarpDrive,
-    /// Unconditionally opens Warp Drive. This is used in the case of user lifecycle
-    /// events like new user onboarding or when the user joins a team.
-    OpenWarpDrive,
     /// Toggles the right panel. This happens as an explicit action from the user.
     ToggleRightPanel,
     ToggleAgentInbox,
@@ -433,9 +412,6 @@ pub enum WorkspaceAction {
     FocusLeftPanel,
     /// Moves focus to the panel on the right
     FocusRightPanel,
-    /// An action to view a newly created/edited workflow in WD from the toast
-    ViewObjectInWarpDrive(WarpDriveItemId),
-    UndoTrash(CloudObjectTypeAndId),
     /// Open a local path in the file explorer.
     OpenInExplorer {
         path: PathBuf,
@@ -623,33 +599,7 @@ pub enum WorkspaceAction {
     },
 }
 
-impl From<&WorkspaceAction> for LoginGatedFeature {
-    fn from(val: &WorkspaceAction) -> LoginGatedFeature {
-        use WorkspaceAction::*;
-        match val {
-            ImportToTeamDrive => "Importing to a team drive",
-            CreateTeamNotebook => "Creating a team notebook",
-            CreateTeamWorkflow => "Creating a team workflow",
-            CreateTeamFolder => "Creating a team folder",
-            CreateTeamEnvVarCollection => "Creating a team environment variable collection",
-            _ => "Unknown reason",
-        }
-    }
-}
-
 impl WorkspaceAction {
-    pub fn blocked_for_anonymous_user(&self) -> bool {
-        use WorkspaceAction::*;
-        matches!(
-            self,
-            ImportToTeamDrive
-                | CreateTeamNotebook
-                | CreateTeamWorkflow
-                | CreateTeamFolder
-                | CreateTeamEnvVarCollection
-        )
-    }
-
     /// Matches what actions require the app state to be saved, and which don't. We match all
     /// actions directly, rather than using _, so we're forced to make a conscious decision for each
     /// of them, rather than following some default.
@@ -741,7 +691,6 @@ impl WorkspaceAction {
             | CopyVersion(_)
             | DownloadNewVersion
             | ConfigureKeybindingSettings { .. }
-            | ExportAllWarpDriveObjects
             | ShowSettings
             | ShowSettingsPage(_)
             | ShowSettingsPageWithSearch { .. }
@@ -785,24 +734,12 @@ impl WorkspaceAction {
             | ToggleMouseReporting
             | ToggleScrollReporting
             | ToggleFocusReporting
-            | ImportToPersonalDrive
-            | ImportToTeamDrive
-            | CreatePersonalNotebook
-            | CreateTeamNotebook
-            | CreatePersonalWorkflow
-            | CreateTeamWorkflow
-            | CreatePersonalFolder
-            | CreateTeamFolder
-            | CreateTeamEnvVarCollection
-            | CreatePersonalEnvVarCollection
             | OpenInExplorer { .. }
             | DragTab { .. }
             | StartTabDrag
             | DragGroup { .. }
             | StartGroupDrag(_)
             | ToggleLeftPanel
-            | ToggleWarpDrive
-            | OpenWarpDrive
             | ClosePanel
             | ToggleRightPanel
             | ToggleAgentInbox
@@ -852,9 +789,7 @@ impl WorkspaceAction {
             | ToggleShowMemoryStats
             | RunCommand { .. }
             | InsertInInput { .. }
-            | UndoTrash(_)
             | OpenFilePath { .. }
-            | ViewObjectInWarpDrive(_)
             | TerminateApp
             | SignInAnonymousWebUser
             | TabHoverWidthStart { .. }

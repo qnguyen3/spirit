@@ -3,7 +3,6 @@ use settings::Setting as _;
 use warp_errors::report_if_error;
 use warpui::{AppContext, SingletonEntity as _};
 
-use crate::drive::settings::WarpDriveSettings;
 use crate::settings::CodeSettings;
 use crate::workspace::tab_settings::TabSettings;
 
@@ -37,14 +36,6 @@ fn apply_ui_customization_settings(ui: &UICustomizationSettings, app: &mut AppCo
             settings
                 .show_code_review_button
                 .set_value(ui.show_code_review_button, ctx)
-        );
-    });
-
-    WarpDriveSettings::handle(app).update(app, |settings, ctx| {
-        report_if_error!(
-            settings
-                .enable_warp_drive
-                .set_value(ui.show_warp_drive, ctx)
         );
     });
 

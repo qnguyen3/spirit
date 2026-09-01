@@ -4,11 +4,7 @@ use warpui::windowing::WindowManager;
 use warpui::{SingletonEntity, WindowId, async_assert};
 
 use super::open_workflow_count;
-use crate::cloud_object::model::persistence::CloudModel;
-use crate::cloud_object::{CloudObjectEventEntrypoint, Space};
-use crate::drive::OpenWarpDriveObjectSettings;
 use crate::integration_testing::view_getters::workspace_view;
-use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::ids::{ClientId, SyncId};
 use crate::workflows::WorkflowViewMode;
 use crate::workflows::manager::WorkflowOpenSource;

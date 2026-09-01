@@ -11,7 +11,6 @@ use warpui::{
 };
 
 use crate::appearance::Appearance;
-use crate::drive::settings::WarpDriveSettings;
 use crate::search::QueryFilter;
 use crate::search::command_palette::FilterChipRenderer;
 

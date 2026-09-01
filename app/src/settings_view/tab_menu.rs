@@ -7,7 +7,6 @@ use warpui::ui_components::components::{UiComponent, UiComponentStyles};
 
 use super::teams_page::TeamsPageAction;
 use crate::Appearance;
-use crate::cloud_object::model::persistence::CloudModel;
 use crate::workspaces::team::Team;
 
 /// The Tabs trait provides common functionality for an enum to be used as a tabs menu UI component.

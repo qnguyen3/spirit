@@ -139,11 +139,6 @@ use crate::autoupdate::{
 use crate::banner::BannerState;
 use crate::changelog_model::{ChangelogModel, ChangelogRequestType, Event as ChangelogEvent};
 use crate::channel::ChannelState;
-use crate::cloud_object::model::persistence::CloudModel;
-use crate::cloud_object::toast_message::CloudObjectToastMessage;
-use crate::cloud_object::{
-    CloudObject, GenericStringObjectFormat, JsonObjectType, ObjectType, Owner, Space,
-};
 use crate::code::buffer_location::LocalOrRemotePath;
 use crate::code::editor::{add_color, remove_color};
 #[cfg(feature = "local_fs")]
@@ -155,20 +150,10 @@ use crate::code_review::diff_state::DiffStateModel;
 use crate::coding_panel_enablement_state::CodingPanelEnablementState;
 use crate::context_chips::ChipRuntimeCapabilities;
 use crate::default_terminal::DefaultTerminal;
-use crate::drive::export::ExportManager;
-use crate::drive::import::modal::{ImportModal, ImportModalEvent};
-use crate::drive::items::WarpDriveItemId;
-use crate::drive::settings::{WarpDriveSettings, WarpDriveSettingsChangedEvent};
-use crate::drive::workflows::modal::{WorkflowModal, WorkflowModalEvent};
-use crate::drive::{
-    CloudObjectTypeAndId, DriveObjectType, DrivePanel, DrivePanelEvent, OpenWarpDriveObjectSettings,
-};
 use crate::editor::{
     EditorView, Event as EditorEvent, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions,
     TextOptions,
 };
-use crate::env_vars::CloudEnvVarCollection;
-use crate::env_vars::manager::{EnvVarCollectionManager, EnvVarCollectionSource};
 use crate::launch_configs::launch_config::WindowTemplate;
 use crate::launch_configs::save_modal::{LaunchConfigModalEvent, LaunchConfigSaveModal};
 use crate::menu::{
@@ -218,14 +203,10 @@ use crate::search::command_search::view::{CommandSearchEvent, CommandSearchView}
 #[cfg(target_family = "wasm")]
 use crate::search::slash_command_menu::static_commands::commands;
 use crate::search::{self, QueryFilter};
-use crate::server::cloud_objects::update_manager::{
-    ObjectOperation, OperationSuccessType, UpdateManager, UpdateManagerEvent,
-};
 use crate::server::ids::{ObjectUid, ServerId, SyncId};
 use crate::server::network_log_pane_manager::NetworkLogPaneManager;
 use crate::server::server_api::{ServerApi, ServerApiProvider, ServerTime};
 use crate::session_management::{SessionNavigationData, SessionSource, TabNavigationData};
-use crate::settings::cloud_preferences::CloudPreferencesSettings;
 use crate::settings::{
     AccessibilitySettings, AliasExpansionSettings, AppEditorSettings, BlockVisibilitySettings,
     ChangelogSettings, CodeSettings, CodeSettingsChangedEvent, CtrlTabBehavior, CursorBlink,
@@ -465,7 +446,6 @@ pub const TOGGLE_COMMAND_PALETTE_KEYBINDING_NAME: &str = "workspace:toggle_comma
 
 // these won't have to be public after we deprecate the code mode v1 project explorer which is defined in terminal
 pub(crate) const TOGGLE_PROJECT_EXPLORER_BINDING_NAME: &str = "workspace:toggle_project_explorer";
-pub(crate) const TOGGLE_WARP_DRIVE_BINDING_NAME: &str = "workspace:toggle_warp_drive";
 pub(crate) const TOGGLE_RIGHT_PANEL_BINDING_NAME: &str = "workspace:toggle_right_panel";
 pub(crate) const TOGGLE_VERTICAL_TABS_PANEL_BINDING_NAME: &str =
     "workspace:toggle_vertical_tabs_panel";
@@ -485,7 +465,6 @@ pub(crate) const TOGGLE_TAB_CONFIGS_MENU_BINDING_NAME: &str = "workspace:toggle_
 pub(crate) const LEFT_PANEL_PROJECT_EXPLORER_BINDING_NAME: &str =
     "workspace:left_panel_project_explorer";
 pub(crate) const LEFT_PANEL_GLOBAL_SEARCH_BINDING_NAME: &str = "workspace:left_panel_global_search";
-pub(crate) const LEFT_PANEL_WARP_DRIVE_BINDING_NAME: &str = "workspace:left_panel_warp_drive";
 
 const KEYBINDINGS_TO_CACHE: [&str; 4] = [
     ASK_AI_ASSISTANT_KEYBINDING_NAME,

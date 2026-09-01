@@ -1,7 +1,6 @@
 use warpui::prelude::ChildView;
 use warpui::{Element, EntityId, View, ViewContext, ViewHandle};
 
-use crate::env_vars::env_var_collection_block::EnvVarCollectionBlock;
 use crate::terminal::TerminalView;
 use crate::terminal::block_list_viewport::ScrollPositionUpdate;
 use crate::terminal::model::blocks::{RemovableBlocklistItem, RichContentItem};

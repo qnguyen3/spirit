@@ -153,8 +153,6 @@ use crate::banner::{
     Banner, BannerAction, BannerEvent, BannerState, BannerTextButton, BannerTextContent,
     DismissalType,
 };
-use crate::cloud_object::model::actions::ObjectActionType;
-use crate::cloud_object::{CloudObject, GenericStringObjectFormat, JsonObjectType};
 #[cfg(feature = "local_fs")]
 use crate::code::editor_management::CodeSource;
 use crate::code_review::agent_handoff::AgentReviewCommentBatch;
@@ -165,13 +163,7 @@ use crate::code_review::github_repo_model::GitHubRepoModel;
 use crate::context_chips::ContextChipKind;
 use crate::context_chips::prompt::{Prompt, PromptSelection};
 use crate::context_chips::prompt_type::PromptType;
-use crate::drive::CloudObjectTypeAndId;
-use crate::drive::settings::WarpDriveSettings;
 use crate::editor::{AutosuggestionType, CrdtOperation, EditorAction};
-use crate::env_vars::env_var_collection_block::{
-    EnvVarCollectionBlock, EnvVarCollectionBlockEvent,
-};
-use crate::env_vars::{CloudEnvVarCollection, EnvVar, EnvVarExt};
 use crate::features::FeatureFlag;
 use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields};
 use crate::palette::PaletteSource;
@@ -186,7 +178,6 @@ use crate::remote_server::manager::{RemoteServerManager, RemoteServerManagerEven
 use crate::resource_center::{
     Tip, TipHint, TipsCompleted, mark_feature_used_and_write_to_user_defaults,
 };
-use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::ids::{ObjectUid, SyncId};
 use crate::session_management::{CommandContext, SessionNavigationPromptElements};
 #[cfg(feature = "local_fs")]

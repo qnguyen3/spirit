@@ -107,7 +107,6 @@ use super::{
 };
 use crate::appearance::{Appearance, AppearanceEvent};
 use crate::channel::{Channel, ChannelState};
-use crate::cloud_object::model::persistence::CloudModel;
 #[cfg(feature = "local_fs")]
 use crate::code::editor_management::CodeSource;
 use crate::completer::SessionContext;
@@ -123,7 +122,6 @@ use crate::editor::{
     TextColors, TextRun, default_cursor_colors, position_id_for_cached_point,
     position_id_for_cursor, position_id_for_first_cursor,
 };
-use crate::env_vars::EnvVarCollectionExt;
 use crate::features::FeatureFlag;
 use crate::input_suggestions::{
     Event as InputSuggestionsEvent, HistoryInputSuggestion, InputSuggestions,
@@ -183,7 +181,6 @@ use crate::voltron::{
     Voltron, VoltronEvent, VoltronFeatureView, VoltronFeatureViewHandle, VoltronFeatureViewMeta,
     VoltronItem, VoltronMetadata,
 };
-use crate::workflows::aliases::WorkflowAliases;
 use crate::workflows::command_parser::{
     WorkflowArgumentIndex, WorkflowDisplayData, compute_workflow_display_data,
     compute_workflow_display_data_for_history_command,

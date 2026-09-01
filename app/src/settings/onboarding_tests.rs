@@ -3,11 +3,7 @@ use warp_core::features::FeatureFlag;
 use warpui::{App, SingletonEntity};
 
 use crate::auth::AuthStateProvider;
-use crate::cloud_object::model::persistence::CloudModel;
-use crate::drive::settings::WarpDriveSettings;
 use crate::network::NetworkStatus;
-use crate::server::cloud_objects::update_manager::UpdateManager;
-use crate::server::sync_queue::SyncQueue;
 use crate::settings::{CodeSettings, PrivacySettings, apply_account_first_onboarding_settings};
 use crate::test_util::settings::initialize_settings_for_tests;
 use crate::workspace::tab_settings::TabSettings;

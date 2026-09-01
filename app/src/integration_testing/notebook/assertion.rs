@@ -4,8 +4,6 @@ use warp_editor::render::model::BlockItem;
 use warpui::integration::{AssertionCallback, AssertionOutcome, AssertionWithDataCallback};
 use warpui::{App, ViewHandle, async_assert, async_assert_eq};
 
-use crate::cloud_object::model::generic_string_model::GenericStringObjectId;
-use crate::cloud_object::model::persistence::CloudModel;
 use crate::integration_testing::cloud_object::assert_metadata_revision;
 use crate::integration_testing::terminal::util::ExpectedOutput;
 use crate::integration_testing::view_getters::{notebook_view, terminal_view};

@@ -51,11 +51,6 @@ use crate::auth::web_handoff::{WebHandoffEvent, WebHandoffView};
 use crate::auth::{AuthStateProvider, LoginFailureReason};
 use crate::autoupdate::{AutoupdateState, AutoupdateStateEvent, RequestType, UpdateReady};
 use crate::changelog_model::ChangelogRequestType;
-use crate::cloud_object::model::persistence::CloudModel;
-use crate::cloud_object::{GenericStringObjectFormat, JsonObjectType, ObjectType};
-use crate::drive::export::ExportManager;
-use crate::drive::items::WarpDriveItemId;
-use crate::drive::{CloudObjectTypeAndId, OpenWarpDriveObjectArgs, OpenWarpDriveObjectSettings};
 use crate::features::FeatureFlag;
 use crate::interval_timer::IntervalTimer;
 use crate::launch_configs::launch_config;
@@ -63,13 +58,9 @@ use crate::notebooks::manager::NotebookSource;
 use crate::pane_group::{NewTerminalOptions, PanesLayout};
 use crate::persistence::ModelEvent;
 use crate::projects::host::ProjectHost;
-use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::ids::{ServerId, SyncId};
 use crate::server::server_api::auth::UserAuthenticationError;
 use crate::server::server_api::{ServerApi, ServerApiProvider, ServerTime};
-use crate::settings::cloud_preferences_syncer::{
-    CloudPreferencesSyncer, CloudPreferencesSyncerEvent,
-};
 use crate::settings::initializer::SettingsInitializer;
 use crate::settings::{
     QuakeModeSettings, ThemeSettings, apply_account_first_onboarding_settings,

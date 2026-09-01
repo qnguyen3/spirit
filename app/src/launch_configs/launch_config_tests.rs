@@ -6,7 +6,6 @@ use crate::app_state::{
     PaneNodeSnapshot, ProjectScreenSnapshot, SplitDirection, TabSnapshot, TerminalPaneSnapshot,
     WindowSnapshot,
 };
-use crate::drive::OpenWarpDriveObjectSettings;
 use crate::tab::SelectedTabColor;
 
 fn single_tab_snapshot(root: PaneNodeSnapshot) -> AppState {

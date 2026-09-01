@@ -45,7 +45,6 @@ use crate::channel::{Channel, ChannelState};
 use crate::context_chips::ChipAvailability;
 use crate::context_chips::prompt::{Prompt, PromptEvent};
 use crate::context_chips::renderer::{ChipDragState, Renderer as ContextChipRenderer};
-use crate::drive::settings::WarpDriveSettings;
 use crate::editor::{
     EditOrigin, EditorView, Event as EditorEvent, InteractionState, SingleLineEditorOptions,
     TextOptions,

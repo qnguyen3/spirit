@@ -34,8 +34,6 @@ use super::super::rich_text_styles;
 use super::NotebooksEditorModel;
 use crate::appearance::Appearance;
 use crate::auth::AuthStateProvider;
-use crate::cloud_object::model::persistence::CloudModel;
-use crate::cloud_object::{Owner, Revision, ServerMetadata, ServerPermissions, ServerWorkflow};
 use crate::editor::InteractionState;
 use crate::notebooks::editor::keys::NotebookKeybindings;
 use crate::notebooks::editor::model::DEBOUNCED_RESIZE_PERIOD;

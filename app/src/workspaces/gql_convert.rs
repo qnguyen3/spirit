@@ -58,7 +58,6 @@ use super::workspace::{
     Workspace, WorkspaceMember, WorkspaceMemberUsageInfo, WorkspaceSettings, WorkspaceSizePolicy,
 };
 use crate::auth::UserUid;
-use crate::server::cloud_objects::listener::ObjectUpdateMessage;
 use crate::server::graphql::schema::object_action_history_from_gql;
 use crate::server::ids::ServerId;
 use crate::workspaces::workspace::{

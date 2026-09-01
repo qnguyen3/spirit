@@ -96,17 +96,9 @@ pub enum CustomAction {
     ToggleSyncTerminalInputsInCurrentTab,
     DisableSyncTerminalInputs,
     ReopenClosedSession,
-    ToggleWarpDrive,
     AddWindow,
     CloseCurrentSession,
     CloseWindow,
-    NewPersonalWorkflow,
-    NewPersonalNotebook,
-    NewPersonalEnvVars,
-    NewTeamWorkflow,
-    NewTeamNotebook,
-    NewTeamEnvVars,
-    SearchDrive,
     OpenTeamSettings,
     #[cfg(windows)]
     WindowsPaste,
@@ -377,13 +369,6 @@ pub fn custom_tag_to_keystroke(custom: CustomTag) -> Option<Keystroke> {
 
         // This is one of the app's hardcoded keybindings.
         CustomAction::AddWindow => Keystroke::parse(cmd_or_ctrl_shift("n")).ok(),
-        CustomAction::ToggleWarpDrive => {
-            if OperatingSystem::get().is_mac() {
-                Keystroke::parse("cmd-\\").ok()
-            } else {
-                Keystroke::parse("ctrl-shift-|").ok()
-            }
-        }
         CustomAction::CloseWindow => mac_only_keystroke("cmd-shift-W"),
         CustomAction::CloseCurrentSession => Keystroke::parse(cmd_or_ctrl_shift("w")).ok(),
         CustomAction::ViewChangelog => Keystroke::parse(cmd_or_ctrl_shift("alt-o")).ok(),
@@ -443,13 +428,6 @@ pub fn custom_tag_to_keystroke(custom: CustomTag) -> Option<Keystroke> {
         | CustomAction::HistorySearch
         | CustomAction::DisableSyncTerminalInputs
         | CustomAction::ToggleSyncAllTerminalInputsInAllTabs
-        | CustomAction::NewPersonalWorkflow
-        | CustomAction::NewPersonalNotebook
-        | CustomAction::NewPersonalEnvVars
-        | CustomAction::NewTeamWorkflow
-        | CustomAction::NewTeamNotebook
-        | CustomAction::NewTeamEnvVars
-        | CustomAction::SearchDrive
         | CustomAction::OpenTeamSettings => None,
     }
 }

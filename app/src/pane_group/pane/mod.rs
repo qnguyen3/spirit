@@ -42,7 +42,6 @@ use super::{ActivationReason, LeafContents, PaneGroup, PaneGroupAction};
 use crate::code::buffer_location::LocalOrRemotePath;
 use crate::code::view::CodeView;
 #[cfg(feature = "local_fs")]
-use crate::env_vars::view::env_var_collection::EnvVarCollectionView;
 use crate::menu::MenuItem;
 use crate::notebooks::file::FileNotebookView;
 use crate::notebooks::notebook::NotebookView;

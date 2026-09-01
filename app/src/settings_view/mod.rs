@@ -82,7 +82,6 @@ mod tab_menu;
 mod teams_page;
 mod transfer_ownership_confirmation_modal;
 pub mod update_environment_form;
-mod warp_drive_page;
 mod warpify_page;
 
 #[cfg(not(target_family = "wasm"))]
