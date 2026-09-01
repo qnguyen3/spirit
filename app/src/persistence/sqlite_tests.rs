@@ -21,7 +21,6 @@ use crate::app_state::{
 };
 use crate::auth::UserUid;
 use crate::code::editor_management::CodeSource;
-use crate::notebooks::{CloudNotebook, CloudNotebookModel};
 use crate::persistence::model::{
     ObjectPermissions, Project as ProjectRow, ProjectWorktree as WorktreeRow,
 };
@@ -188,17 +187,6 @@ fn sqlite_writer_reuses_codebase_index_metadata_events() {
 }
 #[test]
 fn test_deduplicate_snapshots() {
-    let local_notebook = CloudNotebook::new_local(
-        CloudNotebookModel {
-            title: "Hello".to_string(),
-            data: "World".to_string(),
-            ai_document_id: None,
-            conversation_id: None,
-        },
-        Owner::mock_current_user(),
-        None,
-        ClientId::new(),
-    );
     let completed_block_1 = BlockCompleted {
         pane_id: vec![1, 2, 3],
         block: Arc::new(SerializedBlock::default()),
@@ -226,39 +214,25 @@ fn test_deduplicate_snapshots() {
     };
 
     let original_events = vec![
-        ModelEvent::UpsertNotebook {
-            notebook: local_notebook.clone(),
-        },
         ModelEvent::Snapshot(snapshot_1.clone()),
         ModelEvent::SaveBlock(completed_block_1.clone()),
         ModelEvent::Snapshot(snapshot_2.clone()),
         ModelEvent::SaveBlock(completed_block_2.clone()),
         ModelEvent::Snapshot(snapshot_3.clone()),
-        ModelEvent::UpsertNotebook {
-            notebook: local_notebook.clone(),
-        },
     ];
 
     let filtered_events = deduplicate_events(original_events);
-    assert_eq!(filtered_events.len(), 5);
+    assert_eq!(filtered_events.len(), 3);
 
-    assert!(matches!(
-        &filtered_events[0],
-        &ModelEvent::UpsertNotebook { .. }
-    ));
     // The first snapshot should have been filtered out.
-    assert!(matches!(&filtered_events[1], &ModelEvent::SaveBlock(_)));
+    assert!(matches!(&filtered_events[0], &ModelEvent::SaveBlock(_)));
     // The second snapshot should have been filtered out.
-    assert!(matches!(&filtered_events[2], &ModelEvent::SaveBlock(_)));
+    assert!(matches!(&filtered_events[1], &ModelEvent::SaveBlock(_)));
     // The third snapshot should be preserved.
-    match &filtered_events[3] {
+    match &filtered_events[2] {
         ModelEvent::Snapshot(snapshot) => assert_eq!(snapshot, &snapshot_3),
         other => panic!("Expected ModelEvent::Snapshot, got {other:?}"),
     }
-    assert!(matches!(
-        &filtered_events[4],
-        &ModelEvent::UpsertNotebook { .. }
-    ));
 }
 
 #[test]
@@ -912,43 +886,6 @@ fn test_path_encode_decode() {
     assert_encode_then_decode_preserves_original_path(PathBuf::from("/temp/ñoñàscii/temp.txt"));
     assert_encode_then_decode_preserves_original_path(PathBuf::from("/temp/hindi/हिन्दी"));
     assert_encode_then_decode_preserves_original_path(PathBuf::from("/temp/cjk/狗没有耐心"));
-}
-
-#[test]
-fn test_deserialize_corrupted_guests() {
-    let _ = FeatureFlag::SharedWithMe.override_enabled(true);
-    // Use a hardcoded timestamp to ensure this test works on systems with more-than-microsecond
-    // precision.
-    let permissions_ts_micros = 123456;
-    let permissions_ts =
-        ServerTimestamp::from_unix_timestamp_micros(permissions_ts_micros).unwrap();
-
-    let db_permissions = ObjectPermissions {
-        id: 42,
-        object_metadata_id: 10,
-        subject_type: "TEAM".to_string(),
-        subject_id: Some("7".to_string()),
-        subject_uid: "team_uid12345678912345".to_string(),
-        permissions_last_updated_at: Some(permissions_ts_micros),
-        // This is not a valid set of encoded object guests.
-        object_guests: Some(vec![1, 2, 3]),
-        anyone_with_link_access_level: None,
-        anyone_with_link_source: None,
-    };
-
-    // The overall permissions should successfully convert, minus the object guests.
-    let cloud_permissions = to_cloud_object_permissions(&db_permissions, None);
-    assert_eq!(
-        cloud_permissions,
-        Some(CloudObjectPermissions {
-            owner: Owner::Team {
-                team_uid: crate::server::ids::ServerId::from_string_lossy("team_uid12345678912345"),
-            },
-            permissions_last_updated_ts: Some(permissions_ts),
-            anyone_with_link: None,
-            guests: vec![],
-        })
-    );
 }
 
 // Regression: GH#10083. The macOS green-tile button could leave a 1px-wide

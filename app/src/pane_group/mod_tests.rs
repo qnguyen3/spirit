@@ -22,7 +22,6 @@ use crate::context_chips::prompt::Prompt;
 use crate::launch_configs::launch_config::PaneMode;
 use crate::network::NetworkStatus;
 use crate::notebooks::editor::keys::NotebookKeybindings;
-use crate::notebooks::notebook::NotebookView;
 use crate::persisted_workspace::PersistedWorkspace;
 use crate::resource_center::TipsCompleted;
 use crate::search::files::model::FileSearchModel;
@@ -161,8 +160,14 @@ fn is_active_session(panes: &PaneGroup, pane_id: PaneId, ctx: &AppContext) -> bo
     panes.active_session_id(ctx).map(Into::into) == Some(pane_id)
 }
 
-fn new_notebook(ctx: &mut ViewContext<PaneGroup>) -> ViewHandle<NotebookView> {
-    ctx.add_typed_action_view(NotebookView::new)
+fn new_file_pane(ctx: &mut ViewContext<PaneGroup>) -> FilePane {
+    FilePane::new(
+        None,
+        None,
+        #[cfg(feature = "local_fs")]
+        None,
+        ctx,
+    )
 }
 
 struct PreAttachReturnsFalsePane {
@@ -302,7 +307,7 @@ fn test_active_session_id_reset_on_last_pane_close() {
             // Add a non-terminal pane (Notebook) so the pane group remains alive when terminal is closed.
             panes.add_pane_with_direction(
                 Direction::Right,
-                NotebookPane::new(new_notebook(ctx), ctx),
+                new_file_pane(ctx),
                 false, /* focus_new_pane */
                 ctx,
             );
@@ -355,7 +360,7 @@ fn test_focus_notebook() {
             // Add a notebook to the left.
             panes.add_pane_with_direction(
                 Direction::Left,
-                NotebookPane::new(new_notebook(ctx), ctx),
+                new_file_pane(ctx),
                 true, /* focus_new_pane */
                 ctx,
             );
@@ -436,7 +441,7 @@ fn test_group_without_terminals() {
             // Add a notebook to the left.
             panes.add_pane_with_direction(
                 Direction::Left,
-                NotebookPane::new(new_notebook(ctx), ctx),
+                new_file_pane(ctx),
                 true, /* focus_new_pane */
                 ctx,
             );
@@ -469,7 +474,7 @@ fn test_close_active_session() {
             // Add a notebook to the left.
             panes.add_pane_with_direction(
                 Direction::Left,
-                NotebookPane::new(new_notebook(ctx), ctx),
+                new_file_pane(ctx),
                 true, /* focus_new_pane */
                 ctx,
             );
@@ -836,7 +841,7 @@ fn test_terminal_pane_headers() {
         pane_group.update(&mut app, |pane_group, ctx| {
             pane_group.add_pane_with_direction(
                 Direction::Left,
-                NotebookPane::new(new_notebook(ctx), ctx),
+                new_file_pane(ctx),
                 true, /* focus_new_pane */
                 ctx,
             );

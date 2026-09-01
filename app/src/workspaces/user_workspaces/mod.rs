@@ -124,6 +124,16 @@ pub struct WorkspacesMetadataWithPricing {
     pub pricing_info: Option<warp_graphql::billing::PricingInfo>,
 }
 
+#[cfg(test)]
+#[derive(Debug)]
+pub enum SoleTeamError {
+    NoTeam,
+    MoreThanOneTeam {
+        #[allow(dead_code)]
+        team_uids: Vec<ServerId>,
+    },
+}
+
 pub struct CreateTeamResponse {
     pub workspace: Workspace,
     #[allow(dead_code)]
@@ -313,6 +323,40 @@ impl UserWorkspaces {
     /// applies such a response so the teamless fallback can't go stale.
     pub fn set_user_purchase_policy(&mut self, policy: Option<PurchaseAddOnCreditsPolicy>) {
         self.user_purchase_policy = policy;
+    }
+
+    /// The user's single team in the current workspace.
+    ///
+    /// Having no workspace is reported as [`SoleTeamError::NoTeam`]: a user with no workspace
+    /// is on no team, and no caller can act differently on the distinction.
+    #[cfg(test)]
+    pub fn sole_team_uid(&self) -> Result<ServerId, SoleTeamError> {
+        let teams = self
+            .current_workspace()
+            .map(|workspace| workspace.teams.as_slice())
+            .unwrap_or_default();
+        match teams {
+            [] => Err(SoleTeamError::NoTeam),
+            [team] => Ok(team.uid),
+            _ => Err(SoleTeamError::MoreThanOneTeam {
+                team_uids: teams.iter().map(|team| team.uid).collect(),
+            }),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn set_team_for_window(
+        &mut self,
+        window_id: WindowId,
+        team_uid: ServerId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let window_team_uid = self.window_team_uids.entry(window_id).or_default();
+        if window_team_uid.is_none() {
+            *window_team_uid = Some(team_uid);
+            ctx.emit(UserWorkspacesEvent::WindowTeamChanged { window_id });
+            ctx.notify();
+        }
     }
 
     pub fn workspaces(&self) -> &Vec<Workspace> {
