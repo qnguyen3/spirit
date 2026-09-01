@@ -11,7 +11,6 @@ use watcher::HomeDirectoryWatcher;
 use super::settings::initialize_history_persistence_for_tests;
 use crate::auth::AuthStateProvider;
 use crate::auth::auth_manager::AuthManager;
-use crate::auth::github_auth_notifier::GitHubAuthNotifier;
 use crate::changelog_model::ChangelogModel;
 use crate::code_review::git_repo_model::GitRepoModels;
 use crate::context_chips::prompt::Prompt;
@@ -57,9 +56,6 @@ pub fn initialize_app_for_terminal_view(app: &mut App) {
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| SystemStats::new());
     app.add_singleton_model(|_| Prompt::mock());
-    app.add_singleton_model(UserWorkspaces::default_mock);
-    app.add_singleton_model(TeamTesterStatus::mock);
-    app.add_singleton_model(TeamUpdateManager::mock);
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(PrivacySettings::mock);
     app.add_singleton_model(|_ctx| SyncedInputState::mock());
@@ -102,7 +98,6 @@ pub fn initialize_app_for_terminal_view(app: &mut App) {
 
     app.add_singleton_model(|_| WorkspaceRegistry::new());
     app.add_singleton_model(|_| IgnoredSuggestionsModel::new(vec![]));
-    app.add_singleton_model(|_| GitHubAuthNotifier::new());
     app.add_singleton_model(PersistedWorkspace::new_for_test);
 
     AltScreenReporting::register(app);

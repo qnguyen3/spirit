@@ -16,7 +16,6 @@ use watcher::HomeDirectoryWatcher;
 use super::*;
 use crate::auth::AuthStateProvider;
 use crate::auth::auth_manager::AuthManager;
-use crate::auth::github_auth_notifier::GitHubAuthNotifier;
 use crate::changelog_model::ChangelogModel;
 use crate::context_chips::prompt::Prompt;
 use crate::launch_configs::launch_config::PaneMode;
@@ -41,10 +40,6 @@ use crate::warp_managed_paths_watcher::WarpManagedPathsWatcher;
 use crate::workflows::local_workflows::LocalWorkflows;
 use crate::workspace::sync_inputs::SyncedInputState;
 use crate::workspace::{ActiveSession, WorkspaceRegistry};
-use crate::workspaces::team_tester::TeamTesterStatus;
-use crate::workspaces::update_manager::TeamUpdateManager;
-use crate::workspaces::user_profiles::UserProfiles;
-use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::{GlobalResourceHandles, GlobalResourceHandlesProvider};
 
 fn initialize_app(app: &mut App) {
@@ -69,14 +64,10 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_ctx| PtySpawner::new_for_test());
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| SystemStats::new());
-    app.add_singleton_model(UserWorkspaces::default_mock);
-    app.add_singleton_model(TeamTesterStatus::mock);
-    app.add_singleton_model(TeamUpdateManager::mock);
     app.add_singleton_model(|_| DetectedRepositories::default());
     app.add_singleton_model(HomeDirectoryWatcher::new_for_test);
     app.add_singleton_model(DirectoryWatcher::new);
     app.add_singleton_model(WarpManagedPathsWatcher::new_for_testing);
-    app.add_singleton_model(|_ctx| UserProfiles::new(Vec::new()));
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(PrivacySettings::mock);
     app.add_singleton_model(|_ctx| SyncedInputState::mock());
@@ -101,7 +92,6 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(UndoCloseStack::new);
     app.add_singleton_model(|_| IgnoredSuggestionsModel::new(vec![]));
     app.add_singleton_model(|_| History::new(vec![]));
-    app.add_singleton_model(|_| GitHubAuthNotifier::new());
     app.add_singleton_model(remote_server::manager::RemoteServerManager::new);
 }
 

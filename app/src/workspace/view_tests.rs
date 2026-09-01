@@ -18,7 +18,6 @@ use warpui::{AddSingletonModel, App, ViewHandle};
 use watcher::HomeDirectoryWatcher;
 
 use super::*;
-use crate::auth::github_auth_notifier::GitHubAuthNotifier;
 use crate::context_chips::prompt::Prompt;
 use crate::editor::Event;
 use crate::gpu_state::GPUState;
@@ -27,7 +26,6 @@ use crate::notebooks::editor::keys::NotebookKeybindings;
 use crate::pane_group::{Direction, PaneGroupAction, PaneId};
 use crate::persisted_workspace::PersistedWorkspace;
 use crate::projects::registry::ProjectRegistryModel;
-use crate::server::ids::ServerId;
 use crate::server::server_api::ServerApiProvider;
 use crate::settings::PrivacySettings;
 use crate::settings_view::DisplayCount;
@@ -46,10 +44,6 @@ use crate::user_config::tab_configs_dir;
 use crate::util::traffic_lights::windows::RendererState;
 use crate::warp_managed_paths_watcher::WarpManagedPathsWatcher;
 use crate::workflows::local_workflows::LocalWorkflows;
-use crate::workspaces::team_tester::TeamTesterStatus;
-use crate::workspaces::update_manager::TeamUpdateManager;
-use crate::workspaces::user_profiles::UserProfiles;
-use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::{GlobalResourceHandlesProvider, workspace};
 pub(crate) fn initialize_app(app: &mut App) {
     initialize_settings_for_tests(app);
@@ -66,10 +60,6 @@ pub(crate) fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| SystemStats::new());
     app.add_singleton_model(|_| crate::tab::TabShortcutModifierState::new());
-    app.add_singleton_model(UserWorkspaces::default_mock);
-    app.add_singleton_model(|_ctx| UserProfiles::new(Vec::new()));
-    app.add_singleton_model(TeamTesterStatus::mock);
-    app.add_singleton_model(TeamUpdateManager::mock);
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(AppearanceManager::new);
     app.add_singleton_model(|_| DisplayCount::mock());
@@ -79,7 +69,6 @@ pub(crate) fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| {
         ChangelogModel::new(std::sync::Arc::new(http_client::Client::new_for_test()))
     });
-    app.add_singleton_model(|_| GitHubAuthNotifier::new());
     app.add_singleton_model(|_ctx| SyncedInputState::mock());
     app.add_singleton_model(|_| ResizableData::default());
     app.add_singleton_model(LocalWorkflows::new);
@@ -158,59 +147,6 @@ pub(crate) fn mock_workspace(app: &mut App) -> ViewHandle<Workspace> {
         )
     });
     workspace
-}
-
-#[test]
-fn test_open_new_window_for_team_reuses_existing_team_window() {
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        let source_workspace = mock_workspace(&mut app);
-        let existing_team_workspace = mock_workspace(&mut app);
-        let existing_team_window_id =
-            existing_team_workspace.update(&mut app, |_, ctx| ctx.window_id());
-        let team_uid: ServerId = 123.into();
-        app.update(|ctx| {
-            UserWorkspaces::handle(ctx).update(ctx, |user_workspaces, ctx| {
-                user_workspaces.register_window(existing_team_window_id, Some(team_uid), ctx);
-            });
-        });
-        let initial_window_count = app.window_ids().len();
-
-        source_workspace.update(&mut app, |workspace, ctx| {
-            workspace.handle_action(&WorkspaceAction::OpenNewWindowForTeam { team_uid }, ctx);
-        });
-
-        assert_eq!(app.window_ids().len(), initial_window_count);
-    });
-}
-
-#[test]
-fn test_open_new_window_for_team_creates_window_when_team_has_none() {
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        let source_workspace = mock_workspace(&mut app);
-        let team_uid: ServerId = 123.into();
-        let initial_window_count = app.window_ids().len();
-
-        source_workspace.update(&mut app, |workspace, ctx| {
-            workspace.handle_action(&WorkspaceAction::OpenNewWindowForTeam { team_uid }, ctx);
-        });
-
-        assert_eq!(app.window_ids().len(), initial_window_count + 1);
-        app.read(|ctx| {
-            assert_eq!(
-                ctx.window_ids()
-                    .filter(|window_id| {
-                        UserWorkspaces::as_ref(ctx).team_uid_for_window(*window_id)
-                            == Some(team_uid)
-                    })
-                    .count(),
-                1
-            );
-        });
-    });
 }
 
 fn restored_workspace(

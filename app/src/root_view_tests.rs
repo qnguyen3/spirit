@@ -1,6 +1,5 @@
 use onboarding::{
-    AgentOnboardingView, OfferVariant, OnboardingAuthState, SelectedSettings,
-    UICustomizationSettings,
+    AgentOnboardingView, OnboardingAuthState, SelectedSettings, UICustomizationSettings,
 };
 use warp_core::features::FeatureFlag;
 use warp_core::user_preferences::GetUserPreferences as _;
@@ -12,8 +11,8 @@ use warpui::{
 
 use super::{
     AuthOnboardingState, AuthOnboardingTarget, HAS_COMPLETED_ONBOARDING_KEY, NewWorkspaceSource,
-    RootView, WorkspaceArgs, has_completed_local_onboarding, offer_variant_for_account_class,
-    refresh_pending_onboarding_choices, requires_post_onboarding_login,
+    RootView, WorkspaceArgs, has_completed_local_onboarding, refresh_pending_onboarding_choices,
+    requires_post_onboarding_login,
 };
 use crate::GlobalResourceHandles;
 use crate::appearance::Appearance;
@@ -24,42 +23,12 @@ use crate::server::server_api::ServerApiProvider;
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
 use crate::test_util::settings::initialize_settings_for_tests;
 use crate::themes::onboarding_theme_picker_themes;
-use crate::workspaces::user_workspaces::UserWorkspaces;
-use crate::workspaces::workspace::FtueAccountClass;
 
 fn initialize_app(app: &mut App) {
     app.update(crate::settings::init_and_register_user_preferences);
     app.add_singleton_model(|_ctx| ServerApiProvider::new_for_test());
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
     app.add_singleton_model(AuthManager::new_for_test);
-}
-
-#[test]
-fn account_first_class_uses_paid_status_then_fresh_request_limit() {
-    assert_eq!(
-        RootView::account_first_class(true, Some(0)),
-        FtueAccountClass::Paid
-    );
-    assert_eq!(
-        RootView::account_first_class(true, Some(300)),
-        FtueAccountClass::Paid
-    );
-    assert_eq!(
-        RootView::account_first_class(true, None),
-        FtueAccountClass::Paid
-    );
-    assert_eq!(
-        RootView::account_first_class(false, Some(300)),
-        FtueAccountClass::FreeIcp
-    );
-    assert_eq!(
-        RootView::account_first_class(false, Some(0)),
-        FtueAccountClass::FreeStandard
-    );
-    assert_eq!(
-        RootView::account_first_class(false, None),
-        FtueAccountClass::FreeStandard
-    );
 }
 
 fn set_local_onboarding_completed(app: &mut App, completed: bool) {
@@ -87,22 +56,6 @@ fn fallback_flow_never_requires_login_after_onboarding() {
 
     assert!(!requires_post_onboarding_login(false));
     assert!(!requires_post_onboarding_login(true));
-}
-
-#[test]
-fn account_first_classes_route_to_paid_or_the_expected_offer() {
-    assert_eq!(
-        offer_variant_for_account_class(FtueAccountClass::Paid),
-        None
-    );
-    assert_eq!(
-        offer_variant_for_account_class(FtueAccountClass::FreeIcp),
-        Some(OfferVariant::HeadStart)
-    );
-    assert_eq!(
-        offer_variant_for_account_class(FtueAccountClass::FreeStandard),
-        Some(OfferVariant::ChooseHowToStart)
-    );
 }
 
 #[test]
@@ -271,7 +224,6 @@ fn test_show_needs_sso_link_view_blocks_pre_terminal_onboarding_states() {
         app.add_singleton_model(AuthManager::new_for_test);
         app.add_singleton_model(|_| Appearance::mock());
         app.add_singleton_model(|_| KeybindingChangedNotifier::new());
-        app.add_singleton_model(UserWorkspaces::default_mock);
 
         let (_, harness) = app.add_window(WindowStyle::NotStealFocus, |ctx| {
             let login_slide_view = ctx.add_typed_action_view(|ctx| {
@@ -350,18 +302,6 @@ fn test_show_needs_sso_link_view_blocks_pre_terminal_onboarding_states() {
             },
             marker,
             "Onboarding",
-        );
-
-        let (target, marker) = workspace_target(&mut app);
-        assert_becomes_needs_sso_link(
-            AuthOnboardingState::PostAuthOnboarding {
-                onboarding_view,
-                target,
-                account_class: FtueAccountClass::FreeStandard,
-                upgrade_started: false,
-            },
-            marker,
-            "PostAuthOnboarding",
         );
     });
 }

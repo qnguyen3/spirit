@@ -7,8 +7,6 @@ use crate::network::NetworkStatus;
 use crate::settings::{CodeSettings, PrivacySettings, apply_account_first_onboarding_settings};
 use crate::test_util::settings::initialize_settings_for_tests;
 use crate::workspace::tab_settings::TabSettings;
-use crate::workspaces::team_tester::TeamTesterStatus;
-use crate::workspaces::user_workspaces::UserWorkspaces;
 
 #[test]
 fn account_first_settings_apply_ui_choices() {
@@ -17,9 +15,7 @@ fn account_first_settings_apply_ui_choices() {
         initialize_settings_for_tests(&mut app);
         app.add_singleton_model(|_| AuthStateProvider::new_for_test());
         app.add_singleton_model(|_| NetworkStatus::new());
-        app.add_singleton_model(TeamTesterStatus::mock);
         app.add_singleton_model(PrivacySettings::mock);
-        app.add_singleton_model(UserWorkspaces::default_mock);
 
         let selected_settings = SelectedSettings {
             ui_customization: Some(UICustomizationSettings {
