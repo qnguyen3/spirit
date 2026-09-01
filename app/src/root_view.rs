@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::SyncSender;
 
-use anyhow::Result;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use onboarding::{AgentOnboardingEvent, AgentOnboardingView};
@@ -32,7 +31,7 @@ use warpui::{
 
 use crate::app_state::{AppState, PaneUuid, WindowSnapshot};
 use crate::appearance::Appearance;
-use crate::autoupdate::{AutoupdateState, AutoupdateStateEvent, RequestType, UpdateReady};
+use crate::autoupdate::AutoupdateState;
 use crate::changelog_model::ChangelogRequestType;
 use crate::features::FeatureFlag;
 use crate::interval_timer::IntervalTimer;
@@ -40,7 +39,6 @@ use crate::launch_configs::launch_config;
 use crate::pane_group::{NewTerminalOptions, PanesLayout};
 use crate::persistence::ModelEvent;
 use crate::projects::host::ProjectHost;
-use crate::server::server_api::{ServerApi, ServerApiProvider, ServerTime};
 use crate::settings::initializer::SettingsInitializer;
 use crate::settings::{QuakeModeSettings, ThemeSettings, apply_onboarding_settings};
 use crate::settings_view::{SettingsSection, flags};
@@ -1192,7 +1190,6 @@ impl NewWorkspaceSource {
 #[derive(Clone)]
 struct WorkspaceArgs {
     global_resource_handles: GlobalResourceHandles,
-    server_time: Option<Arc<ServerTime>>,
     workspace_setting: NewWorkspaceSource,
 }
 
@@ -1239,8 +1236,6 @@ enum OnboardingState {
 
 pub struct RootView {
     onboarding_state: OnboardingState,
-    server_time: Option<Arc<ServerTime>>,
-    pub server_api: Arc<ServerApi>,
     pub model_event_sender: Option<SyncSender<ModelEvent>>,
     mouse_states: TrafficLightMouseStates,
     /// The window ID is needed because the "maximize" button needs to change its icon based on
@@ -1258,13 +1253,9 @@ impl RootView {
         workspace_setting: NewWorkspaceSource,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
-        let server_api_provider = ServerApiProvider::as_ref(ctx);
-        let server_api = server_api_provider.get();
-
         let model_event_sender = global_resource_handles.model_event_sender.clone();
         let workspace_args = WorkspaceArgs {
             global_resource_handles,
-            server_time: None,
             workspace_setting,
         };
 
@@ -1286,8 +1277,6 @@ impl RootView {
 
         let root_view = Self {
             onboarding_state,
-            server_time: None,
-            server_api: server_api.clone(),
             model_event_sender,
             mouse_states: Default::default(),
             window_id: ctx.window_id(),
@@ -1330,17 +1319,6 @@ impl RootView {
             OnboardingState::Terminal(_) => {}
         }
 
-        let autoupdate_handle = AutoupdateState::handle(ctx);
-        ctx.subscribe_to_model(&autoupdate_handle, |root_view, _handle, evt, ctx| {
-            if let AutoupdateStateEvent::CheckComplete {
-                result,
-                request_type: RequestType::Poll,
-            } = evt
-            {
-                root_view.polling_update_check_complete(result, ctx)
-            }
-        });
-
         // Ensure the onboarding view has focus after all views are created, so keyboard input
         // (Enter, arrow keys) routes to onboarding rather than a hidden editor.
         if let OnboardingState::Onboarding {
@@ -1382,47 +1360,6 @@ impl RootView {
     pub fn workspace_view(&self, app: &AppContext) -> Option<ViewHandle<Workspace>> {
         self.project_host_view()
             .map(|host| host.as_ref(app).active_workspace().clone())
-    }
-
-    fn polling_update_check_complete(
-        &mut self,
-        result: &Result<UpdateReady>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if let Ok(UpdateReady::Yes { new_version, .. }) = result {
-            log::info!("Update ready for channel version {new_version:?}");
-            if new_version.update_by.is_some() {
-                log::info!("Update ready, there is an update-by time, checking for server time.");
-                let server_api = self.server_api.clone();
-                let _ = ctx.spawn(
-                    async move { server_api.server_time().await },
-                    Self::server_time_updated,
-                );
-            }
-        }
-    }
-
-    fn server_time_updated(
-        &mut self,
-        server_time: Result<ServerTime>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if let Ok(server_time) = server_time {
-            let server_time = Arc::new(server_time);
-            self.server_time = Some(server_time.clone());
-
-            if let Some(workspace) = self.active_workspace(ctx) {
-                workspace.update(ctx, |workspace, ctx| {
-                    workspace.set_server_time(server_time);
-                    ctx.notify();
-                })
-            }
-        } else {
-            report_error!(anyhow::anyhow!(
-                "Error fetching server time {:?}",
-                server_time.err()
-            ));
-        }
     }
 
     fn close_window(&mut self, _: &(), ctx: &mut ViewContext<Self>) -> bool {
@@ -1862,12 +1799,7 @@ impl TypedActionView for RootView {
 impl WorkspaceArgs {
     fn create_workspace(self, ctx: &mut ViewContext<RootView>) -> ViewHandle<ProjectHost> {
         ctx.add_typed_action_view(|ctx| {
-            ProjectHost::new(
-                self.global_resource_handles,
-                self.server_time,
-                self.workspace_setting,
-                ctx,
-            )
+            ProjectHost::new(self.global_resource_handles, self.workspace_setting, ctx)
         })
     }
 }

@@ -160,8 +160,7 @@ impl TryFrom<PaneNodeSnapshot> for PaneTemplateType {
                 | LeafContents::Settings(_)
                 | LeafContents::CodeReview(_)
                 | LeafContents::GetStarted
-                | LeafContents::AgentPicker
-                | LeafContents::NetworkLog => Err(()),
+                | LeafContents::AgentPicker => Err(()),
             },
         }
     }

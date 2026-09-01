@@ -35,7 +35,6 @@ use warpui::{
 use crate::editor::{
     EditorOptions, EditorView, Event as EditorEvent, PropagateAndNoOpNavigationKeys, TextOptions,
 };
-use crate::server::ids::{ClientId, HashableId, ServerId, SyncId};
 use crate::ui_components::icons::Icon;
 use crate::view_components::copyable_text_field::{
     COPY_FEEDBACK_DURATION, CopyButtonPlacement, CopyableTextFieldConfig,
@@ -624,14 +623,6 @@ impl DisplayChipMenu {
         self.chip_menu_type == ChipMenuType::Environments
             && !self.is_footer_selected()
             && self.selected_index < self.filtered_items.len()
-    }
-
-    fn parse_sync_id_lossy(s: &str) -> SyncId {
-        if let Some(hashed) = ClientId::from_hash(s) {
-            SyncId::ClientId(hashed)
-        } else {
-            SyncId::ServerId(ServerId::from_string_lossy(s))
-        }
     }
 
     fn environment_sidecar_data(&self, app: &AppContext) -> Option<EnvironmentSidecarData> {

@@ -29,7 +29,6 @@ use crate::context_chips::{
 };
 use crate::features::FeatureFlag;
 use crate::menu::MenuItem;
-use crate::server::server_api::ServerApiProvider;
 use crate::settings::WarpPromptSeparator;
 #[cfg(windows)]
 use crate::system::SystemInfo;
@@ -253,7 +252,6 @@ fn test_shell_chip_is_disabled_when_required_executable_is_missing() {
                 Box::<user_preferences::in_memory::InMemoryPreferences>::default(),
             )
         });
-        app.add_singleton_model(|_| ServerApiProvider::new_for_test());
         app.add_singleton_model(|_| crate::settings::manager::SettingsManager::default());
         crate::settings::InputSettings::register(&mut app);
         #[cfg(windows)]
@@ -398,7 +396,6 @@ fn test_disabling_chips() {
                 Box::<user_preferences::in_memory::InMemoryPreferences>::default(),
             )
         });
-        app.add_singleton_model(|_| ServerApiProvider::new_for_test());
 
         // Register required singleton models to fix the singleton model error
         app.add_singleton_model(|_| crate::settings::manager::SettingsManager::default());
@@ -559,7 +556,6 @@ fn test_ps1_enabled_runs_no_generators() {
                 settings.honor_ps1.set_value(true, ctx).unwrap();
             });
         });
-        app.add_singleton_model(|_| ServerApiProvider::new_for_test());
         app.add_singleton_model(|_| crate::settings::manager::SettingsManager::default());
         crate::settings::InputSettings::register(&mut app);
         #[cfg(windows)]

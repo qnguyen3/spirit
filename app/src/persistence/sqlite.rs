@@ -856,8 +856,8 @@ fn save_pane_state(
         LeafContents::Settings(_) => SETTINGS_PANE_KIND,
         LeafContents::CodeReview(_) => CODE_REVIEW_PANE_KIND,
         LeafContents::GetStarted => GET_STARTED_PANE_KIND,
-        LeafContents::NetworkLog | LeafContents::AgentPicker => {
-            // These pane types are filtered out before this function is
+        LeafContents::AgentPicker => {
+            // This pane type is filtered out before this function is
             // called; see `LeafContents::is_persisted` and the skip in
             // `save_app_state`. Reaching this arm would mean a `pane_nodes`
             // row had already been inserted with no corresponding
@@ -979,7 +979,7 @@ fn save_pane_state(
         LeafContents::GetStarted => {
             // Stateless
         }
-        LeafContents::NetworkLog | LeafContents::AgentPicker => {
+        LeafContents::AgentPicker => {
             // Unreachable: filtered by `is_persisted` in `save_app_state`.
         }
     }

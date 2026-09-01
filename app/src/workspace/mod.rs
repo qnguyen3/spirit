@@ -67,12 +67,9 @@ pub fn purge_screen_scoped_state(screen_id: warpui::EntityId, app: &mut AppConte
     use warpui::SingletonEntity as _;
 
     use crate::agent_launcher::pane_manager::AgentPickerPaneManager;
-    use crate::server::network_log_pane_manager::NetworkLogPaneManager;
     use crate::settings_view::pane_manager::SettingsPaneManager;
 
     SettingsPaneManager::handle(app).update(app, |manager, _| manager.forget_screen(&screen_id));
-    NetworkLogPaneManager::handle(app)
-        .update(app, |manager, _| manager.deregister_pane(&screen_id));
     AgentPickerPaneManager::handle(app)
         .update(app, |manager, _| manager.deregister_pane(&screen_id));
 }

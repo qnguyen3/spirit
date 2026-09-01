@@ -41,7 +41,6 @@ use self::model::{Project as ProjectRow, ProjectWorktree as WorktreeRow};
 use crate::app_state::AppState;
 use crate::persisted_workspace::EnablementState;
 use crate::projects::{Project, Worktree};
-use crate::server::ids::SyncId;
 use crate::suggestions::ignored_suggestions_model::SuggestionType;
 use crate::terminal::history::PersistedCommand;
 use crate::terminal::model::block::SerializedBlock;
@@ -219,7 +218,6 @@ pub struct StartedCommandMetadata {
     pub hostname: Option<String>,
     pub session_id: Option<SessionId>,
     pub git_branch: Option<String>,
-    pub cloud_workflow_id: Option<SyncId>,
     pub workflow_command: Option<String>,
     pub is_agent_executed: bool,
 }

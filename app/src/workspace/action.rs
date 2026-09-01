@@ -540,9 +540,6 @@ pub enum WorkspaceAction {
     },
     /// Opens the settings.toml file in a code editor pane.
     OpenSettingsFile,
-    /// Opens (or focuses) the in-app network log pane as a right-split of the
-    /// active pane group. Gated on `ContextFlag::NetworkLogConsole`.
-    OpenNetworkLogPane,
     ShowWorkspaceSwitcherMenu,
     ShowCreateWorktreeModal {
         agent_catalog_index: Option<usize>,
@@ -787,7 +784,6 @@ impl WorkspaceAction {
             | TabConfigSidecarEditConfig { .. }
             | TabConfigSidecarRemoveConfig { .. }
             | OpenSettingsFile
-            | OpenNetworkLogPane
             | ShowWorkspaceSwitcherMenu
             | ShowCreateWorktreeModal { .. }
             | OpenWorktreeTab { .. }

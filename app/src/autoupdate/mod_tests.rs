@@ -5,11 +5,8 @@ use warp_core::execution_mode::{AppExecutionMode, ExecutionMode};
 use warpui::{App, ModelHandle, UpdateModel};
 
 use super::*;
-use crate::server::server_api::ServerApiProvider;
 
 fn initialize_app(app: &mut App) -> ModelHandle<AutoupdateState> {
-    app.add_singleton_model(|_| ServerApiProvider::new_for_test());
-
     app.add_model(|_| AutoupdateState::new(Arc::new(http_client::Client::new_for_test())))
 }
 
