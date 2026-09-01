@@ -85,7 +85,7 @@ use super::history_autosuggestions::{
     get_reverse_chronological_potential_autosuggestions, is_command_valid,
 };
 use super::ligature_settings::LigatureSettings;
-use super::model::block::{BlockId, BlockMetadata, BlocklistEnvVarMetadata};
+use super::model::block::{BlockId, BlockMetadata};
 use super::model::session::{Session, SessionId, Sessions};
 use super::prompt_render_helper::{
     PromptRenderHelper, SameLinePromptElements, should_render_prompt_on_same_line,
@@ -462,10 +462,6 @@ pub enum CommandExecutionSource {
     /// A command dispatched by the queued-prompts panel. It should execute like a user command but
     /// must not treat the current editor contents as the submitted command.
     QueuedCommand,
-
-    EnvVarCollection {
-        metadata: BlocklistEnvVarMetadata,
-    },
 }
 
 impl CommandExecutionSource {
@@ -6003,15 +5999,9 @@ impl Input {
             .get(session_id)
             .and_then(|session| {
                 session.subshell_info().as_ref().map(|info| {
-                    if let Some(env_var_collection_name) = &info.env_var_collection_name {
-                        Some(SubshellRenderState::Flag(SubshellSource::EnvVarCollection(
-                            env_var_collection_name.to_owned(),
-                        )))
-                    } else {
-                        info.spawning_command.split_whitespace().next().map(|exec| {
-                            SubshellRenderState::Flag(SubshellSource::Command(exec.to_owned()))
-                        })
-                    }
+                    info.spawning_command.split_whitespace().next().map(|exec| {
+                        SubshellRenderState::Flag(SubshellSource::Command(exec.to_owned()))
+                    })
                 })
             })?;
 
