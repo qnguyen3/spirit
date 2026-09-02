@@ -16,14 +16,10 @@ use crate::search::slash_command_menu::static_commands::commands::COMMAND_REGIST
 use crate::settings::{InputSettings, InputSettingsChangedEvent};
 use crate::terminal::input::slash_commands::AcceptSlashCommandOrSavedPrompt;
 use crate::terminal::model::session::active_session::ActiveSession;
-use crate::workspaces::user_workspaces::TeamContextResolver;
 
 pub struct GuiDataSourceArgs {
     pub active_session: ModelHandle<ActiveSession>,
     pub terminal_view_id: EntityId,
-    /// Resolves this data source's terminal surface's window's team context. Minted by the
-    /// owning view at construction via `UserWorkspaces::team_context_resolver`.
-    pub team_context_resolver: TeamContextResolver,
 }
 
 pub struct GuiSlashCommandDataSource {
@@ -35,7 +31,6 @@ impl GuiSlashCommandDataSource {
         let GuiDataSourceArgs {
             active_session,
             terminal_view_id,
-            team_context_resolver,
         } = args;
 
         subscribe_to_shared_dependencies(
@@ -54,11 +49,7 @@ impl GuiSlashCommandDataSource {
         });
 
         let mut me = Self {
-            state: SlashCommandDataSourceState::new(
-                active_session,
-                terminal_view_id,
-                team_context_resolver,
-            ),
+            state: SlashCommandDataSourceState::new(active_session, terminal_view_id),
         };
         me.recompute_active_commands(ctx);
         me

@@ -1,4 +1,3 @@
-use self::parse_url_paths::{WarpWebLink, get_item_data_from_warp_link};
 use super::*;
 use crate::ChannelState;
 use crate::launch_configs::launch_config::make_mock_single_window_launch_config;
@@ -197,81 +196,6 @@ fn test_remove_extension() {
     assert_eq!(remove_extension("..yaml"), Some("."));
     assert_eq!(remove_extension("config"), None);
     assert_eq!(remove_extension("🍞.yaml"), Some("🍞"));
-}
-
-#[test]
-fn test_warp_web_link_notebook() {
-    assert_eq!(
-        get_item_data_from_warp_link(
-            &Url::parse(&format!(
-                "{}/drive/notebook/Performance-Analysis-LkDlnAe34vfYD2JXsAkssc?focused_folder_id=test_uid00000000000123&invitee_email=test@example.com",
-                ChannelState::server_root_url()
-            ))
-            .unwrap()
-        ),
-        Some(WarpWebLink::DriveObject(Box::new(OpenWarpDriveObjectArgs {
-            object_type: ObjectType::Notebook,
-server_id: ServerId::from_string_lossy("LkDlnAe34vfYD2JXsAkssc"),
-            settings: OpenWarpDriveObjectSettings {
-                focused_folder_id: Some(ServerId::from(123)),
-                invitee_email: Some(String::from("test@example.com")),
-            },
-        })))
-    );
-}
-
-#[test]
-fn test_warp_web_link_session() {
-    assert_eq!(
-        get_item_data_from_warp_link(
-            &Url::parse(&format!(
-                "{}/session/317d0686-7a0b-4b67-806b-aaa3e9df501b?
-                pwd=6f727249-af9f-4025-a240-59df40a4c64b",
-                ChannelState::server_root_url()
-            ))
-            .unwrap()
-        ),
-        Some(WarpWebLink::Session)
-    );
-}
-
-#[test]
-fn test_warp_web_link_workflow() {
-    assert_eq!(
-        get_item_data_from_warp_link(
-            &Url::parse(&format!(
-                "{}/drive/workflow/Remove-all-stopped-docker-container-image-and-volumes-ZCJSkai2gpwTqpBFs5HOfZ",
-                ChannelState::server_root_url()
-            ))
-            .unwrap()
-        ),
-        Some(WarpWebLink::DriveObject(Box::new(OpenWarpDriveObjectArgs {
-            object_type: ObjectType::Workflow,
-server_id: ServerId::from_string_lossy("ZCJSkai2gpwTqpBFs5HOfZ"),
-            settings: OpenWarpDriveObjectSettings::default(),
-        })))
-    );
-}
-
-#[test]
-fn test_warp_web_link_failure() {
-    assert_eq!(
-        get_item_data_from_warp_link(&Url::parse("https://google.com").unwrap()),
-        None
-    );
-}
-#[test]
-fn test_app_web_link_rewrites_to_new_cloud_agent_conversation() {
-    let url = Url::parse(&format!("{}/app", ChannelState::server_root_url())).unwrap();
-    let intent = web_intent_parser::maybe_rewrite_web_url_to_intent(&url).unwrap();
-
-    assert_eq!(
-        intent.as_str(),
-        format!(
-            "{}://action/new_cloud_agent_conversation?source=web_home",
-            ChannelState::url_scheme()
-        )
-    );
 }
 
 #[test]
@@ -610,54 +534,10 @@ fn test_settings_section_for_simple_subpage() {
         settings_section_for_simple_subpage("appearance"),
         Some(SettingsSection::Appearance),
     );
-    assert_eq!(
-        settings_section_for_simple_subpage("billing_and_usage"),
-        Some(SettingsSection::BillingAndUsage),
-    );
-    assert_eq!(
-        settings_section_for_simple_subpage("platform"),
-        Some(SettingsSection::WarpCloudAgentAPIKeys),
-    );
     assert!(settings_section_for_simple_subpage("not_a_subpage").is_none());
 }
 
 // -- post-checkout desktop hand-off ------------------------------------------
-
-/// Regression coverage for REV-1952: the confirmation page reports a completed
-/// purchase by riding `checkoutSuccessful=true` on the ordinary desktop
-/// redirect, so onboarding can advance without opening a settings page.
-#[test]
-fn test_url_reports_checkout_success() {
-    let scheme = ChannelState::url_scheme();
-
-    let with_flag = Url::parse(&format!(
-        "{scheme}://auth/desktop_redirect?refresh_token=abc&checkoutSuccessful=true"
-    ))
-    .unwrap();
-    assert!(url_reports_checkout_success(&with_flag));
-
-    let plain_redirect = Url::parse(&format!(
-        "{scheme}://auth/desktop_redirect?refresh_token=abc"
-    ))
-    .unwrap();
-    assert!(!url_reports_checkout_success(&plain_redirect));
-
-    // Only an explicit `true` counts, so an abandoned checkout that reports
-    // failure never advances onboarding.
-    let failed = Url::parse(&format!(
-        "{scheme}://auth/desktop_redirect?checkoutSuccessful=false"
-    ))
-    .unwrap();
-    assert!(!url_reports_checkout_success(&failed));
-
-    // The flag is not tied to the auth host: an older confirmation page can
-    // still send it on the settings deeplink.
-    let on_settings = Url::parse(&format!(
-        "{scheme}://settings/billing_and_usage?checkoutSuccessful=true"
-    ))
-    .unwrap();
-    assert!(url_reports_checkout_success(&on_settings));
-}
 
 // Regression coverage for issue #9005: shell scripts opened via `file://` should run,
 // not open in the editor. Exercised through the pure routing helper to avoid standing

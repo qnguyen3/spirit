@@ -176,7 +176,7 @@ case "$CHANNEL" in
     BUNDLE_ID="dev.warp.Warp-Preview"
     URL_SCHEME="warppreview"
     CLI_COMMAND_NAME="oz-preview"
-    FEATURES="$FEATURES,cocoa_sentry,preview_channel,jemalloc_pprof,heap_usage_tracking"
+    FEATURES="$FEATURES,preview_channel,jemalloc_pprof,heap_usage_tracking"
     ;;
   stable)
     WARP_BIN="stable"
@@ -184,7 +184,7 @@ case "$CHANNEL" in
     BUNDLE_ID="dev.warp.Warp-Stable"
     URL_SCHEME="warp"
     CLI_COMMAND_NAME="oz"
-    FEATURES="$FEATURES,cocoa_sentry,jemalloc_pprof,heap_usage_tracking"
+    FEATURES="$FEATURES,jemalloc_pprof,heap_usage_tracking"
     ;;
   dev)
     WARP_BIN="dev"
@@ -192,7 +192,7 @@ case "$CHANNEL" in
     BUNDLE_ID="dev.warp.Warp-Dev"
     URL_SCHEME="warpdev"
     CLI_COMMAND_NAME="oz-dev"
-    FEATURES="$FEATURES,cocoa_sentry,jemalloc_pprof,heap_usage_tracking,warp_control_cli"
+    FEATURES="$FEATURES,jemalloc_pprof,heap_usage_tracking,warp_control_cli"
     export FRAMEWORK_OVERRIDE="dev"
     export HANDLE_MARKDOWN=1
     ;;
@@ -202,7 +202,6 @@ case "$CHANNEL" in
     BUNDLE_ID="dev.warp.Warp-Local"
     URL_SCHEME="warplocal"
     CLI_COMMAND_NAME="oz-local"
-    FEATURES="$FEATURES,cocoa_sentry"
     export FRAMEWORK_OVERRIDE="dev"
     ;;
   *)

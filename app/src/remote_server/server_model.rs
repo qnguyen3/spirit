@@ -62,8 +62,8 @@ const MAX_BRANCH_COUNT_CAP: usize = 500;
 
 /// Unique identifier for a connected proxy session in daemon mode.
 pub type ConnectionId = uuid::Uuid;
+
 use super::protocol::RequestId;
-use crate::auth::auth_state::{AuthState, AuthStateProvider};
 use crate::code_review::git_actions;
 use crate::terminal::model::session::command_executor::{
     ExecuteCommandOptions, LocalCommandExecutor,
@@ -163,6 +163,43 @@ impl PendingFileOps {
     }
 }
 
+/// The connecting client's credentials and identity, delivered over the wire by
+/// `Initialize` and refreshed by `Authenticate`.
+///
+/// Empty values are authoritative: an empty token clears the bearer credential, and an
+/// empty user ID clears the daemon's record of who is connected.
+#[derive(Default)]
+pub(crate) struct ClientAuthContext {
+    bearer_token: Option<String>,
+    user_id: Option<String>,
+    user_email: Option<String>,
+}
+
+impl ClientAuthContext {
+    fn apply_initialize(&mut self, auth_token: String, user_id: String, user_email: String) {
+        self.set_bearer_token(auth_token);
+        if user_id.is_empty() {
+            self.user_id = None;
+            self.user_email = None;
+            return;
+        }
+        self.user_id = Some(user_id);
+        self.user_email = (!user_email.is_empty()).then_some(user_email);
+    }
+
+    fn set_bearer_token(&mut self, auth_token: String) {
+        self.bearer_token = (!auth_token.is_empty()).then_some(auth_token);
+    }
+
+    pub(crate) fn user_id(&self) -> Option<&str> {
+        self.user_id.as_deref()
+    }
+
+    pub(crate) fn user_email(&self) -> Option<&str> {
+        self.user_email.as_deref()
+    }
+}
+
 /// The top-level server-side orchestrator model.
 ///
 /// Receives `ClientMessage`s from connected proxy sessions and routes
@@ -197,8 +234,8 @@ pub struct ServerModel {
     executors: HashMap<SessionId, Arc<LocalCommandExecutor>>,
     /// Tracks in-flight file write/delete operations and handles cleanup.
     pending_file_ops: PendingFileOps,
-    /// Daemon-wide auth credentials and user identity.
-    auth_state: Arc<AuthState>,
+    /// Daemon-wide auth credentials and user identity, supplied by connecting clients.
+    client_auth: ClientAuthContext,
     /// Tracks open buffers, per-buffer connection sets, and pending async
     /// buffer requests (OpenBuffer, SaveBuffer).
     buffers: ServerBufferTracker,
@@ -251,7 +288,7 @@ impl ServerModel {
             host_id,
             executors: HashMap::new(),
             pending_file_ops: PendingFileOps::new(),
-            auth_state: AuthStateProvider::as_ref(ctx).get().clone(),
+            client_auth: ClientAuthContext::default(),
             buffers: ServerBufferTracker::new(),
             diff_states: ctx.add_model(|_| RemoteDiffStateManager::new()),
             host_scoped_requests: HashMap::new(),
@@ -810,7 +847,7 @@ impl ServerModel {
             Some(client_message::Message::SessionScoped(wrapper)) => {
                 let outcome = match wrapper.message {
                     Some(session_scoped_request::Message::Initialize(m)) => {
-                        self.handle_initialize(m, &request_id, ctx)
+                        self.handle_initialize(m, &request_id)
                     }
                     Some(session_scoped_request::Message::NavigatedToDirectory(m)) => {
                         self.handle_navigated_to_directory(m, &request_id, conn_id, ctx)
@@ -851,9 +888,6 @@ impl ServerModel {
                     }
                     Some(notification::Message::Authenticate(m)) => {
                         self.handle_authenticate(m);
-                    }
-                    Some(notification::Message::UpdatePreferences(m)) => {
-                        self.handle_update_preferences(m, ctx);
                     }
                     Some(notification::Message::SessionBootstrapped(m)) => {
                         self.handle_session_bootstrapped(m);
@@ -1039,28 +1073,9 @@ impl ServerModel {
     }
 
     /// Handles `Initialize` by returning the server version and host id.
-    ///
-    /// Also configures Sentry crash reporting based on the user's identity and
-    /// preferences supplied by the connecting client.
-    #[cfg_attr(not(feature = "crash_reporting"), allow(unused_variables))]
-    fn handle_initialize(
-        &mut self,
-        msg: Initialize,
-        request_id: &RequestId,
-        ctx: &mut ModelContext<Self>,
-    ) -> HandlerOutcome {
+    fn handle_initialize(&mut self, msg: Initialize, request_id: &RequestId) -> HandlerOutcome {
         log::info!("Handling Initialize (request_id={request_id})");
         self.apply_initialize_auth(&msg);
-
-        // Update crash reporting based on client-supplied preferences.
-        #[cfg(feature = "crash_reporting")]
-        {
-            if msg.crash_reporting_enabled {
-                self.apply_sentry_user_id(ctx);
-            } else {
-                crate::crash_reporting::uninit_sentry();
-            }
-        }
 
         let server_version = ChannelState::app_version().unwrap_or("").to_string();
         HandlerOutcome::Sync(server_message::Message::InitializeResponse(
@@ -1074,56 +1089,21 @@ impl ServerModel {
     /// Applies the auth token from an `Initialize` message.
     /// Extracted so unit tests can call it without a `ModelContext`.
     fn apply_initialize_auth(&mut self, msg: &Initialize) {
-        self.auth_state.apply_remote_server_auth_context(
+        self.client_auth.apply_initialize(
             msg.auth_token.clone(),
             msg.user_id.clone(),
             msg.user_email.clone(),
         );
     }
 
-    /// Sets the Sentry user identity from the stored `AuthState`.
-    /// Called both during `Initialize` and when re-enabling crash reporting
-    /// via `UpdatePreferences`.
-    #[cfg(feature = "crash_reporting")]
-    fn apply_sentry_user_id(&self, ctx: &mut warpui::AppContext) {
-        if let Some(user_id) = self.auth_state.user_id() {
-            crate::crash_reporting::set_user_id(user_id, self.auth_state.user_email(), ctx);
-        }
-    }
-
-    /// Handles `UpdatePreferences` by dynamically enabling or disabling
-    /// Sentry crash reporting. This is a notification — no response is sent.
-    fn handle_update_preferences(
-        &mut self,
-        msg: super::proto::UpdatePreferences,
-        #[allow(unused_variables)] ctx: &mut ModelContext<Self>,
-    ) {
-        log::info!(
-            "Handling UpdatePreferences: crash_reporting_enabled={}",
-            msg.crash_reporting_enabled
-        );
-        #[cfg(feature = "crash_reporting")]
-        {
-            if msg.crash_reporting_enabled {
-                if !crate::crash_reporting::is_initialized() {
-                    crate::crash_reporting::init(ctx);
-                    self.apply_sentry_user_id(ctx);
-                }
-            } else {
-                crate::crash_reporting::uninit_sentry();
-            }
-        }
-    }
-
     /// Handles `Authenticate` by replacing the daemon-wide credential.
     /// This is a notification — no response is sent.
     fn handle_authenticate(&mut self, msg: Authenticate) {
-        self.auth_state
-            .set_remote_server_bearer_token(msg.auth_token);
+        self.client_auth.set_bearer_token(msg.auth_token);
     }
 
     pub fn auth_token(&self) -> Option<String> {
-        self.auth_state.get_access_token_ignoring_validity()
+        self.client_auth.bearer_token.clone()
     }
 
     /// Handles `Abort` by cancelling the in-progress request it targets.

@@ -1,4 +1,4 @@
-use super::{parse_forcekill_exit_code, parse_minidump_cleanup_exit_code};
+use super::parse_forcekill_exit_code;
 
 fn log(line: &str) -> Vec<u8> {
     line.to_ascii_lowercase().into_bytes()
@@ -50,23 +50,6 @@ fn returns_none_when_exit_code_has_no_digits() {
 }
 
 #[test]
-fn parses_signed_minidump_cleanup_exit_code() {
-    // PowerShell can report signed HRESULT values for cleanup failures.
-    let contents = log("minidump-server cleanup failed (exit code: -2147024891)");
-    assert_eq!(
-        parse_minidump_cleanup_exit_code(&contents),
-        Some(-2147024891)
-    );
-}
-
-#[test]
-fn parses_unsigned_minidump_cleanup_exit_code() {
-    let contents = log("minidump-server cleanup failed (exit code: 5)");
-    assert_eq!(parse_minidump_cleanup_exit_code(&contents), Some(5));
-}
-
-#[test]
 fn returns_none_for_empty_log() {
     assert_eq!(parse_forcekill_exit_code(b""), None);
-    assert_eq!(parse_minidump_cleanup_exit_code(b""), None);
 }

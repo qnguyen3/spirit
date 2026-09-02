@@ -109,10 +109,6 @@ impl CrashRecoveryProcess {
                 "Failed to render a frame {NUM_DRAW_ERRORS_BEFORE_EXITING} times in a row; exiting..."
             );
 
-            // Uninitialize sentry (ensuring any remaining events get flushed) before hard exiting.
-            #[cfg(feature = "crash_reporting")]
-            crate::crash_reporting::uninit_sentry();
-
             std::process::exit(1);
         }
     }

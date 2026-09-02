@@ -11,7 +11,7 @@ use local_control::selection::select_instance;
 use serde::Serialize;
 use warp_core::channel::ChannelState;
 
-use crate::agent::OutputFormat;
+use crate::OutputFormat;
 use crate::local_control::output::{write_json, write_json_line};
 use crate::local_control::selectors::{instance_selector, target_selector};
 use crate::local_control::{
@@ -55,20 +55,6 @@ pub(super) fn run_surface_command(
         SurfaceCommand::Keybindings(command) => {
             run_surface_open_command(command, ActionKind::SurfaceKeybindingsOpen, output_format)
         }
-        SurfaceCommand::WarpDrive(command) => match command {
-            SurfaceOpenToggleCommand::Open(args) => run_action_with_params(
-                args,
-                ActionKind::SurfaceWarpDriveOpen,
-                EmptyParams {},
-                output_format,
-            ),
-            SurfaceOpenToggleCommand::Toggle(args) => run_action_with_params(
-                args,
-                ActionKind::SurfaceWarpDriveToggle,
-                EmptyParams {},
-                output_format,
-            ),
-        },
         SurfaceCommand::ResourceCenter(command) => run_surface_toggle_command(
             command,
             ActionKind::SurfaceResourceCenterToggle,

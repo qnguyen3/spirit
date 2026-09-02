@@ -8,21 +8,6 @@ This file provides guidance when working with code in this repository.
 - `cargo run` / `./script/run` - Build and run the GUI desktop app locally
 - `cargo bundle --bin warp` - Bundle the main (GUI) app
 
-### Running with local warp-server
-To connect Warp client to a local warp-server instance:
-
-```bash
-# Connect to server on default port 8080
-WITH_LOCAL_SERVER=1 ./script/run
-
-# Connect to server on custom port (e.g., 8082)
-WITH_LOCAL_SERVER=1 SERVER_ROOT_URL=http://localhost:8082 WS_SERVER_URL=ws://localhost:8082/graphql/v2 ./script/run
-```
-
-Environment variables:
-- `SERVER_ROOT_URL` - HTTP endpoint (default: `http://localhost:8080`)
-- `WS_SERVER_URL` - WebSocket endpoint (default: `ws://localhost:8080/graphql/v2`)
-
 ### Testing
 - `cargo nextest run --no-fail-fast --workspace --exclude command-signatures-v2` - Run tests with nextest
 - `cargo nextest run -p warp_completer --features v2` - Run completer tests with v2 features
@@ -73,8 +58,6 @@ The GUI desktop app is the `app/` crate on the WarpUI pixel/GPU framework (`warp
 **Main app** (`app/`) — the GUI desktop app:
 - Terminal emulation and shell management (`terminal/`)
 - Agent Launcher (`agent_launcher/`): picker tab that spawns third-party CLI agents (Claude Code, Codex, Gemini, ...) in a terminal. The catalog lives in `agent_launcher/catalog.rs`; launching injects the agent's command into a fresh terminal tab via `execute_command_or_set_pending`, which waits for shell bootstrap.
-- Cloud synchronization and Drive features (`drive/`)
-- Authentication and user management (`auth/`)
 - Settings and preferences (`settings/`)
 - Workspace and session management (`workspace/`)
 
@@ -83,19 +66,17 @@ The GUI desktop app is the `app/` crate on the WarpUI pixel/GPU framework (`warp
 - `crates/editor/` - Text editing functionality
 - `crates/warpui/` and `crates/warpui_core/` - Custom UI framework (shared core plus the GUI element library)
 - `crates/ipc/` - Inter-process communication
-- `crates/graphql/` - GraphQL client and schema
 
 ### Key Architectural Patterns
 
 1. **Entity-Handle System**: Views reference other views via handles, not direct ownership
 2. **Modular Structure**: Workspace contains multiple workspace configurations, each with terminals, notebooks, etc.
 3. **Cross-Platform**: Native implementations for macOS, Windows, Linux, plus WASM target
-4. **Cloud Sync**: Objects can be synchronized across devices via Warp Drive
 
 ### Development Guidelines
 
 **Workspace Structure**:
-- This is a Cargo workspace with 60+ member crates
+- This is a Cargo workspace with 50+ member crates
 - Main binary is in `app/`, UI framework in `crates/warpui/`
 - Platform-specific code is conditionally compiled
 - Integration tests are in `crates/integration/`
@@ -190,10 +171,6 @@ for itself.
 - Uses Diesel ORM with SQLite
 - Migrations in `crates/persistence/migrations/`
 - Schema defined in `crates/persistence/src/schema.rs`
-
-**GraphQL**:
-- Schema and client code generation from `crates/warp_graphql_schema/api/schema.graphql`
-- TypeScript types generated for frontend integration
 
 ### Feature Flags
 

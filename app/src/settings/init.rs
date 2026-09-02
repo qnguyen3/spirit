@@ -10,7 +10,6 @@ use warpui_extras::user_preferences;
 
 use super::app_icon::AppIconSettings;
 use super::app_installation_detection::UserAppInstallDetectionSettings;
-use super::cloud_preferences::CloudPreferencesSettings;
 use super::initializer::SettingsInitializer;
 use super::native_preference::NativePreferenceSettings;
 use super::{
@@ -18,11 +17,9 @@ use super::{
     ChangelogSettings, CodeSettings, DebugSettings, EmacsBindingsSettings, FontSettings,
     FontSettingsChangedEvent, GPUSettings, InputBoxType, InputModeSettings, InputSettings,
     LocalControlSettings, NewSessionSettings, PaneSettings, SameLinePromptBlockSettings,
-    ScrollSettings, SelectionSettings, SharedObjectLimitBannerSettings, SshSettings, ThemeSettings,
-    VimBannerSettings, WarpDrivePrivacySettings,
+    ScrollSettings, SelectionSettings, SshSettings, ThemeSettings, VimBannerSettings,
 };
 use crate::banner::BannerState;
-use crate::drive::settings::WarpDriveSettings;
 use crate::resource_center::TipsCompleted;
 use crate::search::command_search::settings::CommandSearchSettings;
 use crate::terminal::BlockListSettings;
@@ -33,11 +30,9 @@ use crate::terminal::ligature_settings::LigatureSettings;
 use crate::terminal::safe_mode_settings::SafeModeSettings;
 use crate::terminal::session_settings::{SessionSettings, SessionSettingsChangedEvent};
 use crate::terminal::settings::TerminalSettings;
-use crate::terminal::shared_session::settings::SharedSessionSettings;
 use crate::terminal::warpify::settings::WarpifySettings;
 use crate::undo_close::UndoCloseSettings;
 use crate::window_settings::WindowSettings;
-use crate::workflows::aliases::WorkflowAliases;
 use crate::workspace::tab_settings::TabSettings;
 
 pub struct UserDefaultsOnStartup {
@@ -79,8 +74,6 @@ pub fn register_all_settings(ctx: &mut AppContext) {
     ThemeSettings::register(ctx);
     AccessibilitySettings::register(ctx);
     NativePreferenceSettings::register(ctx);
-    CloudPreferencesSettings::register(ctx);
-    WarpDrivePrivacySettings::register(ctx);
     UserAppInstallDetectionSettings::register(ctx);
     AppIconSettings::register(ctx);
     AppEditorSettings::register(ctx);
@@ -90,10 +83,6 @@ pub fn register_all_settings(ctx: &mut AppContext) {
     UndoCloseSettings::register(ctx);
     SshSettings::register(ctx);
     VimBannerSettings::register(ctx);
-    SharedObjectLimitBannerSettings::register(ctx);
-    SharedSessionSettings::register(ctx);
-    WarpDriveSettings::register(ctx);
-    WorkflowAliases::register(ctx);
     EmacsBindingsSettings::register(ctx);
     SameLinePromptBlockSettings::register(ctx);
     SemanticSelection::register(ctx);

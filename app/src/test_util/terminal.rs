@@ -3,29 +3,17 @@ use repo_metadata::RepoMetadataModel;
 use repo_metadata::repositories::DetectedRepositories;
 use repo_metadata::watcher::DirectoryWatcher;
 use warp_core::ui::appearance::Appearance;
-use warp_server_client::iap::IapManager;
 use warpui::platform::WindowStyle;
-use warpui::{App, SingletonEntity, ViewHandle, WindowId};
+use warpui::{App, ViewHandle, WindowId};
 use watcher::HomeDirectoryWatcher;
 
 use super::settings::initialize_history_persistence_for_tests;
-use crate::auth::AuthStateProvider;
-use crate::auth::auth_manager::AuthManager;
-use crate::auth::github_auth_notifier::GitHubAuthNotifier;
 use crate::changelog_model::ChangelogModel;
-use crate::cloud_object::model::persistence::CloudModel;
 use crate::code_review::git_repo_model::GitRepoModels;
 use crate::context_chips::prompt::Prompt;
-use crate::experiments;
 use crate::network::NetworkStatus;
 use crate::persisted_workspace::PersistedWorkspace;
-use crate::pricing::PricingInfoModel;
 use crate::search::files::model::FileSearchModel;
-use crate::server::cloud_objects::listener::Listener;
-use crate::server::cloud_objects::update_manager::UpdateManager;
-use crate::server::server_api::ServerApiProvider;
-use crate::server::sync_queue::SyncQueue;
-use crate::server::telemetry::context_provider::AppTelemetryContextProvider;
 use crate::settings::PrivacySettings;
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
 #[cfg(feature = "local_fs")]
@@ -36,44 +24,22 @@ use crate::terminal::alt_screen_reporting::AltScreenReporting;
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::model::block::SerializedBlock;
 use crate::terminal::resizable_data::ResizableData;
-use crate::terminal::shared_session::permissions_manager::SessionPermissionsManager;
 use crate::terminal::{History, TerminalView};
 use crate::undo_close::UndoCloseStack;
 use crate::warp_managed_paths_watcher::WarpManagedPathsWatcher;
 use crate::workflows::local_workflows::LocalWorkflows;
 use crate::workspace::sync_inputs::SyncedInputState;
 use crate::workspace::{ActiveSession, WorkspaceRegistry};
-use crate::workspaces::team_tester::TeamTesterStatus;
-use crate::workspaces::update_manager::TeamUpdateManager;
-use crate::workspaces::user_workspaces::UserWorkspaces;
 
 /// Initializes all of the necessary models to use a terminal view.
 pub fn initialize_app_for_terminal_view(app: &mut App) {
     initialize_history_persistence_for_tests(app);
-
-    app.add_singleton_model(|_| ServerApiProvider::new_for_test());
-    // Register a disabled `IapManager` (no IAP state) so code paths that read
-    // the singleton (e.g. the shared-session viewer network) don't panic in
-    // tests. With `None` state it is an inert no-op.
-    app.add_singleton_model(|ctx| {
-        IapManager::new(
-            None,
-            Box::new(|_| futures::FutureExt::boxed(futures::future::ready(None::<String>))),
-            None,
-            ctx,
-        )
+    app.add_singleton_model(|_| {
+        ChangelogModel::new(std::sync::Arc::new(http_client::Client::new_for_test()))
     });
-    app.add_singleton_model(|ctx| ChangelogModel::new(ServerApiProvider::as_ref(ctx).get()));
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| SystemStats::new());
     app.add_singleton_model(|_| Prompt::mock());
-    app.add_singleton_model(SyncQueue::mock);
-    app.add_singleton_model(CloudModel::mock);
-    app.add_singleton_model(UserWorkspaces::default_mock);
-    app.add_singleton_model(TeamTesterStatus::mock);
-    app.add_singleton_model(TeamUpdateManager::mock);
-    app.add_singleton_model(UpdateManager::mock);
-    app.add_singleton_model(Listener::mock);
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(PrivacySettings::mock);
     app.add_singleton_model(|_ctx| SyncedInputState::mock());
@@ -85,10 +51,6 @@ pub fn initialize_app_for_terminal_view(app: &mut App) {
 
     app.add_singleton_model(|_| KeybindingChangedNotifier::new());
     app.add_singleton_model(|_| ActiveSession::default());
-    app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
-    app.add_singleton_model(AuthManager::new_for_test);
-    app.add_singleton_model(SessionPermissionsManager::new);
     app.add_singleton_model(DirectoryWatcher::new);
     app.add_singleton_model(|_| DetectedRepositories::default());
     #[cfg(feature = "local_fs")]
@@ -118,11 +80,8 @@ pub fn initialize_app_for_terminal_view(app: &mut App) {
 
     app.add_singleton_model(|_| WorkspaceRegistry::new());
     app.add_singleton_model(|_| IgnoredSuggestionsModel::new(vec![]));
-    app.add_singleton_model(|_| PricingInfoModel::new());
-    app.add_singleton_model(|_| GitHubAuthNotifier::new());
     app.add_singleton_model(PersistedWorkspace::new_for_test);
 
-    app.update(experiments::init);
     AltScreenReporting::register(app);
 }
 

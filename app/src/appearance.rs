@@ -111,9 +111,6 @@ impl AppearanceManager {
             Settings::theme_for_theme_kind(&theme_kind, ctx)
         };
 
-        #[cfg(target_family = "wasm")]
-        emit_theme_background_event(&new_theme);
-
         Appearance::handle(ctx).update(ctx, |appearance, ctx| {
             appearance.set_theme(new_theme, ctx);
         })
@@ -389,9 +386,6 @@ fn build_appearance(ctx: &mut AppContext) -> Appearance {
 
     let theme_kind = active_theme_kind(ThemeSettings::as_ref(ctx), ctx);
     let theme = Settings::theme_for_theme_kind(&theme_kind, ctx);
-    #[cfg(target_family = "wasm")]
-    emit_theme_background_event(&theme);
-
     Appearance::new(
         theme,
         monospace_font_family_from_settings.unwrap_or(default_monospace_font_family),
@@ -401,15 +395,6 @@ fn build_appearance(ctx: &mut AppContext) -> Appearance {
         line_height_ratio,
         password_font_family,
     )
-}
-
-#[cfg(target_family = "wasm")]
-fn emit_theme_background_event(theme: &WarpTheme) {
-    let bg = theme.background().into_solid();
-    let color = format!("#{:02x}{:02x}{:02x}", bg.r, bg.g, bg.b);
-    crate::platform::wasm::emit_event(crate::platform::wasm::WarpEvent::ThemeBackgroundChanged {
-        color,
-    });
 }
 
 pub fn register(app: &mut impl AddSingletonModel) {

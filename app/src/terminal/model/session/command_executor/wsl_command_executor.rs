@@ -8,9 +8,8 @@ use command::r#async::Command;
 use itertools::Itertools as _;
 
 use super::{CommandExecutor, CommandOutput, ExecuteCommandOptions};
-use crate::env_vars::{EnvVarValue, serialize_variables_for_shell};
 use crate::safe_warn;
-use crate::terminal::shell::{Shell, ShellType};
+use crate::terminal::shell::{Shell, ShellType, serialize_variables_for_shell};
 
 /// `CommandExecutor` implementation that executes the given `command` in a WSL instance via the
 /// `wsl.exe` executable.
@@ -72,10 +71,8 @@ impl WslCommandExecutor {
                 // This conversion fails in this case b/c we collected the value of PATH from a
                 // bootstrapped WSL session and it's _already_ converted. Conversion failures
                 // result in truncation.
-                let env_vars_str = serialize_variables_for_shell(
-                    [("PATH", &EnvVarValue::Constant(path_var))],
-                    self.shell_type,
-                );
+                let env_vars_str =
+                    serialize_variables_for_shell([("PATH", path_var.as_str())], self.shell_type);
                 command_with_env = Cow::Owned(format!(r#"{env_vars_str}; {command}"#));
             }
 

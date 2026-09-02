@@ -27,8 +27,6 @@ pub(in crate::terminal) enum LifecyclePhase {
 pub(in crate::terminal) enum CommandStartKind {
     /// A user command or queued command should start the ordinary active block.
     UserOrQueued,
-    /// A shared-session command should start the ordinary active block.
-    SharedSession,
     /// An in-band command should start an in-band active block.
     InBand,
 }
@@ -77,36 +75,7 @@ pub(in crate::terminal) enum LifecycleInput {
     Exit,
 }
 
-/// Identifies a lifecycle input without retaining its input-specific evidence.
-///
-/// Diagnostics use this bounded vocabulary so telemetry remains structured and non-UGC.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(in crate::terminal) enum LifecycleInputKind {
-    StartCommand,
-    Preexec,
-    CommandFinished,
-    PrecmdWithCompletionMetadata,
-    PromptOnlyPrecmd,
-    InitShell,
-    Exit,
-}
-
-impl LifecycleInput {
-    /// Returns the bounded input kind used to key and populate lifecycle diagnostics.
-    pub(super) fn kind(self) -> LifecycleInputKind {
-        match self {
-            LifecycleInput::StartCommand(_) => LifecycleInputKind::StartCommand,
-            LifecycleInput::Preexec(_) => LifecycleInputKind::Preexec,
-            LifecycleInput::CommandFinished(_) => LifecycleInputKind::CommandFinished,
-            LifecycleInput::PrecmdWithCompletionMetadata(_) => {
-                LifecycleInputKind::PrecmdWithCompletionMetadata
-            }
-            LifecycleInput::PromptOnlyPrecmd => LifecycleInputKind::PromptOnlyPrecmd,
-            LifecycleInput::InitShell => LifecycleInputKind::InitShell,
-            LifecycleInput::Exit => LifecycleInputKind::Exit,
-        }
-    }
-}
+impl LifecycleInput {}
 
 /// Captures live block and terminal evidence at the point an input is planned.
 ///
@@ -157,12 +126,7 @@ pub(in crate::terminal) enum LifecycleAction {
     Ignore(IgnoreReason),
 }
 
-impl LifecycleAction {
-    /// Returns whether the selected action intentionally avoids lifecycle mutation.
-    pub(super) fn is_ignored(self) -> bool {
-        matches!(self, LifecycleAction::Ignore(_))
-    }
-}
+impl LifecycleAction {}
 
 /// Contains the complete plan for handling one lifecycle input.
 ///
@@ -172,7 +136,6 @@ pub(in crate::terminal) struct LifecycleTransition {
     pub previous_phase: LifecyclePhase,
     pub next_phase: LifecyclePhase,
     pub action: LifecycleAction,
-    pub recovery_record: Option<super::LifecycleRecoveryRecord>,
 }
 
 /// Reconciles a remembered phase against the active block's live state.

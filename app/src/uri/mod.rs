@@ -1,6 +1,4 @@
 mod docker;
-pub mod parse_url_paths;
-pub mod web_intent_parser;
 
 #[cfg(target_family = "wasm")]
 pub mod browser_url_handler;
@@ -10,8 +8,6 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use anyhow::{Result, anyhow, ensure};
-use itertools::Itertools;
-use session_sharing_protocol::common::SessionId;
 use url::Url;
 use warp_util::path::LineAndColumnArg;
 use warpui::notification::UserNotification;
@@ -19,17 +15,10 @@ use warpui::platform::TerminationMode;
 use warpui::{AppContext, SingletonEntity as _, TypedActionView, WindowId};
 
 use self::docker::open_docker_container;
-use crate::auth::github_auth_notifier::GitHubAuthNotifier;
-use crate::cloud_object::ObjectType;
-use crate::drive::{OpenWarpDriveObjectArgs, OpenWarpDriveObjectSettings};
 use crate::features::FeatureFlag;
 use crate::launch_configs::launch_config::LaunchConfig;
 use crate::root_view::{OpenLaunchConfigArg, open_new_window_get_handles};
-use crate::server::ids::ServerId;
-use crate::server::telemetry::{LaunchConfigUiLocation, TelemetryEvent};
-use crate::settings_view::{
-    OpenTeamsSettingsModalArgs, SettingsSection, settings_widget_deeplink_target,
-};
+use crate::settings_view::{SettingsSection, settings_widget_deeplink_target};
 use crate::tab_configs::TabConfig;
 use crate::user_config::{load_launch_configs, load_tab_configs, tab_configs_dir};
 use crate::util::openable_file_type::{
@@ -41,10 +30,7 @@ use crate::workspace::util::PaneViewLocator;
 use crate::workspace::{
     ToastStack, Workspace, WorkspaceAction, WorkspaceRegistry, active_terminal_in_window,
 };
-use crate::{
-    ChannelState, OpenPath, quake_mode_window_id, quake_mode_window_is_open, safe_info,
-    send_telemetry_from_app_ctx,
-};
+use crate::{ChannelState, OpenPath, quake_mode_window_id, quake_mode_window_is_open, safe_info};
 
 const DESKTOP_REDIRECT_URI_PATH: &str = "/desktop_redirect";
 
@@ -62,34 +48,13 @@ pub enum OpenSettingsArgs {
     },
 }
 
-/// Source query parameter value indicating auth was initiated from cloud agent setup.
-/// Used to skip opening settings page after GitHub auth completes.
-pub const CLOUD_SETUP_SOURCE: &str = "cloud_setup";
-
-/// Query parameter the web checkout confirmation page appends to the desktop
-/// hand-off to report that the purchase went through. It is the shared
-/// convention across every product the web can sell (a subscription plan or a
-/// one-time credit pack), so the client has a single success signal to react to.
-pub const CHECKOUT_SUCCESSFUL_PARAM: &str = "checkoutSuccessful";
-
-/// Whether an incoming deeplink reports a completed web checkout.
-pub fn url_reports_checkout_success(url: &Url) -> bool {
-    url.query_pairs()
-        .any(|(key, value)| key == CHECKOUT_SUCCESSFUL_PARAM && value == "true")
-}
-
 #[derive(Debug, PartialEq, Eq)]
 pub enum UriHost {
-    Auth,
-    Team,
     /// A host prefix for all actions (e.g.: new tab, new window).
     Action,
     /// A host prefix for all actions that involve launch configurations
     Launch,
-    /// Supports joining shared sessions via a warp:// URI.
-    SharedSession,
     /// Supports WD object actions
-    Drive,
     /// Supports opening warp's settings panel via URI
     Settings,
     /// A host prefix for a general-purpose home/landing page. Unlike other intent URIs, the home
@@ -108,14 +73,8 @@ impl FromStr for UriHost {
 
     fn from_str(s: &str) -> Result<Self> {
         match s {
-            "auth" => Ok(Self::Auth),
-            "team" => Ok(Self::Team),
             "action" => Ok(Self::Action),
             "launch" => Ok(Self::Launch),
-            "shared_session" if FeatureFlag::ViewingSharedSessions.is_enabled() => {
-                Ok(Self::SharedSession)
-            }
-            "drive" => Ok(Self::Drive),
             "settings" => Ok(Self::Settings),
             "home" => Ok(Self::Home),
             "linear" => Ok(Self::Linear),
@@ -130,50 +89,6 @@ impl UriHost {
     fn handle(&self, primary_window_id: Option<WindowId>, url: &Url, ctx: &mut AppContext) {
         // Handle host
         match self {
-            UriHost::Auth => {
-                ctx.window_ids()
-                    .collect_vec()
-                    .into_iter()
-                    .for_each(|window_id| {
-                        let Some(root_view_id) = ctx.root_view_id(window_id) else {
-                            return;
-                        };
-                        safe_info!(
-                            safe: ("Dispatched auth url to window {window_id}"),
-                            full: ("Dispatched auth url {url} to window {window_id}")
-                        );
-                        ctx.dispatch_action(
-                            window_id,
-                            &[root_view_id],
-                            "root_view:handle_incoming_auth_url",
-                            &url.clone(),
-                            log::Level::Info,
-                        );
-                    });
-            }
-            UriHost::Team => {
-                match url.path_segments().into_iter().flatten().last() {
-                    // If the last segment of the URL is "settings", open the team settings page.
-                    Some("settings") => {
-                        open_window_with_action(
-                            primary_window_id,
-                            "root_view:open_team_settings_page",
-                            ctx,
-                        );
-                    }
-                    // Otherwise default to previous behavior.
-                    _ => {
-                        // TODO: Parse URL to ensure the user is logged into the right account
-                        // Shows the user the settings view of their newly joined team within the app.
-                        open_window_with_action(
-                            primary_window_id,
-                            "root_view:handle_team_intent_link_action",
-                            ctx,
-                        );
-                    }
-                };
-                send_telemetry_from_app_ctx!(TelemetryEvent::OpenTeamFromURI, ctx);
-            }
             UriHost::Action => {
                 match Action::parse(url) {
                     Ok(action) => action.handle(primary_window_id, url, ctx),
@@ -192,7 +107,6 @@ impl UriHost {
                             "root_view:open_launch_config",
                             &OpenLaunchConfigArg {
                                 launch_config: config.clone(),
-                                ui_location: LaunchConfigUiLocation::Uri,
                                 open_in_active_window: false,
                             },
                         )
@@ -208,103 +122,6 @@ impl UriHost {
             }
             UriHost::TabConfig => {
                 handle_tab_config_uri(primary_window_id, url, ctx);
-            }
-            UriHost::SharedSession => {
-                // We expect the uri to have the ID of the session to join as the last segment.
-                // e.g. warp://shared_session/{id}
-                let session_id = url
-                    .path_segments()
-                    .into_iter()
-                    .flatten()
-                    .last()
-                    .and_then(|id| SessionId::from_str(id).ok());
-                if let Some(session_id) = session_id {
-                    // If there's an existing window, join the session inc a new tab. Otherwise, open a new window.
-                    match primary_window_id.and_then(|window_id| {
-                        ctx.root_view_id(window_id)
-                            .map(|view_id| (window_id, view_id))
-                    }) {
-                        Some((primary_window_id, root_view_id)) => {
-                            ctx.dispatch_action(
-                                primary_window_id,
-                                &[root_view_id],
-                                "root_view:join_shared_session_in_existing_window",
-                                &session_id,
-                                log::Level::Info,
-                            );
-                        }
-                        None => {
-                            ctx.dispatch_global_action("root_view:join_shared_session", &session_id)
-                        }
-                    }
-                } else {
-                    log::warn!("Failed to join shared session with uri={url}");
-                }
-            }
-            UriHost::Drive => {
-                // We expect the uri to have the ID of the object we are trying to open and the object_type.
-                // e.g. warp://drive/{object_type}?id={UID}
-                // For folder links, we expect an additional query parameter primary_object_id which refers to the id object
-                // that should be opened
-                // When the user is directed here via the request access flow, we expect an additional query parameter invitee_email
-                // If this parameter is present, we will open the sharing dialog with the email filled in.
-                let object_type = url
-                    .path_segments()
-                    .into_iter()
-                    .flatten()
-                    .last()
-                    .and_then(|object_type| ObjectType::from_str(object_type).ok());
-
-                let query_string: HashMap<_, _> = url.query_pairs().collect();
-                let object_server_id: Option<ServerId> =
-                    query_string.get("id").map(ServerId::from_string_lossy);
-
-                let focused_folder_id: Option<ServerId> = query_string
-                    .get("focused_folder_id")
-                    .map(ServerId::from_string_lossy);
-
-                let invitee_email: Option<String> =
-                    query_string.get("invitee_email").map(|s| s.to_string());
-
-                if let Some((object_type, server_id)) = object_type.zip(object_server_id) {
-                    let primary_window_and_view = primary_window_id.and_then(|window_id| {
-                        ctx.root_view_id(window_id)
-                            .map(|view_id| (window_id, view_id))
-                    });
-                    let args = OpenWarpDriveObjectArgs {
-                        object_type,
-                        server_id,
-                        settings: OpenWarpDriveObjectSettings {
-                            focused_folder_id,
-                            invitee_email,
-                        },
-                    };
-                    // If there's an existing window, open the object in that window, otherwise open a new window
-                    if let Some((primary_window_id, root_view_id)) = primary_window_and_view {
-                        // `args` may contain user-identifiable fields
-                        // (e.g. `invitee_email`), so avoid writing the full
-                        // debug representation to `warp.log` on non-dogfood
-                        // release channels.
-                        safe_info!(
-                            safe: (
-                                "Opening drive object in existing window: object_type={:?} server_id={}",
-                                args.object_type, args.server_id,
-                            ),
-                            full: ("Opening drive object in existing window: {args:?}")
-                        );
-                        ctx.dispatch_action(
-                            primary_window_id,
-                            &[root_view_id],
-                            "root_view:open_drive_object_existing_window",
-                            &args,
-                            log::Level::Info,
-                        );
-                    } else {
-                        ctx.dispatch_global_action("root_view:open_drive_object_new_window", &args)
-                    }
-                } else {
-                    log::warn!("Failed to open drive object with uri={url}");
-                }
             }
             UriHost::Settings => {
                 // We support opening different settings pages through URI:
@@ -330,97 +147,64 @@ impl UriHost {
                     .filter(|s| !s.is_empty())
                     .map(|s| s.to_string());
 
-                match settings_sub_page.as_deref() {
-                    Some("teams") => {
-                        let invite_email = query_string.get("invite").map(|s| s.to_string());
-                        let args = OpenTeamsSettingsModalArgs { invite_email };
+                {
+                    // Route the bare host, the `q` (search) and `widget` (scroll-to) query
+                    // params, and the simple section sub-pages (e.g. platform, appearance,
+                    // warp_agent) resolved via `settings_section_for_simple_subpage`.
+                    let maybe_simple_subpage = settings_sub_page.as_deref();
+                    let simple_section =
+                        maybe_simple_subpage.and_then(settings_section_for_simple_subpage);
+                    // Pull the non-empty `q` search query out of the already
+                    // parsed pairs to pre-fill the settings search bar.
+                    let search_query = query_string
+                        .get("q")
+                        .map(|query| query.to_string())
+                        .filter(|query| !query.is_empty());
+                    let widget_target = query_string
+                        .get("widget")
+                        .and_then(|slug| settings_widget_deeplink_target(slug));
+
+                    if let Some((page, widget_id)) = widget_target {
+                        // `?widget=` scrolls to a specific widget; it takes
+                        // precedence over `?q=` since searching would filter the
+                        // target widget out of view.
+                        let args = OpenSettingsArgs::Widget { page, widget_id };
                         dispatch_action_in_new_or_existing_window(
                             primary_window_id,
-                            "root_view:open_team_settings_with_email_invite_in_existing_window",
-                            "root_view:open_team_settings_with_email_invite_in_new_window",
+                            "root_view:open_settings_in_existing_window",
+                            "root_view:open_settings_in_new_window",
                             &args,
                             ctx,
                         );
-                    }
-                    Some("environments") => {
-                        // Notify that GitHub auth completed so views can refresh
-                        GitHubAuthNotifier::handle(ctx).update(ctx, |notifier, ctx| {
-                            notifier.notify_auth_completed(ctx);
-                        });
-
-                        // Open settings page unless auth was initiated from cloud setup
-                        // (cloud setup users should stay on their current page)
-                        let source = query_string.get("source").map(|s| s.as_ref());
-                        let skip_settings = source == Some(CLOUD_SETUP_SOURCE);
-                        if !skip_settings {
-                            dispatch_action_in_new_or_existing_window(
-                                primary_window_id,
-                                "root_view:open_settings_page_in_existing_window",
-                                "root_view:open_settings_page_in_new_window",
-                                &SettingsSection::CloudEnvironments,
-                                ctx,
-                            );
-                        }
-                    }
-                    // No special sub-page: route the bare host, the `q` (search) and
-                    // `widget` (scroll-to) query params, and the simple section
-                    // sub-pages (e.g. billing_and_usage, platform, appearance,
-                    // warp_agent) resolved via `settings_section_for_simple_subpage`.
-                    maybe_simple_subpage => {
-                        let simple_section =
-                            maybe_simple_subpage.and_then(settings_section_for_simple_subpage);
-                        // Pull the non-empty `q` search query out of the already
-                        // parsed pairs to pre-fill the settings search bar.
-                        let search_query = query_string
-                            .get("q")
-                            .map(|query| query.to_string())
-                            .filter(|query| !query.is_empty());
-                        let widget_target = query_string
-                            .get("widget")
-                            .and_then(|slug| settings_widget_deeplink_target(slug));
-
-                        if let Some((page, widget_id)) = widget_target {
-                            // `?widget=` scrolls to a specific widget; it takes
-                            // precedence over `?q=` since searching would filter the
-                            // target widget out of view.
-                            let args = OpenSettingsArgs::Widget { page, widget_id };
-                            dispatch_action_in_new_or_existing_window(
-                                primary_window_id,
-                                "root_view:open_settings_in_existing_window",
-                                "root_view:open_settings_in_new_window",
-                                &args,
-                                ctx,
-                            );
-                        } else if let Some(query) = search_query {
-                            let args = OpenSettingsArgs::Search { query };
-                            dispatch_action_in_new_or_existing_window(
-                                primary_window_id,
-                                "root_view:open_settings_in_existing_window",
-                                "root_view:open_settings_in_new_window",
-                                &args,
-                                ctx,
-                            );
-                        } else if let Some(section) = simple_section {
-                            dispatch_action_in_new_or_existing_window(
-                                primary_window_id,
-                                "root_view:open_settings_page_in_existing_window",
-                                "root_view:open_settings_page_in_new_window",
-                                &section,
-                                ctx,
-                            );
-                        } else if maybe_simple_subpage.is_none() {
-                            // Bare `warp://settings` opens the default settings page.
-                            let args = OpenSettingsArgs::Default;
-                            dispatch_action_in_new_or_existing_window(
-                                primary_window_id,
-                                "root_view:open_settings_in_existing_window",
-                                "root_view:open_settings_in_new_window",
-                                &args,
-                                ctx,
-                            );
-                        } else {
-                            log::warn!("Failed to open settings pane: unrecognized sub-page");
-                        }
+                    } else if let Some(query) = search_query {
+                        let args = OpenSettingsArgs::Search { query };
+                        dispatch_action_in_new_or_existing_window(
+                            primary_window_id,
+                            "root_view:open_settings_in_existing_window",
+                            "root_view:open_settings_in_new_window",
+                            &args,
+                            ctx,
+                        );
+                    } else if let Some(section) = simple_section {
+                        dispatch_action_in_new_or_existing_window(
+                            primary_window_id,
+                            "root_view:open_settings_page_in_existing_window",
+                            "root_view:open_settings_page_in_new_window",
+                            &section,
+                            ctx,
+                        );
+                    } else if maybe_simple_subpage.is_none() {
+                        // Bare `warp://settings` opens the default settings page.
+                        let args = OpenSettingsArgs::Default;
+                        dispatch_action_in_new_or_existing_window(
+                            primary_window_id,
+                            "root_view:open_settings_in_existing_window",
+                            "root_view:open_settings_in_new_window",
+                            &args,
+                            ctx,
+                        );
+                    } else {
+                        log::warn!("Failed to open settings pane: unrecognized sub-page");
                     }
                 }
             }
@@ -484,12 +268,9 @@ impl UriHost {
     fn window_behavior_hint(&self) -> WindowBehaviorHint {
         use WindowBehaviorHint as W;
         match self {
-            Self::Auth => W::ShowPrimaryWindow(WindowActivationFallbackBehavior::NewWindow {
-                replace_existing: true,
-            }),
-            Self::Team | Self::Drive | Self::Settings => W::default(),
+            Self::Settings => W::default(),
             // These URLs always open new windows.
-            Self::Launch | Self::SharedSession | Self::Home => W::Nothing,
+            Self::Launch | Self::Home => W::Nothing,
             // This will actually be handled by [`Action::window_behavior_hint`].
             Self::Action => W::Nothing,
             Self::Linear => W::default(),
@@ -1172,8 +953,6 @@ fn open_file(window_id: Option<WindowId>, path: PathBuf, ctx: &mut AppContext) {
                 }
             }
         }
-
-        send_telemetry_from_app_ctx!(TelemetryEvent::OpenNewSessionFromFilePath, ctx);
     }
 }
 
@@ -1238,30 +1017,6 @@ fn execute_file(window_id: WindowId, path_str: &str, ctx: &mut AppContext) {
             input.set_pending_command(&path_str, i_ctx);
         })
     });
-
-    send_telemetry_from_app_ctx!(TelemetryEvent::CommandFileRun, ctx);
-}
-
-fn open_window_with_action(active_window_id: Option<WindowId>, action: &str, ctx: &mut AppContext) {
-    if let Some(primary_window_id) = active_window_id {
-        // Dispatch action to primary window
-        if let Some(root_view_id) = ctx.root_view_id(primary_window_id) {
-            ctx.dispatch_action(
-                primary_window_id,
-                &[root_view_id],
-                action,
-                &(),
-                log::Level::Info,
-            );
-        }
-    } else {
-        log::warn!("no primary window id to dispatch action to");
-
-        // Open a new window and dispatch action there
-        ctx.dispatch_global_action("root_view:open_new", &());
-        // TODO: Note we cannot just dispatch here as it will be a no-op.
-        // Need to send a callback once window is fully open.
-    }
 }
 
 /// Helper function to dispatch an action to an existing window
@@ -1293,8 +1048,6 @@ fn dispatch_action_in_new_or_existing_window<T: 'static>(
 
 fn settings_section_for_simple_subpage(subpage: &str) -> Option<SettingsSection> {
     match subpage {
-        "billing_and_usage" => Some(SettingsSection::BillingAndUsage),
-        "platform" => Some(SettingsSection::WarpCloudAgentAPIKeys),
         "appearance" => Some(SettingsSection::Appearance),
         _ => None,
     }
@@ -1321,15 +1074,12 @@ fn validate_custom_uri(url: &Url) -> Result<UriHost> {
     let host_allows_arbitrary_path = match host {
         UriHost::Action
         | UriHost::Launch
-        | UriHost::SharedSession
-        | UriHost::Drive
-        | UriHost::Team
         | UriHost::Settings
         | UriHost::Linear
         | UriHost::TabConfig
         | UriHost::Session => true,
-        // Auth and Home only allow the desktop redirect path
-        UriHost::Auth | UriHost::Home => false,
+        // Home only allows the desktop redirect path
+        UriHost::Home => false,
     };
 
     ensure!(

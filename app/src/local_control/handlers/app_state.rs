@@ -20,7 +20,6 @@ use warp_util::path::LineAndColumnArg;
 use warpui::SingletonEntity;
 use warpui::{AppContext, ModelContext, TypedActionView};
 
-#[cfg(feature = "local_fs")]
 use crate::code::editor_management::CodeSource;
 use crate::local_control::LocalControlBridge;
 use crate::local_control::handlers::ack;
@@ -32,8 +31,9 @@ use crate::local_control::resolver::{
     target_pane_id, target_session_pane_id, target_window_id_for_target, target_workspace,
 };
 use crate::palette::PaletteMode;
+#[cfg(feature = "local_fs")]
+use crate::palette::PaletteSource;
 use crate::pane_group::{ActivationReason, Direction, PaneGroupAction};
-use crate::server::telemetry::PaletteSource;
 use crate::settings_view::SettingsSection;
 #[cfg(feature = "local_fs")]
 use crate::util::file::external_editor::EditorSettings;
@@ -83,14 +83,6 @@ pub(crate) fn handle(
             target,
             ctx,
         ),
-        ActionKind::SurfaceWarpDriveOpen => surface_workspace_action(
-            instance_id,
-            action,
-            SurfaceDestination::WarpDrive,
-            WorkspaceAction::OpenWarpDrive,
-            target,
-            ctx,
-        ),
         ActionKind::SessionNext => workspace_action(
             instance_id,
             action,
@@ -114,13 +106,6 @@ pub(crate) fn handle(
             surface_command_search_open(instance_id, params, target, ctx)
         }
         ActionKind::SurfaceThemePickerOpen => surface_theme_picker_open(instance_id, target, ctx),
-        ActionKind::SurfaceWarpDriveToggle => workspace_action(
-            instance_id,
-            action,
-            WorkspaceAction::ToggleWarpDrive,
-            target,
-            ctx,
-        ),
         ActionKind::SurfaceResourceCenterToggle => workspace_action(
             instance_id,
             action,
@@ -664,12 +649,6 @@ fn settings_section(page: String) -> Result<SettingsSection, ControlError> {
             format!("surface.settings.open cannot resolve settings page {page:?}"),
         )
     })?;
-    if section == SettingsSection::WarpDrive {
-        return Err(ControlError::new(
-            ErrorCode::UnsupportedAction,
-            "surface.settings.open does not open Warp Drive settings",
-        ));
-    }
     Ok(section)
 }
 

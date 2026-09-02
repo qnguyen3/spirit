@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -34,10 +33,9 @@ use warpui::{
 
 use super::directory_color_add_picker::{DirectoryColorAddPicker, DirectoryColorAddPickerEvent};
 use super::settings_page::{
-    AdditionalInfo, CONTENT_FONT_SIZE, Category, HEADER_PADDING, LocalOnlyIconState, MatchData,
-    PageType, SettingsPageEvent, SettingsPageMeta, SettingsPageViewHandle, SettingsWidget,
-    ToggleState, build_reset_button, render_body_item, render_body_item_label,
-    render_dropdown_item,
+    AdditionalInfo, CONTENT_FONT_SIZE, Category, HEADER_PADDING, MatchData, PageType,
+    SettingsPageEvent, SettingsPageMeta, SettingsPageViewHandle, SettingsWidget, ToggleState,
+    build_reset_button, render_body_item, render_body_item_label, render_dropdown_item,
 };
 use super::{SettingsAction, SettingsSection, ToggleSettingActionPair, flags};
 use crate::appearance::{Appearance, AppearanceEvent};
@@ -45,7 +43,6 @@ use crate::channel::{Channel, ChannelState};
 use crate::context_chips::ChipAvailability;
 use crate::context_chips::prompt::{Prompt, PromptEvent};
 use crate::context_chips::renderer::{ChipDragState, Renderer as ContextChipRenderer};
-use crate::drive::settings::WarpDriveSettings;
 use crate::editor::{
     EditOrigin, EditorView, Event as EditorEvent, InteractionState, SingleLineEditorOptions,
     TextOptions,
@@ -53,28 +50,22 @@ use crate::editor::{
 use crate::features::FeatureFlag;
 use crate::gpu_state::{GPUState, GPUStateEvent};
 use crate::prompt::editor_modal::OpenSource as PromptEditorOpenSource;
-use crate::server::telemetry::{InputUXChangeOrigin, TelemetryEvent};
-use crate::settings::app_icon::{AppIcon, AppIconSettings, ShowDockIconState};
+use crate::settings::app_icon::{AppIcon, AppIconSettings};
 use crate::settings::{
-    AppEditorSettings, CodeSettings, CursorBlink, CursorBlinkEnabled, CursorDisplayType,
-    DEFAULT_MONOSPACE_FONT_NAME, EnforceMinimumContrast, FocusPaneOnHover, FontSettings,
-    FontSettingsChangedEvent, GPUSettings, InputBoxType, InputModeSettings, InputModeState,
-    InputSettings, InputSettingsChangedEvent, MonospaceFontName, PaneSettings,
-    ShouldDimInactivePanes, ThemeSettings, UseSystemTheme, UseThinStrokes, active_theme_kind,
-    respect_system_theme,
+    AppEditorSettings, CodeSettings, CursorBlink, CursorDisplayType, DEFAULT_MONOSPACE_FONT_NAME,
+    EnforceMinimumContrast, FontSettings, FontSettingsChangedEvent, GPUSettings, InputBoxType,
+    InputModeSettings, InputSettings, InputSettingsChangedEvent, MonospaceFontName, PaneSettings,
+    ThemeSettings, active_theme_kind, respect_system_theme,
 };
 use crate::terminal::block_list_viewport::InputMode;
 use crate::terminal::blockgrid_element::BlockGridElement;
-use crate::terminal::ligature_settings::{LigatureRenderingEnabled, LigatureSettings};
+use crate::terminal::ligature_settings::LigatureSettings;
 use crate::terminal::model::ObfuscateSecrets;
 use crate::terminal::model::blockgrid::BlockGrid;
 use crate::terminal::session_settings::SessionSettings;
-use crate::terminal::settings::{
-    AltScreenPadding, AltScreenPaddingMode, Spacing, SpacingMode, TerminalSettings,
-};
-use crate::terminal::{
-    BlockListSettings, ShowBlockDividers, ShowJumpToBottomOfBlockButton, SizeInfo,
-};
+use crate::terminal::settings::{AltScreenPaddingMode, SpacingMode, TerminalSettings};
+use crate::terminal::{BlockListSettings, SizeInfo};
+use crate::themes;
 use crate::themes::theme::{self, RespectSystemTheme, SelectedSystemThemes, ThemeKind, WarpTheme};
 use crate::themes::theme_chooser::ThemeChooserMode;
 use crate::ui_components::color_dot::{TAB_COLOR_OPTIONS, render_color_dot};
@@ -84,18 +75,14 @@ use crate::util::bindings;
 use crate::view_components::action_button::{ActionButton, ButtonSize, NakedTheme};
 use crate::view_components::{Dropdown, DropdownItem, FilterableDropdown};
 use crate::window_settings::{
-    BackgroundBlurRadius, BackgroundBlurTexture, BackgroundOpacity, LeftPanelVisibilityAcrossTabs,
-    OpenWindowsAtCustomSize, WindowSettings, WindowSettingsChangedEvent, ZoomLevel,
+    BackgroundBlurRadius, BackgroundOpacity, WindowSettings, WindowSettingsChangedEvent, ZoomLevel,
 };
 use crate::workspace::WorkspaceAction;
 use crate::workspace::header_toolbar_editor::HeaderToolbarInlineEditor;
 use crate::workspace::tab_settings::{
-    DirectoryTabColor, HideTitleBarSearchBarInVerticalTabs, PreserveActiveTabColor,
-    ShowIndicatorsButton, ShowVerticalTabPanelInRestoredWindows, TabCloseButtonPosition,
-    TabSettings, TabSettingsChangedEvent, UseLatestUserPromptAsConversationTitleInTabNames,
-    UseVerticalTabs, WorkspaceDecorationVisibility, canonical_directory_key,
+    DirectoryTabColor, TabCloseButtonPosition, TabSettings, TabSettingsChangedEvent,
+    WorkspaceDecorationVisibility, canonical_directory_key,
 };
-use crate::{send_telemetry_from_ctx, themes};
 
 const FONT_SIZE_INPUT_BOX_WIDTH: f32 = 80.;
 const NOTEBOOK_FONT_SIZE_INPUT_BOX_WIDTH: f32 = 50.;
@@ -492,7 +479,6 @@ pub enum AppearancePageAction {
     ToggleLeftPanelVisibility,
     ToggleToolsPanelProjectExplorer,
     ToggleToolsPanelGlobalSearch,
-    ToggleToolsPanelWarpDrive,
     SetEnforceMinimumContrast(EnforceMinimumContrast),
     OpenUrl(String),
     ToggleFocusPaneOnHover,
@@ -514,7 +500,6 @@ pub enum AppearancePageAction {
 pub struct AppearanceSettingsPageView {
     page: PageType<Self>,
     window_id: WindowId,
-    local_only_icon_tooltip_states: RefCell<HashMap<String, MouseStateHandle>>,
     font_size_editor: ViewHandle<EditorView>,
     line_height_editor: ViewHandle<EditorView>,
     notebook_font_size_editor: ViewHandle<EditorView>,
@@ -579,8 +564,8 @@ impl TypedActionView for AppearanceSettingsPageView {
             }
             SetNotebookFontSize => self.set_notebook_font_size(ctx),
             SetLineHeight => self.set_line_height_ratio(ctx),
-            SetOpacity(value) => self.set_opacity(*value, true, ctx),
-            SetBlur(value) => self.set_blur(*value, true, ctx),
+            SetOpacity(value) => self.set_opacity(*value, ctx),
+            SetBlur(value) => self.set_blur(*value, ctx),
             SetFontFamily(name) => self.set_font_family(name, ctx),
             SetThinStrokes(value) => self.set_thin_strokes(value, ctx),
             SetEnforceMinimumContrast(value) => {
@@ -620,12 +605,6 @@ impl TypedActionView for AppearanceSettingsPageView {
                 });
                 ctx.notify();
             }
-            ToggleToolsPanelWarpDrive => {
-                WarpDriveSettings::handle(ctx).update(ctx, |settings, ctx| {
-                    report_if_error!(settings.enable_warp_drive.toggle_and_save_value(ctx));
-                });
-                ctx.notify();
-            }
             SetInputMode {
                 new_mode,
                 from_binding,
@@ -634,8 +613,8 @@ impl TypedActionView for AppearanceSettingsPageView {
             SetAppIcon(new_icon) => self.set_app_icon(*new_icon, ctx),
             ToggleShowDockIcon => self.toggle_show_dock_icon(ctx),
             SetCursorType(cursor_display_type) => self.set_cursor_type(*cursor_display_type, ctx),
-            OpacitySliderDragged(val) => self.set_opacity(*val, false, ctx),
-            BlurSliderDragged(val) => self.set_blur(*val, false, ctx),
+            OpacitySliderDragged(val) => self.set_opacity(*val, ctx),
+            BlurSliderDragged(val) => self.set_blur(*val, ctx),
             OpenUrl(url) => {
                 ctx.open_url(url);
             }
@@ -659,12 +638,7 @@ impl TypedActionView for AppearanceSettingsPageView {
                         .focus_panes_on_hover
                         .toggle_and_save_value(ctx)
                     {
-                        Ok(new_val) => {
-                            send_telemetry_from_ctx!(
-                                TelemetryEvent::ToggleFocusPaneOnHover { enabled: new_val },
-                                ctx
-                            );
-                        }
+                        Ok(_new_val) => {}
                         Err(e) => {
                             report_error!(e);
                         }
@@ -685,10 +659,6 @@ impl TypedActionView for AppearanceSettingsPageView {
                     );
                 });
                 self.set_alt_screen_padding_editor_text(ctx);
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::UpdateAltScreenPaddingMode { new_mode },
-                    ctx
-                );
             }
             UpdateAltScreenPaddingMode(new_mode) => {
                 TerminalSettings::handle(ctx).update(ctx, |terminal_settings, ctx| {
@@ -699,12 +669,6 @@ impl TypedActionView for AppearanceSettingsPageView {
                     );
                 });
                 self.set_alt_screen_padding_editor_text(ctx);
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::UpdateAltScreenPaddingMode {
-                        new_mode: *new_mode,
-                    },
-                    ctx
-                );
             }
             SetTabCloseButtonPosition(position) => {
                 self.update_tab_close_button_position(*position, ctx);
@@ -1258,7 +1222,6 @@ impl AppearanceSettingsPageView {
         AppearanceSettingsPageView {
             page: Self::build_page(ctx),
             window_id: ctx.window_id(),
-            local_only_icon_tooltip_states: Default::default(),
             notebook_font_size_editor,
             font_size_editor,
             line_height_editor,
@@ -1372,7 +1335,6 @@ impl AppearanceSettingsPageView {
         if cfg!(feature = "local_fs") && FeatureFlag::GlobalSearch.is_enabled() {
             tools_panel_widgets.push(Box::new(ToolsPanelGlobalSearchWidget::default()));
         }
-        tools_panel_widgets.push(Box::new(ToolsPanelWarpDriveWidget::default()));
         if !tools_panel_widgets.is_empty() {
             categories.push(Category::new("Right Sidebar", tools_panel_widgets));
         }
@@ -1671,10 +1633,6 @@ impl AppearanceSettingsPageView {
                                 .alt_screen_padding
                                 .set_value(new_mode, ctx)
                         );
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::UpdateAltScreenPaddingMode { new_mode },
-                            ctx
-                        );
                     });
                 }
 
@@ -1820,20 +1778,7 @@ impl AppearanceSettingsPageView {
         }
     }
 
-    fn set_opacity(
-        &mut self,
-        opacity_value: f32,
-        should_set_defaults: bool,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if should_set_defaults {
-            send_telemetry_from_ctx!(
-                TelemetryEvent::SetOpacity {
-                    opacity: opacity_value as u8
-                },
-                ctx
-            );
-        }
+    fn set_opacity(&mut self, opacity_value: f32, ctx: &mut ViewContext<Self>) {
         WindowSettings::handle(ctx).update(ctx, |window_settings, ctx| {
             report_if_error!(
                 window_settings
@@ -1844,21 +1789,7 @@ impl AppearanceSettingsPageView {
         ctx.notify();
     }
 
-    fn set_blur(
-        &mut self,
-        blur_value: f32,
-        should_set_defaults: bool,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if should_set_defaults {
-            send_telemetry_from_ctx!(
-                TelemetryEvent::SetBlurRadius {
-                    blur_radius: blur_value as u8
-                },
-                ctx
-            );
-        }
-
+    fn set_blur(&mut self, blur_value: f32, ctx: &mut ViewContext<Self>) {
         ctx.windows()
             .set_all_windows_background_blur_radius(blur_value as u8);
 
@@ -1876,13 +1807,6 @@ impl AppearanceSettingsPageView {
         self.line_height_editor.update(ctx, |editor, ctx| {
             editor.set_buffer_text(&format!("{DEFAULT_UI_LINE_HEIGHT_RATIO}"), ctx);
         });
-
-        send_telemetry_from_ctx!(
-            TelemetryEvent::SetLineHeight {
-                new_value: DEFAULT_UI_LINE_HEIGHT_RATIO
-            },
-            ctx
-        );
 
         FontSettings::handle(ctx).update(ctx, |font_settings, ctx| {
             report_if_error!(
@@ -1902,23 +1826,16 @@ impl AppearanceSettingsPageView {
         let appearance = Appearance::as_ref(ctx);
         let current_line_height = appearance.ui_builder().line_height_ratio();
 
-        if (current_line_height - new_line_height).abs() > f32::EPSILON {
-            send_telemetry_from_ctx!(
-                TelemetryEvent::SetLineHeight {
-                    new_value: new_line_height
-                },
-                ctx
-            );
-
-            if (MIN_LINE_SPACING..=MAX_LINE_SPACING).contains(&new_line_height) {
-                FontSettings::handle(ctx).update(ctx, |font_settings, ctx| {
-                    report_if_error!(
-                        font_settings
-                            .line_height_ratio
-                            .set_value(new_line_height, ctx)
-                    );
-                });
-            }
+        if (current_line_height - new_line_height).abs() > f32::EPSILON
+            && (MIN_LINE_SPACING..=MAX_LINE_SPACING).contains(&new_line_height)
+        {
+            FontSettings::handle(ctx).update(ctx, |font_settings, ctx| {
+                report_if_error!(
+                    font_settings
+                        .line_height_ratio
+                        .set_value(new_line_height, ctx)
+                );
+            });
         }
     }
 
@@ -1926,10 +1843,6 @@ impl AppearanceSettingsPageView {
         WindowSettings::handle(ctx).update(ctx, |window_settings, ctx| {
             let current_val = window_settings.open_windows_at_custom_size.value();
             let new_val: bool = !current_val;
-            send_telemetry_from_ctx!(
-                TelemetryEvent::ToggleNewWindowsAtCustomSize { enabled: new_val },
-                ctx
-            );
             report_if_error!(
                 window_settings
                     .open_windows_at_custom_size
@@ -1941,7 +1854,6 @@ impl AppearanceSettingsPageView {
 
     fn set_new_windows_num_columns(&mut self, columns: u16, ctx: &mut ViewContext<Self>) {
         WindowSettings::handle(ctx).update(ctx, |window_settings, ctx| {
-            send_telemetry_from_ctx!(TelemetryEvent::SetNewWindowsAtCustomSize, ctx);
             report_if_error!(
                 window_settings
                     .new_windows_num_columns
@@ -1952,7 +1864,6 @@ impl AppearanceSettingsPageView {
 
     fn set_new_windows_num_rows(&mut self, rows: u16, ctx: &mut ViewContext<Self>) {
         WindowSettings::handle(ctx).update(ctx, |window_settings, ctx| {
-            send_telemetry_from_ctx!(TelemetryEvent::SetNewWindowsAtCustomSize, ctx);
             report_if_error!(window_settings.new_windows_num_rows.set_value(rows, ctx));
         });
     }
@@ -2074,12 +1985,7 @@ impl AppearanceSettingsPageView {
     fn set_thin_strokes(&mut self, value: &ThinStrokes, ctx: &mut ViewContext<Self>) {
         FontSettings::handle(ctx).update(ctx, |font_settings, ctx| {
             match font_settings.use_thin_strokes.set_value(*value, ctx) {
-                Ok(_) => {
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::ThinStrokesSettingChanged { new_value: *value },
-                        ctx
-                    );
-                }
+                Ok(_) => {}
                 Err(e) => {
                     report_error!(e);
                 }
@@ -2095,10 +2001,6 @@ impl AppearanceSettingsPageView {
                 .show_jump_to_bottom_of_block_button
                 .value()
         };
-        send_telemetry_from_ctx!(
-            TelemetryEvent::ToggleJumpToBottomofBlockButton { enabled: new_value },
-            ctx
-        );
         ctx.update_model(&block_list_settings, move |block_list_settings, ctx| {
             report_if_error!(
                 block_list_settings
@@ -2111,10 +2013,6 @@ impl AppearanceSettingsPageView {
     pub fn toggle_show_block_dividers(&mut self, ctx: &mut ViewContext<Self>) {
         let block_list_settings = BlockListSettings::handle(ctx);
         let new_value = { !*block_list_settings.as_ref(ctx).show_block_dividers.value() };
-        send_telemetry_from_ctx!(
-            TelemetryEvent::ToggleShowBlockDividers { enabled: new_value },
-            ctx
-        );
         ctx.update_model(&block_list_settings, move |block_list_settings, ctx| {
             report_if_error!(
                 block_list_settings
@@ -2154,12 +2052,7 @@ impl AppearanceSettingsPageView {
                 .should_dim_inactive_panes
                 .toggle_and_save_value(ctx)
             {
-                Ok(new_value) => {
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::ToggleDimInactivePanes { enabled: new_value },
-                        ctx
-                    );
-                }
+                Ok(_new_value) => {}
                 Err(e) => {
                     report_error!(e);
                 }
@@ -2200,8 +2093,7 @@ impl AppearanceSettingsPageView {
         from_binding: bool,
         ctx: &mut ViewContext<Self>,
     ) {
-        let old_mode = *InputModeSettings::as_ref(ctx).input_mode.value();
-        send_telemetry_from_ctx!(TelemetryEvent::InputModeChanged { old_mode, new_mode }, ctx);
+        let _old_mode = *InputModeSettings::as_ref(ctx).input_mode.value();
         InputModeSettings::handle(ctx).update(ctx, |input_mode, ctx| {
             report_if_error!(input_mode.input_mode.set_value(new_mode, ctx));
         });
@@ -2229,14 +2121,7 @@ impl AppearanceSettingsPageView {
             self.input_type_radio_state
                 .set_selected_idx(new_type as usize);
 
-            let is_udi_enabled = new_type == InputBoxType::Universal;
-            send_telemetry_from_ctx!(
-                TelemetryEvent::InputUXModeChanged {
-                    is_udi_enabled,
-                    origin: InputUXChangeOrigin::Settings
-                },
-                ctx
-            );
+            let _is_udi_enabled = new_type == InputBoxType::Universal;
 
             // Selecting classic mode must also enable honor_ps1 so the mode takes
             // effect immediately (input_type() requires honor_ps1 to return classic).
@@ -2255,12 +2140,6 @@ impl AppearanceSettingsPageView {
     fn set_app_icon(&mut self, new_icon: AppIcon, ctx: &mut ViewContext<Self>) {
         AppIconSettings::handle(ctx).update(ctx, |app_icon_settings, ctx| {
             report_if_error!(app_icon_settings.app_icon.set_value(new_icon, ctx));
-            send_telemetry_from_ctx!(
-                TelemetryEvent::AppIconSelection {
-                    icon: new_icon.to_string(),
-                },
-                ctx
-            );
         });
     }
 
@@ -2277,12 +2156,6 @@ impl AppearanceSettingsPageView {
                     .cursor_display_type
                     .set_value(new_cursor_type, ctx)
             );
-            send_telemetry_from_ctx!(
-                TelemetryEvent::CursorDisplayType {
-                    cursor: new_cursor_type.to_string(),
-                },
-                ctx
-            );
         });
     }
 
@@ -2298,11 +2171,6 @@ impl AppearanceSettingsPageView {
         ctx.update_model(&tab_settings, move |tab_settings, ctx| {
             report_if_error!(tab_settings.show_indicators.set_value(new_value, ctx));
         });
-
-        send_telemetry_from_ctx!(
-            TelemetryEvent::ToggleTabIndicators { enabled: new_value },
-            ctx
-        );
     }
 
     fn toggle_show_code_review_button(&mut self, ctx: &mut ViewContext<Self>) {
@@ -2329,11 +2197,6 @@ impl AppearanceSettingsPageView {
                     .set_value(new_value, ctx)
             );
         });
-
-        send_telemetry_from_ctx!(
-            TelemetryEvent::TogglePreserveActiveTabColor { enabled: new_value },
-            ctx
-        );
     }
 
     fn toggle_vertical_tabs(&mut self, ctx: &mut ViewContext<Self>) {
@@ -2384,7 +2247,7 @@ impl AppearanceSettingsPageView {
         new_value: WorkspaceDecorationVisibility,
         ctx: &mut ViewContext<Self>,
     ) {
-        let previous_value = TabSettings::handle(ctx).update(ctx, |tab_settings, ctx| {
+        let _previous_value = TabSettings::handle(ctx).update(ctx, |tab_settings, ctx| {
             let prev_value = *tab_settings.workspace_decoration_visibility.value();
             report_if_error!(
                 tab_settings
@@ -2393,18 +2256,11 @@ impl AppearanceSettingsPageView {
             );
             prev_value
         });
-        send_telemetry_from_ctx!(
-            TelemetryEvent::ToggleWorkspaceDecorationVisibility {
-                previous_value,
-                new_value
-            },
-            ctx
-        );
     }
 
     /// Toggle among the supported workspace decoration visibility values.
     fn toggle_workspace_decoration_visiblity(&mut self, ctx: &mut ViewContext<Self>) {
-        let (new_value, previous_value) =
+        let (_new_value, _previous_value) =
             TabSettings::handle(ctx).update(ctx, |tab_settings, ctx| {
                 let previous_value = *tab_settings.workspace_decoration_visibility.value();
                 let new_value = previous_value.toggled();
@@ -2415,13 +2271,6 @@ impl AppearanceSettingsPageView {
                 );
                 (new_value, previous_value)
             });
-        send_telemetry_from_ctx!(
-            TelemetryEvent::ToggleWorkspaceDecorationVisibility {
-                previous_value,
-                new_value
-            },
-            ctx
-        );
     }
 
     fn build_workspace_decoration_visibility_dropdown(
@@ -2558,11 +2407,6 @@ impl AppearanceSettingsPageView {
                         .set_value(new_value, ctx)
                 );
             });
-
-            send_telemetry_from_ctx!(
-                TelemetryEvent::ToggleLigatureRendering { enabled: new_value },
-                ctx
-            );
         }
     }
 
@@ -2588,10 +2432,6 @@ impl AppearanceSettingsPageView {
         TabSettings::handle(ctx).update(ctx, |tab_settings, ctx| {
             report_if_error!(tab_settings.close_button_position.set_value(position, ctx));
         });
-        send_telemetry_from_ctx!(
-            TelemetryEvent::TabCloseButtonPositionUpdated { position },
-            ctx
-        );
         ctx.notify();
     }
 }
@@ -2767,7 +2607,7 @@ impl SettingsWidget for ThemeSelectWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -2806,12 +2646,6 @@ impl SettingsWidget for ThemeSelectWidget {
             .with_child(render_body_item::<AppearancePageAction>(
                 "Sync with OS".into(),
                 None,
-                LocalOnlyIconState::for_setting(
-                    UseSystemTheme::storage_key(),
-                    UseSystemTheme::sync_to_cloud(),
-                    &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                    app,
-                ),
                 ToggleState::Enabled,
                 appearance,
                 appearance
@@ -2888,7 +2722,6 @@ impl SettingsWidget for CustomAppIconWidget {
             "Customize your app icon",
             show_bundle_warning.then_some("Changing the app icon requires the app to be bundled."),
             None,
-            LocalOnlyIconState::Hidden,
             None,
             &view.app_icon_dropdown,
         );
@@ -2896,12 +2729,6 @@ impl SettingsWidget for CustomAppIconWidget {
         let show_dock_icon_toggle = render_body_item::<AppearancePageAction>(
             "Show Warp in Dock".into(),
             None,
-            LocalOnlyIconState::for_setting(
-                ShowDockIconState::storage_key(),
-                ShowDockIconState::sync_to_cloud(),
-                &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                app,
-            ),
             ToggleState::Enabled,
             appearance,
             appearance
@@ -2992,12 +2819,6 @@ impl SettingsWidget for CustomWindowSizeWidget {
         let mut column = Flex::column().with_child(render_body_item::<AppearancePageAction>(
             "Open new windows with custom size".into(),
             None,
-            LocalOnlyIconState::for_setting(
-                OpenWindowsAtCustomSize::storage_key(),
-                OpenWindowsAtCustomSize::sync_to_cloud(),
-                &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                app,
-            ),
             ToggleState::Enabled,
             appearance,
             appearance
@@ -3017,7 +2838,6 @@ impl SettingsWidget for CustomWindowSizeWidget {
                     "Columns".into(),
                     None,
                     // We show the local-only icon for this with the toggle, not the individual inputs.
-                    LocalOnlyIconState::Hidden,
                     ToggleState::Enabled,
                     appearance,
                     Dismiss::new(
@@ -3053,7 +2873,6 @@ impl SettingsWidget for CustomWindowSizeWidget {
                     "Rows".into(),
                     None,
                     // We show the local-only icon for this with the toggle, not the individual inputs.
-                    LocalOnlyIconState::Hidden,
                     ToggleState::Enabled,
                     appearance,
                     Dismiss::new(
@@ -3118,7 +2937,6 @@ impl SettingsWidget for WindowOpacityWidget {
                         "Window Opacity:".to_owned(),
                         None,
                         None,
-                        LocalOnlyIconState::Hidden,
                         ToggleState::Disabled,
                         appearance,
                     ))
@@ -3145,12 +2963,6 @@ impl SettingsWidget for WindowOpacityWidget {
             format!("Window Opacity: {opacity_value}"),
             // TODO(CORE-3384) add AdditionalInfo here.
             None,
-            LocalOnlyIconState::for_setting(
-                BackgroundOpacity::storage_key(),
-                BackgroundOpacity::sync_to_cloud(),
-                &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                app,
-            ),
             ToggleState::Enabled,
             appearance,
             appearance
@@ -3230,7 +3042,7 @@ impl SettingsWidget for WindowBlurWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -3249,12 +3061,6 @@ impl SettingsWidget for WindowBlurWidget {
             .with_child(render_body_item::<AppearancePageAction>(
                 format!("Window Blur Radius: {blur_value}"),
                 Some(label_info),
-                LocalOnlyIconState::for_setting(
-                    BackgroundBlurRadius::storage_key(),
-                    BackgroundBlurRadius::sync_to_cloud(),
-                    &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                    app,
-                ),
                 ToggleState::Enabled,
                 appearance,
                 appearance
@@ -3306,12 +3112,6 @@ impl SettingsWidget for WindowBlurTextureWidget {
         let mut col = Flex::column().with_child(render_body_item::<AppearancePageAction>(
             "Use Window Blur (Acrylic texture)".to_string(),
             None,
-            LocalOnlyIconState::for_setting(
-                BackgroundBlurTexture::storage_key(),
-                BackgroundBlurTexture::sync_to_cloud(),
-                &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                app,
-            ),
             ToggleState::Enabled,
             appearance,
             appearance
@@ -3356,12 +3156,12 @@ impl SettingsWidget for ToolsPanelStateScopeWidget {
     type View = AppearanceSettingsPageView;
 
     fn search_terms(&self) -> &str {
-        "left tools panel open closed across tabs file tree project explorer global search warp drive conversation list"
+        "left tools panel open closed across tabs file tree project explorer global search conversation list"
     }
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -3371,12 +3171,6 @@ impl SettingsWidget for ToolsPanelStateScopeWidget {
         render_body_item::<AppearancePageAction>(
             "Right Sidebar visibility is consistent across tabs".to_string(),
             None,
-            LocalOnlyIconState::for_setting(
-                LeftPanelVisibilityAcrossTabs::storage_key(),
-                LeftPanelVisibilityAcrossTabs::sync_to_cloud(),
-                &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                app,
-            ),
             ToggleState::Enabled,
             appearance,
             appearance
@@ -3418,7 +3212,6 @@ impl SettingsWidget for ToolsPanelProjectExplorerWidget {
         render_body_item::<AppearancePageAction>(
             "Project explorer".to_string(),
             None,
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             appearance
@@ -3458,7 +3251,6 @@ impl SettingsWidget for ToolsPanelGlobalSearchWidget {
         render_body_item::<AppearancePageAction>(
             "Global search".to_string(),
             None,
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             appearance
@@ -3472,44 +3264,6 @@ impl SettingsWidget for ToolsPanelGlobalSearchWidget {
                 })
                 .finish(),
             Some("Show the global file search tab in the right sidebar.".to_string()),
-        )
-    }
-}
-
-#[derive(Default)]
-struct ToolsPanelWarpDriveWidget {
-    switch_state: SwitchStateHandle,
-}
-
-impl SettingsWidget for ToolsPanelWarpDriveWidget {
-    type View = AppearanceSettingsPageView;
-
-    fn search_terms(&self) -> &str {
-        "tools panel tabs warp drive left panel visibility"
-    }
-
-    fn render(
-        &self,
-        _view: &Self::View,
-        appearance: &Appearance,
-        app: &AppContext,
-    ) -> Box<dyn Element> {
-        render_body_item::<AppearancePageAction>(
-            "Warp Drive".to_string(),
-            None,
-            LocalOnlyIconState::Hidden,
-            ToggleState::Enabled,
-            appearance,
-            appearance
-                .ui_builder()
-                .switch(self.switch_state.clone())
-                .check(*WarpDriveSettings::as_ref(app).enable_warp_drive)
-                .build()
-                .on_click(|evt_ctx, _app, _v2f| {
-                    evt_ctx.dispatch_typed_action(AppearancePageAction::ToggleToolsPanelWarpDrive);
-                })
-                .finish(),
-            Some("Show the Warp Drive tab in the right sidebar.".to_string()),
         )
     }
 }
@@ -3568,7 +3322,6 @@ impl SettingsWidget for InputTypeWidget {
         render_body_item::<AppearancePageAction>(
             "Input type".into(),
             None,
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             radio_buttons,
@@ -3591,19 +3344,13 @@ impl SettingsWidget for InputModeWidget {
         &self,
         view: &Self::View,
         appearance: &Appearance,
-        app: &AppContext,
+        _app: &AppContext,
     ) -> Box<dyn Element> {
         render_dropdown_item(
             appearance,
             "Input position",
             None,
             None,
-            LocalOnlyIconState::for_setting(
-                InputModeState::storage_key(),
-                InputModeState::sync_to_cloud(),
-                &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                app,
-            ),
             None,
             &view.input_mode_dropdown,
         )
@@ -3712,19 +3459,13 @@ impl SettingsWidget for DimInactivePanesWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
         render_body_item::<AppearancePageAction>(
             "Dim inactive panes".into(),
             None,
-            LocalOnlyIconState::for_setting(
-                ShouldDimInactivePanes::storage_key(),
-                ShouldDimInactivePanes::sync_to_cloud(),
-                &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                app,
-            ),
             ToggleState::Enabled,
             appearance,
             appearance
@@ -3755,19 +3496,13 @@ impl SettingsWidget for FocusFollowsMouseWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
         render_body_item::<AppearancePageAction>(
             "Focus follows mouse".into(),
             None,
-            LocalOnlyIconState::for_setting(
-                FocusPaneOnHover::storage_key(),
-                FocusPaneOnHover::sync_to_cloud(),
-                &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                app,
-            ),
             ToggleState::Enabled,
             appearance,
             appearance
@@ -3798,7 +3533,7 @@ impl SettingsWidget for CompactModeWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -3810,12 +3545,6 @@ impl SettingsWidget for CompactModeWidget {
         render_body_item::<AppearancePageAction>(
             "Compact mode".into(),
             None,
-            LocalOnlyIconState::for_setting(
-                Spacing::storage_key(),
-                Spacing::sync_to_cloud(),
-                &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                app,
-            ),
             ToggleState::Enabled,
             appearance,
             appearance
@@ -3846,7 +3575,7 @@ impl SettingsWidget for JumpToBottomOfBlockWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -3857,12 +3586,6 @@ impl SettingsWidget for JumpToBottomOfBlockWidget {
         render_body_item::<AppearancePageAction>(
             "Show Jump to Bottom of Block button".into(),
             None,
-            LocalOnlyIconState::for_setting(
-                ShowJumpToBottomOfBlockButton::storage_key(),
-                ShowJumpToBottomOfBlockButton::sync_to_cloud(),
-                &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                app,
-            ),
             ToggleState::Enabled,
             appearance,
             appearance
@@ -3895,7 +3618,7 @@ impl SettingsWidget for ShowBlockDividersWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -3904,12 +3627,6 @@ impl SettingsWidget for ShowBlockDividersWidget {
         render_body_item::<AppearancePageAction>(
             "Show block dividers".into(),
             None,
-            LocalOnlyIconState::for_setting(
-                ShowBlockDividers::storage_key(),
-                ShowBlockDividers::sync_to_cloud(),
-                &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                app,
-            ),
             ToggleState::Enabled,
             appearance,
             appearance
@@ -4034,7 +3751,7 @@ impl SettingsWidget for TerminalFontWidget {
         &self,
         view: &Self::View,
         appearance: &Appearance,
-        app: &AppContext,
+        _app: &AppContext,
     ) -> Box<dyn Element> {
         let mut terminal_font_row = Flex::row();
 
@@ -4044,12 +3761,6 @@ impl SettingsWidget for TerminalFontWidget {
             "Terminal font".to_string(),
             None,
             None,
-            LocalOnlyIconState::for_setting(
-                MonospaceFontName::storage_key(),
-                MonospaceFontName::sync_to_cloud(),
-                &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                app,
-            ),
             ToggleState::Enabled,
             appearance,
         ));
@@ -4292,19 +4003,13 @@ impl SettingsWidget for ThinStrokesWidget {
         &self,
         view: &Self::View,
         appearance: &Appearance,
-        app: &AppContext,
+        _app: &AppContext,
     ) -> Box<dyn Element> {
         render_dropdown_item(
             appearance,
             "Use thin strokes",
             None,
             None,
-            LocalOnlyIconState::for_setting(
-                UseThinStrokes::storage_key(),
-                UseThinStrokes::sync_to_cloud(),
-                &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                app,
-            ),
             None,
             &view.thin_strokes_dropdown,
         )
@@ -4325,19 +4030,13 @@ impl SettingsWidget for MinimumContrastWidget {
         &self,
         view: &Self::View,
         appearance: &Appearance,
-        app: &AppContext,
+        _app: &AppContext,
     ) -> Box<dyn Element> {
         render_dropdown_item(
             appearance,
             "Enforce minimum contrast",
             None,
             None,
-            LocalOnlyIconState::for_setting(
-                crate::settings::font::EnforceMinimumContrast::storage_key(),
-                crate::settings::font::EnforceMinimumContrast::sync_to_cloud(),
-                &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                app,
-            ),
             None,
             &view.enforce_min_contrast_dropdown,
         )
@@ -4359,7 +4058,7 @@ impl SettingsWidget for LigaturesWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -4374,12 +4073,6 @@ impl SettingsWidget for LigaturesWidget {
                 secondary_text: None,
                 tooltip_override_text: Some("Ligatures may reduce performance".to_string()),
             }),
-            LocalOnlyIconState::for_setting(
-                LigatureRenderingEnabled::storage_key(),
-                LigatureRenderingEnabled::sync_to_cloud(),
-                &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                app,
-            ),
             ToggleState::Enabled,
             appearance,
             appearance
@@ -4421,7 +4114,7 @@ impl SettingsWidget for CursorTypeWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -4434,12 +4127,6 @@ impl SettingsWidget for CursorTypeWidget {
         render_body_item::<AppearancePageAction>(
             "Cursor type".into(),
             None,
-            LocalOnlyIconState::for_setting(
-                CursorBlinkEnabled::storage_key(),
-                CursorBlinkEnabled::sync_to_cloud(),
-                &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                app,
-            ),
             ToggleState::Enabled,
             appearance,
             match is_vim_mode_enabled {
@@ -4494,7 +4181,7 @@ impl SettingsWidget for BlinkingCursorWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -4503,12 +4190,6 @@ impl SettingsWidget for BlinkingCursorWidget {
         render_body_item::<AppearancePageAction>(
             "Blinking cursor".into(),
             None,
-            LocalOnlyIconState::for_setting(
-                CursorBlinkEnabled::storage_key(),
-                CursorBlinkEnabled::sync_to_cloud(),
-                &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                app,
-            ),
             ToggleState::Enabled,
             appearance,
             appearance
@@ -4539,19 +4220,13 @@ impl SettingsWidget for TabCloseButtonPositionWidget {
         &self,
         view: &Self::View,
         appearance: &Appearance,
-        app: &AppContext,
+        _app: &AppContext,
     ) -> Box<dyn Element> {
         render_dropdown_item(
             appearance,
             "Tab close button position",
             None,
             None,
-            LocalOnlyIconState::for_setting(
-                TabCloseButtonPosition::storage_key(),
-                TabCloseButtonPosition::sync_to_cloud(),
-                &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                app,
-            ),
             None,
             &view.tab_close_button_position_dropdown,
         )
@@ -4572,7 +4247,7 @@ impl SettingsWidget for TabIndicatorWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -4581,12 +4256,6 @@ impl SettingsWidget for TabIndicatorWidget {
         render_body_item::<AppearancePageAction>(
             "Show tab indicators".into(),
             None,
-            LocalOnlyIconState::for_setting(
-                ShowIndicatorsButton::storage_key(),
-                ShowIndicatorsButton::sync_to_cloud(),
-                &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                app,
-            ),
             ToggleState::Enabled,
             appearance,
             appearance
@@ -4617,7 +4286,7 @@ impl SettingsWidget for PreserveActiveTabColorWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -4626,12 +4295,6 @@ impl SettingsWidget for PreserveActiveTabColorWidget {
         render_body_item::<AppearancePageAction>(
             "Preserve active tab color for new tabs".into(),
             None,
-            LocalOnlyIconState::for_setting(
-                PreserveActiveTabColor::storage_key(),
-                PreserveActiveTabColor::sync_to_cloud(),
-                &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                app,
-            ),
             ToggleState::Enabled,
             appearance,
             appearance
@@ -4666,7 +4329,7 @@ impl SettingsWidget for VerticalTabsWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -4675,12 +4338,6 @@ impl SettingsWidget for VerticalTabsWidget {
         render_body_item::<AppearancePageAction>(
             "Use vertical tab layout".into(),
             None,
-            LocalOnlyIconState::for_setting(
-                UseVerticalTabs::storage_key(),
-                UseVerticalTabs::sync_to_cloud(),
-                &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                app,
-            ),
             ToggleState::Enabled,
             appearance,
             appearance
@@ -4711,7 +4368,7 @@ impl SettingsWidget for ShowVerticalTabPanelInRestoredWindowsWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -4720,12 +4377,6 @@ impl SettingsWidget for ShowVerticalTabPanelInRestoredWindowsWidget {
         render_body_item::<AppearancePageAction>(
             "Show vertical tabs panel in restored windows".into(),
             None,
-            LocalOnlyIconState::for_setting(
-                ShowVerticalTabPanelInRestoredWindows::storage_key(),
-                ShowVerticalTabPanelInRestoredWindows::sync_to_cloud(),
-                &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                app,
-            ),
             ToggleState::Enabled,
             appearance,
             appearance
@@ -4761,7 +4412,7 @@ impl SettingsWidget for HideTitleBarSearchBarInVerticalTabsWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -4770,12 +4421,6 @@ impl SettingsWidget for HideTitleBarSearchBarInVerticalTabsWidget {
         render_body_item::<AppearancePageAction>(
             "Hide search bar in vertical tab layout".into(),
             None,
-            LocalOnlyIconState::for_setting(
-                HideTitleBarSearchBarInVerticalTabs::storage_key(),
-                HideTitleBarSearchBarInVerticalTabs::sync_to_cloud(),
-                &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                app,
-            ),
             ToggleState::Enabled,
             appearance,
             appearance
@@ -4811,7 +4456,7 @@ impl SettingsWidget for UseLatestUserPromptAsConversationTitleInTabNamesWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -4820,12 +4465,6 @@ impl SettingsWidget for UseLatestUserPromptAsConversationTitleInTabNamesWidget {
         render_body_item::<AppearancePageAction>(
             "Use latest user prompt as conversation title in tab names".into(),
             None,
-            LocalOnlyIconState::for_setting(
-                UseLatestUserPromptAsConversationTitleInTabNames::storage_key(),
-                UseLatestUserPromptAsConversationTitleInTabNames::sync_to_cloud(),
-                &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                app,
-            ),
             ToggleState::Enabled,
             appearance,
             appearance
@@ -4870,7 +4509,6 @@ impl SettingsWidget for EditToolbarWidget {
             "Header toolbar layout".to_string(),
             None,
             None,
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
         );
@@ -5119,19 +4757,13 @@ impl SettingsWidget for ZenModeWidget {
         &self,
         view: &Self::View,
         appearance: &Appearance,
-        app: &AppContext,
+        _app: &AppContext,
     ) -> Box<dyn Element> {
         render_dropdown_item(
             appearance,
             "Show the tab bar",
             None,
             None,
-            LocalOnlyIconState::for_setting(
-                WorkspaceDecorationVisibility::storage_key(),
-                WorkspaceDecorationVisibility::sync_to_cloud(),
-                &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                app,
-            ),
             None,
             &view.workspace_decorations_dropdown,
         )
@@ -5169,12 +4801,6 @@ impl SettingsWidget for AltScreenPaddingWidget {
                 secondary_text: None,
                 tooltip_override_text: None,
             }),
-            LocalOnlyIconState::for_setting(
-                AltScreenPadding::storage_key(),
-                AltScreenPadding::sync_to_cloud(),
-                &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                app,
-            ),
             ToggleState::Enabled,
             appearance,
             appearance
@@ -5282,12 +4908,6 @@ impl SettingsWidget for ZoomLevelWidget {
             "Zoom",
             Some("Adjusts the default zoom level across all windows"),
             Some(reset_button),
-            LocalOnlyIconState::for_setting(
-                crate::window_settings::ZoomLevel::storage_key(),
-                crate::window_settings::ZoomLevel::sync_to_cloud(),
-                &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                app,
-            ),
             None,
             &view.zoom_level_dropdown,
         )

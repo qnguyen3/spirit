@@ -63,7 +63,6 @@ use crate::ui_components::buttons::icon_button;
 use crate::util::path::{display_name_with_host, display_path_with_host};
 use crate::view_components::{DismissibleToast, MarkdownToggleEvent, MarkdownToggleView};
 use crate::workspace::{ActiveSession, TabBarDropTargetData, ToastStack};
-use crate::{TelemetryEvent, send_telemetry_from_ctx};
 
 type SaveCallback =
     Box<dyn FnOnce(SaveOutcome, &mut CodeView, &mut ViewContext<CodeView>) + Send + Sync + 'static>;
@@ -343,7 +342,6 @@ impl CodeView {
             self.set_title_after_content_update(ctx);
             self.update_tab_bar_state(ctx);
             self.focus_contents(ctx);
-            send_telemetry_from_ctx!(TelemetryEvent::PreviewPanePromoted, ctx);
             ctx.notify();
         }
     }
@@ -1619,7 +1617,7 @@ impl CodeView {
     /// Renders the tab bar with explicit draggable handling for multi-tab case.
     fn render_tab_bar_with_draggable(
         &self,
-        header_ctx: &view::HeaderRenderContext<'_>,
+        header_ctx: &view::HeaderRenderContext,
         app: &AppContext,
     ) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
@@ -1815,7 +1813,7 @@ impl CodeView {
     /// Renders the header for the single-tab (or empty) case with a centered title.
     fn render_single_tab_header(
         &self,
-        header_ctx: &view::HeaderRenderContext<'_>,
+        header_ctx: &view::HeaderRenderContext,
         app: &AppContext,
     ) -> Box<dyn Element> {
         let title = self
@@ -2269,7 +2267,7 @@ impl BackingView for CodeView {
 
     fn render_header_content(
         &self,
-        ctx: &view::HeaderRenderContext<'_>,
+        ctx: &view::HeaderRenderContext,
         app: &AppContext,
     ) -> view::HeaderContent {
         if self.tab_group.len() >= 2 {

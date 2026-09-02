@@ -42,7 +42,6 @@ pub(super) struct WorkspaceMouseStates {
     pub(super) session_config_tab_config_chip_close: MouseStateHandle,
     pub(super) tools_panel_icon: MouseStateHandle,
     pub(super) title_bar_search_bar: MouseStateHandle,
-    pub(super) team_switcher_pill: MouseStateHandle,
     pub(super) workspace_switcher_pill: MouseStateHandle,
     pub(super) agent_inbox_icon: MouseStateHandle,
     #[cfg(target_family = "wasm")]
@@ -89,22 +88,14 @@ pub struct WorkspaceState {
     pub is_theme_deletion_modal_open: bool,
     pub is_changelog_modal_open: bool,
     pub is_tab_being_dragged: bool,
-    pub is_reward_modal_open: bool,
     pub is_launch_config_save_modal_open: bool,
     pub is_resource_center_open: bool,
     pub is_command_search_open: bool,
-    pub is_warp_drive_open: bool,
     pub is_ai_assistant_panel_open: bool,
-    pub is_auth_override_modal_open: bool,
-    pub is_require_login_modal_open: bool,
-    pub is_workflow_modal_open: bool,
     pub is_prompt_editor_open: bool,
     pub is_header_toolbar_editor_open: bool,
     pub is_agent_inbox_open: bool,
-    pub is_import_modal_open: bool,
-    pub is_close_session_confirmation_dialog_open: bool,
     pub is_native_quit_modal_open: bool,
-    pub is_shared_objects_creation_denied_modal_open: bool,
     pub is_tab_config_params_modal_open: bool,
     pub is_session_config_modal_open: bool,
     pub is_new_worktree_modal_open: bool,
@@ -118,11 +109,7 @@ pub struct WorkspaceState {
 
 impl WorkspaceState {
     pub fn is_any_non_terminal_view_open(&self) -> bool {
-        self.is_any_modal_open()
-            || self.is_theme_chooser_open
-            || self.is_ai_assistant_panel_open
-            || self.is_workflow_modal_open
-            || self.is_warp_drive_open
+        self.is_any_modal_open() || self.is_theme_chooser_open || self.is_ai_assistant_panel_open
     }
 
     pub fn is_any_non_palette_modal_open(&self) -> bool {
@@ -133,13 +120,10 @@ impl WorkspaceState {
             || self.pane_being_renamed.is_some()
             || self.tab_group_being_renamed.is_some()
             || self.worktree_being_renamed.is_some()
-            || self.is_reward_modal_open
             || self.is_launch_config_save_modal_open
             || self.is_command_search_open
             || self.is_prompt_editor_open
             || self.is_header_toolbar_editor_open
-            || self.is_import_modal_open
-            || self.is_shared_objects_creation_denied_modal_open
             || self.is_tab_config_params_modal_open
             || self.is_session_config_modal_open
             || self.is_new_worktree_modal_open
@@ -163,16 +147,10 @@ impl WorkspaceState {
         self.pane_being_renamed = None;
         self.tab_group_being_renamed = None;
         self.worktree_being_renamed = None;
-        self.is_reward_modal_open = false;
         self.is_launch_config_save_modal_open = false;
         self.is_command_search_open = false;
-        self.is_workflow_modal_open = false;
         self.is_prompt_editor_open = false;
         self.is_header_toolbar_editor_open = false;
-        self.is_import_modal_open = false;
-        self.is_shared_objects_creation_denied_modal_open = false;
-        self.is_auth_override_modal_open = false;
-        self.is_require_login_modal_open = false;
         self.is_tab_config_params_modal_open = false;
         self.is_session_config_modal_open = false;
         self.is_new_worktree_modal_open = false;
@@ -188,7 +166,6 @@ impl WorkspaceState {
     }
 
     pub fn close_all_left_panels(&mut self) {
-        self.is_warp_drive_open = false;
         self.is_theme_chooser_open = false;
     }
 

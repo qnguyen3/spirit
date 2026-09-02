@@ -26,7 +26,6 @@ fn command_entry(
         exit_code: None,
         git_head: None,
         shell_host: None,
-        workflow_id: None,
         workflow_command: workflow_command.map(str::to_owned),
         is_for_restored_block: false,
         is_agent_executed: false,

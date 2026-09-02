@@ -22,20 +22,15 @@ use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity, Vie
 
 use super::event_loop::EventLoop;
 use super::shell::{ShellStarter, ShellStarterSource};
-use super::spawner::{PtySpawnHooks, PtySpawnMode};
 #[cfg(unix)]
 use super::terminal_attributes::TerminalAttributesPoller;
 use super::{mio_channel, recorder};
-use crate::auth::AuthStateProvider;
-use crate::auth::auth_state::AuthState;
 use crate::banner::BannerState;
 use crate::context_chips::ContextChipKind;
 use crate::context_chips::prompt::Prompt;
 use crate::features::FeatureFlag;
 use crate::persistence::ModelEvent;
-use crate::send_telemetry_on_executor;
-use crate::server::telemetry::{PtySpawnMode as TelemetryPtySpawnMode, TelemetryEvent};
-use crate::settings::{DebugSettings, PrivacySettings, SshSettings};
+use crate::settings::{DebugSettings, SshSettings};
 use crate::terminal::available_shells::{AvailableShell, AvailableShells};
 use crate::terminal::color::List as ColorList;
 use crate::terminal::event_listener::ChannelEventListener;
@@ -51,8 +46,6 @@ use crate::terminal::model::terminal_model::ExitReason;
 use crate::terminal::model_events::ModelEvent as TerminalModelEvent;
 use crate::terminal::model_events::{ModelEventDispatcher, SshRemoteServerSupport};
 use crate::terminal::session_settings::SessionSettings;
-use crate::terminal::shared_session::sharer::network::Network;
-use crate::terminal::shared_session::{IsSharedSessionCreator, SharedSessionStatus};
 use crate::terminal::shell::ShellName;
 use crate::terminal::terminal_manager::BlockSpacing;
 use crate::terminal::warpify::settings::WarpifySettings;
@@ -69,33 +62,6 @@ use crate::terminal::{
 type PtyController = writeable_pty::PtyController<mio_channel::Sender<Message>>;
 type RemoteServerController =
     writeable_pty::remote_server_controller::RemoteServerController<mio_channel::Sender<Message>>;
-
-struct AppPtySpawnHooks {
-    is_crash_reporting_enabled: bool,
-}
-
-impl PtySpawnHooks for AppPtySpawnHooks {
-    fn before_spawn(&self) {
-        #[cfg(feature = "crash_reporting")]
-        crate::crash_reporting::uninit_cocoa_sentry();
-    }
-
-    fn after_spawn(&self) {
-        if self.is_crash_reporting_enabled {
-            #[cfg(feature = "crash_reporting")]
-            crate::crash_reporting::init_cocoa_sentry();
-        }
-    }
-
-    fn spawned(&self, mode: PtySpawnMode, ctx: &mut AppContext) {
-        let mode = match mode {
-            PtySpawnMode::TerminalServer => TelemetryPtySpawnMode::TerminalServer,
-            PtySpawnMode::FallbackToDirect => TelemetryPtySpawnMode::FallbackToDirect,
-            PtySpawnMode::Direct => TelemetryPtySpawnMode::Direct,
-        };
-        crate::send_telemetry_from_app_ctx!(TelemetryEvent::PtySpawned { mode }, ctx);
-    }
-}
 
 /// Owns a local terminal session: the terminal model, PTY event loop, PTY
 /// controller, and a terminal surface.
@@ -133,10 +99,6 @@ pub struct TerminalManager<S> {
     /// to avoid unnecessary allocations of data coming from the PTY (high throughput).
     /// Note that we need to hold onto the inactive receiver so that the channel isn't closed prematurely.
     inactive_pty_reads_rx: InactiveReceiver<Arc<Vec<u8>>>,
-
-    /// The sharer side of the session sharing protocol. [`Some`] only when a
-    /// shared session connection is ongoing.
-    pub(super) session_sharer: Rc<RefCell<Option<ModelHandle<Network>>>>,
 }
 
 /// Shared inputs needed to construct a terminal surface for a local PTY.
@@ -224,7 +186,6 @@ impl<S> TerminalManager<S> {
     pub(crate) fn create_model<PostWire>(
         startup_directory: Option<PathBuf>,
         env_vars: HashMap<OsString, OsString>,
-        is_shared_session_creator: IsSharedSessionCreator,
         all_restored_blocks: Option<&Vec<SerializedBlock>>,
         user_default_shell_unsupported_banner_model_handle: ModelHandle<BannerState>,
         initial_size: Vector2F,
@@ -245,7 +206,6 @@ impl<S> TerminalManager<S> {
         Self::create_model_with_manager(
             startup_directory,
             env_vars,
-            is_shared_session_creator,
             all_restored_blocks,
             user_default_shell_unsupported_banner_model_handle,
             initial_size,
@@ -265,7 +225,6 @@ impl<S> TerminalManager<S> {
     pub fn create_tui_model<PostWire>(
         startup_directory: Option<PathBuf>,
         env_vars: HashMap<OsString, OsString>,
-        is_shared_session_creator: IsSharedSessionCreator,
         all_restored_blocks: Option<&Vec<SerializedBlock>>,
         user_default_shell_unsupported_banner_model_handle: ModelHandle<BannerState>,
         initial_size: Vector2F,
@@ -286,7 +245,6 @@ impl<S> TerminalManager<S> {
         Self::create_model_with_manager(
             startup_directory,
             env_vars,
-            is_shared_session_creator,
             all_restored_blocks,
             user_default_shell_unsupported_banner_model_handle,
             initial_size,
@@ -305,7 +263,6 @@ impl<S> TerminalManager<S> {
     fn create_model_with_manager<PostWire, BoxManager>(
         startup_directory: Option<PathBuf>,
         env_vars: HashMap<OsString, OsString>,
-        is_shared_session_creator: IsSharedSessionCreator,
         all_restored_blocks: Option<&Vec<SerializedBlock>>,
         user_default_shell_unsupported_banner_model_handle: ModelHandle<BannerState>,
         initial_size: Vector2F,
@@ -385,8 +342,6 @@ impl<S> TerminalManager<S> {
 
         // This is purely for measuring throughput on WarpDev.
         if FeatureFlag::RecordPtyThroughput.is_enabled() {
-            let auth_state = AuthStateProvider::as_ref(ctx).get().clone();
-            let telemetry_executor = Arc::clone(ctx.background_executor());
             recorder::record_pty_throughput(
                 inactive_pty_reads_rx.clone().activate(),
                 model.clone(),
@@ -394,38 +349,9 @@ impl<S> TerminalManager<S> {
                     !model.is_receiving_in_band_command_output()
                         && model.is_active_block_bootstrapped()
                 },
-                move |max_bytes_per_second| {
-                    send_telemetry_on_executor!(
-                        auth_state,
-                        TelemetryEvent::PtyThroughput {
-                            max_bytes_per_second,
-                        },
-                        telemetry_executor
-                    );
-                },
+                move |_max_bytes_per_second| {},
                 ctx.background_executor().to_owned(),
             );
-        }
-
-        // If this session should be a shared-session creator, configure its initial
-        // shared-session state before the surface is constructed, so that bootstrap
-        // events can observe the correct pending status and source type.
-        match is_shared_session_creator {
-            IsSharedSessionCreator::Yes { source }
-                if FeatureFlag::CreatingSharedSessions.is_enabled() =>
-            {
-                model.lock().set_shared_session_status(
-                    SharedSessionStatus::SharePendingPreBootstrap { source },
-                );
-                log::info!("Configured terminal to start sharing after bootstrap");
-            }
-            IsSharedSessionCreator::Yes { .. } => {
-                log::warn!(
-                    "Session sharing was requested, but CreatingSharedSessions is disabled; \
-                     skipping shared-session startup"
-                );
-            }
-            IsSharedSessionCreator::No => {}
         }
 
         // Initialize the PtyController.
@@ -474,7 +400,6 @@ impl<S> TerminalManager<S> {
             #[cfg(feature = "integration_tests")]
             pid: None,
             inactive_pty_reads_rx,
-            session_sharer: Rc::new(RefCell::new(None)),
         };
 
         // Run surface-specific wiring after the manager exists, because this
@@ -587,14 +512,13 @@ fn on_shell_determined<S: TerminalSurface>(
 
     log::debug!("Using shell starter source {shell_starter_source:?}");
     let bg_executor = ctx.background_executor();
-    let auth_state = AuthStateProvider::as_ref(ctx).get();
 
     let is_fallback_shell = matches!(
         shell_starter_source,
         Some(ShellStarterSource::Fallback { .. })
     );
-    let shell_starter = shell_starter_source
-        .map(|source| get_shell_starter_internal(source, bg_executor, auth_state));
+    let shell_starter =
+        shell_starter_source.map(|source| get_shell_starter_internal(source, bg_executor));
     let shell_starter = match shell_starter {
         Some(shell_starter) => shell_starter,
         None => {
@@ -802,7 +726,6 @@ impl<S> TerminalManager<S> {
             .is_shell_debug_mode_enabled
             .value();
         let is_honor_ps1_enabled = *SessionSettings::as_ref(ctx).honor_ps1;
-        let is_crash_reporting_enabled = PrivacySettings::as_ref(ctx).is_crash_reporting_enabled;
 
         // Determine whether the Node.js Version chip is enabled in the Warp prompt. When it
         // is not, the shell bootstrap skips the expensive per-prompt `node --version`
@@ -841,12 +764,8 @@ impl<S> TerminalManager<S> {
             close_fds: true,
         };
 
-        let hooks = AppPtySpawnHooks {
-            is_crash_reporting_enabled,
-        };
         Pty::new(
             options,
-            &hooks,
             #[cfg(windows)]
             event_loop_tx,
             ctx,
@@ -981,7 +900,6 @@ fn wire_up_terminal_attribute_poller_with_surface<S: TerminalSurface>(
 
 pub fn get_shell_starter(
     chosen_shell: Option<AvailableShell>,
-    auth_state: &AuthState,
     ctx: &mut AppContext,
 ) -> Option<ShellStarter> {
     let preferred_shell = chosen_shell.unwrap_or_else(|| {
@@ -995,18 +913,13 @@ pub fn get_shell_starter(
             warpui::r#async::block_on(async { starter.to_shell_starter_source().await })
         })
         .map(|starter_source| {
-            get_shell_starter_internal(
-                starter_source,
-                ctx.background_executor().clone(),
-                auth_state,
-            )
+            get_shell_starter_internal(starter_source, ctx.background_executor().clone())
         })
 }
 
 fn get_shell_starter_internal(
     shell_starter_source: ShellStarterSource,
-    background_executor: Arc<Background>,
-    auth_state: &AuthState,
+    _background_executor: Arc<Background>,
 ) -> ShellStarter {
     match shell_starter_source {
         ShellStarterSource::Override(shell_starter) => shell_starter,
@@ -1017,15 +930,7 @@ fn get_shell_starter_internal(
             unsupported_shell,
             starter,
         } => {
-            if let Some(unsupported_shell) = unsupported_shell {
-                send_telemetry_on_executor!(
-                    auth_state,
-                    TelemetryEvent::UnsupportedShell {
-                        shell: unsupported_shell
-                    },
-                    background_executor
-                );
-            }
+            if let Some(_unsupported_shell) = unsupported_shell {}
 
             ShellStarter::Direct(starter)
         }

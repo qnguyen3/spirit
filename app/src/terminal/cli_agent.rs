@@ -11,25 +11,18 @@ use markdown_parser::parse_markdown;
 use pathfinder_color::ColorU;
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
-use warp_cli::agent::Harness;
 use warp_completer::parsers::simple::top_level_command;
 use warp_editor::content::buffer::Buffer;
 use warp_editor::content::markdown::MarkdownStyle;
 use warp_util::path::EscapeChar;
-use warpui::{AppContext, SingletonEntity};
+use warpui::AppContext;
 
 use crate::code::editor::line::EditorLineLocation;
 use crate::code_review::agent_handoff::{AgentReviewCommentBatch, DiffSetHunk};
 use crate::code_review::comments::AttachedReviewCommentTarget;
-use crate::server::telemetry::CLIAgentType;
 use crate::skills::SkillProvider;
 use crate::ui_components::icons::Icon;
 use crate::util::color::CLAUDE_ORANGE;
-use crate::workspaces::user_workspaces::UserWorkspaces;
-
-/// UID for the Uber team.
-/// See https://warp.metabaseapp.com/dashboard/1454?team_id=46347
-const UBER_TEAM_UID: &str = "BdVbYjy9LRZcZrYBemSfAF";
 
 /// Gemini brand blue color
 pub(crate) const GEMINI_BLUE: ColorU = ColorU {
@@ -186,8 +179,7 @@ impl CLIAgent {
         self.command_prefixes().first().copied().unwrap_or_default()
     }
 
-    /// Serialized version of the CLIAgent name (e.g. "Claude", "Gemini"). Used for the
-    /// session-sharing protocol's opaque `cli_agent` string field.
+    /// Serialized version of the CLIAgent name (e.g. "Claude", "Gemini").
     pub fn to_serialized_name(&self) -> String {
         serde_json::to_value(self)
             .ok()
@@ -198,20 +190,6 @@ impl CLIAgent {
     /// Inverse of `to_serialized_name`. Falls back to `Unknown`.
     pub fn from_serialized_name(name: &str) -> CLIAgent {
         serde_json::from_value(name.into()).unwrap_or(CLIAgent::Unknown)
-    }
-
-    /// Returns the [`CLIAgent`] corresponding to a cloud-agent [`Harness`] when it represents a
-    /// third-party agent. Returns `None` for [`Harness::Oz`] (Warp's built-in harness has no
-    /// distinct CLI agent identity).
-    pub fn from_harness(harness: Harness) -> Option<Self> {
-        match harness {
-            Harness::Oz => None,
-            Harness::Claude => Some(CLIAgent::Claude),
-            Harness::Gemini => Some(CLIAgent::Gemini),
-            Harness::OpenCode => Some(CLIAgent::OpenCode),
-            Harness::Codex => Some(CLIAgent::Codex),
-            Harness::Unknown => Some(CLIAgent::Unknown),
-        }
     }
 
     pub fn display_name(&self) -> &'static str {
@@ -419,17 +397,8 @@ impl CLIAgent {
     /// internal wrapper around Claude) and the user is on the Uber team.
     /// We special-case this so Uber employees get the toolbar without needing
     /// to configure anything.
-    fn is_aifx_agent_run_claude(resolved_command: &str, ctx: &AppContext) -> bool {
+    fn is_aifx_agent_run_claude(resolved_command: &str, _ctx: &AppContext) -> bool {
         resolved_command.starts_with("aifx agent run claude")
-            && Self::is_on_uber_team(UserWorkspaces::as_ref(ctx))
-    }
-
-    fn is_on_uber_team(user_workspaces: &UserWorkspaces) -> bool {
-        user_workspaces
-            .workspaces()
-            .iter()
-            .flat_map(|workspace| workspace.teams.iter())
-            .any(|team| team.uid.uid() == UBER_TEAM_UID)
     }
 }
 
@@ -587,29 +556,6 @@ pub fn build_selection_line_range_prompt(
     end_line: usize,
 ) -> String {
     format!("{file_path} L{start_line}-L{end_line}")
-}
-
-impl From<CLIAgent> for CLIAgentType {
-    fn from(agent: CLIAgent) -> Self {
-        match agent {
-            CLIAgent::Claude => CLIAgentType::Claude,
-            CLIAgent::Gemini => CLIAgentType::Gemini,
-            CLIAgent::Codex => CLIAgentType::Codex,
-            CLIAgent::Amp => CLIAgentType::Amp,
-            CLIAgent::Droid => CLIAgentType::Droid,
-            CLIAgent::OpenCode => CLIAgentType::OpenCode,
-            CLIAgent::Copilot => CLIAgentType::Copilot,
-            CLIAgent::Pi => CLIAgentType::Pi,
-            CLIAgent::OhMyPi => CLIAgentType::OhMyPi,
-            CLIAgent::Auggie => CLIAgentType::Auggie,
-            CLIAgent::CursorCli => CLIAgentType::Cursor,
-            CLIAgent::Goose => CLIAgentType::Goose,
-            CLIAgent::Hermes => CLIAgentType::Hermes,
-            CLIAgent::Vibe => CLIAgentType::Vibe,
-            CLIAgent::Antigravity => CLIAgentType::Antigravity,
-            CLIAgent::Unknown => CLIAgentType::Unknown,
-        }
-    }
 }
 
 #[cfg(test)]

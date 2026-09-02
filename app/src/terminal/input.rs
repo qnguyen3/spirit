@@ -36,7 +36,6 @@ use parking_lot::FairMutex;
 #[cfg(feature = "local_fs")]
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use session_sharing_protocol::common::ParticipantId;
 use settings::{Setting as _, ToggleableSetting};
 use string_offset::{ByteOffset, CharOffset};
 use vec1::Vec1;
@@ -51,7 +50,6 @@ use warp_completer::parsers::LiteCommand;
 use warp_completer::parsers::simple::command_at_cursor_position;
 use warp_completer::signatures::CommandRegistry;
 use warp_core::r#async::debounce;
-use warp_core::context_flag::ContextFlag;
 use warp_core::user_preferences::GetUserPreferences as _;
 use warp_editor::editor::NavigationKey;
 use warp_errors::{report_error, report_if_error};
@@ -86,7 +84,7 @@ use super::history_autosuggestions::{
     get_reverse_chronological_potential_autosuggestions, is_command_valid,
 };
 use super::ligature_settings::LigatureSettings;
-use super::model::block::{BlockId, BlockMetadata, BlocklistEnvVarMetadata};
+use super::model::block::{BlockId, BlockMetadata};
 use super::model::session::{Session, SessionId, Sessions};
 use super::prompt_render_helper::{
     PromptRenderHelper, SameLinePromptElements, should_render_prompt_on_same_line,
@@ -97,9 +95,6 @@ use super::safe_mode_settings::{
 };
 use super::session_settings::{SessionSettings, SessionSettingsChangedEvent};
 use super::settings::{SpacingMode, TerminalSettings, TerminalSettingsChangedEvent};
-use super::shared_session::SharedSessionStatus;
-use super::shared_session::presence_manager::PresenceManager;
-use super::shared_session::viewer::history_model::SharedSessionHistoryModel;
 use super::shell::ShellType;
 use super::view::{
     ExecuteCommandEvent, PADDING_LEFT as TERMINAL_VIEW_PADDING_LEFT, SyncInputType, TerminalAction,
@@ -109,13 +104,10 @@ use super::{
     History, HistoryEntry, SizeInfo, TerminalModel, UpArrowHistoryConfig, prompt,
     should_right_click_paste,
 };
-#[allow(unused_imports)]
-use crate::ASSETS;
 use crate::appearance::{Appearance, AppearanceEvent};
 use crate::channel::{Channel, ChannelState};
-use crate::cloud_object::model::persistence::CloudModel;
-use crate::cloud_object::model::view::CloudViewModel;
-use crate::cloud_object::{CloudObject, Space};
+#[allow(unused_imports)]
+use crate::cmd_or_ctrl_shift;
 #[cfg(feature = "local_fs")]
 use crate::code::editor_management::CodeSource;
 use crate::completer::SessionContext;
@@ -128,15 +120,16 @@ use crate::editor::{
     EditorDecoratorElements, EditorOptions, EditorSnapshot, EditorView, Event as EditorEvent,
     InteractionState, PathTransformerFn, PlainTextEditorViewAction, Point as BufferPoint,
     PropagateAndNoOpEscapeKey, PropagateAndNoOpNavigationKeys, PropagateHorizontalNavigationKeys,
-    ReplicaId, TextColors, TextRun, default_cursor_colors, position_id_for_cached_point,
+    TextColors, TextRun, default_cursor_colors, position_id_for_cached_point,
     position_id_for_cursor, position_id_for_first_cursor,
 };
-use crate::env_vars::EnvVarCollectionExt;
 use crate::features::FeatureFlag;
 use crate::input_suggestions::{
     Event as InputSuggestionsEvent, HistoryInputSuggestion, InputSuggestions,
     TabCompletionsPreselectOption,
 };
+#[allow(unused_imports)]
+use crate::palette::PaletteSource;
 use crate::pane_group::PaneGroupAction;
 use crate::pane_group::focus_state::PaneFocusHandle;
 #[cfg(feature = "local_fs")]
@@ -148,11 +141,6 @@ use crate::resource_center::{
 };
 use crate::search::QueryFilter;
 use crate::search::slash_command_menu::static_commands::commands::COMMAND_REGISTRY;
-use crate::server::ids::SyncId;
-use crate::server::telemetry::{
-    AnonymousUserSignupEntrypoint, CommandXRayTrigger, EnvVarTelemetryMetadata, PaletteSource,
-    SlashMenuSource, TelemetryEvent, WorkflowTelemetryMetadata,
-};
 use crate::session_management::SessionNavigationPromptElements;
 use crate::settings::{
     AliasExpansionSettings, AppEditorSettings, AppEditorSettingsChangedEvent, InputSettings,
@@ -193,7 +181,6 @@ use crate::voltron::{
     Voltron, VoltronEvent, VoltronFeatureView, VoltronFeatureViewHandle, VoltronFeatureViewMeta,
     VoltronItem, VoltronMetadata,
 };
-use crate::workflows::aliases::WorkflowAliases;
 use crate::workflows::command_parser::{
     WorkflowArgumentIndex, WorkflowDisplayData, compute_workflow_display_data,
     compute_workflow_display_data_for_history_command,
@@ -203,13 +190,16 @@ use crate::workflows::info_box::{
     WORKFLOW_PARAMETER_HIGHLIGHT_COLOR, WorkflowsInfoBoxViewEvent, WorkflowsMoreInfoView,
 };
 use crate::workflows::local_workflows::LocalWorkflows;
-use crate::workflows::workflow_enum::EnumVariants;
-use crate::workflows::{self, WorkflowSelectionSource, WorkflowSource, WorkflowType};
+use crate::workflows::{self, WorkflowSelectionSource, WorkflowType};
 use crate::workspace::sync_inputs::SyncedInputState;
 use crate::workspace::{CommandSearchOptions, InitContent, ToastStack, WorkspaceAction};
-use crate::workspaces::user_workspaces::UserWorkspaces;
-#[allow(unused_imports)]
-use crate::{AgentModeEntrypoint, ServerApiProvider, cmd_or_ctrl_shift, send_telemetry_from_ctx};
+
+/// The possible ways to trigger command x-ray.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum CommandXRayTrigger {
+    Hover,
+    Keystroke,
+}
 
 /// Drop target data for dropping content on the [`Input`].
 #[derive(Debug, Clone)]
@@ -305,17 +295,6 @@ lazy_static! {
             ..Default::default()
         }
     };
-}
-
-#[derive(PartialEq, Eq, Copy, Clone, Serialize)]
-pub enum TelemetryInputSuggestionsMode {
-    HistoryFuzzySearch,
-    CompletionSuggestions,
-    HistoryUp,
-    StaticWorkflowEnumSuggestions,
-    DynamicWorkflowEnumSuggestions,
-    SlashCommands,
-    InlineHistoryMenu,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -471,92 +450,21 @@ impl InputSuggestionsMode {
     pub fn placeholder_text(&self) -> Option<&'static str> {
         None
     }
-
-    fn to_telemetry_mode(&self) -> TelemetryInputSuggestionsMode {
-        match *self {
-            InputSuggestionsMode::HistoryUp {
-                search_mode: HistorySearchMode::Prefix,
-                ..
-            } => TelemetryInputSuggestionsMode::HistoryUp,
-            InputSuggestionsMode::HistoryUp {
-                search_mode: HistorySearchMode::Fuzzy,
-                ..
-            } => TelemetryInputSuggestionsMode::HistoryFuzzySearch,
-            InputSuggestionsMode::CompletionSuggestions { .. } => {
-                TelemetryInputSuggestionsMode::CompletionSuggestions
-            }
-            InputSuggestionsMode::StaticWorkflowEnumSuggestions { .. } => {
-                TelemetryInputSuggestionsMode::StaticWorkflowEnumSuggestions
-            }
-            InputSuggestionsMode::DynamicWorkflowEnumSuggestions { .. } => {
-                TelemetryInputSuggestionsMode::DynamicWorkflowEnumSuggestions
-            }
-            InputSuggestionsMode::SlashCommands => TelemetryInputSuggestionsMode::SlashCommands,
-            InputSuggestionsMode::InlineHistoryMenu => {
-                TelemetryInputSuggestionsMode::InlineHistoryMenu
-            }
-            InputSuggestionsMode::Closed => unreachable!(),
-        }
-    }
-}
-
-struct SharedSessionInputState {
-    /// History model for viewers in a shared session.
-    // TODO: With this current approach, the shared session history crosses
-    // subshell boundaries, we'll need to make it work with our current history model
-    // to ensure we show the right shell history.
-    history_model: ModelHandle<SharedSessionHistoryModel>,
-
-    // Is [`Some`] iff a command execution was requested by a shared session executor.
-    pending_command_execution_request: Option<ViewerCommandExecutionRequest>,
-}
-
-struct ViewerCommandExecutionRequest {
-    /// Text in buffer when command execution was requested.
-    original_buffer: String,
 }
 
 /// Where a command execution request originates from.
 #[derive(Clone)]
 pub enum CommandExecutionSource {
-    /// A command execution request in a shared session (by a viewer or sharer).
-    ///
-    /// For a sharer, this will be processed similar to [`CommandExecutionSource::User`]
-    /// except the resulting block will be annotated with the participant ID.
-    ///
-    /// For a viewer, this will be handled by sending the request to the sharer.
-    SharedSession {
-        /// The participant ID of the
-        participant_id: ParticipantId,
-        /// The block ID associated to the active block when
-        /// the request was fired.
-        block_id: BlockId,
-        /// True when the command was dispatched by a queued command row rather than the current
-        /// editor buffer, so input draft state should be preserved.
-        preserve_input: bool,
-    },
-
     /// A normal command execution request.
     User,
     /// A command dispatched by the queued-prompts panel. It should execute like a user command but
     /// must not treat the current editor contents as the submitted command.
     QueuedCommand,
-
-    EnvVarCollection {
-        metadata: BlocklistEnvVarMetadata,
-    },
 }
 
 impl CommandExecutionSource {
     pub fn should_preserve_input(&self) -> bool {
-        matches!(
-            self,
-            CommandExecutionSource::QueuedCommand
-                | CommandExecutionSource::SharedSession {
-                    preserve_input: true,
-                    ..
-                }
-        )
+        matches!(self, CommandExecutionSource::QueuedCommand)
     }
 }
 
@@ -664,9 +572,6 @@ pub enum Event {
     EditorFocused,
     UnhandledCmdEnter,
     CtrlEnter,
-    SignupAnonymousUser {
-        entrypoint: AnonymousUserSignupEntrypoint,
-    },
     OpenSettings(SettingsSection),
     #[cfg(feature = "local_fs")]
     OpenCodeInWarp {
@@ -674,7 +579,6 @@ pub enum Event {
         layout: external_editor::settings::EditorLayout,
     },
     OpenCodeReviewPane,
-    OpenEnvironmentManagementPane,
     OpenFilesPalette {
         source: PaletteSource,
     },
@@ -682,8 +586,6 @@ pub enum Event {
         message: String,
         flavor: ToastFlavor,
     },
-    OpenShareSessionModal,
-    StartRemoteControl,
     /// Close the CLI agent rich input composer.
     CloseCLIAgentRichInput,
     /// Submit the composed prompt to the active CLI agent.
@@ -813,10 +715,6 @@ struct WorkflowsState {
     selected_workflow_state: Option<SelectedWorkflowState>,
 }
 
-struct EnvVarCollectionState {
-    selected_env_vars: Option<SyncId>,
-}
-
 /// State when a workflow is selected.
 #[derive(Clone)]
 struct SelectedWorkflowState {
@@ -833,10 +731,6 @@ struct SelectedWorkflowState {
     /// select all instances of an argument when a user changes the selected argument.
     argument_index_to_highlight_index: HashMap<WorkflowArgumentIndex, Vec<usize>>,
 
-    /// Map of arguments with enum variants to those variants, which are used as suggested inputs to the argument.
-    argument_index_to_enum_variants: HashMap<WorkflowArgumentIndex, EnumVariants>,
-
-    workflow_source: WorkflowSource,
     workflow_type: WorkflowType,
     workflow_selection_source: WorkflowSelectionSource,
 
@@ -1013,15 +907,10 @@ enum DenyExecutionReason {
     /// Can't execute command because there's an active command in control of the pty.
     ExistingActiveCommand,
 
-    /// With the exception of shared sessions, we should only execute commands if they can be
-    /// recorded in history.
+    /// We should only execute commands if they can be recorded in history.
     ///
     /// Gonna be honest, I (zach b) have the least amount of context on this one, don't really know
     /// why this is the case.
-    ///
-    /// This is not returned as a `CancellationReason::No` for shared sessions even if it may be
-    /// true; we do not record shared sessions in the History model thus they are default not-
-    /// appendable.
     HistoryNotAppendable,
 }
 
@@ -1060,7 +949,6 @@ pub struct Input {
     view_id: EntityId,
     input_render_state_model_handle: ModelHandle<InputRenderStateModel>,
     workflows_state: WorkflowsState,
-    env_var_collection_state: EnvVarCollectionState,
     voltron_view: ViewHandle<Voltron>,
     is_voltron_open: bool,
     command_x_ray_description: Option<Arc<Description>>,
@@ -1085,23 +973,11 @@ pub struct Input {
     // a settings read on every typed character).
     enable_autosuggestions_setting: bool,
 
-    /// Manages the input state for a shared session.
-    /// Is [`Some`] iff this is a viewer in a shared session.
-    shared_session_input_state: Option<SharedSessionInputState>,
-
-    /// Manages presence state for shared session.
-    ///
-    /// Only [`Some`] if this is a shared session.
-    shared_session_presence_manager: Option<ModelHandle<PresenceManager>>,
-
     /// A cache of the local buffer operations for the latest instance
     /// of the input buffer. Specifically, these only include operations
     /// resulting from local changes to the buffer (not remote changes / operations).
     /// Note that the input buffer is reinstantiated every time a command is executed,
     /// while ultimately clears this set.
-    ///
-    /// Today, we only expect to use this with when starting
-    /// a shared session.
     ///
     /// TODO (suraj): technically, we don't need the full
     /// history for _selections_; we just need the latest.
@@ -1113,8 +989,6 @@ pub struct Input {
     ///
     /// When the buffer is reinstantiated, we check
     /// if any of these pending remote edits can be flushed.
-    ///
-    /// Today, we only expect to use this for shared session viewers.
     deferred_remote_operations: DeferredRemoteOperations,
 
     /// The last block that the user ran. This is used for generating autosuggestions.
@@ -1234,13 +1108,6 @@ pub fn init(app: &mut AppContext) {
     ]);
 
     app.register_editable_bindings([EditableBinding::new(
-        "input:insert_network_logging_workflow",
-        "Show Warp network log",
-        WorkspaceAction::OpenNetworkLogPane,
-    )
-    .with_enabled(|| ContextFlag::NetworkLogConsole.is_enabled())]);
-
-    app.register_editable_bindings([EditableBinding::new(
         "input:clear_screen",
         "Clear screen",
         InputAction::ClearScreen,
@@ -1276,7 +1143,6 @@ pub fn init(app: &mut AppContext) {
     .with_group(bindings::BindingGroup::Settings.as_str())
     .with_context_predicate(
         id!("Input")
-            & id!(SharedSessionStatus::ActiveSharer.as_keymap_context())
             & !id!("LongRunningCommand")
             & !id!(flags::ACTIVE_AGENT_VIEW)
             & !id!(flags::ACTIVE_INLINE_AGENT_VIEW),
@@ -1441,8 +1307,6 @@ impl Input {
             completer_data.completion_session_context(ctx)
         };
 
-        let is_shared_session_viewer = model.lock().shared_session_status().is_viewer();
-
         let prompt_view = ctx.add_typed_action_view(|ctx| {
             PromptDisplay::new(
                 current_prompt.clone(),
@@ -1451,7 +1315,6 @@ impl Input {
                 initial_session_context.clone(),
                 current_repo_path.clone(),
                 model_events.clone(),
-                is_shared_session_viewer,
                 ctx,
             )
         });
@@ -1703,10 +1566,6 @@ impl Input {
             selected_workflow_state: None,
         };
 
-        let env_var_collection_state = EnvVarCollectionState {
-            selected_env_vars: None,
-        };
-
         let last_word_insertion = LastWordInsertion {
             insert_command_from_history_index: 0,
             is_latest_editor_event: false,
@@ -1733,13 +1592,10 @@ impl Input {
             },
         );
 
-        let slash_command_team_context_resolver =
-            UserWorkspaces::team_context_resolver(ctx.handle());
         let slash_command_data_source = ctx.add_model(|ctx| {
             let args = slash_commands::GuiDataSourceArgs {
                 active_session: active_session.clone(),
                 terminal_view_id,
-                team_context_resolver: slash_command_team_context_resolver.clone(),
             };
             GuiSlashCommandDataSource::new(args, ctx)
         });
@@ -1795,7 +1651,6 @@ impl Input {
             view_id,
             input_render_state_model_handle,
             workflows_state,
-            env_var_collection_state,
             voltron_view,
             is_voltron_open: false,
             command_x_ray_description: None,
@@ -1817,8 +1672,6 @@ impl Input {
                 .enable_autosuggestions,
             latest_buffer_operations: Vec::new(),
             deferred_remote_operations,
-            shared_session_input_state: None,
-            shared_session_presence_manager: None,
             last_user_block_completed: None,
             hoverable_handle: Default::default(),
             terminal_view_id,
@@ -1841,13 +1694,7 @@ impl Input {
             input.conn = Some(Arc::new(Mutex::new(conn)));
         }
 
-        if input.model.lock().shared_session_status().is_viewer() {
-            input.editor.update(ctx, |editor, ctx| {
-                editor.set_interaction_state(InteractionState::Selectable, ctx);
-            });
-        } else {
-            input.set_zero_state_hint_text(ctx);
-        }
+        input.set_zero_state_hint_text(ctx);
 
         input
     }
@@ -1886,14 +1733,6 @@ impl Input {
             self.close_slash_commands_menu(ctx);
         } else {
             self.system_insert("/", ctx);
-            send_telemetry_from_ctx!(
-                TelemetryEvent::OpenSlashMenu {
-                    source: SlashMenuSource::SlashButton,
-                    is_inline_ui_enabled: true,
-                    is_in_agent_view: false,
-                },
-                ctx
-            );
         }
     }
 
@@ -1923,20 +1762,15 @@ impl Input {
                 command,
                 linked_workflow_data,
             } => {
-                if let Some((workflow_type, workflow_source)) = linked_workflow_data
+                if let Some(workflow_type) = linked_workflow_data
                     .as_ref()
                     .and_then(|linked_workflow_data| linked_workflow_data.linked_workflow(ctx))
                 {
-                    // TODO(ben): We should include the chosen env vars in the history
-                    // entry.
-                    let env_vars = workflow_type.as_workflow().default_env_vars();
                     self.insert_workflow_into_input(
                         workflow_type,
-                        workflow_source,
                         WorkflowSelectionSource::UpArrowHistory,
                         None,
                         Some(command),
-                        env_vars,
                         /*should_show_more_info_view=*/ false,
                         ctx,
                     );
@@ -1992,13 +1826,6 @@ impl Input {
         });
 
         ctx.notify();
-    }
-
-    pub fn set_shared_session_presence_manager(
-        &mut self,
-        presence_manager: ModelHandle<PresenceManager>,
-    ) {
-        self.shared_session_presence_manager = Some(presence_manager);
     }
 
     fn handle_prompt_event(&mut self, event: &PromptDisplayEvent, ctx: &mut ViewContext<Self>) {
@@ -2389,9 +2216,7 @@ impl Input {
         // It's confusing and might actually be implied
         // (session history is only queryable if the session is bootstrapped).
 
-        // We also return true for shared session executors since they're able to view the history
-        // of a shared session without yet being hooked up to the history model.
-        is_bootstrapped && (is_history_queryable || model.shared_session_status().is_executor())
+        is_bootstrapped && is_history_queryable
     }
 
     /// Returns enum indicating if we can execute a command in the active session.
@@ -2401,9 +2226,7 @@ impl Input {
     ///    with the PTY while bootstrapping is in progress
     /// 2. there isn't an active, long-running command (in-band commands are okay)
     /// 3. if the history for the session is appendable, because we want to
-    ///    acknowledge the command in the session's history. Except when viewing
-    ///    a shared session, since those sessions aren't registered in the [`History`]
-    ///    model.
+    ///    acknowledge the command in the session's history.
     fn can_execute_command(&self, ctx: &AppContext) -> CanExecuteCommand {
         let model = self.model.lock();
         let active_block = model.block_list().active_block();
@@ -2414,10 +2237,9 @@ impl Input {
             && !active_block.is_in_band_command_block()
         {
             CanExecuteCommand::No(DenyExecutionReason::ExistingActiveCommand)
-        } else if !model.shared_session_status().is_executor()
-            && active_block
-                .session_id()
-                .is_none_or(|session_id| !History::as_ref(ctx).is_appendable(&session_id))
+        } else if active_block
+            .session_id()
+            .is_none_or(|session_id| !History::as_ref(ctx).is_appendable(&session_id))
         {
             CanExecuteCommand::No(DenyExecutionReason::HistoryNotAppendable)
         } else {
@@ -2443,29 +2265,6 @@ impl Input {
         });
     }
 
-    /// Try to execute a command in the local session that was
-    /// requested by a shared session participant (sharer or viewer).
-    ///
-    /// Returns `true` if the command was executed, `false` otherwise.
-    pub fn try_execute_command_on_behalf_of_shared_session_participant(
-        &mut self,
-        command: &str,
-        participant_id: ParticipantId,
-        preserve_input: bool,
-        ctx: &mut ViewContext<Self>,
-    ) -> bool {
-        let block_id = self.model.lock().block_list().active_block_id().clone();
-        self.try_execute_command_from_source(
-            command,
-            CommandExecutionSource::SharedSession {
-                participant_id,
-                block_id,
-                preserve_input,
-            },
-            ctx,
-        )
-    }
-
     /// Freeze the editor and put it in a loading state.
     pub fn freeze_input_in_loading_state(&mut self, ctx: &mut ViewContext<Self>) -> String {
         let buffer_text = self.editor.as_ref(ctx).buffer_text(ctx);
@@ -2474,10 +2273,6 @@ impl Input {
     }
 
     /// Freeze the editor and render `"{display_text} ◌"` as the loading indicator.
-    /// Shared between the user-initiated viewer submission path (which passes the
-    /// editor's current buffer text) and the queued-prompt drain path (which passes
-    /// the popped prompt text without ever reading from / writing to the user's
-    /// in-progress buffer).
     fn freeze_input_in_loading_state_with_text(
         &mut self,
         buffer_text: &str,
@@ -2499,30 +2294,6 @@ impl Input {
         });
     }
 
-    /// Restores a shared-session editor frozen by [`Self::freeze_input_in_loading_state`] once
-    /// the sharer reports the command as started. The sharer's delete ops arrive separately via
-    /// `InputUpdated` and clear the regular buffer.
-    pub fn unfreeze_shared_session_input(&mut self, ctx: &mut ViewContext<Self>) {
-        if !matches!(
-            self.model.lock().shared_session_status(),
-            SharedSessionStatus::ActiveViewer { .. } | SharedSessionStatus::ActiveSharer
-        ) {
-            return;
-        }
-
-        self.editor.update(ctx, |editor, ctx| {
-            if let SharedSessionStatus::ActiveViewer { role } =
-                self.model.lock().shared_session_status()
-            {
-                editor.set_interaction_state(role.into(), ctx);
-                editor.exit_ephemeral_loading_state(ctx);
-            }
-
-            let appearance: &Appearance = Appearance::as_ref(ctx);
-            editor.set_text_colors(TextColors::from_appearance(appearance), ctx);
-        });
-    }
-
     pub fn try_execute_command(&mut self, command: &str, ctx: &mut ViewContext<Self>) -> bool {
         self.try_execute_command_with_options(command, false, ctx)
     }
@@ -2533,40 +2304,7 @@ impl Input {
         preserve_input: bool,
         ctx: &mut ViewContext<Self>,
     ) -> bool {
-        let shared_session_status = self.model.lock().shared_session_status().clone();
-        if shared_session_status.is_sharer_or_viewer() {
-            // If this is a viewer who isn't also an executor, they should not
-            // be allowed to execute commands.
-            if shared_session_status.is_reader() {
-                // TODO: consider showing a toast in this scenario. It should be unlikely
-                // that a viewer can get here without being an executor because the main
-                // caller of this API is the `enter` handler.
-                log::warn!("Viewer tried to execute a command as a reader");
-                return false;
-            } else if shared_session_status.is_executor() && !preserve_input {
-                let original_buffer = self.freeze_input_in_loading_state(ctx);
-
-                if let Some(shared_session_input_state) = self.shared_session_input_state.as_mut() {
-                    shared_session_input_state.pending_command_execution_request =
-                        Some(ViewerCommandExecutionRequest { original_buffer });
-                }
-            }
-
-            // Get our own shared session participant ID.
-            let Some(participant_id) = self
-                .shared_session_presence_manager
-                .as_ref()
-                .map(|m| m.as_ref(ctx).id())
-            else {
-                return false;
-            };
-            self.try_execute_command_on_behalf_of_shared_session_participant(
-                command,
-                participant_id,
-                preserve_input,
-                ctx,
-            )
-        } else if preserve_input {
+        if preserve_input {
             self.try_execute_command_from_source(
                 command,
                 CommandExecutionSource::QueuedCommand,
@@ -2649,13 +2387,6 @@ impl Input {
             .active_block_mut()
             .set_home_dir(home_dir);
 
-        let env_var_collection_id = self.env_var_collection_state.selected_env_vars;
-        self.model
-            .lock()
-            .block_list_mut()
-            .active_block_mut()
-            .set_cloud_env_var_state(env_var_collection_id);
-
         let did_execute = if self
             .model
             .lock()
@@ -2688,7 +2419,6 @@ impl Input {
             // We don't want to submit the command if precmd has not
             // been received. Instead, we want the user to be aware
             // that the prompt might not be up to date.
-            send_telemetry_from_ctx!(TelemetryEvent::TriedToExecuteBeforePrecmd, ctx);
             false
         };
 
@@ -2700,50 +2430,8 @@ impl Input {
         did_execute
     }
 
-    /// We locked the viewer's input when they attempted to execute a command.
-    /// On failure, we must restore the editor to its original state before the attempt.
-    pub fn on_execute_command_for_shared_session_participant_failure(
-        &mut self,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        let Some(shared_session_input_state) = self.shared_session_input_state.as_mut() else {
-            return;
-        };
-        let Some(ViewerCommandExecutionRequest { original_buffer }) = shared_session_input_state
-            .pending_command_execution_request
-            .as_ref()
-        else {
-            return;
-        };
-
-        // Unfreeze the editor
-        if let SharedSessionStatus::ActiveViewer { role } =
-            self.model.lock().shared_session_status()
-        {
-            self.editor.update(ctx, |editor, ctx| {
-                // Restore the original buffer and interaction state based on the viewer's role.
-                editor.set_buffer_text(original_buffer, ctx);
-                editor.set_interaction_state(role.into(), ctx);
-
-                // Shared-session pending-command and cloud-followup flows can swap the editor into
-                // a frozen/pending color treatment, so restore the normal palette alongside the
-                // buffer + interaction state reset.
-                let appearance: &Appearance = Appearance::as_ref(ctx);
-                editor.set_text_colors(TextColors::from_appearance(appearance), ctx);
-            });
-        }
-        shared_session_input_state.pending_command_execution_request = None;
-    }
-
-    fn clear_selected_env_var_collection(&mut self) {
-        self.env_var_collection_state.selected_env_vars = None;
-    }
-
     /// Closes the workflows panel.
     fn clear_selected_workflow(&mut self, ctx: &mut ViewContext<Self>) {
-        // Clear the env var state if we had one.
-        self.clear_selected_env_var_collection();
-
         // `take()` closes the Workflows panel because the panel is only
         // rendered if `selected_workflow_state` is Some(..).
         if let Some(state) = self.workflows_state.selected_workflow_state.take() {
@@ -2852,33 +2540,9 @@ impl Input {
                 self.focus_input_box(ctx);
                 self.close_voltron(ctx);
             }
-            workflows::CategoriesViewEvent::WorkflowSelected {
-                workflow,
-                workflow_source,
-            } => {
-                let workflow_id = workflow.server_id();
-                let workflow_source = *workflow_source;
-                let space = workflow_id.and_then(|id| {
-                    CloudViewModel::as_ref(ctx)
-                        .object_space(&id.to_string(), ctx)
-                        .map(Into::into)
-                });
-
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::WorkflowSelected(WorkflowTelemetryMetadata {
-                        workflow_source,
-                        workflow_categories: workflow.as_workflow().tags().cloned(),
-                        workflow_selection_source: WorkflowSelectionSource::Voltron,
-                        workflow_id,
-                        workflow_space: space,
-                        enum_ids: workflow.as_workflow().get_server_enum_ids()
-                    }),
-                    ctx
-                );
-
+            workflows::CategoriesViewEvent::WorkflowSelected { workflow } => {
                 self.show_workflows_info_box_on_workflow_selection(
                     *workflow.clone(),
-                    workflow_source,
                     WorkflowSelectionSource::Voltron,
                     None,
                     ctx,
@@ -2901,36 +2565,19 @@ impl Input {
         self.workflows_state.selected_workflow_state.is_some()
     }
 
-    pub fn workflows_info_box_open_workflow_cloud_id(&self) -> Option<SyncId> {
-        if let Some(state) = &self.workflows_state.selected_workflow_state {
-            match &state.workflow_type {
-                WorkflowType::Cloud(workflow) => Some(workflow.id),
-                _ => None,
-            }
-        } else {
-            None
-        }
-    }
-
     pub fn show_workflows_info_box_on_workflow_selection(
         &mut self,
         workflow_type: WorkflowType,
-        workflow_source: WorkflowSource,
         workflow_selection_source: WorkflowSelectionSource,
         argument_override: Option<HashMap<String, String>>,
         ctx: &mut ViewContext<Input>,
     ) {
-        // Should not show workflows info box for read-only viewers
-        let should_show_more_info_view = !self.model.lock().shared_session_status().is_reader();
-        let env_vars = workflow_type.as_workflow().default_env_vars();
         self.insert_workflow_into_input(
             workflow_type,
-            workflow_source,
             workflow_selection_source,
             argument_override,
             None,
-            env_vars,
-            should_show_more_info_view,
+            true,
             ctx,
         );
     }
@@ -2939,21 +2586,15 @@ impl Input {
         &mut self,
         history_command: &str,
         workflow_type: WorkflowType,
-        workflow_source: WorkflowSource,
         workflow_selection_source: WorkflowSelectionSource,
         ctx: &mut ViewContext<Input>,
     ) {
-        // Should not show workflows info box for read-only viewers
-        let should_show_more_info_view = !self.model.lock().shared_session_status().is_reader();
-        let env_vars = workflow_type.as_workflow().default_env_vars();
         self.insert_workflow_into_input(
             workflow_type,
-            workflow_source,
             workflow_selection_source,
             None,
             Some(history_command),
-            env_vars,
-            should_show_more_info_view,
+            true,
             ctx,
         );
     }
@@ -2991,11 +2632,9 @@ impl Input {
     fn insert_workflow_into_input(
         &mut self,
         workflow_type: WorkflowType,
-        workflow_source: WorkflowSource,
         workflow_selection_source: WorkflowSelectionSource,
         argument_overrides: Option<HashMap<String, String>>,
         history_command: Option<&str>,
-        selected_env_vars: Option<SyncId>,
         should_show_more_info_view: bool,
         ctx: &mut ViewContext<Input>,
     ) {
@@ -3004,19 +2643,6 @@ impl Input {
         self.editor.update(ctx, |editor, ctx| {
             editor.clear_buffer(ctx);
         });
-
-        if let Some(env_vars_command) = selected_env_vars
-            .as_ref()
-            .and_then(|id| self.env_vars_command_prefix(id, ctx))
-        {
-            self.editor.update(ctx, |editor, ctx| {
-                editor.system_insert(
-                    &env_vars_command,
-                    PlainTextEditorViewAction::SystemInsert,
-                    ctx,
-                )
-            });
-        }
 
         // The workflow may or may not come from a history command. If it does, the history command may or may not match
         // the template of the original workflow. If it does match, we have extra display data to show (such as the indices in
@@ -3053,7 +2679,6 @@ impl Input {
                 command_with_replaced_arguments,
                 replaced_ranges,
                 argument_index_to_highlight_index_map,
-                argument_index_to_object_id_map,
                 ..
             }) => {
                 let text_style_ranges = replaced_ranges
@@ -3077,20 +2702,6 @@ impl Input {
                     );
                 });
 
-                // Get enum variants
-                let cloud_model = CloudModel::as_ref(ctx);
-                let enum_variants_map = argument_index_to_object_id_map
-                    .iter()
-                    .filter_map(|(index, object_id)| {
-                        cloud_model
-                            .get_workflow_enum(object_id)
-                            .map(|workflow_enum| {
-                                workflow_enum.model().string_model.variants.clone()
-                            })
-                            .map(|variants| (*index, variants))
-                    })
-                    .collect();
-
                 self.workflows_state.selected_workflow_state = Some(SelectedWorkflowState {
                     more_info_view: self.create_workflows_info_view(
                         workflow_type.clone(),
@@ -3098,8 +2709,6 @@ impl Input {
                         ctx,
                     ),
                     argument_index_to_highlight_index: argument_index_to_highlight_index_map,
-                    argument_index_to_enum_variants: enum_variants_map,
-                    workflow_source,
                     workflow_type,
                     workflow_selection_source,
                     should_show_more_info_view,
@@ -3121,28 +2730,12 @@ impl Input {
                         ctx,
                     ),
                     argument_index_to_highlight_index: HashMap::new(),
-                    argument_index_to_enum_variants: HashMap::new(),
-                    workflow_source,
                     workflow_type,
                     workflow_selection_source,
                     should_show_more_info_view,
                 });
             }
         };
-
-        self.env_var_collection_state.selected_env_vars = selected_env_vars;
-
-        // Ensure the env var selector dropdown is consistent with the selected env vars.
-        if let Some(more_info_view) = self
-            .workflows_state
-            .selected_workflow_state
-            .as_ref()
-            .map(|state| &state.more_info_view)
-        {
-            more_info_view.update(ctx, |info_view, ctx| {
-                info_view.set_environment_variables_selection(selected_env_vars, ctx);
-            })
-        }
 
         // Emit the a11y content as the last step so that it overwrites any of the a11y content
         // emitted by the editor (if multiple `AccessibilityContent`s are emitted within the same
@@ -3170,28 +2763,6 @@ impl Input {
         self.focus_input_box(ctx);
     }
 
-    /// Builds a prefix for applying env vars to a command in the current session.
-    fn env_vars_command_prefix(&self, env_vars_id: &SyncId, ctx: &AppContext) -> Option<String> {
-        let shell_type = self.active_session(ctx)?.shell().shell_type();
-        let env_vars = &CloudModel::as_ref(ctx)
-            .get_env_var_collection(env_vars_id)?
-            .model()
-            .string_model;
-
-        if shell_type == ShellType::Fish {
-            // Warp currently doesn't support newlines in Fish, just prepend the vars
-            let mut command = env_vars.export_variables_for_shell(ShellType::Fish);
-            command.push(' ');
-            Some(command)
-        } else {
-            // Add newlines at the end to separate the vars from the comment/command
-            Some(format!(
-                "# Environment variables\n{}\n\n",
-                env_vars.export_variables(" ", shell_type.into())
-            ))
-        }
-    }
-
     fn create_workflows_info_view(
         &mut self,
         workflow: WorkflowType,
@@ -3217,31 +2788,9 @@ impl Input {
     fn handle_workflow_more_info_event(
         &mut self,
         event: &WorkflowsInfoBoxViewEvent,
-        ctx: &mut ViewContext<Self>,
+        _ctx: &mut ViewContext<Self>,
     ) {
-        match event {
-            WorkflowsInfoBoxViewEvent::PrefixCommandWithEnvironmentVariables(env_vars) => {
-                self.reset_workflow_state(*env_vars, ctx);
-
-                // The ID may be `None` if the user is *clearing* environment variables.
-                if let Some(env_vars_id) = env_vars {
-                    let env_vars_object =
-                        CloudModel::as_ref(ctx).get_env_var_collection(env_vars_id);
-                    let telemetry_metadata = EnvVarTelemetryMetadata {
-                        object_id: env_vars_id.into_server().map(Into::into),
-                        team_uid: env_vars_object
-                            .and_then(|object| object.permissions.owner.into()),
-                        space: env_vars_object
-                            .map_or(Space::Personal, |object| object.space(ctx))
-                            .into(),
-                    };
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::EnvVarWorkflowParameterization(telemetry_metadata),
-                        ctx
-                    );
-                }
-            }
-        }
+        match *event {}
     }
 
     /// Returns the a11y text for a workflow that is selected. `None`, if there is no workflow
@@ -3338,7 +2887,6 @@ impl Input {
         text_style_ranges: Vec<Range<ByteOffset>>,
         ctx: &mut ViewContext<Self>,
     ) {
-        let mut variants = None;
         let mut selected_ranges = Vec::new();
 
         if let Some(active_workflow_state) = self.workflows_state.selected_workflow_state.as_ref() {
@@ -3355,10 +2903,6 @@ impl Input {
                         ) {
                             selected_workflow_state.set_argument_cycling_enabled(false);
                         } else {
-                            variants = active_workflow_state
-                                .argument_index_to_enum_variants
-                                .get(&selected_workflow_state.currently_selected_argument());
-
                             selected_workflow_state.set_argument_cycling_enabled(true);
                             // Get all of the highlighted ranges for the currently selected argument.
                             let byte_ranges = active_workflow_state
@@ -3379,72 +2923,9 @@ impl Input {
                 });
         }
 
-        if let Some(enum_variants) = variants {
-            self.populate_enum_suggestions_menu(enum_variants.clone(), selected_ranges, ctx);
-        } else {
-            self.suggestions_mode_model.update(ctx, |m, ctx| {
-                m.set_mode(InputSuggestionsMode::Closed, ctx);
-            });
-        }
-        ctx.notify();
-    }
-
-    fn populate_enum_suggestions_menu(
-        &mut self,
-        enum_variants: EnumVariants,
-        selected_ranges: Vec<Range<ByteOffset>>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        // If the newly highlighted argument has enum variants, populate the suggestions menu
-        let position = self.editor.as_ref(ctx).first_selection_end_to_point(ctx);
-
-        self.editor.update(ctx, |editor, ctx| {
-            editor.cache_buffer_point(
-                position,
-                COMPLETIONS_START_OF_REPLACEMENT_SPAN_POSITION_ID,
-                ctx,
-            );
+        self.suggestions_mode_model.update(ctx, |m, ctx| {
+            m.set_mode(InputSuggestionsMode::Closed, ctx);
         });
-
-        let variants = match enum_variants {
-            EnumVariants::Static(variants) => {
-                self.suggestions_mode_model.update(ctx, |m, ctx| {
-                    m.set_mode(
-                        InputSuggestionsMode::StaticWorkflowEnumSuggestions {
-                            suggestions: variants.clone(),
-                            menu_position: TabCompletionsMenuPosition::AtFirstCursor,
-                            selected_ranges,
-                            cursor_point: position,
-                        },
-                        ctx,
-                    );
-                });
-                variants
-            }
-            EnumVariants::Dynamic(command) => {
-                if FeatureFlag::DynamicWorkflowEnums.is_enabled() {
-                    self.suggestions_mode_model.update(ctx, |m, ctx| {
-                        m.set_mode(
-                            InputSuggestionsMode::DynamicWorkflowEnumSuggestions {
-                                suggestions: vec![],
-                                menu_position: TabCompletionsMenuPosition::AtFirstCursor,
-                                selected_ranges,
-                                cursor_point: position,
-                                dynamic_enum_status: DynamicEnumSuggestionStatus::Unapproved,
-                                command,
-                            },
-                            ctx,
-                        );
-                    });
-                }
-                vec![]
-            }
-        };
-
-        self.input_suggestions.update(ctx, |input, ctx| {
-            input.set_enum_variants(variants, ctx);
-        });
-
         ctx.notify();
     }
 
@@ -3460,44 +2941,21 @@ impl Input {
         match event {
             InputSuggestionsEvent::ConfirmSuggestion {
                 suggestion,
-                match_type,
+                match_type: _,
             } => {
                 if !self.confirm_suggestion(suggestion, ctx) {
                     return;
                 }
 
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::ConfirmSuggestion {
-                        mode: self
-                            .suggestions_mode_model
-                            .as_ref(ctx)
-                            .mode()
-                            .to_telemetry_mode(),
-                        match_type: *match_type,
-                    },
-                    ctx
-                );
                 self.close_input_suggestions(/*should_focus_input=*/ true, ctx);
             }
             InputSuggestionsEvent::ConfirmAndExecuteSuggestion {
                 suggestion,
-                match_type,
+                match_type: _,
             } => {
                 if !self.confirm_and_execute_suggestion(suggestion, ctx) {
                     return;
                 }
-
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::ConfirmSuggestion {
-                        mode: self
-                            .suggestions_mode_model
-                            .as_ref(ctx)
-                            .mode()
-                            .to_telemetry_mode(),
-                        match_type: *match_type,
-                    },
-                    ctx
-                );
 
                 self.close_input_suggestions(/*should_focus_input=*/ true, ctx);
 
@@ -3522,22 +2980,18 @@ impl Input {
                 let mode = self.suggestions_mode_model.as_ref(ctx).mode().clone();
                 match &mode {
                     InputSuggestionsMode::HistoryUp { .. } => {
-                        if let Some((workflow_type, workflow_source)) = selected_item
-                            .linked_workflow_data()
-                            .and_then(|linked_workflow_data| {
-                                linked_workflow_data.linked_workflow(ctx)
-                            })
+                        if let Some(workflow_type) =
+                            selected_item
+                                .linked_workflow_data()
+                                .and_then(|linked_workflow_data| {
+                                    linked_workflow_data.linked_workflow(ctx)
+                                })
                         {
-                            // TODO(ben): We should include the chosen env vars in the history
-                            // entry.
-                            let env_vars = workflow_type.as_workflow().default_env_vars();
                             self.insert_workflow_into_input(
                                 workflow_type,
-                                workflow_source,
                                 WorkflowSelectionSource::UpArrowHistory,
                                 None,
                                 Some(selected_item.text()),
-                                env_vars,
                                 /*should_show_more_info_view=*/ false,
                                 ctx,
                             );
@@ -3600,11 +3054,7 @@ impl Input {
                     self.suggestions_mode_model.as_ref(ctx).mode(),
                     InputSuggestionsMode::HistoryUp { .. }
                 ) {
-                    let history = if self.model.lock().shared_session_status().is_executor() {
-                        self.shared_session_history(ctx)
-                    } else {
-                        self.collate_ai_and_command_history(ctx)
-                    };
+                    let history = self.collate_ai_and_command_history(ctx);
                     let original_buffer = if let InputSuggestionsMode::HistoryUp {
                         original_buffer,
                         ..
@@ -3628,18 +3078,13 @@ impl Input {
 
     /// Resets the SelectedWorkflowState back to the original workflow, with its original arguments. This
     /// is useful when the command does not match the original workflow.
-    fn reset_workflow_state(&mut self, env_vars: Option<SyncId>, ctx: &mut ViewContext<Input>) {
-        // We want to also initially clear the stored selected env var.
-        self.clear_selected_env_var_collection();
-
+    fn reset_workflow_state(&mut self, ctx: &mut ViewContext<Input>) {
         if let Some(state) = self.workflows_state.selected_workflow_state.take() {
             self.insert_workflow_into_input(
                 state.workflow_type,
-                state.workflow_source,
                 state.workflow_selection_source,
                 None,
                 None,
-                env_vars,
                 true,
                 ctx,
             )
@@ -3843,12 +3288,6 @@ impl Input {
     }
 
     fn editor_up(&mut self, ctx: &mut ViewContext<Self>) {
-        // History and input suggestions are not available for
-        // read-only viewers in a shared session
-        if self.model.lock().shared_session_status().is_reader() {
-            return;
-        }
-
         // For some input suggestion modes, the menu handles its own actions.
         let handled = match self.suggestions_mode_model.as_ref(ctx).mode() {
             InputSuggestionsMode::SlashCommands => {
@@ -3893,11 +3332,7 @@ impl Input {
                 return;
             }
 
-            let history = if self.model.lock().shared_session_status().is_executor() {
-                self.shared_session_history(ctx)
-            } else {
-                self.collate_ai_and_command_history(ctx)
-            };
+            let history = self.collate_ai_and_command_history(ctx);
             let original_buffer = self.editor.as_ref(ctx).buffer_text(ctx);
 
             let matches = InputSuggestions::history_prefix_search(&original_buffer, history);
@@ -3928,13 +3363,6 @@ impl Input {
 
     // TODO - Implement PageUp functionality for input suggestions menu
     fn editor_page_up(&mut self, ctx: &mut ViewContext<Self>) {
-        let event = self.editor.read(ctx, |editor, ctx| {
-            TelemetryEvent::PageUpDownInEditorPressed {
-                is_empty_editor: editor.is_empty(ctx),
-                is_down: false,
-            }
-        });
-        send_telemetry_from_ctx!(event, ctx);
         if self.suggestions_mode_model.as_ref(ctx).is_visible() {
             self.editor
                 .update(ctx, |input, ctx| input.move_page_up(ctx));
@@ -4012,9 +3440,6 @@ impl Input {
     }
 
     fn clear_current_workflow(&mut self, ctx: &mut ViewContext<Input>) {
-        // Whenever we clear the workflow we also want to clear the env vars
-        self.clear_selected_env_var_collection();
-
         if let Some(state) = self.workflows_state.selected_workflow_state.take() {
             self.update_workflows_info_box_expanded_setting(ctx, &state);
         }
@@ -4069,13 +3494,6 @@ impl Input {
 
     // TODO - Implement PageDown functionality for input suggestions menu
     fn editor_page_down(&mut self, ctx: &mut ViewContext<Self>) {
-        let event = self.editor.read(ctx, |editor, ctx| {
-            TelemetryEvent::PageUpDownInEditorPressed {
-                is_empty_editor: editor.is_empty(ctx),
-                is_down: true,
-            }
-        });
-        send_telemetry_from_ctx!(event, ctx);
         if self.suggestions_mode_model.as_ref(ctx).is_visible() {
             self.editor
                 .update(ctx, |input, ctx| input.move_page_down(ctx));
@@ -5084,50 +4502,6 @@ impl Input {
         ctx.notify();
     }
 
-    pub fn on_session_share_joined(
-        &mut self,
-        replica_id: ReplicaId,
-        presence_manager: ModelHandle<PresenceManager>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        // Shared session history model should only be set if we are a viewer
-        debug_assert!(self.model.lock().shared_session_status().is_viewer());
-        self.set_shared_session_presence_manager(presence_manager);
-
-        // Set the history model which is only available for a shared session viewer.
-        let history_model = ctx.add_model(|_| SharedSessionHistoryModel::new());
-        self.shared_session_input_state = Some(SharedSessionInputState {
-            history_model,
-            pending_command_execution_request: None,
-        });
-
-        self.editor().update(ctx, |editor, ctx| {
-            editor.reinitialize_buffer(Some(replica_id), ctx);
-        });
-    }
-
-    /// Returns a collection of history entries that are shell commands from
-    /// the shared session (run on the sharer's machine).
-    fn shared_session_history<'b>(
-        &'b self,
-        ctx: &'b ViewContext<Self>,
-    ) -> Vec<HistoryInputSuggestion<'b>> {
-        let Some(history_model) = self
-            .shared_session_input_state
-            .as_ref()
-            .map(|state| state.history_model.clone())
-        else {
-            return Vec::new();
-        };
-
-        // TODO: append viewer's local shell history
-        history_model
-            .as_ref(ctx)
-            .entries()
-            .map(|entry| HistoryInputSuggestion::Command { entry })
-            .collect()
-    }
-
     /// Returns a collection of history entries that are shell commands in order from oldest to
     /// most recent.
     fn collate_ai_and_command_history<'a>(
@@ -5418,98 +4792,6 @@ impl Input {
             .abort_handle();
 
         self.completions_abort_handle = Some(abort_handle);
-    }
-
-    /// Asynchronously generates dynamic enum suggestions.
-    fn get_enum_suggestions_async(
-        &mut self,
-        command: String,
-        editor_snapshot: EditorSnapshot,
-        ctx: &mut ViewContext<'_, Input>,
-    ) {
-        if let Some(completion_context) = self.completion_session_context(ctx) {
-            self.suggestions_mode_model.update(ctx, |m, ctx| {
-                m.set_dynamic_enum_status(DynamicEnumSuggestionStatus::Pending, ctx);
-            });
-            let abort_handle = ctx
-                .spawn(
-                    async move {
-                        let variants = super::dynamic_enum_suggestions::run_dynamic_enum_command(
-                            command.as_str(),
-                            &completion_context,
-                        )
-                        .await;
-
-                        (variants, editor_snapshot)
-                    },
-                    move |input, (variants, editor_model), ctx| {
-                        input.handle_enum_completion_results(variants, editor_model, ctx);
-                    },
-                )
-                .abort_handle();
-
-            self.completions_abort_handle = Some(abort_handle);
-            ctx.notify();
-        }
-    }
-
-    /// When the command finishes running, update the input suggestions menu with the suggestions.
-    fn handle_enum_completion_results(
-        &mut self,
-        results: anyhow::Result<Vec<String>>,
-        editor_snapshot_when_completer_was_ran: EditorSnapshot,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        let current_editor_model = self
-            .editor
-            .read(ctx, |editor, ctx| editor.snapshot_model(ctx));
-
-        let buffer_text = self.editor.as_ref(ctx).buffer_text(ctx);
-        // If the editor has changed since the completions trigger was hit-- noop since the
-        // suggestions are no longer valid. Note that we purposely ignore attributes such as text
-        // styles for the purposes of this check (we only care about the buffer text content and
-        // the cursor selections state).
-        if buffer_text != editor_snapshot_when_completer_was_ran.text()
-            || current_editor_model.selections()
-                != editor_snapshot_when_completer_was_ran.selections()
-        {
-            return;
-        }
-
-        let (variants, status) = match results {
-            Ok(variants) => (variants, DynamicEnumSuggestionStatus::Success),
-            Err(e) => {
-                log::warn!("Failed to generate dynamic enum suggestions: {e:?}");
-                (vec![], DynamicEnumSuggestionStatus::Failure)
-            }
-        };
-
-        self.input_suggestions.update(ctx, |input, ctx| {
-            input.set_enum_variants(variants.clone(), ctx);
-        });
-
-        if let InputSuggestionsMode::DynamicWorkflowEnumSuggestions {
-            menu_position,
-            selected_ranges,
-            cursor_point,
-            command,
-            ..
-        } = self.suggestions_mode_model.as_ref(ctx).mode()
-        {
-            let updated_mode = InputSuggestionsMode::DynamicWorkflowEnumSuggestions {
-                dynamic_enum_status: status,
-                suggestions: variants,
-                menu_position: *menu_position,
-                selected_ranges: selected_ranges.clone(),
-                cursor_point: *cursor_point,
-                command: command.clone(),
-            };
-            self.suggestions_mode_model.update(ctx, |model, ctx| {
-                model.set_mode(updated_mode, ctx);
-            });
-        }
-
-        ctx.notify();
     }
 
     fn path_separators(&self, ctx: &AppContext) -> PathSeparators {
@@ -5960,7 +5242,7 @@ impl Input {
                     async move {
                         completer::describe(buffer_text.as_str(), pos, &completion_context).await
                     },
-                    |input, description, ctx| {
+                    move |input, description, ctx| {
                         input.show_xray(description, trigger, ctx);
                     },
                 );
@@ -6295,40 +5577,6 @@ impl Input {
                 suggestions.confirm(ctx);
             });
         } else {
-            if FeatureFlag::WorkflowAliases.is_enabled() {
-                let mut command_string = self.editor.as_ref(ctx).buffer_text(ctx);
-                // If the alias was inserted from the completions menu, it will have trailing
-                // whitespace - trim it in-place.
-                command_string.truncate(command_string.trim_end().len());
-
-                if let Some(alias) = WorkflowAliases::as_ref(ctx).match_alias(&command_string) {
-                    if let Some(workflow) = CloudModel::as_ref(ctx).get_workflow(&alias.workflow_id)
-                    {
-                        let owner = workflow.clone().permissions.owner.into();
-
-                        let workflow_type = WorkflowType::Cloud(Box::new(workflow.clone()));
-                        let env_vars = alias.env_vars.or(workflow.model().data.default_env_vars());
-
-                        self.insert_workflow_into_input(
-                            workflow_type,
-                            owner,
-                            WorkflowSelectionSource::Alias,
-                            alias.arguments,
-                            None,
-                            env_vars,
-                            true,
-                            ctx,
-                        );
-                        return;
-                    } else {
-                        log::warn!(
-                            "Tried to execute workflow for id {:?} but it does not exist",
-                            alias.workflow_id
-                        );
-                    };
-                }
-            }
-
             let command = self.get_command(ctx);
             if !self.try_execute_command(&command, ctx) {
                 return;
@@ -6375,14 +5623,6 @@ impl Input {
                 self.input_suggestions.update(ctx, |suggestions, ctx| {
                     suggestions.confirm_and_execute(ctx);
                 });
-            }
-            InputSuggestionsMode::DynamicWorkflowEnumSuggestions {
-                dynamic_enum_status: DynamicEnumSuggestionStatus::Unapproved,
-                command,
-                ..
-            } => {
-                let editor_model = self.editor.read(ctx, |view, ctx| view.snapshot_model(ctx));
-                self.get_enum_suggestions_async(command.clone(), editor_model, ctx);
             }
             _ => {
                 if FeatureFlag::AgentView.is_enabled()
@@ -6561,24 +5801,6 @@ impl Input {
                 }
             }
 
-            // Make sure the viewer's interaction state is correct based on their role.
-            // We may have locked up their input if they tried to execute a command.
-            if let SharedSessionStatus::ActiveViewer { role } =
-                self.model.lock().shared_session_status()
-            {
-                self.editor.update(ctx, |editor, ctx| {
-                    editor.set_interaction_state(role.into(), ctx);
-
-                    // Also need to set the text colors back to normal.
-                    let appearance: &Appearance = Appearance::as_ref(ctx);
-                    editor.set_text_colors(TextColors::from_appearance(appearance), ctx);
-                });
-
-                if let Some(shared_session_input_state) = self.shared_session_input_state.as_mut() {
-                    shared_session_input_state.pending_command_execution_request = None;
-                };
-            }
-
             // Generate autosuggestion if the input is not empty (user had type-ahead).
             self.maybe_generate_autosuggestion(ctx);
         }
@@ -6603,43 +5825,6 @@ impl Input {
     ) {
         if let BlockType::User(block_completed) = block {
             self.last_user_block_completed = Some(block_completed.clone());
-
-            let viewing_shared_session = self.model.lock().shared_session_status().is_viewer();
-            if viewing_shared_session {
-                // As we switch to the new block ID, if there were any remote
-                // edits that were pending for that block ID, we should flush them.
-                // Today, we only expect this to be the case with session-sharing viewers.
-                self.flush_deferred_remote_operations(ctx);
-
-                // Update shared session history model
-                match self
-                    .shared_session_input_state
-                    .as_ref()
-                    .map(|state| state.history_model.clone())
-                {
-                    Some(shared_session_history_model) => {
-                        let command = block_completed
-                            .command
-                            .get_with(|compute| {
-                                let model = self.model.lock();
-                                compute(model.block_list())
-                            })
-                            .to_owned();
-                        let serialized_block =
-                            block_completed.serialized_block.get_with(|compute| {
-                                let model = self.model.lock();
-                                compute(model.block_list())
-                            });
-                        shared_session_history_model.update(ctx, move |history_model, _ctx| {
-                            history_model
-                                .push(HistoryEntry::for_completed_block(command, serialized_block))
-                        })
-                    }
-                    _ => {
-                        log::warn!("Tried to access non-existent shared session history model")
-                    }
-                }
-            }
 
             ctx.emit(Event::InputStateChanged(InputState::Enabled));
         } else if block.is_bootstrap_block()
@@ -6696,60 +5881,20 @@ impl Input {
             .expect("session_id should be set (via bootstrap) before executing command");
 
         // If the SelectedWorkflowState is populated with a workflow, we count this as a workflow execution.
-        let (workflow_id, workflow_command) = {
-            match self.workflows_state.selected_workflow_state.as_ref() {
-                Some(selected_workflow_state) => {
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::WorkflowExecuted(WorkflowTelemetryMetadata {
-                            workflow_source: selected_workflow_state.workflow_source,
-                            workflow_categories: selected_workflow_state
-                                .workflow_type
-                                .as_workflow()
-                                .tags()
-                                .cloned(),
-                            workflow_selection_source: selected_workflow_state
-                                .workflow_selection_source,
-                            // This is only `Some()` for WarpDrive workflows; we don't track
-                            // ID for execution of local workflows because they have no such
-                            // unique ID.
-                            workflow_id: selected_workflow_state.workflow_type.server_id(),
-                            workflow_space: match &selected_workflow_state.workflow_type {
-                                WorkflowType::Cloud(workflow) => Some(workflow.space(ctx).into()),
-                                _ => None,
-                            },
-                            enum_ids: selected_workflow_state
-                                .workflow_type
-                                .as_workflow()
-                                .get_server_enum_ids()
-                        }),
-                        ctx
-                    );
-
-                    let workflow_type = &selected_workflow_state.workflow_type;
-                    let workflow_id = match workflow_type {
-                        WorkflowType::Cloud(workflow) => Some(workflow.id),
-                        _ => None,
-                    };
-
-                    // If the SelectedWorkflowState is populated, then we're always able to return the workflow command.
-                    // The case where workflow_id = None but workflow_command = Some() is when it's a local workflow, which
-                    // don't have ids and are tracked just by persisting the workflow contents. This is a little janky and would
-                    // be fixed if we could identify all workflows under a unified id system, not just cloud ones.
-                    (
-                        workflow_id,
-                        workflow_type
-                            .as_workflow()
-                            .command()
-                            .map(|command| command.to_owned()),
-                    )
-                }
-                None => (None, None),
-            }
-        };
+        let workflow_command = self
+            .workflows_state
+            .selected_workflow_state
+            .as_ref()
+            .and_then(|selected_workflow_state| {
+                selected_workflow_state
+                    .workflow_type
+                    .as_workflow()
+                    .command()
+                    .map(|command| command.to_owned())
+            });
 
         ctx.emit(Event::ExecuteCommand(Box::new(ExecuteCommandEvent {
             command: command.to_string(),
-            workflow_id,
             session_id,
             workflow_command,
             should_add_command_to_history: true,
@@ -6841,15 +5986,9 @@ impl Input {
             .get(session_id)
             .and_then(|session| {
                 session.subshell_info().as_ref().map(|info| {
-                    if let Some(env_var_collection_name) = &info.env_var_collection_name {
-                        Some(SubshellRenderState::Flag(SubshellSource::EnvVarCollection(
-                            env_var_collection_name.to_owned(),
-                        )))
-                    } else {
-                        info.spawning_command.split_whitespace().next().map(|exec| {
-                            SubshellRenderState::Flag(SubshellSource::Command(exec.to_owned()))
-                        })
-                    }
+                    info.spawning_command.split_whitespace().next().map(|exec| {
+                        SubshellRenderState::Flag(SubshellSource::Command(exec.to_owned()))
+                    })
                 })
             })?;
 
@@ -7035,11 +6174,6 @@ impl Input {
         feature_item: VoltronItem,
         ctx: &mut ViewContext<Input>,
     ) {
-        // View-only sessions should not show workflows menu
-        if self.model.lock().shared_session_status().is_reader() {
-            return;
-        }
-
         let welcome_tip_feature = match feature_item {
             VoltronItem::AiCommands => Some(Tip::Action(TipAction::AiCommandSearch)),
             VoltronItem::History => Some(Tip::Action(TipAction::HistorySearch)),
@@ -7156,7 +6290,7 @@ impl TypedActionView for Input {
                 self.maybe_open_completion_suggestions(ctx);
             }
             InputAction::HideWorkflowInfoCard => self.hide_workflows_info_box(ctx),
-            InputAction::ResetWorkflowState => self.reset_workflow_state(None, ctx),
+            InputAction::ResetWorkflowState => self.reset_workflow_state(ctx),
             InputAction::ToggleClassicCompletionsMode => {
                 InputSettings::handle(ctx).update(ctx, |settings, ctx| {
                     if let Err(e) = settings.classic_completions_mode.toggle_and_save_value(ctx) {
@@ -7263,9 +6397,6 @@ impl View for Input {
         }
 
         let model_lock = self.model.lock();
-        ctx.set
-            .insert(model_lock.shared_session_status().as_keymap_context());
-
         if model_lock
             .block_list()
             .active_block()

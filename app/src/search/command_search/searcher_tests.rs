@@ -9,8 +9,6 @@ use warpui::{App, AppContext, Element};
 
 use super::*;
 use crate::appearance::Appearance;
-use crate::auth::AuthStateProvider;
-use crate::auth::auth_manager::AuthManager;
 use crate::search::command_search::history::history_data_source;
 use crate::search::command_search::searcher::CommandSearchMixer;
 use crate::search::data_source::{Query, QueryResult};
@@ -20,8 +18,6 @@ use crate::search::mixer::{
 };
 use crate::search::result_renderer::ItemHighlightState;
 use crate::search::{QueryFilter, SyncDataSource};
-use crate::server::server_api::ServerApiProvider;
-use crate::server::telemetry::context_provider::AppTelemetryContextProvider;
 use crate::terminal::HistoryEntry;
 
 #[derive(Clone, Debug)]
@@ -108,17 +104,9 @@ impl SyncDataSource for SlowDataSource {
     }
 }
 
-fn initialize_app(app: &mut App) {
-    app.add_singleton_model(|_| ServerApiProvider::new_for_test());
-    app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
-    app.add_singleton_model(AuthManager::new_for_test);
-}
-
 #[test]
 fn test_add_source_to_mixer() {
     App::test((), |mut app| async move {
-        initialize_app(&mut app);
         let mixer = app.add_model(|_| CommandSearchMixer::new());
         mixer.update(&mut app, |mixer, ctx| {
             mixer.add_async_source(
@@ -148,7 +136,6 @@ fn test_add_source_to_mixer() {
 #[test]
 fn test_exact_matches_rank_above_prefix_matches() {
     App::test((), |mut app| async move {
-        initialize_app(&mut app);
         let short_command = "git".to_owned();
         let long_command = "git checkout master".to_owned();
         let unrelated_command = "echo hello!".to_owned();
@@ -207,7 +194,6 @@ fn test_exact_matches_rank_above_prefix_matches() {
 #[test]
 fn test_no_query_filter_runs_all_data_sources() {
     App::test((), |mut app| async move {
-        initialize_app(&mut app);
         let mixer = app.add_model(|_| CommandSearchMixer::new());
         mixer.update(&mut app, |mixer, ctx| {
             mixer.add_async_source(
@@ -254,7 +240,6 @@ fn test_no_query_filter_runs_all_data_sources() {
 #[test]
 fn test_query_filter_limits_data_sources() {
     App::test((), |mut app| async move {
-        initialize_app(&mut app);
         let mixer = app.add_model(|_| CommandSearchMixer::new());
         mixer.update(&mut app, |mixer, ctx| {
             mixer.add_async_source(
@@ -330,8 +315,6 @@ fn test_query_filter_limits_data_sources() {
 #[test]
 fn test_async_data_source() {
     App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
         let mixer = app.add_model(|_| TestMixer::new());
         mixer.update(&mut app, |mixer, ctx| {
             mixer.add_async_source(
@@ -376,8 +359,6 @@ fn test_async_data_source() {
 #[test]
 fn test_async_data_source_run_twice_with_debounce() {
     App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
         let mixer = app.add_model(|_| TestMixer::new());
         mixer.update(&mut app, |mixer, ctx| {
             mixer.add_async_source(
@@ -439,8 +420,6 @@ fn test_async_data_source_run_twice_with_debounce() {
 #[test]
 fn test_async_data_source_run_twice_without_debounce() {
     App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
         let mixer = app.add_model(|_| TestMixer::new());
         mixer.update(&mut app, |mixer, ctx| {
             mixer.add_async_source(
@@ -493,8 +472,6 @@ fn test_async_data_source_run_twice_without_debounce() {
 #[test]
 fn test_async_source_with_include_in_unfiltered_runs_on_empty_filters() {
     App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
         let mixer = app.add_model(|_| TestMixer::new());
         mixer.update(&mut app, |mixer, ctx| {
             mixer.add_async_source(
@@ -536,8 +513,6 @@ fn test_async_source_with_include_in_unfiltered_runs_on_empty_filters() {
 #[test]
 fn test_async_source_without_include_in_unfiltered_skipped_on_empty_filters() {
     App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
         let mixer = app.add_model(|_| TestMixer::new());
         mixer.update(&mut app, |mixer, ctx| {
             mixer.add_async_source(
@@ -574,8 +549,6 @@ fn test_async_source_without_include_in_unfiltered_skipped_on_empty_filters() {
 #[test]
 fn test_sync_and_async_data_sources() {
     App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
         let mixer = app.add_model(|_| TestMixer::new());
         mixer.update(&mut app, |mixer, ctx| {
             mixer.add_sync_source(SlowDataSource {}, [QueryFilter::Actions]);

@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use session_sharing_protocol::common::SessionId;
 use ui_components::lightbox;
 use warp_util::path::LineAndColumnArg;
 use warpui::accessibility::AccessibilityVerbosity;
@@ -10,30 +9,24 @@ use warpui::geometry::rect::RectF;
 use warpui::geometry::vector::Vector2F;
 use warpui::platform::Cursor;
 use warpui::platform::keyboard::KeyCode;
-use warpui::{EntityId, WeakViewHandle, WindowId};
+use warpui::{EntityId, WindowId};
 
 use super::tab_settings::{
     VerticalTabsCompactSubtitle, VerticalTabsDisplayGranularity, VerticalTabsPrimaryInfo,
     VerticalTabsTabItemMode, VerticalTabsViewMode,
 };
 use super::view::WorkspaceBanner;
-use crate::auth::auth_manager::LoginGatedFeature;
-use crate::drive::CloudObjectTypeAndId;
-use crate::drive::items::WarpDriveItemId;
-use crate::palette::PaletteMode;
-use crate::pane_group::PaneGroup;
+use crate::palette::{PaletteMode, PaletteSource};
 use crate::projects::WorktreeId;
 use crate::prompt::editor_modal::OpenSource as PromptEditorOpenSource;
 use crate::search;
-use crate::server::ids::{ServerId, SyncId};
-use crate::server::telemetry::{AddTabWithShellSource, PaletteSource, SharingDialogSource};
 use crate::settings_view::{SettingsAction as SettingsTabAction, SettingsSection};
 use crate::tab::{NewSessionMenuItem, SelectedTabColor};
 use crate::tab_configs::TabConfig;
 use crate::terminal::available_shells::AvailableShell;
 use crate::themes::theme::AnsiColorIdentifier;
 use crate::themes::theme_chooser::ThemeChooserMode;
-use crate::workflows::{WorkflowSelectionSource, WorkflowSource, WorkflowType};
+use crate::workflows::{WorkflowSelectionSource, WorkflowType};
 use crate::workspace::PaneViewLocator;
 use crate::workspace::tab_group::TabGroupId;
 
@@ -243,7 +236,6 @@ pub enum WorkspaceAction {
     },
     AddTabWithShell {
         shell: AvailableShell,
-        source: AddTabWithShellSource,
     },
     AddGetStartedTab,
     AddAgentPickerTab,
@@ -262,7 +254,6 @@ pub enum WorkspaceAction {
     SelectNewSessionMenuItem(NewSessionMenuItem),
     AutoupdateFailureLink,
     ApplyUpdate,
-    LogOut,
     CopyVersion(&'static str),
     DownloadNewVersion,
     ConfigureKeybindingSettings {
@@ -296,8 +287,6 @@ pub enum WorkspaceAction {
         mode: PaletteMode,
         source: PaletteSource,
     },
-    ShowUpgrade,
-    ShowReferralSettingsPage,
     JoinSlack,
     ViewUserDocs,
     ViewLatestChangelog,
@@ -311,7 +300,6 @@ pub enum WorkspaceAction {
     ToggleErrorUnderlining,
     ToggleSyntaxHighlighting,
     CheckForUpdate,
-    ExportAllWarpDriveObjects,
     SetA11yVerbosityLevel(AccessibilityVerbosity),
     ToggleNotifications,
     ToggleTabColor {
@@ -331,16 +319,6 @@ pub enum WorkspaceAction {
     ToggleUserMenu,
     ToggleKeybindingsPage,
     ShowCommandSearch(CommandSearchOptions),
-    CreatePersonalNotebook,
-    ImportToPersonalDrive,
-    ImportToTeamDrive,
-    CreateTeamNotebook,
-    CreatePersonalWorkflow,
-    CreateTeamWorkflow,
-    CreatePersonalFolder,
-    CreateTeamFolder,
-    CreateTeamEnvVarCollection,
-    CreatePersonalEnvVarCollection,
     ToggleMouseReporting,
     ToggleScrollReporting,
     ToggleFocusReporting,
@@ -359,15 +337,8 @@ pub enum WorkspaceAction {
         cursor_position: Vector2F,
     },
     DropGroup,
-    /// Toggles the left panel. In Code Mode V1 this toggles Warp Drive.
-    /// In Code Mode V2 this toggles the left panel which contains both the project explorer and
-    /// Warp Drive. This happens as explicit action from the user.
+    /// Toggles the left panel. This happens as an explicit action from the user.
     ToggleLeftPanel,
-    /// Toggles directly to the Warp Drive tab of the left panel in Code Mode V2
-    ToggleWarpDrive,
-    /// Unconditionally opens Warp Drive. This is used in the case of user lifecycle
-    /// events like new user onboarding or when the user joins a team.
-    OpenWarpDrive,
     /// Toggles the right panel. This happens as an explicit action from the user.
     ToggleRightPanel,
     ToggleAgentInbox,
@@ -393,13 +364,9 @@ pub enum WorkspaceAction {
     /// if the focused pane is the rendered file viewer (`FilePane`), otherwise the focused
     /// terminal session's working directory. No-op if neither yields a path.
     CopyCurrentPath,
-    /// An action only registered in dev and local builds, which writes the user's current access
-    /// token to the system clipboard to aid debugging and development.
-    CopyAccessTokenToClipboard,
     DismissWorkspaceBanner(WorkspaceBanner),
     /// An action only registered in dev and local builds, which crashes the
     /// app (via a Sentry helper method) immediately when called.
-    Crash,
     /// An action only registered in dev and local builds, which triggers a
     /// panic immediately when called.
     Panic,
@@ -415,8 +382,6 @@ pub enum WorkspaceAction {
     ToggleSyncTerminalInputsInTab,
     /// An action to force terminal input syncing off
     DisableTerminalInputSync,
-    HandleConflictingWorkflow(SyncId),
-    HandleConflictingEnvVarCollection(SyncId),
     OpenPromptEditor {
         open_source: PromptEditorOpenSource,
     },
@@ -424,27 +389,8 @@ pub enum WorkspaceAction {
     ShowHeaderToolbarContextMenu {
         position: Vector2F,
     },
-    Reauth,
-    SignupAnonymousUser,
-    SignInAnonymousWebUser,
     OpenLink(String),
-    /// On WASM, opens a given URL in the desktop Warp app (if installed) or redirects to download page.
-    #[cfg(target_family = "wasm")]
-    OpenLinkOnDesktop(url::Url),
     ReopenClosedSession,
-    OpenShareSessionModal(usize),
-    StopSharingSessionFromTabMenu {
-        terminal_view_id: EntityId,
-    },
-    StopSharingAllSessionsInTab {
-        pane_group: WeakViewHandle<PaneGroup>,
-    },
-    CopySharedSessionLinkFromTab {
-        tab_index: usize,
-    },
-    OpenSharedSessionQrCode {
-        session_id: SessionId,
-    },
     AddWindow,
     AddWindowWithShell {
         shell: AvailableShell,
@@ -453,14 +399,6 @@ pub enum WorkspaceAction {
     FocusLeftPanel,
     /// Moves focus to the panel on the right
     FocusRightPanel,
-    /// An action to view a newly created/edited workflow in WD from the toast
-    ViewObjectInWarpDrive(WarpDriveItemId),
-    /// Open the object's sharing settings in WD.
-    OpenObjectSharingSettings {
-        object_id: CloudObjectTypeAndId,
-        source: SharingDialogSource,
-    },
-    UndoTrash(CloudObjectTypeAndId),
     /// Open a local path in the file explorer.
     OpenInExplorer {
         path: PathBuf,
@@ -488,8 +426,6 @@ pub enum WorkspaceAction {
     /// information.
     #[cfg(target_os = "linux")]
     DismissWaylandCrashRecoveryBannerAndOpenLink,
-    /// Open the Environment Management pane in Create mode.
-    OpenEnvironmentManagementPane,
     FocusTerminalViewInWorkspace {
         terminal_view_id: EntityId,
     },
@@ -500,12 +436,8 @@ pub enum WorkspaceAction {
         full_path: PathBuf,
         line_and_column: Option<LineAndColumnArg>,
     },
-    OpenNotebook {
-        id: SyncId,
-    },
     RunWorkflow {
         workflow: Arc<WorkflowType>,
-        workflow_source: WorkflowSource,
         workflow_selection_source: WorkflowSelectionSource,
         argument_override: Option<HashMap<String, String>>,
     },
@@ -608,15 +540,6 @@ pub enum WorkspaceAction {
     },
     /// Opens the settings.toml file in a code editor pane.
     OpenSettingsFile,
-    /// Opens (or focuses) the in-app network log pane as a right-split of the
-    /// active pane group. Gated on `ContextFlag::NetworkLogConsole`.
-    OpenNetworkLogPane,
-    /// Opens or focuses a window scoped to the specified team.
-    OpenNewWindowForTeam {
-        team_uid: ServerId,
-    },
-    /// Shows (toggles) the team-switcher dropdown menu in the title bar.
-    ShowTeamSwitcherMenu,
     ShowWorkspaceSwitcherMenu,
     ShowCreateWorktreeModal {
         agent_catalog_index: Option<usize>,
@@ -649,35 +572,7 @@ pub enum WorkspaceAction {
     },
 }
 
-impl From<&WorkspaceAction> for LoginGatedFeature {
-    fn from(val: &WorkspaceAction) -> LoginGatedFeature {
-        use WorkspaceAction::*;
-        match val {
-            ImportToTeamDrive => "Importing to a team drive",
-            CreateTeamNotebook => "Creating a team notebook",
-            CreateTeamWorkflow => "Creating a team workflow",
-            CreateTeamFolder => "Creating a team folder",
-            CreateTeamEnvVarCollection => "Creating a team environment variable collection",
-            OpenShareSessionModal(_) => "Sharing a session",
-            _ => "Unknown reason",
-        }
-    }
-}
-
 impl WorkspaceAction {
-    pub fn blocked_for_anonymous_user(&self) -> bool {
-        use WorkspaceAction::*;
-        matches!(
-            self,
-            ImportToTeamDrive
-                | CreateTeamNotebook
-                | CreateTeamWorkflow
-                | CreateTeamFolder
-                | CreateTeamEnvVarCollection
-                | OpenShareSessionModal(_)
-        )
-    }
-
     /// Matches what actions require the app state to be saved, and which don't. We match all
     /// actions directly, rather than using _, so we're forced to make a conscious decision for each
     /// of them, rather than following some default.
@@ -752,7 +647,6 @@ impl WorkspaceAction {
             | AddWindowWithShell { .. }
             | CloseWindow
             | ScrollToSettingsWidget { .. }
-            | OpenNotebook { .. }
             | RunWorkflow { .. }
             | OpenFileInNewTab { .. }
             | NewCodeFile
@@ -769,7 +663,6 @@ impl WorkspaceAction {
             | CopyVersion(_)
             | DownloadNewVersion
             | ConfigureKeybindingSettings { .. }
-            | ExportAllWarpDriveObjects
             | ShowSettings
             | ShowSettingsPage(_)
             | ShowSettingsPageWithSearch { .. }
@@ -783,8 +676,6 @@ impl WorkspaceAction {
             | ResetZoom
             | OpenPalette { .. }
             | TogglePalette { mode: _, source: _ }
-            | ShowUpgrade
-            | ShowReferralSettingsPage
             | JoinSlack
             | ViewUserDocs
             | ViewLatestChangelog
@@ -815,24 +706,12 @@ impl WorkspaceAction {
             | ToggleMouseReporting
             | ToggleScrollReporting
             | ToggleFocusReporting
-            | ImportToPersonalDrive
-            | ImportToTeamDrive
-            | CreatePersonalNotebook
-            | CreateTeamNotebook
-            | CreatePersonalWorkflow
-            | CreateTeamWorkflow
-            | CreatePersonalFolder
-            | CreateTeamFolder
-            | CreateTeamEnvVarCollection
-            | CreatePersonalEnvVarCollection
             | OpenInExplorer { .. }
             | DragTab { .. }
             | StartTabDrag
             | DragGroup { .. }
             | StartGroupDrag(_)
             | ToggleLeftPanel
-            | ToggleWarpDrive
-            | OpenWarpDrive
             | ClosePanel
             | ToggleRightPanel
             | ToggleAgentInbox
@@ -849,13 +728,11 @@ impl WorkspaceAction {
             | ToggleWelcomeTips
             | CopyTextToClipboard(_)
             | CopyCurrentPath
-            | CopyAccessTokenToClipboard
             | OpenTabConfigRepoPicker { .. }
             | OpenNewWorktreeModal
             | OpenNewWorktreeRepoPicker
             | OpenWorktreeInRepo { .. }
             | OpenWorktreeAddRepoPicker
-            | Crash
             | Panic
             | DumpHeapProfile
             | OpenViewTreeDebugWindow
@@ -863,20 +740,10 @@ impl WorkspaceAction {
             | ToggleSyncAllTerminalInputsInAllTabs
             | ToggleSyncTerminalInputsInTab
             | DisableTerminalInputSync
-            | HandleConflictingWorkflow(_)
-            | HandleConflictingEnvVarCollection(_)
             | OpenPromptEditor { .. }
             | OpenHeaderToolbarEditor
             | ShowHeaderToolbarContextMenu { .. }
-            | Reauth
-            | SignupAnonymousUser
-            | LogOut
             | OpenLink(_)
-            | OpenShareSessionModal(_)
-            | StopSharingSessionFromTabMenu { .. }
-            | StopSharingAllSessionsInTab { .. }
-            | CopySharedSessionLinkFromTab { .. }
-            | OpenSharedSessionQrCode { .. }
             | ReopenClosedSession
             | FocusLeftPanel
             | FocusRightPanel
@@ -888,12 +755,8 @@ impl WorkspaceAction {
             | ToggleShowMemoryStats
             | RunCommand { .. }
             | InsertInInput { .. }
-            | UndoTrash(_)
             | OpenFilePath { .. }
-            | ViewObjectInWarpDrive(_)
-            | OpenObjectSharingSettings { .. }
             | TerminateApp
-            | SignInAnonymousWebUser
             | TabHoverWidthStart { .. }
             | TabHoverWidthEnd
             | FocusTerminalViewInWorkspace { .. }
@@ -921,9 +784,6 @@ impl WorkspaceAction {
             | TabConfigSidecarEditConfig { .. }
             | TabConfigSidecarRemoveConfig { .. }
             | OpenSettingsFile
-            | OpenNetworkLogPane
-            | OpenNewWindowForTeam { .. }
-            | ShowTeamSwitcherMenu
             | ShowWorkspaceSwitcherMenu
             | ShowCreateWorktreeModal { .. }
             | OpenWorktreeTab { .. }
@@ -942,11 +802,8 @@ impl WorkspaceAction {
             FileRenamed { .. } => false, // File rename doesn't change workspace state
             #[cfg(feature = "local_fs")]
             FileDeleted { .. } => false, // File deletion doesn't change workspace state
-            OpenEnvironmentManagementPane => false,
             #[cfg(target_os = "linux")]
             DismissWaylandCrashRecoveryBannerAndOpenLink => false,
-            #[cfg(target_family = "wasm")]
-            OpenLinkOnDesktop(_) => false,
             // actions that are related to updating user settings or
             // managing some ui elements (like closing/opening modals)
             // that don't reflect on actual workspace and don't need to

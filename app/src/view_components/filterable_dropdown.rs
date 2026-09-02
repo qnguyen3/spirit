@@ -37,7 +37,6 @@ pub enum FilterableDropdownEvent {
 
 #[derive(Default, Debug, PartialEq)]
 pub enum FilterableDropdownOrientation {
-    Up,
     #[default]
     Down,
 }
@@ -164,10 +163,6 @@ where
         self.style_override = Some(style);
     }
 
-    pub fn set_orientation(&mut self, orientation: FilterableDropdownOrientation) {
-        self.orientation = orientation;
-    }
-
     pub fn add_items(&mut self, items: Vec<DropdownItem<A>>, ctx: &mut ViewContext<Self>) {
         self.items.extend(items.iter().map(|item| item.into()));
         self.set_filtered_items(ctx);
@@ -194,11 +189,6 @@ where
             self.selected_item = None;
             ctx.notify();
         }
-    }
-
-    /// The number of items in the dropdown.
-    pub fn len(&self) -> usize {
-        self.items.len()
     }
 
     #[expect(dead_code)]
@@ -265,22 +255,6 @@ where
             menu.set_width(width);
             ctx.notify();
         })
-    }
-
-    /// When enabled, the open menu sizes itself to the last rendered width of
-    /// the dropdown's top bar. This is useful for flexible dropdowns whose
-    /// trigger width is determined by parent layout rather than a fixed max.
-    pub fn set_match_menu_width_to_top_bar(
-        &mut self,
-        match_width: bool,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        self.match_menu_width_to_top_bar = match_width;
-        let top_bar_label = self.top_bar_label();
-        self.dropdown.update(ctx, |menu, _ctx| {
-            menu.set_width_match_position_id(match_width.then_some(top_bar_label));
-        });
-        ctx.notify();
     }
 
     pub fn set_disabled(&mut self, ctx: &mut ViewContext<Self>) {
@@ -690,23 +664,6 @@ where
 
     pub fn set_menu_header_to_static(&mut self, header: &'static str) {
         self.static_menu_header = Some(header);
-    }
-
-    /// Test-only: drive the filter input with `query` and re-filter the list,
-    /// mirroring what happens when a user types into the search field.
-    #[cfg(test)]
-    pub(crate) fn set_filter_query_for_test(&mut self, query: &str, ctx: &mut ViewContext<Self>) {
-        self.filter_editor.update(ctx, |editor, ctx| {
-            editor.select_all(ctx);
-            editor.insert_selected_text(query, ctx);
-        });
-        self.set_filtered_items(ctx);
-    }
-
-    /// Test-only: the number of items currently visible after filtering.
-    #[cfg(test)]
-    pub(crate) fn visible_items_len_for_test(&self, ctx: &AppContext) -> usize {
-        self.dropdown_items_len(ctx)
     }
 }
 

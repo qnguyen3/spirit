@@ -4,8 +4,6 @@ use std::path::PathBuf;
 
 use command_corrections::Correction;
 use pathfinder_geometry::vector::Vector2F;
-use session_sharing_protocol::common::Role;
-use session_sharing_protocol::sharer::RoleUpdateReason;
 use warp_util::user_input::UserInput;
 use warpui::elements::HyperlinkUrl;
 use warpui::event::ModifiersState;
@@ -17,9 +15,7 @@ use super::{
     NotificationsDiscoveryBannerAction, NotificationsErrorBannerAction, RichContentLink,
     TerminalEditor,
 };
-use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
-use crate::server::ids::SyncId;
-use crate::server::telemetry::{PaletteSource, ToggleBlockFilterSource};
+use crate::palette::PaletteSource;
 use crate::terminal::available_shells::AvailableShell;
 use crate::terminal::block_list_element::{
     BlockHoverAction, BlockListMenuSource, BlockSelectAction, BlockTextSelectAction,
@@ -31,7 +27,6 @@ use crate::terminal::model::index::Point;
 use crate::terminal::model::mouse::MouseState;
 use crate::terminal::model::selection::{SelectAction, SelectionDirection};
 use crate::terminal::model::terminal_model::{BlockIndex, WithinModel};
-use crate::terminal::shared_session::SharedSessionActionSource;
 
 /// This represents whether entering a subshell for a particular command should become automatic in
 /// the future, or to ask again.
@@ -72,9 +67,6 @@ pub enum TerminalAction {
     AltScroll {
         delta: i32,
         point: Point,
-    },
-    SharedSessionViewerAltScroll {
-        new_scroll_top: Lines,
     },
     ScrollToTopOfBlock {
         topmost_block: BlockIndex,
@@ -130,7 +122,6 @@ pub enum TerminalAction {
     CopyOutputs,
     CopyCommands,
     CopyGitBranch,
-    OpenShareModal,
     ReinputCommands,
     ReinputCommandsWithSudo,
     ClearBuffer,
@@ -203,9 +194,6 @@ pub enum TerminalAction {
         layout: crate::util::file::external_editor::settings::EditorLayout,
         line_col: Option<warp_util::path::LineAndColumnArg>,
     },
-    OpenWorkflowModal,
-    OpenWorkflowModalForBlock(BlockIndex),
-    OpenWorkflowModalWithCloudWorkflow(SyncId),
     /// Starts a subshell in the active session.
     TriggerSubshellBootstrap,
     /// If the user says "no" to Warpification, possibly requesting not to be asked again
@@ -218,33 +206,14 @@ pub enum TerminalAction {
     OpenInWarpBanner(OpenInWarpBannerAction),
     OpenBlockFilterEditor(BlockIndex),
     ImportSettings,
-    StopSharingCurrentSession {
-        source: SharedSessionActionSource,
-    },
-    OpenSharedSessionOnDesktop {
-        source: SharedSessionActionSource,
-    },
-    ToggleBlockFilterOnSelectedOrLastBlock(ToggleBlockFilterSource),
+    ToggleBlockFilterOnSelectedOrLastBlock,
     ToggleCLIAgentRichInput,
-    OpenShareSessionModal {
-        source: SharedSessionActionSource,
-    },
-    CopySharedSessionLink {
-        source: SharedSessionActionSource,
-    },
     VimModeBanner(VimModeBannerAction),
     ToggleSnackbarInActivePane,
-    MakeAllParticipantsReaders {
-        reason: RoleUpdateReason,
-    },
-    OpenSharedSessionViewerRoleMenu,
-    RequestSharedSessionRole(Role),
     DragAndDropFiles(Vec<String>),
     HyperlinkClick(HyperlinkUrl),
-    AttemptLoginGatedFeature,
     StartFileDropTarget,
     StopFileDropTarget,
-    OpenTeamSettingsPage,
     SetMarkedText {
         marked_text: UserInput<String>,
         selected_range: Range<usize>,
@@ -252,19 +221,15 @@ pub enum TerminalAction {
     ClearMarkedText,
     ShowInitializationBlock,
     ShowWarpifySettings,
-    ToggleCodeReviewPane {
-        entrypoint: CodeReviewPaneEntrypoint,
-    },
+    ToggleCodeReviewPane,
     AddProjectAtCurrentDirectory,
     OpenAddPromptPane,
-    OpenBillingAndUsagePane,
     PickRepoToOpen,
     OpenFilesPalette {
         source: PaletteSource,
     },
     DismissCodeToolbeltTooltip,
     /// Open the Environment Management pane.
-    OpenEnvironmentManagementPane,
     OpenInlineHistoryMenu,
     /// Toggle PTY recording for this session.
     ToggleSessionRecording,
@@ -280,10 +245,6 @@ impl fmt::Debug for TerminalAction {
         match self {
             Scroll { delta } => write!(f, "Scroll {{ delta: {delta} }}"),
             AltScroll { delta, .. } => write!(f, "AltScroll {{ delta: {delta} }}"),
-            SharedSessionViewerAltScroll { new_scroll_top } => write!(
-                f,
-                "SharedSessionViewerAltScroll {{ new_scroll_top: {new_scroll_top} }}"
-            ),
             ScrollToTopOfBlock { topmost_block } => write!(
                 f,
                 "JumpToPreviousCommand {{ topmost_block: {topmost_block} }}"
@@ -336,7 +297,6 @@ impl fmt::Debug for TerminalAction {
             CopyOutputs => f.write_str("CopyOutputs"),
             CopyCommands => f.write_str("CopyCommands"),
             CopyGitBranch => f.write_str("CopyGitBranch"),
-            OpenShareModal => f.write_str("OpenShareModal"),
             ReinputCommands => f.write_str("ReinputCommands"),
             ReinputCommandsWithSudo => f.write_str("ReinputCommandsWithSudo"),
             ClearBuffer => f.write_str("ClearBuffer"),
@@ -403,13 +363,6 @@ impl fmt::Debug for TerminalAction {
             OpenFileInWarp(_) => f.write_str("OpenFileInWarp"),
             #[cfg(feature = "local_fs")]
             OpenCodeInWarp { .. } => f.write_str("OpenCodeInWarp"),
-            OpenWorkflowModal => f.write_str("OpenWorkflowModal"),
-            OpenWorkflowModalForBlock(block_index) => {
-                write!(f, "OpenWorkflowModalForBlock({block_index:?})")
-            }
-            OpenWorkflowModalWithCloudWorkflow(_) => {
-                f.write_str("OpenWorkflowModalWithCloudWorkflow")
-            }
             OpenBlockListContextMenu => f.write_str("OpenBlockListContextMenu"),
             TriggerSubshellBootstrap => f.write_str("TriggerSubshellBootstrap"),
             DismissWarpifyBanner(remember) => write!(f, "DismissWarpifyBanner({remember:?})"),
@@ -421,38 +374,23 @@ impl fmt::Debug for TerminalAction {
                 write!(f, "OpenBlockFilterEditor({block_index:?})")
             }
             ImportSettings => write!(f, "ImportSettings"),
-            StopSharingCurrentSession { source } => {
-                write!(f, "StopSharingCurrentSession({source:?})")
-            }
-            OpenSharedSessionOnDesktop { source } => {
-                write!(f, "OpenSharedSessionOnDesktop({source:?})")
-            }
-            ToggleBlockFilterOnSelectedOrLastBlock(_) => {
+            ToggleBlockFilterOnSelectedOrLastBlock => {
                 f.write_str("ToggleBlockFilterOnSelectedOrLastBlock")
             }
             ToggleCLIAgentRichInput => f.write_str("ToggleCLIAgentRichInput"),
-            OpenShareSessionModal { source } => write!(f, "OpenShareSessionModal({source:?})"),
-            CopySharedSessionLink { .. } => f.write_str("CopySharedSessionLink"),
             VimModeBanner(action) => write!(f, "VimModeBanner({action:?})"),
             ToggleSnackbarInActivePane => write!(f, "ToggleSnackbarInActivePane"),
-            MakeAllParticipantsReaders { reason } => {
-                write!(f, "MakeAllParticipantsReaders {{ reason: {reason:?} }}")
-            }
-            OpenSharedSessionViewerRoleMenu => write!(f, "OpenSharedSessionViewerRoleMenu"),
-            RequestSharedSessionRole(role) => write!(f, "RequestSharedSessionRole({role:?})"),
             MiddleClickOnGrid { position } => {
                 write!(f, "MiddleClickonGrid {{ position: {position:?} }}")
             }
             MiddleClickOnInput => write!(f, "MiddleClickOnInput"),
             DragAndDropFiles(_) => write!(f, "DragAndDropFiles"),
             HyperlinkClick(hyperlink_url) => write!(f, "HyperlinkClick({hyperlink_url:?})"),
-            AttemptLoginGatedFeature => write!(f, "AttemptLoginGatedFeature"),
             StartFileDropTarget => write!(f, "StartFileDropTarget"),
             StopFileDropTarget => write!(f, "StopFileDropTarget"),
             RunNativeShellCompletions { buffer_text, .. } => {
                 write!(f, "RunNativeShellCompletions({buffer_text:?})")
             }
-            OpenTeamSettingsPage => write!(f, "OpenTeamSettingsPage"),
             SetMarkedText {
                 marked_text,
                 selected_range,
@@ -460,14 +398,12 @@ impl fmt::Debug for TerminalAction {
             ClearMarkedText => write!(f, "ClearMarkedText"),
             ShowInitializationBlock => write!(f, "ShowInitializationBlock"),
             ShowWarpifySettings => write!(f, "ShowWarpifySettings"),
-            ToggleCodeReviewPane { .. } => write!(f, "ToggleCodeReviewPane"),
+            ToggleCodeReviewPane => write!(f, "ToggleCodeReviewPane"),
             AddProjectAtCurrentDirectory => write!(f, "AddProjectAtCurrentDirectory"),
             OpenAddPromptPane => write!(f, "OpenAddPromptPane"),
-            OpenBillingAndUsagePane => write!(f, "OpenBillingAndUsagePane"),
             PickRepoToOpen => write!(f, "PickRepoToOpen"),
             OpenFilesPalette { .. } => write!(f, "OpenFilesPalette"),
             DismissCodeToolbeltTooltip => write!(f, "DismissCodeToolbeltTooltip"),
-            OpenEnvironmentManagementPane => write!(f, "OpenEnvironmentManagementPane"),
             OpenInlineHistoryMenu => write!(f, "OpenInlineHistoryMenu"),
             ToggleSessionRecording => write!(f, "ToggleSessionRecording"),
             Osc52AllowBlockedClipboardOperation => {

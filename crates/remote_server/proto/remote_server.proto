@@ -74,7 +74,6 @@ message Notification {
   oneof message {
     Abort abort = 1;
     Authenticate authenticate = 2;
-    UpdatePreferences update_preferences = 3;
     SessionBootstrapped session_bootstrapped = 4;
     BufferEdit buffer_edit = 5;
     CloseBuffer close_buffer = 6;
@@ -135,11 +134,9 @@ message Initialize {
   // Empty means no credential was available and does not clear an existing
   // daemon credential.
   string auth_token = 1;
-  // User identity for Sentry crash reports. Empty when not logged in.
+  // User identity. Empty when not logged in.
   string user_id = 2;
   string user_email = 3;
-  // Whether the user has enabled crash reporting in their privacy settings.
-  bool crash_reporting_enabled = 4;
   // Client-resolved codebase index limits for parity with local indexing.
   optional CodebaseIndexLimits codebase_index_limits = 5;
 }
@@ -151,13 +148,6 @@ message Authenticate {
   // Empty means no credential was available and does not clear an existing
   // daemon credential.
   string auth_token = 1;
-}
-
-// Sent by the client when the user's privacy preferences change.
-// This is a notification (fire-and-forget) — the server does not send a response.
-message UpdatePreferences {
-  bool crash_reporting_enabled = 1;
-  optional CodebaseIndexLimits codebase_index_limits = 2;
 }
 
 message CodebaseIndexLimits {

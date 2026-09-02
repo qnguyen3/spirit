@@ -8,12 +8,9 @@ use warpui::platform::FullscreenState;
 use warpui::{AppContext, SingletonEntity as _};
 
 use crate::code::editor_management::CodeSource;
-use crate::drive::OpenWarpDriveObjectSettings;
 use crate::projects::{ProjectId, WorktreeId};
 use crate::root_view::quake_mode_window_id;
-use crate::server::ids::{ServerId, SyncId};
 use crate::settings_view::SettingsSection;
-use crate::settings_view::environments_page::EnvironmentsPage;
 use crate::tab::SelectedTabColor;
 use crate::terminal::ShellLaunchData;
 use crate::terminal::model::block::SerializedBlock;
@@ -36,13 +33,11 @@ pub struct PaneUuid(pub Vec<u8>);
 pub struct WindowSnapshot {
     pub screens: Vec<ProjectScreenSnapshot>,
     pub active_screen_index: usize,
-    pub team_uid: Option<ServerId>,
     pub bounds: Option<RectF>,
     pub fullscreen_state: FullscreenState,
     pub quake_mode: bool,
     pub universal_search_width: Option<f32>,
     pub voltron_width: Option<f32>,
-    pub warp_drive_index_width: Option<f32>,
     pub left_panel_open: bool,
     pub vertical_tabs_panel_open: bool,
     pub left_panel_width: Option<f32>,
@@ -167,14 +162,8 @@ pub enum LeafContents {
     Terminal(TerminalPaneSnapshot),
     Notebook(NotebookPaneSnapshot),
     Code(CodePaneSnapShot),
-    EnvVarCollection(EnvVarCollectionPaneSnapshot),
-    EnvironmentManagement(EnvironmentManagementPaneSnapshot),
-    Workflow(WorkflowPaneSnapshot),
     Settings(SettingsPaneSnapshot),
     CodeReview(CodeReviewPaneSnapshot),
-    /// The in-app network log pane. Not persisted across restarts because the
-    /// backing log is an in-memory ring buffer that starts empty on launch.
-    NetworkLog,
     /// A new first-time user experience which prioritizes choosing a coding repository.
     GetStarted,
     AgentPicker,
@@ -193,19 +182,12 @@ impl LeafContents {
     /// restoration to fail and the whole tab to disappear on restart.
     pub(crate) fn is_persisted(&self) -> bool {
         match self {
-            // Network log: the backing log is an in-memory ring buffer that
-            // starts empty on launch; persisting would also regress back to
-            // an on-disk log via the app-state database.
-            LeafContents::NetworkLog
             // Environment management panes are opened on-demand via workspace
             // actions and have no persistable state.
-            | LeafContents::EnvironmentManagement(_)
-            | LeafContents::AgentPicker => false,
+            LeafContents::AgentPicker => false,
             LeafContents::Terminal(_)
             | LeafContents::Notebook(_)
             | LeafContents::Code(_)
-            | LeafContents::EnvVarCollection(_)
-            | LeafContents::Workflow(_)
             | LeafContents::Settings(_)
             | LeafContents::CodeReview(_)
             | LeafContents::GetStarted => true,
@@ -225,18 +207,6 @@ pub struct TerminalPaneSnapshot {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum NotebookPaneSnapshot {
-    CloudNotebook {
-        /// The ID of the notebook that was open in this pane. There are 3 possibilities:
-        /// 1. The pane contains a newly-created notebook that has not been edited yet. It might not
-        ///    have an ID yet (client or server), so this will be `None`.
-        /// 2. The pane contains a notebook that hasn't been synced to the server yet, so this will
-        ///    contain a client ID that should exist in SQLite.
-        /// 3. The pane contains a notebook that's known to the server, so this will contain the
-        ///    server ID.
-        notebook_id: Option<SyncId>,
-        // Settings for the notebook pane when it's opened (such as a folder to focus upon opening)
-        settings: OpenWarpDriveObjectSettings,
-    },
     LocalFileNotebook {
         /// The path to the local file that was open in this pane. This may be `None` if
         /// the pane contained an unreadable file.
@@ -260,29 +230,6 @@ pub enum CodePaneSnapShot {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum WorkflowPaneSnapshot {
-    CloudWorkflow {
-        workflow_id: Option<SyncId>,
-        // Settings for the workflow pane when it's opened (such as a folder to focus upon opening)
-        settings: OpenWarpDriveObjectSettings,
-    },
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum EnvVarCollectionPaneSnapshot {
-    // CloudEnvVarCollection snapshots operate under the same heuristics
-    // as NotebookPaneSnapshot::CloudNotebook
-    CloudEnvVarCollection {
-        env_var_collection_id: Option<SyncId>,
-    },
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct EnvironmentManagementPaneSnapshot {
-    pub mode: EnvironmentsPage,
-}
-
-#[derive(Clone, Debug, PartialEq)]
 pub enum SettingsPaneSnapshot {
     Local {
         current_page: SettingsSection,
@@ -302,7 +249,6 @@ pub enum CodeReviewPaneSnapshot {
 pub enum LeftPanelDisplayedTab {
     FileTree,
     GlobalSearch,
-    WarpDrive,
     SourceControl,
 }
 
@@ -311,7 +257,6 @@ impl From<ToolPanelView> for LeftPanelDisplayedTab {
         match view {
             ToolPanelView::ProjectExplorer => LeftPanelDisplayedTab::FileTree,
             ToolPanelView::GlobalSearch { .. } => LeftPanelDisplayedTab::GlobalSearch,
-            ToolPanelView::WarpDrive => LeftPanelDisplayedTab::WarpDrive,
             ToolPanelView::SourceControl => LeftPanelDisplayedTab::SourceControl,
         }
     }

@@ -7,10 +7,9 @@ use warpui::elements::{
     Border, Container, CornerRadius, Flex, MouseStateHandle, ParentElement, Radius, Text,
 };
 use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
-use warpui::{AppContext, Element, EventContext, SingletonEntity};
+use warpui::{AppContext, Element, EventContext};
 
 use crate::appearance::Appearance;
-use crate::settings::PrivacySettings;
 use crate::terminal::model::secrets::SecretLevel;
 use crate::ui_components::blended_colors;
 
@@ -62,7 +61,7 @@ pub fn render_tooltip<OnClick>(
     tooltip_links: impl IntoIterator<Item = TooltipLink<OnClick>>,
     redaction: TooltipRedaction,
     appearance: &Appearance,
-    app: &AppContext,
+    _app: &AppContext,
 ) -> Box<dyn Element>
 where
     OnClick: 'static + Fn(&mut EventContext),
@@ -186,16 +185,13 @@ where
         }
     }
 
-    let is_secret = matches!(
+    let _is_secret = matches!(
         redaction,
         TooltipRedaction::SecretNotSentToLLMMessaging { .. }
             | TooltipRedaction::SecretWillNotBeSentToLLMMessaging { .. }
     );
 
-    // If enterprise secret redaction is enabled, add additional messaging and padding to the tooltip.
-    let is_enterprise_secret_redaction_enabled =
-        is_secret && PrivacySettings::as_ref(app).is_enterprise_secret_redaction_enabled();
-    let tooltip_element = if is_enterprise_secret_redaction_enabled {
+    let tooltip_element = if false {
         let tooltip_column = Flex::column()
             .with_child(tooltip.finish())
             .with_child(

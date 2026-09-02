@@ -9,7 +9,6 @@ use warpui::platform::Cursor;
 use warpui::{AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext};
 
 use crate::appearance::Appearance;
-use crate::drive::settings::{WarpDriveSettings, WarpDriveSettingsChangedEvent};
 use crate::search::{FilterChipRenderer, QueryFilter};
 
 lazy_static! {
@@ -19,10 +18,6 @@ lazy_static! {
     static ref SAMPLE_QUERY_TO_FILTER: HashMap<&'static str, QueryFilter> = HashMap::from([
         ("history: git checkout", QueryFilter::History),
         ("workflows: run dev server", QueryFilter::Workflows),
-        (
-            "notebooks: deploy production server",
-            QueryFilter::Notebooks
-        ),
     ]);
 }
 
@@ -43,13 +38,7 @@ pub struct CommandSearchZeroStateView {
 }
 
 impl CommandSearchZeroStateView {
-    pub fn new(ctx: &mut ViewContext<Self>) -> Self {
-        ctx.subscribe_to_model(&WarpDriveSettings::handle(ctx), |_, _, event, ctx| {
-            if let WarpDriveSettingsChangedEvent::EnableWarpDrive { .. } = event {
-                ctx.notify();
-            }
-        });
-
+    pub fn new(_ctx: &mut ViewContext<Self>) -> Self {
         Self {
             filter_chip_to_mouse_state_handle: QueryFilter::all()
                 .map(|filter| (filter, MouseStateHandle::default()))
@@ -195,7 +184,7 @@ impl View for CommandSearchZeroStateView {
         .with_margin_bottom(styles::COMMAND_SEARCH_TEXT_MARGIN_BOTTOM)
         .finish();
 
-        let valid_filters = valid_query_filters(app);
+        let valid_filters = valid_query_filters();
 
         let column = Flex::column()
             .with_child(command_search_text)
@@ -271,18 +260,9 @@ impl TypedActionView for CommandSearchZeroStateView {
     }
 }
 
-/// Returns list of valid query filters that may be applied. This does not include notebooks if the
-/// notebooks feature flag is disabled.
-fn valid_query_filters(app: &AppContext) -> Vec<QueryFilter> {
-    let mut filters = vec![QueryFilter::History];
-
-    if WarpDriveSettings::is_warp_drive_enabled(app) {
-        filters.extend([QueryFilter::Workflows, QueryFilter::Notebooks]);
-
-        filters.push(QueryFilter::EnvironmentVariables);
-    }
-
-    filters
+/// Returns list of valid query filters that may be applied.
+fn valid_query_filters() -> Vec<QueryFilter> {
+    vec![QueryFilter::History, QueryFilter::Workflows]
 }
 
 mod styles {

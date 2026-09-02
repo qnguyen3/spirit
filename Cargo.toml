@@ -5,15 +5,12 @@ members = [
 ]
 resolver = "2"
 
-# Include all members except serve-wasm (since it's a helper helper for serving
-# wasm binaries and not something we want to regularly compile or run
-# tests against) and integration (since it is only used for testing).
+# Include all members except integration (since it is only used for testing).
 default-members = [
   "app",
   "crates/channel_versions",
   "crates/command",
   "crates/editor",
-  "crates/graphql",
   "crates/markdown_parser",
   "crates/sum_tree",
   "crates/warpui",
@@ -29,17 +26,11 @@ publish = false
 
 [workspace.dependencies]
 # Local workspace crates. This lets us reference them in other crates without specifying a path.
-app-installation-detection = { path = "crates/app-installation-detection" }
 asset_cache = { path = "crates/asset_cache" }
 asset_macro = { path = "crates/asset_macro" }
 channel_versions = { path = "crates/channel_versions", default-features = false }
 command = { path = "crates/command" }
 command-signatures-v2 = { path = "crates/command-signatures-v2" }
-cloud_objects = { path = "crates/cloud_objects" }
-cloud_object_client = { path = "crates/cloud_object_client" }
-cloud_object_persistence = { path = "crates/cloud_object_persistence" }
-cloud_object_models = { path = "crates/cloud_object_models" }
-firebase = { path = "crates/firebase" }
 fuzzy_match = { path = "crates/fuzzy_match" }
 handlebars = { path = "crates/handlebars" }
 http_client = { path = "crates/http_client" }
@@ -78,19 +69,13 @@ warp_editor = { path = "crates/editor" }
 warp_errors = { path = "crates/warp_errors" }
 warp_features = { path = "crates/warp_features" }
 warp_files = { path = "crates/warp_files" }
-warp_graphql = { path = "crates/graphql" }
-warp_graphql_schema = { path = "crates/warp_graphql_schema" }
 warp_isolation_platform = { path = "crates/isolation_platform" }
 warp_js = { path = "crates/warp_js" }
 warp_logging = { path = "crates/warp_logging" }
-warp_managed_secrets = { path = "crates/managed_secrets" }
 warp_ripgrep = { path = "crates/warp_ripgrep" }
 warp_search_core = { path = "crates/warp_search_core" }
-warp_server_auth = { path = "crates/warp_server_auth" }
-warp_server_client = { path = "crates/warp_server_client" }
 warp_terminal = { path = "crates/warp_terminal" }
 warp_util = { path = "crates/warp_util" }
-warp_web_event_bus = { path = "crates/warp_web_event_bus" }
 warpui = { path = "crates/warpui" }
 warpui_core = { path = "crates/warpui_core" }
 warpui_extras = { path = "crates/warpui_extras", default-features = false }
@@ -133,8 +118,6 @@ clap = { version = "4.5", features = ["derive"] }
 cocoa = "=0.26.0"
 ctrlc = "3.4.7"
 crc = "3.4.0"
-cynic = { version = "3" }
-cynic-codegen = { version = "3", features = ["rkyv"] }
 dashmap = "6.1.0"
 derive_more = "0.99.17"
 diesel = { version = "2.3.8", default-features = false }
@@ -158,7 +141,6 @@ gloo = { version = "0.11.0", default-features = false, features = [
   "futures",
   "utils",
 ] }
-graphql-ws-client = { version = "0.11.1", default-features = false }
 hashbrown = "0.17.1"
 hex = "0.4.3"
 # This matches the version of hyper used by reqwest.
@@ -196,16 +178,6 @@ nix = { version = "0.26.4", default-features = false, features = ["signal"] }
 notify-debouncer-full = { git = "https://github.com/warpdotdev/notify", rev = "91b719849bc04ef251bcb2cc61076b099204e970" }
 nom = "7.1.1"
 num-traits = "0.2"
-oauth2 = { version = "5.0.0", default-features = false }
-opentelemetry = { version = "0.32.0", default-features = false, features = ["trace"] }
-opentelemetry-http = "0.32.0"
-opentelemetry-otlp = { version = "0.32.0", default-features = false, features = [
-  "gzip-http",
-  "http-proto",
-  "trace",
-  "zstd-http",
-] }
-opentelemetry_sdk = { version = "0.32.1", default-features = false, features = ["trace"] }
 openh264 = "0.8"
 static_assertions = "1.1.0"
 url = "2.5.4"
@@ -245,23 +217,11 @@ reqwest = { version = "0.13", features = [
   "query",
   "stream",
 ] }
-reqwest-eventsource = { package = "aha-reqwest-eventsource", version = "0.1" }
 resvg = "0.47.0"
 rust-embed = { version = "8.7.0", features = ["include-exclude"] }
 rustc-hash = "2.1.1"
 rustls = "0.23.39"
 schemars = { version = "1", features = ["chrono04"] }
-sentry = { version = "0.47.0", default-features = false, features = [
-  "anyhow",
-  "backtrace",
-  "contexts",
-  "debug-images",
-  "panic",
-  "release-health",
-  "reqwest",
-  "rustls",
-] }
-sentry-log = "0.47.0"
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_bytes = "0.11"
 serde-bytes-repr = "0.3"
@@ -269,7 +229,6 @@ serde_json = { version = "1.0", features = ["raw_value"] }
 serde_urlencoded = "0.7"
 serde_with = "^3.21"
 serde_yaml = "0.8"
-session-sharing-protocol = { git = "https://github.com/warpdotdev/session-sharing-protocol.git", rev = "b30fdd06379a3d073b398eabd106abed5b443aae" }
 similar = { version = "2.7", features = ["inline"] }
 simplelog = "0.12.2"
 smallvec = "1.6.1"
@@ -286,11 +245,6 @@ tower = "0.5.2"
 tower-http = "0.6.6"
 tracing = "0.1.40"
 tracing-futures = "0.2.5"
-tracing-opentelemetry = { version = "0.33.0", default-features = false }
-tracing-subscriber = { version = "0.3.22", default-features = false, features = [
-  "registry",
-  "std",
-] }
 arborium = { version = "2", default-features = false, features = [
   "lang-rust",
   "lang-go",
@@ -383,7 +337,6 @@ shellexpand = "3.1.1"
 warp-command-signatures = { git = "https://github.com/warpdotdev/command-signatures.git", rev = "d3725aa42375cc229699c87be2b38f9d9f07080f", default-features = false }
 winit = { git = "https://github.com/warpdotdev/winit.git", rev = "a4e0ecb5f9626ccac9445a73dc28354b52423abc" }
 x11rb = "0.13.0"
-mockito = "1.7.0"
 sysinfo = { version = "0.37.0", default-features = false, features = [
   "system",
   "multithread",
@@ -547,16 +500,9 @@ objc = { git = "https://github.com/warpdotdev/rust-objc.git", rev = "5b656827fa9
 pathfinder_simd = { git = "https://github.com/warpdotdev/pathfinder.git", rev = "34128a129ca6aee168fbc5060a4f21b4f7e486a9" }
 yaml-rust = { git = "https://github.com/warpdotdev/yaml-rust.git", rev = "51684719d0102ca85ff4b21cec39877a0c669e19" }
 
-tink-core = { git = "https://github.com/warpdotdev/tink-rust", rev = "54b9ac9af93b0c08b446a7bc0582836c9403a71b" }
-tink-proto = { git = "https://github.com/warpdotdev/tink-rust", rev = "54b9ac9af93b0c08b446a7bc0582836c9403a71b" }
-tink-hybrid = { git = "https://github.com/warpdotdev/tink-rust", rev = "54b9ac9af93b0c08b446a7bc0582836c9403a71b" }
-
 tikv-jemallocator = { git = "https://github.com/warpdotdev/jemallocator.git", rev = "2ee30bfdf7059223b54810e4ea6c666f0a379e0b" }
 tikv-jemalloc-sys = { git = "https://github.com/warpdotdev/jemallocator.git", rev = "2ee30bfdf7059223b54810e4ea6c666f0a379e0b" }
 
 [patch."https://github.com/warpdotdev/warp-proto-apis.git"]
 # Uncomment for local development of warp-proto-apis
 
-[patch."https://github.com/warpdotdev/session-sharing-protocol.git"]
-# Uncomment for local development of session-sharing-protocol
-# session-sharing-protocol = { path = "../session-sharing-protocol" }

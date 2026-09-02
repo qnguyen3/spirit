@@ -276,6 +276,37 @@ impl From<ShellType> for warp_util::path::ShellFamily {
     }
 }
 
+/// Serializes environment variable assignments into a prefix that can be prepended to a command
+/// line for the given shell.
+pub fn serialize_variables_for_shell<'s, I: IntoIterator<Item = (&'s str, &'s str)>>(
+    pairs: I,
+    shell_type: ShellType,
+) -> String {
+    let shell_family = warp_util::path::ShellFamily::from(shell_type);
+    let escape_value = |value: &str| match shell_family {
+        warp_util::path::ShellFamily::Posix => shell_family.escape(value).into_owned(),
+        warp_util::path::ShellFamily::PowerShell => format!("'{}'", value.replace('\'', "''")),
+    };
+    let (prefix, separator, postfix, delimiter) = match shell_type {
+        // Warp doesn't support newlines in fish so we can't use env syntax
+        ShellType::Fish => ("set -x ", " ", ";", " "),
+        ShellType::Bash | ShellType::Zsh => ("", "=", "", " "),
+        ShellType::PowerShell => ("$env:", " = ", ";", " "),
+    };
+
+    pairs
+        .into_iter()
+        .map(|(name, value)| {
+            format!(
+                "{prefix}{}{separator}{}{postfix}",
+                shell_family.escape(name),
+                escape_value(value)
+            )
+        })
+        .collect_vec()
+        .join(delimiter)
+}
+
 impl ShellType {
     // Returns a shell type from a shell executable name
     pub fn from_name(name: &str) -> Option<Self> {

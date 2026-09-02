@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use warp_util::standardized_path::StandardizedPath;
 use warpui::App;
@@ -11,8 +10,7 @@ use super::super::proto::{
 };
 use super::super::protocol::RequestId;
 use super::super::server_buffer_tracker::ServerBufferTracker;
-use super::{ConnectionId, PendingFileOps, ServerModel};
-use crate::auth::auth_state::AuthState;
+use super::{ClientAuthContext, ConnectionId, PendingFileOps, ServerModel};
 use crate::code_review::diff_state::DiffMode;
 use crate::remote_server::diff_state_tracker::DiffModelKey;
 
@@ -25,7 +23,7 @@ fn test_model(app: &mut App) -> ServerModel {
         host_id: "test-host-id".to_string(),
         executors: HashMap::new(),
         pending_file_ops: PendingFileOps::new(),
-        auth_state: Arc::new(AuthState::new_logged_out_for_test()),
+        client_auth: ClientAuthContext::default(),
         buffers: ServerBufferTracker::new(),
         diff_states: app.add_model(|_| RemoteDiffStateManager::new()),
         host_scoped_requests: HashMap::new(),
@@ -51,8 +49,8 @@ fn fresh_model_starts_without_auth_token() {
         let model = test_model(&mut app);
 
         assert_eq!(model.auth_token().as_deref(), None);
-        assert_eq!(model.auth_state.user_id(), None);
-        assert_eq!(model.auth_state.user_email(), None);
+        assert_eq!(model.client_auth.user_id(), None);
+        assert_eq!(model.client_auth.user_email(), None);
     });
 }
 
@@ -65,19 +63,12 @@ fn initialize_with_auth_token_stores_token() {
             auth_token: "initial-token".to_string(),
             user_id: "test-user-id".to_string(),
             user_email: "test@example.com".to_string(),
-            crash_reporting_enabled: true,
             codebase_index_limits: None,
         });
 
         assert_eq!(model.auth_token().as_deref(), Some("initial-token"));
-        assert_eq!(
-            model.auth_state.user_id().unwrap().as_string(),
-            "test-user-id"
-        );
-        assert_eq!(
-            model.auth_state.user_email().as_deref(),
-            Some("test@example.com")
-        );
+        assert_eq!(model.client_auth.user_id(), Some("test-user-id"));
+        assert_eq!(model.client_auth.user_email(), Some("test@example.com"));
     });
 }
 
@@ -89,7 +80,6 @@ fn empty_initialize_clears_auth_context() {
             auth_token: "initial-token".to_string(),
             user_id: "test-user-id".to_string(),
             user_email: "test@example.com".to_string(),
-            crash_reporting_enabled: true,
             codebase_index_limits: None,
         });
 
@@ -97,13 +87,12 @@ fn empty_initialize_clears_auth_context() {
             auth_token: String::new(),
             user_id: String::new(),
             user_email: String::new(),
-            crash_reporting_enabled: true,
             codebase_index_limits: None,
         });
 
         assert_eq!(model.auth_token().as_deref(), None);
-        assert_eq!(model.auth_state.user_id(), None);
-        assert_eq!(model.auth_state.user_email(), None);
+        assert_eq!(model.client_auth.user_id(), None);
+        assert_eq!(model.client_auth.user_email(), None);
     });
 }
 
@@ -115,7 +104,6 @@ fn authenticate_with_auth_token_replaces_auth_token() {
             auth_token: "initial-token".to_string(),
             user_id: String::new(),
             user_email: String::new(),
-            crash_reporting_enabled: true,
             codebase_index_limits: None,
         });
 
@@ -135,7 +123,6 @@ fn empty_authenticate_clears_auth_token() {
             auth_token: "initial-token".to_string(),
             user_id: String::new(),
             user_email: String::new(),
-            crash_reporting_enabled: true,
             codebase_index_limits: None,
         });
 

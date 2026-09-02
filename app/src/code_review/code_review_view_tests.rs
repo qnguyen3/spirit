@@ -14,8 +14,6 @@ use warpui::{App, ViewHandle};
 
 use super::*;
 use crate::NotebookKeybindings;
-use crate::auth::AuthStateProvider;
-use crate::cloud_object::model::persistence::CloudModel;
 use crate::code::buffer_location::LocalOrRemotePath;
 use crate::code::editor::view::{CodeEditorRenderOptions, CodeEditorView};
 use crate::code::local_code_editor::LocalCodeEditorView;
@@ -31,17 +29,12 @@ use crate::code_review::editor_state::CodeReviewEditorState;
 use crate::code_review::git_repo_model::GitRepoModels;
 use crate::pane_group::WorkingDirectoriesModel;
 use crate::persisted_workspace::PersistedWorkspace;
-use crate::server::server_api::ServerApiProvider;
-use crate::server::server_api::team::MockTeamClient;
-use crate::server::server_api::workspace::MockWorkspaceClient;
-use crate::server::telemetry::context_provider::AppTelemetryContextProvider;
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
 use crate::terminal::local_shell::LocalShellState;
 use crate::test_util::settings::initialize_settings_for_tests;
 use crate::vim_registers::VimRegisters;
 use crate::workspace::ActiveSession;
 use crate::workspace::sync_inputs::SyncedInputState;
-use crate::workspaces::user_workspaces::UserWorkspaces;
 
 #[derive(Default)]
 struct TestView;
@@ -67,8 +60,6 @@ impl warpui::TypedActionView for TestView {
 /// Initialize required singletons for testing
 fn initialize_test_app(app: &mut App) {
     initialize_settings_for_tests(app);
-    app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(|_| SyncedInputState::mock());
     app.add_singleton_model(|_| VimRegisters::new());
@@ -79,20 +70,10 @@ fn initialize_test_app(app: &mut App) {
     app.add_singleton_model(|_| LocalShellState::NotLoaded);
     app.add_singleton_model(PersistedWorkspace::new_for_test);
     app.add_singleton_model(|_| GlobalCodeReviewModel);
-    app.add_singleton_model(|ctx| {
-        UserWorkspaces::mock(
-            Arc::new(MockTeamClient::new()),
-            Arc::new(MockWorkspaceClient::new()),
-            vec![],
-            ctx,
-        )
-    });
 
     // Add mocks required by rich text editor (used in the CommentEditor)
-    app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(|_| ActiveSession::default());
     app.add_singleton_model(NotebookKeybindings::new);
-    app.add_singleton_model(|_| ServerApiProvider::new_for_test());
 }
 
 /// Creates a LocalCodeEditorView with the given content

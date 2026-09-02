@@ -31,7 +31,7 @@ use warp_errors::report_if_error;
 use warpui_core::{AppContext, SingletonEntity};
 
 use super::event_loop::{PTY_TOKEN, SIGNALS_TOKEN};
-use super::spawner::{PtyHandle, PtySpawnHooks, PtySpawnInfo, PtySpawner};
+use super::spawner::{PtyHandle, PtySpawnInfo, PtySpawner};
 use super::{ChildEvent, EventedPty, EventedReadWrite, PtyOptions, SizeInfo};
 use crate::ASSETS;
 use crate::bootstrap::raw_init_shell_script_for_shell;
@@ -550,10 +550,8 @@ fn spawn_command_in_pty(
             if is_isolated {
                 // If running in a sandbox on Linux, adjust the OOM score
                 // to make the child process more likely to be killed than the parent process
-                // in case of OOM. If the Warp process is killed while hosting an ambient
-                // agent, its shared session will abruptly end with no user-visible error.
-                // Instead, we want to kill whatever process the agent spawned that's using
-                // lots of memory. This gives the agent a chance to gracefully fail.
+                // in case of OOM. Instead, we want to kill whatever process the agent spawned
+                // that's using lots of memory. This gives the agent a chance to gracefully fail.
                 //
                 // Try to open /proc/self/oom_score_adj and set it to a positive value.
                 // Valid values are between -1000 and 1000, where lower values are less likely
@@ -589,11 +587,7 @@ fn spawn_command_in_pty(
 
 impl Pty {
     /// Create a new pty and return a handle to interact with it.
-    pub fn new(
-        options: PtyOptions,
-        hooks: &dyn PtySpawnHooks,
-        ctx: &mut AppContext,
-    ) -> Result<Self> {
+    pub fn new(options: PtyOptions, ctx: &mut AppContext) -> Result<Self> {
         let size = options.size;
         let shell = options.shell_starter.shell_type();
 
@@ -602,9 +596,7 @@ impl Pty {
             .context("error preparing signal handling")?;
 
         let (PtySpawnResult { pid, leader_fd }, pty_handle) = PtySpawner::handle(ctx)
-            .update(ctx, |pty_spawner, ctx| {
-                pty_spawner.spawn_pty(options, hooks, ctx)
-            })?;
+            .update(ctx, |pty_spawner, _ctx| pty_spawner.spawn_pty(options))?;
 
         log::info!(
             "Successfully spawned child {} process with pid {}",

@@ -26,12 +26,10 @@ use crate::modal::{Modal, ModalEvent, ModalViewState};
 use crate::pane_group::NewTerminalOptions;
 use crate::persisted_workspace::PersistedWorkspace;
 use crate::root_view::NewWorkspaceSource;
-use crate::server::server_api::ServerTime;
 use crate::view_components::DismissibleToast;
 use crate::workspace::{
     NotificationOrigin, PaneViewLocator, ToastStack, Workspace, WorkspaceEvent, WorkspaceRegistry,
 };
-use crate::{TelemetryEvent, send_telemetry_from_ctx};
 
 pub const MULTIPLE_SCREENS_FLAG: &str = "ProjectHost_MultipleScreens";
 
@@ -125,7 +123,6 @@ pub struct ProjectHost {
     screens: Vec<ProjectScreen>,
     active_screen_index: usize,
     global_resource_handles: GlobalResourceHandles,
-    server_time: Option<Arc<ServerTime>>,
     new_workspace_modal: ModalViewState<Modal<NewWorkspaceModal>>,
     overview: ViewHandle<WorkspaceOverviewView>,
     overview_active: bool,
@@ -299,12 +296,10 @@ impl ProjectHost {
         self.activate_screen(index, ctx);
         self.active_workspace()
             .update(ctx, |workspace, ctx| workspace.focus_pane(*locator, ctx));
-        send_telemetry_from_ctx!(TelemetryEvent::NotificationClicked, ctx);
     }
 
     pub fn new(
         global_resource_handles: GlobalResourceHandles,
-        server_time: Option<Arc<ServerTime>>,
         workspace_setting: NewWorkspaceSource,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
@@ -315,13 +310,7 @@ impl ProjectHost {
             .into_iter()
             .map(|(project_id, setting)| {
                 let workspace = ctx.add_typed_action_view(|ctx| {
-                    Workspace::new(
-                        global_resource_handles.clone(),
-                        server_time.clone(),
-                        setting,
-                        project_id,
-                        ctx,
-                    )
+                    Workspace::new(global_resource_handles.clone(), setting, project_id, ctx)
                 });
                 Self::subscribe_to_workspace(&workspace, ctx);
                 ProjectScreen {
@@ -340,7 +329,6 @@ impl ProjectHost {
             screens,
             active_screen_index,
             global_resource_handles,
-            server_time,
             new_workspace_modal,
             overview,
             overview_active: false,
@@ -596,7 +584,6 @@ impl ProjectHost {
         let workspace = ctx.add_typed_action_view(|ctx| {
             Workspace::new(
                 self.global_resource_handles.clone(),
-                self.server_time.clone(),
                 NewWorkspaceSource::Session {
                     options: Box::new(NewTerminalOptions {
                         initial_directory: Some(root_path),

@@ -65,10 +65,7 @@ fn summary_pane_kind_icons_pick_two_oldest_distinct_pane_kinds() {
         select_summary_pane_kind_icons([
             (EntityId::from_usize(30), SummaryPaneKind::Terminal),
             (EntityId::from_usize(20), code_summary_kind("main.rs")),
-            (
-                EntityId::from_usize(40),
-                SummaryPaneKind::Notebook { is_plan: false },
-            ),
+            (EntityId::from_usize(40), SummaryPaneKind::File,),
             (EntityId::from_usize(10), SummaryPaneKind::Terminal),
         ]),
         Some(SummaryPaneKindIcons::Pair {
@@ -283,14 +280,7 @@ fn preferred_cli_agent_tab_title_falls_back_when_preferred_text_is_missing() {
 }
 
 fn pane_type_supports_vertical_tabs_detail_sidecar(pane_type: IPaneType) -> bool {
-    matches!(
-        pane_type,
-        IPaneType::Terminal
-            | IPaneType::Code
-            | IPaneType::Notebook
-            | IPaneType::Workflow
-            | IPaneType::EnvVarCollection
-    )
+    matches!(pane_type, IPaneType::Terminal | IPaneType::Code)
 }
 
 fn collect_normalized_unique_summary_texts(
@@ -315,21 +305,12 @@ fn collect_normalized_unique_summary_texts(
 }
 
 #[test]
-fn detail_sidecar_supports_terminal_code_and_warp_drive_object_panes() {
+fn detail_sidecar_supports_terminal_and_code_panes() {
     assert!(pane_type_supports_vertical_tabs_detail_sidecar(
         IPaneType::Terminal
     ));
     assert!(pane_type_supports_vertical_tabs_detail_sidecar(
         IPaneType::Code
-    ));
-    assert!(pane_type_supports_vertical_tabs_detail_sidecar(
-        IPaneType::Notebook
-    ));
-    assert!(pane_type_supports_vertical_tabs_detail_sidecar(
-        IPaneType::Workflow
-    ));
-    assert!(pane_type_supports_vertical_tabs_detail_sidecar(
-        IPaneType::EnvVarCollection
     ));
     assert!(!pane_type_supports_vertical_tabs_detail_sidecar(
         IPaneType::Settings

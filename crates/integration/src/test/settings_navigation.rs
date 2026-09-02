@@ -19,6 +19,9 @@ use super::{Builder, new_builder};
 /// Label of the umbrella that groups the agent subpages.
 const AGENTS_UMBRELLA: &str = "Agents";
 
+/// Label of the umbrella that groups the code subpages.
+const CODE_UMBRELLA: &str = "Code";
+
 // ---------------------------------------------------------------------------
 // Mouse navigation
 // ---------------------------------------------------------------------------
@@ -29,13 +32,13 @@ const AGENTS_UMBRELLA: &str = "Agents";
 pub fn test_settings_mouse_navigation_through_umbrella() -> Builder {
     new_builder()
         .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
-        .with_step(open_settings_page(SettingsSection::Account))
+        .with_step(open_settings_page(SettingsSection::Appearance))
         .with_step(assert_umbrella_expanded(AGENTS_UMBRELLA, false))
         // Expanding the umbrella reveals its subpages but must not move the
-        // selection off Account.
+        // selection off Appearance.
         .with_step(click_settings_umbrella(AGENTS_UMBRELLA))
         .with_step(assert_umbrella_expanded(AGENTS_UMBRELLA, true))
-        .with_step(assert_settings_section(SettingsSection::Account))
+        .with_step(assert_settings_section(SettingsSection::Appearance))
         .with_step(assert_settings_nav_subpage_visible(
             SettingsSection::ThirdPartyCLIAgents,
             true,
@@ -69,7 +72,7 @@ pub fn test_settings_mouse_navigation_through_umbrella() -> Builder {
 pub fn test_settings_keyboard_navigation_down_into_collapsed_umbrella() -> Builder {
     new_builder()
         .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
-        .with_step(open_settings_page(SettingsSection::Account))
+        .with_step(open_settings_page(SettingsSection::Appearance))
         .with_step(assert_umbrella_expanded(AGENTS_UMBRELLA, false))
         .with_step(press_settings_nav_down())
         .with_step(assert_settings_section(
@@ -83,14 +86,14 @@ pub fn test_settings_keyboard_navigation_down_into_collapsed_umbrella() -> Build
 pub fn test_settings_keyboard_navigation_up_into_collapsed_umbrella() -> Builder {
     new_builder()
         .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
-        // Billing and usage sits directly below the Agents umbrella.
-        .with_step(open_settings_page(SettingsSection::BillingAndUsage))
-        .with_step(assert_umbrella_expanded(AGENTS_UMBRELLA, false))
+        // Features sits directly below the Code umbrella.
+        .with_step(open_settings_page(SettingsSection::Features))
+        .with_step(assert_umbrella_expanded(CODE_UMBRELLA, false))
         .with_step(press_settings_nav_up())
         .with_step(assert_settings_section(
-            SettingsSection::ThirdPartyCLIAgents,
+            SettingsSection::EditorAndCodeReview,
         ))
-        .with_step(assert_umbrella_expanded(AGENTS_UMBRELLA, true))
+        .with_step(assert_umbrella_expanded(CODE_UMBRELLA, true))
 }
 
 /// Collapsing an umbrella while one of its subpages is selected keeps arrow
@@ -109,7 +112,9 @@ pub fn test_settings_keyboard_navigation_after_manual_collapse() -> Builder {
         ))
         // Down should continue past the umbrella, not restart from the top.
         .with_step(press_settings_nav_down())
-        .with_step(assert_settings_section(SettingsSection::BillingAndUsage))
+        .with_step(assert_settings_section(
+            SettingsSection::EditorAndCodeReview,
+        ))
 }
 
 // ---------------------------------------------------------------------------
@@ -121,7 +126,7 @@ pub fn test_settings_keyboard_navigation_after_manual_collapse() -> Builder {
 pub fn test_settings_search_filters_top_level_pages() -> Builder {
     new_builder()
         .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
-        .with_step(open_settings_page(SettingsSection::Account))
+        .with_step(open_settings_page(SettingsSection::Appearance))
         .with_step(type_settings_search("keyboard shortcut"))
         .with_step(assert_settings_nav_page_visible(
             SettingsSection::Keybindings,
@@ -140,7 +145,7 @@ pub fn test_settings_search_filters_top_level_pages() -> Builder {
 pub fn test_settings_search_filters_subpages() -> Builder {
     new_builder()
         .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
-        .with_step(open_settings_page(SettingsSection::Account))
+        .with_step(open_settings_page(SettingsSection::Appearance))
         .with_step(assert_umbrella_expanded(AGENTS_UMBRELLA, false))
         .with_step(type_settings_search("codex"))
         .with_step(assert_umbrella_expanded(AGENTS_UMBRELLA, true))
@@ -162,7 +167,7 @@ pub fn test_settings_search_filters_subpages() -> Builder {
 pub fn test_settings_search_subpage_still_renders_content() -> Builder {
     new_builder()
         .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
-        .with_step(open_settings_page(SettingsSection::Account))
+        .with_step(open_settings_page(SettingsSection::Appearance))
         // The CLI agent widget lives on the Third party CLI agents subpage, and
         // nothing has rendered it yet.
         .with_step(assert_settings_widget_rendered(
@@ -184,7 +189,7 @@ pub fn test_settings_search_subpage_still_renders_content() -> Builder {
 pub fn test_settings_search_clear_restores_umbrella_state() -> Builder {
     new_builder()
         .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
-        .with_step(open_settings_page(SettingsSection::Account))
+        .with_step(open_settings_page(SettingsSection::Appearance))
         .with_step(assert_umbrella_expanded(AGENTS_UMBRELLA, false))
         .with_step(type_settings_search("codex"))
         .with_step(assert_umbrella_expanded(AGENTS_UMBRELLA, true))
@@ -201,7 +206,7 @@ pub fn test_settings_search_clear_restores_umbrella_state() -> Builder {
 pub fn test_settings_search_preserved_on_sidebar_click() -> Builder {
     new_builder()
         .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
-        .with_step(open_settings_page(SettingsSection::Account))
+        .with_step(open_settings_page(SettingsSection::Appearance))
         .with_step(type_settings_search("agent"))
         .with_step(assert_umbrella_expanded(AGENTS_UMBRELLA, true))
         .with_step(click_settings_nav_subpage(

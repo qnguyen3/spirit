@@ -7,21 +7,17 @@ use warp_core::features::FeatureFlag;
 use warpui::elements::{Container, Flex, MouseStateHandle, ParentElement, Shrinkable, Wrap};
 use warpui::{
     AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
-    WindowId,
 };
 
 use crate::appearance::Appearance;
-use crate::drive::settings::WarpDriveSettings;
 use crate::search::QueryFilter;
 use crate::search::command_palette::FilterChipRenderer;
-use crate::workspace::Workspace;
 
 /// A zero-state view for the command palette.
 pub struct ZeroState {
     filter_chip_to_mouse_state_handle: HashMap<QueryFilter, MouseStateHandle>,
     items: ModelHandle<Items>,
     // Store the window this view belongs to so we don't rely on the global active window
-    window_id: WindowId,
 }
 
 #[derive(Debug)]
@@ -45,7 +41,6 @@ impl ZeroState {
                 .collect(),
 
             items: results_model,
-            window_id: ctx.window_id(),
         }
     }
 
@@ -76,36 +71,13 @@ impl ZeroState {
     }
 
     /// Returns the set of valid query filters for this zero state view.
-    fn valid_query_filters(
-        app: &AppContext,
-        window_id: WindowId,
-    ) -> impl Iterator<Item = QueryFilter> + use<> {
-        let show_warp_drive = WarpDriveSettings::is_warp_drive_enabled(app);
+    fn valid_query_filters() -> impl Iterator<Item = QueryFilter> + use<> {
+        let mut valid_filters = vec![QueryFilter::Workflows];
 
-        let mut valid_filters = vec![];
-        if show_warp_drive {
-            valid_filters.push(QueryFilter::Workflows);
-            valid_filters.push(QueryFilter::Notebooks);
-
-            valid_filters.push(QueryFilter::EnvironmentVariables);
-        }
-
-        // Don't show Files filter if the user is a viewer of a shared session
         if FeatureFlag::CommandPaletteFileSearch.is_enabled() {
-            let is_shared_session_viewer_focused = app
-                .views_of_type::<Workspace>(window_id)
-                .and_then(|workspaces| workspaces.first().cloned())
-                .is_some_and(|workspace| {
-                    workspace.as_ref(app).is_shared_session_viewer_focused(app)
-                });
-            if !is_shared_session_viewer_focused {
-                valid_filters.push(QueryFilter::Files);
-            }
+            valid_filters.push(QueryFilter::Files);
         }
 
-        if show_warp_drive {
-            valid_filters.push(QueryFilter::Drive);
-        }
         valid_filters.extend([QueryFilter::Actions, QueryFilter::Sessions]);
 
         if ContextFlag::LaunchConfigurations.is_enabled() {
@@ -127,9 +99,8 @@ impl View for ZeroState {
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
-        let mut flex = Flex::column().with_child(
-            self.render_filter_chips(appearance, Self::valid_query_filters(app, self.window_id)),
-        );
+        let mut flex = Flex::column()
+            .with_child(self.render_filter_chips(appearance, Self::valid_query_filters()));
 
         let zero_state_items = self.items.as_ref(app).render(app);
         flex.add_child(Shrinkable::new(1., zero_state_items).finish());

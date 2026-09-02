@@ -48,13 +48,11 @@ use super::{NotebookWorkflow, rich_text_styles};
 use crate::ASSETS;
 use crate::appearance::Appearance;
 use crate::completer::SessionAgnosticContext;
-use crate::drive::workflows::arguments::ArgumentsState;
 use crate::editor::InteractionState;
 use crate::features::FeatureFlag;
 use crate::menu::MenuItemFields;
 use crate::notebooks::file::MarkdownDisplayMode;
 use crate::notebooks::styles::block_footer_action_button;
-use crate::notebooks::telemetry::{ActionEntrypoint, BlockInfo};
 use crate::settings::FontSettings;
 use crate::terminal::input::DEBOUNCE_INPUT_DECORATION_PERIOD;
 use crate::terminal::input::decorations::{
@@ -68,6 +66,7 @@ use crate::util::color::{ContrastingColor, MinimumAllowedContrast};
 use crate::view_components::Dropdown;
 use crate::view_components::dropdown::DropdownAction;
 use crate::workflows::WorkflowType;
+use crate::workflows::arguments::ArgumentsState;
 use crate::workflows::workflow::Workflow;
 use crate::workspace::WorkspaceAction;
 
@@ -785,8 +784,6 @@ impl RunnableCommandModel for NotebookCommand {
                     {
                         ctx.dispatch_typed_action(EditorViewAction::CopyTextToClipboard {
                             text: UserInput::new(block_content.trim()),
-                            block: BlockInfo::CodeBlock,
-                            entrypoint: ActionEntrypoint::Button,
                         });
                     }
                 })

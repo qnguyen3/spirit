@@ -12,16 +12,12 @@ use warp_core::SessionId;
 use warpui::{Entity, ModelContext, ModelHandle, SingletonEntity, WeakModelHandle};
 
 use super::pty_controller::{EventLoopSender, PtyController};
-use crate::auth::auth_state::AuthStateProvider;
 use crate::remote_server::auth_context::server_api_auth_context;
 use crate::remote_server::manager::{RemoteServerManager, RemoteServerManagerEvent};
 use crate::remote_server::ssh_transport::SshTransport;
-use crate::server::server_api::ServerApiProvider;
-use crate::settings::PrivacySettings;
 use crate::terminal::model::session::{IsSSHWrapperSession, SessionInfo};
 use crate::terminal::model_events::{ModelEvent, ModelEventDispatcher};
 use crate::terminal::warpify::settings::{SshExtensionInstallMode, WarpifySettings};
-use crate::{TelemetryEvent, send_telemetry_from_ctx};
 
 /// Per-SSH-init state machine. Encoding the state as an enum makes invalid
 /// transitions unrepresentable and ensures the `SessionInfo` stash cannot be
@@ -226,7 +222,7 @@ impl<T: EventLoopSender> RemoteServerController<T> {
         }
         let transport = SshTransport::new(
             socket_path,
-            self.build_auth_context(ctx),
+            self.build_auth_context(),
             warp_owns_control_master,
         );
         self.did_install = false;
@@ -419,11 +415,11 @@ impl<T: EventLoopSender> RemoteServerController<T> {
         // subsequently initializes, so it picks `RemoteServerCommandExecutor`.
         self.flush_stashed_bootstrap(session_info, ctx);
 
-        let duration_ms = Instant::now()
+        let _duration_ms = Instant::now()
             .duration_since(setup_start)
             .as_millis()
             .min(u64::MAX as u128) as u64;
-        let (remote_os, remote_arch) = self
+        let (_remote_os, _remote_arch) = self
             .remote_platform
             .as_ref()
             .map(|p| {
@@ -433,20 +429,10 @@ impl<T: EventLoopSender> RemoteServerController<T> {
                 )
             })
             .unwrap_or((None, None));
-        let remote_libc = self
+        let _remote_libc = self
             .preinstall_check
             .as_ref()
             .map(|check| describe_libc(&check.libc));
-        send_telemetry_from_ctx!(
-            TelemetryEvent::RemoteServerSetupDuration {
-                duration_ms,
-                installed_binary: self.did_install,
-                remote_os,
-                remote_arch,
-                remote_libc,
-            },
-            ctx
-        );
     }
 
     /// Called when the remote server connection failed. Flushes the stashed
@@ -541,21 +527,9 @@ impl<T: EventLoopSender> RemoteServerController<T> {
         }
     }
 
-    /// Builds a fresh [`RemoteServerAuthContext`] that captures the current
-    /// crash-reporting preference from [`PrivacySettings`], so each
-    /// connection attempt uses the latest value without requiring a
-    /// long-lived cache or subscription.
-    fn build_auth_context(&self, ctx: &ModelContext<Self>) -> Arc<RemoteServerAuthContext> {
-        let auth_state = AuthStateProvider::as_ref(ctx).get().clone();
-        let auth_client = ServerApiProvider::as_ref(ctx).get_auth_client();
-        let crash_reporting_enabled = PrivacySettings::handle(ctx)
-            .as_ref(ctx)
-            .is_crash_reporting_enabled;
-        Arc::new(server_api_auth_context(
-            auth_state,
-            auth_client,
-            crash_reporting_enabled,
-        ))
+    /// Builds a fresh [`RemoteServerAuthContext`] for each connection attempt.
+    fn build_auth_context(&self) -> Arc<RemoteServerAuthContext> {
+        Arc::new(server_api_auth_context())
     }
 
     fn connect_session_for_current_identity(
@@ -566,7 +540,7 @@ impl<T: EventLoopSender> RemoteServerController<T> {
         connection_label: String,
         ctx: &mut ModelContext<Self>,
     ) {
-        let auth_context = self.build_auth_context(ctx);
+        let auth_context = self.build_auth_context();
         let transport =
             SshTransport::new(socket_path, auth_context.clone(), warp_owns_control_master);
         RemoteServerManager::handle(ctx).update(ctx, |mgr, ctx| {
@@ -629,11 +603,11 @@ fn describe_libc(libc: &RemoteLibc) -> String {
 
 fn send_unsupported_telemetry<T: EventLoopSender>(
     remote_platform: Option<&RemotePlatform>,
-    unsupported_reason: &UnsupportedReason,
+    _unsupported_reason: &UnsupportedReason,
     detected_libc: Option<&RemoteLibc>,
-    ctx: &mut ModelContext<RemoteServerController<T>>,
+    _ctx: &mut ModelContext<RemoteServerController<T>>,
 ) {
-    let (remote_os, remote_arch) = remote_platform
+    let (_remote_os, _remote_arch) = remote_platform
         .map(|p| {
             (
                 Some(p.os.as_str().to_owned()),
@@ -641,18 +615,9 @@ fn send_unsupported_telemetry<T: EventLoopSender>(
             )
         })
         .unwrap_or((None, None));
-    let detected_libc = detected_libc
+    let _detected_libc = detected_libc
         .map(describe_libc)
         .unwrap_or_else(|| "unknown".to_string());
-    send_telemetry_from_ctx!(
-        TelemetryEvent::RemoteServerHostUnsupported {
-            remote_os,
-            remote_arch,
-            unsupported_reason: unsupported_reason.clone(),
-            detected_libc,
-        },
-        ctx
-    );
 }
 
 #[cfg(test)]

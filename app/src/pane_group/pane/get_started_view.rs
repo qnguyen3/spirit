@@ -1,7 +1,7 @@
 use pathfinder_geometry::vector::vec2f;
+use warp_core::ui;
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::color::blend::Blend as _;
-use warp_core::ui::{self};
 use warpui::elements::{
     Align, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Flex, Icon,
     MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement as _, Radius,
@@ -24,7 +24,6 @@ use crate::terminal::TerminalView;
 use crate::util::bindings::{BindingGroup, CustomAction, keybinding_name_to_display_string};
 use crate::view_components::DismissibleToast;
 use crate::workspace::{ToastStack, Workspace, WorkspaceAction};
-use crate::{TelemetryEvent, send_telemetry_from_ctx};
 
 pub fn init(app: &mut AppContext) {
     use warpui::keymap::macros::*;
@@ -61,7 +60,7 @@ impl GetStartedView {
         let project_buttons = ctx.add_typed_action_view(ProjectButtons::new);
         ctx.subscribe_to_view(&project_buttons, Self::handle_project_buttons_event);
 
-        let clone_repo_view = ctx.add_typed_action_view(|ctx| CloneRepoView::new(true, ctx));
+        let clone_repo_view = ctx.add_typed_action_view(CloneRepoView::new);
         ctx.subscribe_to_view(&clone_repo_view, Self::handle_clone_repo_event);
 
         Self {
@@ -83,10 +82,6 @@ impl GetStartedView {
         match event {
             ProjectButtonsEvent::OpenRepository(path_result) => match path_result {
                 Ok(path) => {
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::OpenRepoFolderSubmitted { is_ftux: true },
-                        ctx
-                    );
                     ctx.dispatch_typed_action(&WorkspaceAction::OpenRepository {
                         path: Some(path.clone()),
                     });
@@ -262,7 +257,6 @@ impl TypedActionView for GetStartedView {
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
         match action {
             GetStartedAction::TerminalSession => {
-                send_telemetry_from_ctx!(TelemetryEvent::GetStartedSkipToTerminal, ctx);
                 ctx.dispatch_typed_action(&WorkspaceAction::AddTerminalTab {
                     hide_homepage: true,
                 });
@@ -308,7 +302,7 @@ impl BackingView for GetStartedView {
 
     fn render_header_content(
         &self,
-        _ctx: &view::HeaderRenderContext<'_>,
+        _ctx: &view::HeaderRenderContext,
         _app: &AppContext,
     ) -> view::HeaderContent {
         view::HeaderContent::simple("Get started")

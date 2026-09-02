@@ -1,7 +1,7 @@
 use anyhow::Result;
 #[cfg(unix)]
 use warp_errors::report_error;
-use warpui_core::{AppContext, Entity, SingletonEntity};
+use warpui_core::{Entity, SingletonEntity};
 #[cfg(unix)]
 use {
     crate::local_tty::server::TerminalServer, anyhow::bail, std::cmp::Reverse,
@@ -13,18 +13,6 @@ use super::PseudoConsoleChild;
 use super::{PtyOptions, PtySpawnResult};
 use crate::local_tty::{self};
 
-#[derive(Clone, Copy, Debug)]
-pub enum PtySpawnMode {
-    TerminalServer,
-    FallbackToDirect,
-    Direct,
-}
-
-pub trait PtySpawnHooks {
-    fn before_spawn(&self);
-    fn after_spawn(&self);
-    fn spawned(&self, mode: PtySpawnMode, ctx: &mut AppContext);
-}
 /// A handle that can be used to interact with a pty process.
 pub trait PtyHandle: Send + Sync {
     /// Returns the pty's process ID.
@@ -87,23 +75,6 @@ impl PtyHandle for DirectPtyHandle {
         self.child.kill()
     }
 }
-/// Invokes the provided callback function without crash reporting enabled.
-fn invoke_without_crash_reporting<T>(hooks: &dyn PtySpawnHooks, func: impl FnOnce() -> T) -> T {
-    // Uninitialize cocoa-sentry before spawning the shell process to avoid passing any custom state
-    // (such as BSD signal handlers and mach exception handlers) into the shell process. This means
-    // we lose all Cocoa crash reports from now until when the session is successfully spawned,
-    // which is not ideal but allows us to fully ensure that we don't improperly leak any Sentry state
-    // into the child processes.
-    hooks.before_spawn();
-
-    let retval = func();
-
-    // Now that the child has spawned--reinitialize cocoa sentry.
-    hooks.after_spawn();
-
-    retval
-}
-
 pub(super) struct PtySpawnInfo {
     pub result: PtySpawnResult,
     #[cfg(unix)]
@@ -174,15 +145,8 @@ impl PtySpawner {
     pub(super) fn spawn_pty(
         &self,
         options: PtyOptions,
-        hooks: &dyn PtySpawnHooks,
         #[cfg(windows)] event_loop_tx: super::mio_channel::Sender<crate::writeable_pty::Message>,
-        ctx: &mut AppContext,
     ) -> Result<(PtySpawnResult, Box<dyn PtyHandle>)> {
-        #[cfg(not(unix))]
-        let is_fallback = false;
-        #[cfg(unix)]
-        let mut is_fallback = false;
-
         #[cfg(unix)]
         if let Some(server) = &self.server {
             let result = Self::spawn_pty_via_server(server, options.clone());
@@ -206,40 +170,27 @@ impl PtySpawner {
                 report_error!(err.context(
                     "Failed to spawn pty via terminal server; falling back to spawning locally...",
                 ));
-                is_fallback = true;
             } else {
-                hooks.spawned(PtySpawnMode::TerminalServer, ctx);
                 return result;
             }
         }
-
-        let mode = if is_fallback {
-            PtySpawnMode::FallbackToDirect
-        } else {
-            PtySpawnMode::Direct
-        };
-        hooks.spawned(mode, ctx);
 
         Self::spawn_pty_directly(
             options,
             #[cfg(windows)]
             event_loop_tx,
-            hooks,
         )
     }
 
     fn spawn_pty_directly(
         options: PtyOptions,
         #[cfg(windows)] event_loop_tx: super::mio_channel::Sender<crate::writeable_pty::Message>,
-        hooks: &dyn PtySpawnHooks,
     ) -> Result<(PtySpawnResult, Box<dyn PtyHandle>)> {
-        let pty_spawn_info = invoke_without_crash_reporting(hooks, move || {
-            local_tty::spawn(
-                options,
-                #[cfg(windows)]
-                event_loop_tx,
-            )
-        })?;
+        let pty_spawn_info = local_tty::spawn(
+            options,
+            #[cfg(windows)]
+            event_loop_tx,
+        )?;
         let direct_pty_handle = Box::new(DirectPtyHandle {
             child: pty_spawn_info.child,
         });

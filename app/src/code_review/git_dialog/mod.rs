@@ -10,7 +10,6 @@
 //! outcome variant, and wire up dispatch.
 
 use pathfinder_geometry::vector::vec2f;
-use warp_core::send_telemetry_from_ctx;
 use warp_core::ui::appearance::Appearance;
 use warpui::elements::{
     Align, Border, ChildAnchor, ChildView, ClippedScrollStateHandle, ClippedScrollable,
@@ -28,12 +27,7 @@ use warpui::{
 
 use crate::code::buffer_location::LocalOrRemotePath;
 use crate::code::editor::{add_color, remove_color};
-use crate::code_review::diff_state::{
-    CommitChainMode, DiffStateModel, DiffStateModelEvent, GitOpResult,
-};
-use crate::code_review::telemetry_event::{
-    CodeReviewTelemetryEvent, GitDialogStatus, GitOperationKind,
-};
+use crate::code_review::diff_state::{DiffStateModel, DiffStateModelEvent, GitOpResult};
 use crate::ui_components::dialog::{Dialog, dialog_styles};
 use crate::ui_components::icons::Icon;
 use crate::util::git::{Commit, FileChangeEntry};
@@ -852,36 +846,6 @@ impl TypedActionView for GitDialog {
         match action {
             GitDialogAction::Cancel => {
                 if !self.loading {
-                    let operation = match &self.mode {
-                        GitDialogMode::Commit(state) => match state.intent {
-                            CommitChainMode::CommitOnly => GitOperationKind::CommitOnly,
-                            CommitChainMode::CommitAndPush => GitOperationKind::CommitAndPush,
-                            CommitChainMode::CommitAndCreatePr => {
-                                GitOperationKind::CommitAndCreatePr
-                            }
-                        },
-                        GitDialogMode::Push(state) => {
-                            if state.publish {
-                                GitOperationKind::Publish
-                            } else {
-                                GitOperationKind::Push
-                            }
-                        }
-                        GitDialogMode::CreatePr(_) => GitOperationKind::CreatePr,
-                    };
-                    // Derive the real local/remote value rather than hardcoding
-                    // it, so cancel telemetry matches the repo the dialog acts
-                    // on (the completion paths report the same value).
-                    let is_local = !self.repo_location.is_remote();
-                    send_telemetry_from_ctx!(
-                        CodeReviewTelemetryEvent::GitDialogCompleted {
-                            is_local: Some(is_local),
-                            operation,
-                            status: GitDialogStatus::Cancelled,
-                            error: None,
-                        },
-                        ctx
-                    );
                     ctx.emit(GitDialogEvent::Cancelled);
                 }
             }

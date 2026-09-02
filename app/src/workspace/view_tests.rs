@@ -1,16 +1,14 @@
 use std::collections::HashMap;
 
-use pane_group::{NotebookPane, PaneState, SplitPaneState, TerminalPaneId};
+use pane_group::{FilePane, PaneState, SplitPaneState, TerminalPaneId};
 #[cfg(feature = "local_fs")]
 use repo_metadata::CanonicalizedPath;
 #[cfg(feature = "local_fs")]
 use repo_metadata::RepoMetadataModel;
 use repo_metadata::repositories::DetectedRepositories;
 use repo_metadata::watcher::DirectoryWatcher;
-use session_sharing_protocol::common::SessionId;
 #[cfg(feature = "local_fs")]
 use tempfile::TempDir;
-use terminal::shared_session::permissions_manager::SessionPermissionsManager;
 use terminal::view::ActiveSessionState;
 use warp_editor::editor::NavigationKey;
 #[cfg(feature = "local_fs")]
@@ -20,28 +18,15 @@ use warpui::{AddSingletonModel, App, ViewHandle};
 use watcher::HomeDirectoryWatcher;
 
 use super::*;
-use crate::auth::github_auth_notifier::GitHubAuthNotifier;
-use crate::cloud_object::model::persistence::CloudModel;
-use crate::cloud_object::model::view::CloudViewModel;
 use crate::context_chips::prompt::Prompt;
 use crate::editor::Event;
 use crate::gpu_state::GPUState;
 use crate::network::NetworkStatus;
 use crate::notebooks::editor::keys::NotebookKeybindings;
-use crate::notebooks::notebook::NotebookView;
 use crate::pane_group::{Direction, PaneGroupAction, PaneId};
 use crate::persisted_workspace::PersistedWorkspace;
-use crate::pricing::PricingInfoModel;
 use crate::projects::registry::ProjectRegistryModel;
-use crate::resource_center::Tip;
-use crate::server::cloud_objects::listener::Listener;
-use crate::server::cloud_objects::update_manager::UpdateManager;
-use crate::server::experiments::ServerExperiments;
-use crate::server::server_api::ServerApiProvider;
-use crate::server::sync_queue::SyncQueue;
-use crate::server::telemetry::context_provider::AppTelemetryContextProvider;
 use crate::settings::PrivacySettings;
-use crate::settings::cloud_preferences_syncer::CloudPreferencesSyncer;
 use crate::settings_view::DisplayCount;
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
 use crate::suggestions::ignored_suggestions_model::IgnoredSuggestionsModel;
@@ -50,9 +35,6 @@ use crate::tab_configs::tab_config::{TabConfigPaneNode, TabConfigPaneType};
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::history::History;
 use crate::terminal::local_tty::spawner::PtySpawner;
-use crate::terminal::shared_session::{
-    SharedSessionScrollbackType, SharedSessionSource, SharedSessionStatus,
-};
 use crate::test_util::settings::initialize_settings_for_tests;
 use crate::undo_close::UndoCloseSettings;
 #[cfg(feature = "local_fs")]
@@ -61,63 +43,37 @@ use crate::user_config::tab_configs_dir;
 use crate::util::traffic_lights::windows::RendererState;
 use crate::warp_managed_paths_watcher::WarpManagedPathsWatcher;
 use crate::workflows::local_workflows::LocalWorkflows;
-use crate::workspaces::team_tester::TeamTesterStatus;
-use crate::workspaces::update_manager::TeamUpdateManager;
-use crate::workspaces::user_profiles::UserProfiles;
-use crate::workspaces::user_workspaces::UserWorkspaces;
-use crate::{GlobalResourceHandlesProvider, ObjectActions, experiments, workspace};
+use crate::{GlobalResourceHandlesProvider, workspace};
 pub(crate) fn initialize_app(app: &mut App) {
     initialize_settings_for_tests(app);
 
     // Add the necessary singleton models to the App
-    app.add_singleton_model(|_ctx| ServerApiProvider::new_for_test());
-    app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
-    app.add_singleton_model(AuthManager::new_for_test);
     app.add_singleton_model(|_ctx| PtySpawner::new_for_test());
     app.add_singleton_model(|_| Prompt::mock());
-    app.add_singleton_model(|ctx| AutoupdateState::new(ServerApiProvider::as_ref(ctx).get()));
+    app.add_singleton_model(|_| {
+        AutoupdateState::new(std::sync::Arc::new(http_client::Client::new_for_test()))
+    });
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| SystemStats::new());
     app.add_singleton_model(|_| crate::tab::TabShortcutModifierState::new());
-    app.add_singleton_model(SyncQueue::mock);
-    app.add_singleton_model(CloudModel::mock);
-    app.add_singleton_model(UserWorkspaces::default_mock);
-    app.add_singleton_model(|_ctx| UserProfiles::new(Vec::new()));
-    app.add_singleton_model(TeamTesterStatus::mock);
-    app.add_singleton_model(TeamUpdateManager::mock);
-    app.add_singleton_model(UpdateManager::mock);
-    app.add_singleton_model(CloudViewModel::mock);
-    app.add_singleton_model(Listener::mock);
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(AppearanceManager::new);
     app.add_singleton_model(|_| DisplayCount::mock());
     app.add_singleton_model(PrivacySettings::mock);
     app.add_singleton_model(|_| KeybindingChangedNotifier::new());
     app.add_singleton_model(|_ctx| RelaunchModel::new());
-    app.add_singleton_model(|ctx| ChangelogModel::new(ServerApiProvider::as_ref(ctx).get()));
-    app.add_singleton_model(|_| GitHubAuthNotifier::new());
+    app.add_singleton_model(|_| {
+        ChangelogModel::new(std::sync::Arc::new(http_client::Client::new_for_test()))
+    });
     app.add_singleton_model(|_ctx| SyncedInputState::mock());
     app.add_singleton_model(|_| ResizableData::default());
     app.add_singleton_model(LocalWorkflows::new);
     app.add_singleton_model(UndoCloseStack::new);
-    app.add_singleton_model(terminal::shared_session::manager::Manager::new);
     app.add_singleton_model(|_| ActiveSession::default());
     app.add_singleton_model(|_| WorkspaceToastStack);
-    app.add_singleton_model(|_| ObjectActions::new(Vec::new()));
     app.add_singleton_model(NotebookKeybindings::new);
-    app.add_singleton_model(NotebookManager::mock);
-    app.add_singleton_model(|ctx| {
-        CloudPreferencesSyncer::new(
-            false,                     // force_local_wins_on_startup
-            std::path::PathBuf::new(), // unused in tests that don't exercise the hash path
-            true,                      // sync_enabled: cloud sync active in tests
-            ctx,
-        )
-    });
     app.add_singleton_model(|_| CLIAgentSessionsModel::new());
     app.add_singleton_model(|_| crate::workspace::AgentInboxModel::default());
-    app.add_singleton_model(SessionPermissionsManager::new);
     app.add_singleton_model(|_| SettingsPaneManager::new());
     app.add_singleton_model(|_| ProjectRegistryModel::new(None));
     app.add_singleton_model(|_| AgentPickerPaneManager::default());
@@ -130,21 +86,8 @@ pub(crate) fn initialize_app(app: &mut App) {
     #[cfg(feature = "local_fs")]
     app.add_singleton_model(FileModel::new);
     app.add_singleton_model(|_| GPUState::new());
-    // Register IapManager in a disabled state (no IapState). The settings
-    // page's `IapManager::as_ref(ctx).is_enabled()` check panics if the
-    // singleton isn't registered, even though it's a no-op on production.
-    app.add_singleton_model(|ctx| {
-        warp_server_client::iap::IapManager::new(
-            None,
-            Box::new(|_| futures::FutureExt::boxed(futures::future::ready(None::<String>))),
-            None,
-            ctx,
-        )
-    });
-    // Register GlobalResourceHandlesProvider before ServerExperiments which depends on it
     let global_resource_handles = GlobalResourceHandles::mock(app);
     app.add_singleton_model(|_| GlobalResourceHandlesProvider::new(global_resource_handles));
-    app.add_singleton_model(|ctx| ServerExperiments::new_from_cache(vec![], ctx));
     app.add_singleton_model(DefaultTerminal::new);
     app.add_singleton_model(|_| IgnoredSuggestionsModel::new(vec![]));
     app.add_singleton_model(|_| crate::code_review::git_repo_model::GitRepoModels::new());
@@ -166,10 +109,7 @@ pub(crate) fn initialize_app(app: &mut App) {
     #[cfg(enable_crash_recovery)]
     crate::crash_recovery::CrashRecovery::register_for_test(app);
 
-    app.update(experiments::init);
-
     app.add_singleton_model(|ctx| PersistedWorkspace::new(vec![], HashMap::new(), None, ctx));
-    app.add_singleton_model(|_| PricingInfoModel::new());
     app.add_singleton_model(|_| History::new(vec![]));
 
     // Make sure to initialize the keybindings so that they are available for subviews
@@ -182,7 +122,6 @@ pub(crate) fn mock_workspace(app: &mut App) -> ViewHandle<Workspace> {
     let (_, workspace) = app.add_window(WindowStyle::NotStealFocus, |ctx| {
         Workspace::new(
             global_resource_handles,
-            None,
             NewWorkspaceSource::Empty {
                 previous_active_window: active_window_id,
                 shell: None,
@@ -194,59 +133,6 @@ pub(crate) fn mock_workspace(app: &mut App) -> ViewHandle<Workspace> {
     workspace
 }
 
-#[test]
-fn test_open_new_window_for_team_reuses_existing_team_window() {
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        let source_workspace = mock_workspace(&mut app);
-        let existing_team_workspace = mock_workspace(&mut app);
-        let existing_team_window_id =
-            existing_team_workspace.update(&mut app, |_, ctx| ctx.window_id());
-        let team_uid: ServerId = 123.into();
-        app.update(|ctx| {
-            UserWorkspaces::handle(ctx).update(ctx, |user_workspaces, ctx| {
-                user_workspaces.register_window(existing_team_window_id, Some(team_uid), ctx);
-            });
-        });
-        let initial_window_count = app.window_ids().len();
-
-        source_workspace.update(&mut app, |workspace, ctx| {
-            workspace.handle_action(&WorkspaceAction::OpenNewWindowForTeam { team_uid }, ctx);
-        });
-
-        assert_eq!(app.window_ids().len(), initial_window_count);
-    });
-}
-
-#[test]
-fn test_open_new_window_for_team_creates_window_when_team_has_none() {
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        let source_workspace = mock_workspace(&mut app);
-        let team_uid: ServerId = 123.into();
-        let initial_window_count = app.window_ids().len();
-
-        source_workspace.update(&mut app, |workspace, ctx| {
-            workspace.handle_action(&WorkspaceAction::OpenNewWindowForTeam { team_uid }, ctx);
-        });
-
-        assert_eq!(app.window_ids().len(), initial_window_count + 1);
-        app.read(|ctx| {
-            assert_eq!(
-                ctx.window_ids()
-                    .filter(|window_id| {
-                        UserWorkspaces::as_ref(ctx).team_uid_for_window(*window_id)
-                            == Some(team_uid)
-                    })
-                    .count(),
-                1
-            );
-        });
-    });
-}
-
 fn restored_workspace(
     app: &mut App,
     window_snapshot: crate::app_state::WindowSnapshot,
@@ -255,7 +141,6 @@ fn restored_workspace(
     let (_, workspace) = app.add_window(WindowStyle::NotStealFocus, |ctx| {
         Workspace::new(
             global_resource_handles,
-            None,
             NewWorkspaceSource::Restored {
                 window_snapshot,
                 screen_index: 0,
@@ -276,7 +161,6 @@ fn transferred_tab_workspace(
     let (_, workspace) = app.add_window(WindowStyle::NotStealFocus, |ctx| {
         Workspace::new(
             global_resource_handles,
-            None,
             NewWorkspaceSource::TransferredTab {
                 source_window_id: ctx.window_id(),
                 tab_color: None,
@@ -338,104 +222,6 @@ fn test_theme_chooser_does_not_suppress_tab_bar_traffic_light_padding() {
                 closed_padding,
                 "Open tools panel should still reserve tab bar traffic light padding"
             );
-        });
-    });
-}
-
-/// Regression for account-first onboarding users who select Warp Drive, skip
-/// signup, and create an account later. The stored preference should remain
-/// true while unavailable, then take effect automatically once the account
-/// exists—without an off/on toggle.
-#[test]
-fn test_tools_panel_preferences_activate_after_signup() {
-    let _skip_anon_guard = FeatureFlag::SkipFirebaseAnonymousUser.override_enabled(true);
-
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        // Preserve the user's onboarding intent while starting logged out (the
-        // account-skipped account-first completion state).
-        app.update(|ctx| {
-            WarpDriveSettings::handle(ctx).update(ctx, |settings, ctx| {
-                settings
-                    .enable_warp_drive
-                    .set_value(true, ctx)
-                    .expect("remember Warp Drive preference");
-            });
-            let auth_state = AuthStateProvider::as_ref(ctx).get();
-            auth_state.set_user(None);
-            auth_state.set_credentials(None);
-        });
-
-        let workspace = mock_workspace(&mut app);
-        workspace.update(&mut app, |workspace, ctx| {
-            assert!(
-                workspace
-                    .left_panel_views
-                    .contains(&ToolPanelView::WarpDrive),
-                "the stored preference should keep the locked Warp Drive entry visible"
-            );
-            workspace.left_panel_view.update(ctx, |left_panel, ctx| {
-                left_panel.handle_action_with_force_open(&LeftPanelAction::WarpDrive, false, ctx);
-                assert_eq!(
-                    left_panel.active_view_availability(ctx),
-                    left_panel::ToolPanelAvailability::RequiresAccount
-                );
-                drop(left_panel.render(ctx));
-            });
-            workspace.handle_left_panel_event(&LeftPanelEvent::SignInRequested, ctx);
-            assert!(
-                workspace
-                    .current_workspace_state
-                    .is_require_login_modal_open,
-                "locked-panel Sign in should open the existing auth modal"
-            );
-            // Keep the remainder of this state-transition test focused on the
-            // tool panel rather than modal rendering.
-            workspace
-                .current_workspace_state
-                .is_require_login_modal_open = false;
-        });
-        app.read(|ctx| {
-            // Availability must not erase the raw onboarding preference.
-            assert!(*WarpDriveSettings::as_ref(ctx).enable_warp_drive);
-            assert!(!WarpDriveSettings::is_warp_drive_available(ctx));
-            assert!(!WarpDriveSettings::is_warp_drive_enabled(ctx));
-        });
-
-        // Signing up makes account-backed features available. AuthComplete
-        // must refresh the existing workspace even though no setting changed.
-        app.update(|ctx| {
-            AuthStateProvider::as_ref(ctx)
-                .get()
-                .apply_remote_server_auth_context(
-                    "test-token".to_string(),
-                    "test-user".to_string(),
-                    "test@warp.dev".to_string(),
-                );
-        });
-        workspace.update(&mut app, |workspace, ctx| {
-            workspace.handle_auth_manager_event(
-                AuthManager::handle(ctx),
-                &AuthManagerEvent::AuthComplete,
-                ctx,
-            );
-            assert!(
-                workspace
-                    .left_panel_views
-                    .contains(&ToolPanelView::WarpDrive),
-                "Drive entry remains visible and unlocks after signup"
-            );
-            assert!(!workspace.auth_state.is_anonymous_or_logged_out());
-            assert!(WarpDriveSettings::is_warp_drive_enabled(ctx));
-            workspace.left_panel_view.update(ctx, |left_panel, ctx| {
-                left_panel.handle_action_with_force_open(&LeftPanelAction::WarpDrive, false, ctx);
-                assert_eq!(
-                    left_panel.active_view_availability(ctx),
-                    left_panel::ToolPanelAvailability::Available
-                );
-                drop(left_panel.render(ctx));
-            });
         });
     });
 }
@@ -927,103 +713,8 @@ impl Drop for TabConfigCleanupGuard {
     }
 }
 
-/// Creates a workspace with a single, shared session.
-fn mock_workspace_with_shared_session(app: &mut App) -> ViewHandle<Workspace> {
-    use crate::terminal::shared_session::manager::Manager;
-
-    // Create the workspace as a session-sharing sharer.
-    let global_resource_handles = GlobalResourceHandles::mock(app);
-    let (_, workspace) = app.add_window(WindowStyle::NotStealFocus, |ctx| {
-        Workspace::new(
-            global_resource_handles,
-            None,
-            NewWorkspaceSource::Empty {
-                previous_active_window: None,
-                shell: None,
-            },
-            None,
-            ctx,
-        )
-    });
-
-    // Get the single terminal view in the workspace.
-    let terminal_view = workspace.read(app, |workspace, ctx| {
-        assert_eq!(workspace.tabs.len(), 1);
-        workspace
-            .active_tab_pane_group()
-            .as_ref(ctx)
-            .focused_session_view(ctx)
-            .unwrap()
-    });
-
-    terminal_view.update(app, |view, ctx| {
-        view.model.lock().block_list_mut().set_bootstrapped();
-        view.attempt_to_share_session(
-            SharedSessionScrollbackType::All,
-            None,
-            SharedSessionSource::user(None),
-            ctx,
-        );
-    });
-
-    // Make sure the view is registered with the shared session manager.
-    app.read(|ctx| {
-        let manager = Manager::as_ref(ctx);
-        let shared_sessions = manager.shared_views(ctx).collect_vec();
-        assert_eq!(shared_sessions.len(), 1);
-        assert_eq!(shared_sessions[0].id(), terminal_view.id());
-    });
-
-    workspace
-}
-
-// Creates a workspace as a viewer of a shared session.
-fn mock_workspace_viewing_shared_session(app: &mut App) -> ViewHandle<Workspace> {
-    // Create the workspace as a session-sharing sharer.
-    let global_resource_handles = GlobalResourceHandles::mock(app);
-
-    let session_id = SessionId::new();
-
-    let (_, workspace) = app.add_window(WindowStyle::NotStealFocus, |ctx| {
-        Workspace::new(
-            global_resource_handles,
-            None,
-            NewWorkspaceSource::SharedSessionAsViewer { session_id },
-            None,
-            ctx,
-        )
-    });
-
-    // Get the single terminal view in the workspace.
-    let terminal_view = workspace.read(app, |workspace, ctx| {
-        assert_eq!(workspace.tabs.len(), 1);
-        workspace
-            .active_tab_pane_group()
-            .as_ref(ctx)
-            .focused_session_view(ctx)
-            .unwrap()
-    });
-
-    // Ensure session is opened as a viewer.
-    terminal_view.read(app, |terminal, _ctx| {
-        let model = terminal.model.clone();
-        assert!(model.lock().shared_session_status().is_viewer());
-    });
-
-    workspace
-}
-
 /// Disable the warn-before-quit setting. Because we don't fully bootstrap the shell in tests, this
 /// is generally needed in tests that close tabs.
-fn disable_quit_warning(app: &mut AppContext) {
-    GeneralSettings::handle(app).update(app, |settings, ctx| {
-        settings
-            .show_warning_before_quitting
-            .set_value(false, ctx)
-            .expect("Failed to disable quit warning");
-    });
-}
-
 fn get_newly_created_pane_id(panes: &PaneGroup, existing_ids: &[PaneId]) -> PaneId {
     panes
         .pane_ids()
@@ -1081,44 +772,6 @@ fn reopen_closed_session_menu_item(
         Some(MenuItem::Item(fields)) if fields.label() == "Reopen closed session" => fields,
         _ => panic!("expected Reopen closed session to be the last new-session menu item"),
     }
-}
-
-#[test]
-fn test_reward_modal_no_overlap() {
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        let workspace = mock_workspace(&mut app);
-
-        // Trigger the referral reward response
-        workspace.update(&mut app, |view, ctx| {
-            view.handle_referral_theme_status_event(
-                &ReferralThemeEvent::SentReferralThemeActivated,
-                ctx,
-            );
-
-            // This _should_ show the reward modal, since the changelog modal is _not_ active
-            assert!(view.current_workspace_state.is_reward_modal_open);
-        });
-    });
-}
-
-#[test]
-fn test_reward_modal_shows_for_received_referral() {
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        let workspace = mock_workspace(&mut app);
-
-        workspace.update(&mut app, |view, ctx| {
-            view.handle_referral_theme_status_event(
-                &ReferralThemeEvent::ReceivedReferralThemeActivated,
-                ctx,
-            );
-
-            assert!(view.current_workspace_state.is_reward_modal_open);
-        });
-    });
 }
 
 #[test]
@@ -1585,124 +1238,6 @@ fn test_workspace_sessions_retrieves_panes() {
     });
 }
 
-fn number_of_shared_sessions_in_tab(
-    workspace: &Workspace,
-    index: usize,
-    ctx: &AppContext,
-) -> usize {
-    workspace
-        .get_pane_group_view(index)
-        .map_or(0, |view| view.as_ref(ctx).number_of_shared_sessions(ctx))
-}
-
-/// Sets up the workspace with three tabs. The middle tab has two panes, where one is shared.
-fn setup_session_sharing_test(workspace: &ViewHandle<Workspace>, app: &mut App) -> PaneId {
-    let shared_pane_id = workspace.update(app, |workspace, ctx| {
-        workspace.add_terminal_tab(false, ctx);
-        workspace.add_terminal_tab(false, ctx);
-
-        let tab_view = workspace.get_pane_group_view(1).unwrap();
-
-        tab_view.update(ctx, |view, ctx| {
-            assert_eq!(view.pane_count(), 1);
-            view.focused_session_view(ctx)
-                .unwrap()
-                .update(ctx, |terminal, ctx| {
-                    terminal.attempt_to_share_session(
-                        SharedSessionScrollbackType::None,
-                        None,
-                        SharedSessionSource::user(None),
-                        ctx,
-                    );
-                });
-
-            view.handle_action(&PaneGroupAction::Add(Direction::Right), ctx);
-            assert_eq!(view.pane_count(), 2);
-
-            view.pane_id_by_index(0).unwrap()
-        })
-    });
-
-    workspace.read(app, |workspace, ctx| {
-        assert_eq!(number_of_shared_sessions_in_tab(workspace, 1, ctx), 1);
-
-        // Confirmation dialog starts not open.
-        assert!(
-            !workspace
-                .current_workspace_state
-                .is_close_session_confirmation_dialog_open
-        );
-    });
-
-    shared_pane_id
-}
-
-#[test]
-fn test_close_tab_confirmation_dialog() {
-    let _guard = FeatureFlag::CreatingSharedSessions.override_enabled(true);
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-        app.update(disable_quit_warning);
-
-        let workspace = mock_workspace(&mut app);
-        setup_session_sharing_test(&workspace, &mut app);
-
-        workspace.update(&mut app, |workspace, ctx| {
-            let first_tab_id = workspace.get_pane_group_view(0).unwrap().id();
-
-            // Trying to close tab with a shared pane opens dialog.
-            workspace.handle_action(&WorkspaceAction::CloseTab(1), ctx);
-            assert!(
-                workspace
-                    .current_workspace_state
-                    .is_close_session_confirmation_dialog_open
-            );
-
-            // User clicking cancel closes dialog.
-            workspace.handle_close_session_confirmation_dialog_event(
-                &CloseSessionConfirmationEvent::Cancel,
-                ctx,
-            );
-            assert!(
-                !workspace
-                    .current_workspace_state
-                    .is_close_session_confirmation_dialog_open
-            );
-
-            // Trying to close tab without a shared pane goes through without dialog.
-            workspace.handle_action(&WorkspaceAction::CloseTab(2), ctx);
-            assert_eq!(workspace.tab_count(), 2);
-            assert!(
-                !workspace
-                    .current_workspace_state
-                    .is_close_session_confirmation_dialog_open
-            );
-
-            // Close the tab with the shared pane.
-            workspace.handle_action(&WorkspaceAction::CloseTab(1), ctx);
-            assert!(
-                workspace
-                    .current_workspace_state
-                    .is_close_session_confirmation_dialog_open
-            );
-            workspace.handle_close_session_confirmation_dialog_event(
-                &CloseSessionConfirmationEvent::CloseSession {
-                    dont_show_again: false,
-                    open_confirmation_source: OpenDialogSource::CloseTab { tab_index: 1 },
-                },
-                ctx,
-            );
-            assert!(
-                !workspace
-                    .current_workspace_state
-                    .is_close_session_confirmation_dialog_open
-            );
-            assert_eq!(workspace.tab_count(), 1);
-            assert_eq!(workspace.get_pane_group_view(0).unwrap().id(), first_tab_id);
-        });
-    });
-}
-
 #[test]
 fn test_close_active_horizontal_tab_activates_tab_to_right() {
     let _vertical_tabs_guard = FeatureFlag::VerticalTabs.override_enabled(true);
@@ -1816,333 +1351,6 @@ fn test_close_last_vertical_tab_activates_tab_above() {
 }
 
 #[test]
-fn test_close_pane_confirmation_dialog() {
-    let _guard = FeatureFlag::CreatingSharedSessions.override_enabled(true);
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        let workspace = mock_workspace(&mut app);
-        let shared_pane_id = setup_session_sharing_test(&workspace, &mut app);
-
-        workspace.update(&mut app, |workspace, ctx| {
-            let shared_pane_group_id = workspace.get_pane_group_view(1).unwrap().id();
-
-            // User tries to close shared pane, dialog comes up.
-            workspace.handle_file_tree_event(
-                workspace.get_pane_group_view(1).unwrap().clone(),
-                &pane_group::Event::CloseSharedSessionPaneRequested {
-                    pane_id: shared_pane_id,
-                },
-                ctx,
-            );
-            assert!(
-                workspace
-                    .current_workspace_state
-                    .is_close_session_confirmation_dialog_open
-            );
-
-            // User confirms.
-            workspace.handle_close_session_confirmation_dialog_event(
-                &CloseSessionConfirmationEvent::CloseSession {
-                    dont_show_again: false,
-                    open_confirmation_source: OpenDialogSource::ClosePane {
-                        pane_group_id: shared_pane_group_id,
-                        pane_id: shared_pane_id,
-                    },
-                },
-                ctx,
-            );
-            assert!(
-                !workspace
-                    .current_workspace_state
-                    .is_close_session_confirmation_dialog_open
-            );
-            assert_eq!(number_of_shared_sessions_in_tab(workspace, 1, ctx), 0);
-            let remaining_pane_id = workspace
-                .get_pane_group_view_with_id(shared_pane_group_id)
-                .unwrap()
-                .as_ref(ctx)
-                .pane_id_by_index(0)
-                .unwrap();
-            assert_ne!(remaining_pane_id, shared_pane_id);
-            assert_eq!(workspace.tab_count(), 3);
-        });
-    });
-}
-
-#[test]
-fn test_reopen_closed_shared_tab() {
-    let _guard = FeatureFlag::CreatingSharedSessions.override_enabled(true);
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        let workspace = mock_workspace(&mut app);
-        setup_session_sharing_test(&workspace, &mut app);
-
-        workspace.update(&mut app, |workspace, ctx| {
-            let shared_pane_group = workspace.get_pane_group_view(1).unwrap().clone();
-
-            // Close the tab with the shared pane.
-            workspace.close_tab(1, true, true, ctx);
-            assert_eq!(workspace.tab_count(), 2);
-
-            // Restore the shared tab.
-            workspace.restore_closed_tab(1, TabData::new(shared_pane_group.to_owned()), ctx);
-        });
-        // Restored tab should no longer be shared.
-        workspace.read(&app, |workspace, ctx| {
-            let pane_group = workspace.get_pane_group_view(1).unwrap();
-            assert!(!pane_group.as_ref(ctx).is_terminal_pane_being_shared(ctx));
-            assert_eq!(workspace.tab_count(), 3);
-        })
-    });
-}
-
-#[test]
-fn test_close_other_tabs_confirmation_dialog() {
-    let _guard = FeatureFlag::CreatingSharedSessions.override_enabled(true);
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        let workspace = mock_workspace(&mut app);
-        setup_session_sharing_test(&workspace, &mut app);
-
-        workspace.update(&mut app, |workspace, ctx| {
-            let last_tab_id = workspace.get_pane_group_view(2).unwrap().id();
-
-            // User tries to close other tabs choosing non-shared tab, dialog comes up.
-            workspace.handle_action(&WorkspaceAction::CloseOtherTabs(2), ctx);
-            assert!(
-                workspace
-                    .current_workspace_state
-                    .is_close_session_confirmation_dialog_open
-            );
-
-            // User confirms.
-            workspace.handle_close_session_confirmation_dialog_event(
-                &CloseSessionConfirmationEvent::CloseSession {
-                    dont_show_again: false,
-                    open_confirmation_source: OpenDialogSource::CloseOtherTabs { tab_index: 2 },
-                },
-                ctx,
-            );
-            assert!(
-                !workspace
-                    .current_workspace_state
-                    .is_close_session_confirmation_dialog_open
-            );
-            assert_eq!(workspace.tab_count(), 1);
-            assert_eq!(workspace.get_pane_group_view(0).unwrap().id(), last_tab_id);
-        });
-    });
-}
-
-#[test]
-fn test_close_tabs_right_confirmation_dialog() {
-    let _guard = FeatureFlag::CreatingSharedSessions.override_enabled(true);
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        let workspace = mock_workspace(&mut app);
-        setup_session_sharing_test(&workspace, &mut app);
-
-        workspace.update(&mut app, |workspace, ctx| {
-            let first_tab_id = workspace.get_pane_group_view(0).unwrap().id();
-
-            // User tries to close all tabs right of the left-most tab, dialog comes up.
-            workspace.handle_action(&WorkspaceAction::CloseTabsRight(0), ctx);
-            assert!(
-                workspace
-                    .current_workspace_state
-                    .is_close_session_confirmation_dialog_open
-            );
-
-            // User confirms.
-            workspace.handle_close_session_confirmation_dialog_event(
-                &CloseSessionConfirmationEvent::CloseSession {
-                    dont_show_again: false,
-                    open_confirmation_source: OpenDialogSource::CloseTabsDirection {
-                        tab_index: 0,
-                        direction: TabMovement::Right,
-                    },
-                },
-                ctx,
-            );
-            assert!(
-                !workspace
-                    .current_workspace_state
-                    .is_close_session_confirmation_dialog_open
-            );
-            assert_eq!(workspace.tab_count(), 1);
-            assert_eq!(workspace.get_pane_group_view(0).unwrap().id(), first_tab_id);
-        });
-    });
-}
-
-#[test]
-fn test_confirmation_dialog_dont_show_again() {
-    let _guard = FeatureFlag::CreatingSharedSessions.override_enabled(true);
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-        app.update(disable_quit_warning);
-
-        let workspace = mock_workspace(&mut app);
-        setup_session_sharing_test(&workspace, &mut app);
-
-        workspace.update(&mut app, |workspace, ctx| {
-            // Close the tab with the shared pane, dialog comes up
-            workspace.handle_action(&WorkspaceAction::CloseTab(1), ctx);
-            assert!(
-                workspace
-                    .current_workspace_state
-                    .is_close_session_confirmation_dialog_open
-            );
-
-            // User confirms, checking "Don't show again".
-            workspace.handle_close_session_confirmation_dialog_event(
-                &CloseSessionConfirmationEvent::CloseSession {
-                    dont_show_again: true,
-                    open_confirmation_source: OpenDialogSource::CloseTab { tab_index: 1 },
-                },
-                ctx,
-            );
-            assert!(
-                !workspace
-                    .current_workspace_state
-                    .is_close_session_confirmation_dialog_open
-            );
-            assert_eq!(workspace.tab_count(), 2);
-
-            // Share the first tab
-            let tab_view = workspace.get_pane_group_view(0).unwrap();
-            tab_view.update(ctx, |view, ctx| {
-                view.terminal_manager(0, ctx)
-                    .unwrap()
-                    .as_ref(ctx)
-                    .model()
-                    .lock()
-                    .set_shared_session_status(SharedSessionStatus::ActiveSharer);
-            });
-
-            // Close the shared tab. No dialog should come up and action should go through.
-            workspace.handle_action(&WorkspaceAction::CloseActiveTab, ctx);
-            assert!(
-                !workspace
-                    .current_workspace_state
-                    .is_close_session_confirmation_dialog_open
-            );
-            assert_eq!(workspace.tab_count(), 1);
-        });
-    });
-}
-
-#[test]
-fn test_close_last_tab_skip_confirmation() {
-    let _guard = FeatureFlag::CreatingSharedSessions.override_enabled(true);
-
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-        app.update(disable_quit_warning);
-
-        let workspace = mock_workspace(&mut app);
-        setup_session_sharing_test(&workspace, &mut app);
-
-        workspace.update(&mut app, |workspace, ctx| {
-            // Close the non-shared tabs so there's just one shared tab left.
-            workspace.handle_action(&WorkspaceAction::CloseTab(2), ctx);
-            workspace.handle_action(&WorkspaceAction::CloseTab(0), ctx);
-            assert_eq!(workspace.tab_count(), 1);
-            // Close the last remaining tab with the shared pane, no dialog should come up because
-            // we're going to close the window and there's already a confirmation on window close.
-            workspace.handle_action(&WorkspaceAction::CloseActiveTab, ctx);
-            assert!(
-                !workspace
-                    .current_workspace_state
-                    .is_close_session_confirmation_dialog_open
-            );
-        });
-    });
-}
-
-#[test]
-fn test_notebook_pane_tracking() {
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        let workspace = mock_workspace(&mut app);
-
-        workspace.update(&mut app, |workspace, ctx| {
-            // Add a new notebook pane.
-            workspace.open_notebook(
-                &NotebookSource::New {
-                    title: None,
-                    owner: Owner::mock_current_user(),
-                    initial_folder_id: None,
-                },
-                &OpenWarpDriveObjectSettings::default(),
-                ctx,
-                true,
-            );
-
-            // Get the ID of the new notebook.
-            let pane_group = workspace
-                .get_pane_group_view(0)
-                .expect("Pane group does not exist")
-                .clone();
-            let notebook_view = pane_group
-                .as_ref(ctx)
-                .notebook_view_at_pane_index(0, ctx)
-                .expect("Notebook view was not created")
-                .clone();
-            let notebook_pane_id = pane_group
-                .as_ref(ctx)
-                .pane_id_from_index(0)
-                .expect("Notebook view should have been created");
-            let notebook_id = notebook_view
-                .as_ref(ctx)
-                .notebook_id(ctx)
-                .expect("Notebook should have an ID");
-
-            // The notebook should be registered with the NotebookManager.
-            let (window, locator) = NotebookManager::as_ref(ctx)
-                .find_pane(&NotebookSource::Existing(notebook_id))
-                .expect("Notebook pane should be registered");
-            assert_eq!(window, ctx.window_id());
-            assert_eq!(
-                locator,
-                PaneViewLocator {
-                    pane_group_id: pane_group.id(),
-                    pane_id: notebook_pane_id,
-                }
-            );
-
-            // Re-opening the notebook should not create a new view.
-            workspace.open_notebook(
-                &NotebookSource::Existing(notebook_id),
-                &OpenWarpDriveObjectSettings::default(),
-                ctx,
-                true,
-            );
-            assert_eq!(
-                ctx.views_of_type::<NotebookView>(ctx.window_id()),
-                Some(vec![notebook_view])
-            );
-
-            // Finally, closing the notebook pane should de-register it.
-            pane_group.update(ctx, |pane_group, ctx| {
-                pane_group.handle_action(&PaneGroupAction::RemoveActive, ctx)
-            });
-            assert_eq!(
-                NotebookManager::handle(ctx)
-                    .as_ref(ctx)
-                    .find_pane(&NotebookSource::Existing(notebook_id)),
-                None
-            );
-        });
-    });
-}
-
-#[test]
 fn test_set_active_terminal_input_contents_and_focus_app() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
@@ -2230,349 +1438,6 @@ fn test_terminal_model_isnt_leaked() {
 }
 
 #[test]
-fn test_open_or_toggle_warp_drive() {
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        let workspace = mock_workspace(&mut app);
-        workspace.update(&mut app, |workspace, ctx| {
-            // First, unconditionally open Warp Drive as a system action. WD should be open and welcome tips should not have opening warp drive.
-            workspace.open_or_toggle_warp_drive(
-                false, /* toggle */
-                false, /* explicit_user_action */
-                ctx,
-            );
-            assert!(
-                workspace.current_workspace_state.is_warp_drive_open,
-                "Warp Drive should be open"
-            );
-            assert!(
-                !workspace
-                    .tips_completed
-                    .as_ref(ctx)
-                    .features_used
-                    .contains(&Tip::Action(TipAction::OpenWarpDrive)),
-                "Warp drive welcome tip should not be completed"
-            );
-
-            // Next, toggle warp drive as a user action. WD should be closed and tip should not be filled out.
-            workspace.open_or_toggle_warp_drive(
-                true, /* toggle */
-                true, /* explicit_user_action */
-                ctx,
-            );
-            assert!(
-                !workspace.current_workspace_state.is_warp_drive_open,
-                "Warp Drive should be closed"
-            );
-            assert!(
-                !workspace
-                    .tips_completed
-                    .as_ref(ctx)
-                    .features_used
-                    .contains(&Tip::Action(TipAction::OpenWarpDrive)),
-                "Warp drive welcome tip should not be completed"
-            );
-
-            // Finally, toggle warp drive again as a user action. WD should be open and tip filled out.
-            workspace.open_or_toggle_warp_drive(
-                true, /* toggle */
-                true, /* explicit_user_action */
-                ctx,
-            );
-            assert!(
-                workspace.current_workspace_state.is_warp_drive_open,
-                "Warp Drive should be open"
-            );
-            assert!(
-                workspace
-                    .tips_completed
-                    .as_ref(ctx)
-                    .features_used
-                    .contains(&Tip::Action(TipAction::OpenWarpDrive)),
-                "Warp drive welcome tip should not be completed"
-            );
-        });
-    });
-}
-
-#[test]
-fn test_stop_sharing_session() {
-    use crate::terminal::shared_session::manager::Manager;
-    let _guard = FeatureFlag::CreatingSharedSessions.override_enabled(true);
-
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        // Create a workspace with a single session that's shared.
-        let workspace = mock_workspace_with_shared_session(&mut app);
-        let terminal_view = workspace.read(&app, |workspace, ctx| {
-            assert_eq!(workspace.tabs.len(), 1);
-            workspace
-                .active_tab_pane_group()
-                .as_ref(ctx)
-                .focused_session_view(ctx)
-                .unwrap()
-        });
-
-        // Stop sharing the shared session.
-        workspace.update(&mut app, |workspace, ctx| {
-            workspace.stop_sharing_session(
-                &terminal_view.id(),
-                SharedSessionActionSource::Tab,
-                ctx,
-            );
-        });
-
-        // Ensure that the session is no longer registered with the shared session manager.
-        app.read(|ctx| {
-            let manager = Manager::as_ref(ctx);
-            let shared_sessions = manager.shared_views(ctx).collect_vec();
-            assert_eq!(shared_sessions.len(), 0);
-        });
-    });
-}
-
-#[test]
-fn test_stop_sharing_all_sessions_in_tab() {
-    use crate::terminal::shared_session::manager::Manager;
-    let _guard = FeatureFlag::CreatingSharedSessions.override_enabled(true);
-
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        // Create a workspace with two tabs. First tab has two shared sessions. Second tab has one shared session.
-        let workspace = mock_workspace_with_shared_session(&mut app);
-        let second_tab_session = workspace.update(&mut app, |workspace, ctx| {
-            workspace
-                .active_tab_pane_group()
-                .update(ctx, |pane_group, ctx| {
-                    pane_group.handle_action(&PaneGroupAction::Add(Direction::Right), ctx);
-                    pane_group
-                        .terminal_view_at_pane_index(1, ctx)
-                        .unwrap()
-                        .update(ctx, |terminal_view, ctx| {
-                            terminal_view.attempt_to_share_session(
-                                SharedSessionScrollbackType::None,
-                                None,
-                                SharedSessionSource::user(None),
-                                ctx,
-                            );
-                        });
-                });
-
-            workspace.add_terminal_tab(false, ctx);
-            workspace
-                .active_tab_pane_group()
-                .update(ctx, |pane_group, ctx| {
-                    pane_group
-                        .terminal_view_at_pane_index(0, ctx)
-                        .unwrap()
-                        .update(ctx, |terminal_view, ctx| {
-                            terminal_view.attempt_to_share_session(
-                                SharedSessionScrollbackType::None,
-                                None,
-                                SharedSessionSource::user(None),
-                                ctx,
-                            );
-                        });
-                });
-
-            workspace
-                .active_tab_pane_group()
-                .read(ctx, |pane_group, ctx| {
-                    pane_group.terminal_view_at_pane_index(0, ctx).unwrap().id()
-                })
-        });
-
-        // Ensure we have three shared sessions registered.
-        app.read(|ctx| {
-            let manager = Manager::as_ref(ctx);
-            let shared_sessions = manager.shared_views(ctx).collect_vec();
-            assert_eq!(shared_sessions.len(), 3);
-        });
-
-        // Stop sharing all sessions in first tab.
-        workspace.update(&mut app, |workspace, ctx| {
-            let tab = workspace.tabs[0].pane_group.downgrade();
-            workspace.stop_sharing_all_panes_in_tab(&tab, ctx);
-        });
-
-        // Ensure that the only remaining shared session is the one in the other tab.
-        app.read(|ctx| {
-            let manager = Manager::as_ref(ctx);
-            let shared_sessions = manager.shared_views(ctx).collect_vec();
-            assert_eq!(shared_sessions.len(), 1);
-            assert_eq!(shared_sessions[0].id(), second_tab_session);
-        });
-    });
-}
-
-#[test]
-fn test_tab_context_menu_share_session_items() {
-    let _guard = FeatureFlag::CreatingSharedSessions.override_enabled(true);
-
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-        let workspace = mock_workspace(&mut app);
-        let shared_pane_id = setup_session_sharing_test(&workspace, &mut app);
-
-        workspace.update(&mut app, |workspace, ctx| {
-            // Focus the shared session
-            workspace.activate_tab(1, ctx);
-            workspace
-                .active_tab_pane_group()
-                .update(ctx, |pane_group, ctx| {
-                    pane_group.focus_pane_by_id(shared_pane_id, ctx);
-                });
-        });
-
-        // When there's a single shared session in a tab (focused), the options
-        // for sharing are "Stop sharing" and "Stop sharing all".
-        workspace.read(&app, |workspace, ctx| {
-            let items =
-                workspace.tabs[1].menu_items(1, 3, &workspace.tab_groups, false, true, true, ctx);
-            assert!(
-                items[0].is_approximately_same_item_as(
-                    &MenuItemFields::new("Stop sharing").into_item()
-                )
-            );
-            assert!(items[1].is_approximately_same_item_as(
-                &MenuItemFields::new("Stop sharing all").into_item()
-            ));
-        });
-
-        // Focus the other, non-shared pane in the tab
-        workspace.update(&mut app, |workspace, ctx| {
-            workspace.activate_tab(1, ctx);
-            workspace
-                .active_tab_pane_group()
-                .update(ctx, |pane_group, ctx| {
-                    pane_group.pane_by_index(1).unwrap().focus(ctx);
-                });
-        });
-
-        // When there's a single shared session in a tab (unfocused), the options
-        // for sharing are "Share session" and "Stop sharing all".
-        workspace.read(&app, |workspace, ctx| {
-            let items =
-                workspace.tabs[1].menu_items(1, 3, &workspace.tab_groups, false, true, true, ctx);
-            assert!(
-                items[0].is_approximately_same_item_as(
-                    &MenuItemFields::new("Share session").into_item()
-                )
-            );
-            assert!(items[1].is_approximately_same_item_as(
-                &MenuItemFields::new("Stop sharing all").into_item()
-            ));
-        });
-
-        // Stop sharing.
-        workspace.update(&mut app, |workspace, ctx| {
-            let tab = workspace.tabs[1].pane_group.downgrade();
-            workspace.stop_sharing_all_panes_in_tab(&tab, ctx);
-        });
-
-        // When there's no shared sessions in a tab, the only option is "Share session".
-        workspace.read(&app, |workspace, ctx| {
-            let items =
-                workspace.tabs[1].menu_items(1, 3, &workspace.tab_groups, false, true, true, ctx);
-            assert!(
-                items[0].is_approximately_same_item_as(
-                    &MenuItemFields::new("Share session").into_item()
-                )
-            );
-            assert!(items[1].is_approximately_same_item_as(&MenuItem::Separator));
-        });
-    });
-}
-
-#[test]
-fn test_view_only_session() {
-    let _guard = FeatureFlag::ViewingSharedSessions.override_enabled(true);
-
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        // Trying to open command search
-        let workspace = mock_workspace_viewing_shared_session(&mut app);
-        workspace.update(&mut app, |workspace: &mut Workspace, ctx| {
-            workspace.handle_action(&WorkspaceAction::ShowCommandSearch(Default::default()), ctx);
-        });
-
-        // Ensure command search doesn't work for read-only shared sessions
-        workspace.read(&app, |workspace, _ctx| {
-            assert!(!workspace.current_workspace_state.is_command_search_open);
-        });
-    });
-}
-
-#[test]
-// This tests the end-to-end behavior to correctly switch focus among panels.
-// (The only panels that can be focused currently are WD & workspace.)
-fn test_switch_focus_panels() {
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-        let workspace = mock_workspace(&mut app);
-
-        workspace.update(&mut app, |view, ctx| {
-            view.focus_active_tab(ctx);
-        });
-        workspace.update(&mut app, |view, ctx| {
-            assert!(
-                view.active_tab_pane_group().is_self_or_child_focused(ctx),
-                "Expected terminal to be focused"
-            );
-        });
-
-        // Shift focus from terminal to left panel when WD is open
-        workspace.update(&mut app, |view, ctx| {
-            view.current_workspace_state.is_warp_drive_open = true;
-            view.focus_left_panel(ctx);
-        });
-        workspace.update(&mut app, |view, ctx| {
-            assert!(
-                view.left_panel_view.is_self_or_child_focused(ctx),
-                "Expected Warp Drive panel to be focused"
-            );
-        });
-
-        // Shift focus from WD back to the terminal
-        workspace.update(&mut app, |view, ctx| {
-            view.focus_left_panel(ctx);
-        });
-        workspace.update(&mut app, |_view, ctx| {
-            assert!(
-                workspace.is_self_or_child_focused(ctx),
-                "Expected terminal to be focused"
-            );
-        });
-
-        // Shift focus from workspace to right panel when WD is open
-        workspace.update(&mut app, |view, ctx| {
-            view.focus_right_panel(ctx);
-        });
-        workspace.update(&mut app, |view, ctx| {
-            assert!(
-                view.left_panel_view.is_self_or_child_focused(ctx),
-                "Expected Warp Drive panel to be focused"
-            );
-        });
-
-        // Shift focus from WD to right panel (terminal)
-        workspace.update(&mut app, |view, ctx| {
-            view.focus_right_panel(ctx);
-        });
-        workspace.update(&mut app, |_view, ctx| {
-            assert!(
-                workspace.is_self_or_child_focused(ctx),
-                "Expected terminal to be focused"
-            );
-        });
-    });
-}
-
-#[test]
 fn test_focus_notebook() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
@@ -2592,11 +1457,16 @@ fn test_focus_notebook() {
         });
 
         let notebook_id = pane_group.update(&mut app, |panes, ctx| {
-            // Add a notebook to the left.
-            let notebook_view = ctx.add_typed_action_view(NotebookView::new);
+            // Add a file notebook to the left.
             panes.add_pane_with_direction(
                 Direction::Left,
-                NotebookPane::new(notebook_view, ctx),
+                FilePane::new(
+                    None,
+                    None,
+                    #[cfg(feature = "local_fs")]
+                    None,
+                    ctx,
+                ),
                 true, /* focus_new_pane */
                 ctx,
             );
@@ -2709,11 +1579,16 @@ fn test_close_active_session() {
         });
 
         let notebook_id = pane_group.update(&mut app, |panes, ctx| {
-            // Add a notebook to the left.
-            let notebook_view = ctx.add_typed_action_view(NotebookView::new);
+            // Add a file notebook to the left.
             panes.add_pane_with_direction(
                 Direction::Left,
-                NotebookPane::new(notebook_view, ctx),
+                FilePane::new(
+                    None,
+                    None,
+                    #[cfg(feature = "local_fs")]
+                    None,
+                    ctx,
+                ),
                 true, /* focus_new_pane */
                 ctx,
             );
@@ -4570,95 +3445,6 @@ fn test_pin_tab_on_grouped_tab_extracts_then_pins() {
     });
 }
 
-/// Regression for the tools-panel tab visibility toggles surfaced in the
-/// Appearance settings page: toggling a tab's backing setting must add/remove
-/// that tab from the tools panel live, and re-enabling Warp Drive must make it
-/// selectable again (the original report was that Warp Drive could vanish from
-/// the tools panel with no way back).
-#[test]
-fn test_tools_panel_warp_drive_toggle_updates_available_views() {
-    // Force the non-anonymous path so `is_warp_drive_enabled` follows the
-    // `enable_warp_drive` setting rather than the auth state.
-    let _skip_anon_guard = FeatureFlag::SkipFirebaseAnonymousUser.override_enabled(false);
-
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-        let workspace = mock_workspace(&mut app);
-
-        // Warp Drive is enabled by default, so it is an available tools-panel
-        // tab and can be made the active view.
-        workspace.update(&mut app, |workspace, ctx| {
-            assert!(
-                workspace
-                    .left_panel_views
-                    .contains(&ToolPanelView::WarpDrive),
-                "Warp Drive should be an available tools-panel tab by default"
-            );
-            workspace.left_panel_view.update(ctx, |lp, ctx| {
-                lp.handle_action_with_force_open(&LeftPanelAction::WarpDrive, false, ctx);
-            });
-            assert_eq!(
-                workspace.left_panel_view.as_ref(ctx).active_view(),
-                ToolPanelView::WarpDrive,
-                "Warp Drive should be selectable as the active view"
-            );
-        });
-
-        // Turning the toggle off (via its backing setting) removes Warp Drive
-        // from the tools panel; if other tabs remain the active view falls back
-        // to one of them.
-        app.update(|ctx| {
-            WarpDriveSettings::handle(ctx).update(ctx, |settings, ctx| {
-                settings
-                    .enable_warp_drive
-                    .set_value(false, ctx)
-                    .expect("disable warp drive");
-            });
-        });
-        workspace.update(&mut app, |workspace, ctx| {
-            assert!(
-                !workspace
-                    .left_panel_views
-                    .contains(&ToolPanelView::WarpDrive),
-                "Disabling the setting should remove Warp Drive from the tools panel"
-            );
-            if !workspace.left_panel_views.is_empty() {
-                assert_ne!(
-                    workspace.left_panel_view.as_ref(ctx).active_view(),
-                    ToolPanelView::WarpDrive,
-                    "Active view should fall back to a remaining tab when Warp Drive is removed"
-                );
-            }
-        });
-
-        // Re-enabling restores Warp Drive as a selectable tab.
-        app.update(|ctx| {
-            WarpDriveSettings::handle(ctx).update(ctx, |settings, ctx| {
-                settings
-                    .enable_warp_drive
-                    .set_value(true, ctx)
-                    .expect("re-enable warp drive");
-            });
-        });
-        workspace.update(&mut app, |workspace, ctx| {
-            assert!(
-                workspace
-                    .left_panel_views
-                    .contains(&ToolPanelView::WarpDrive),
-                "Re-enabling the setting should restore Warp Drive to the tools panel"
-            );
-            workspace.left_panel_view.update(ctx, |lp, ctx| {
-                lp.handle_action_with_force_open(&LeftPanelAction::WarpDrive, false, ctx);
-            });
-            assert_eq!(
-                workspace.left_panel_view.as_ref(ctx).active_view(),
-                ToolPanelView::WarpDrive,
-                "Warp Drive should be selectable again after re-enabling"
-            );
-        });
-    });
-}
-
 #[test]
 fn add_agent_picker_tab_opens_a_single_picker_tab_per_window() {
     App::test((), |mut app| async move {
@@ -4925,13 +3711,7 @@ fn closing_the_last_tab_of_a_worktree_moves_it_to_the_closed_list() {
             let index = workspace
                 .tab_index_for_worktree(linked_id)
                 .expect("the worktree has a tab");
-            workspace.close_tabs(
-                std::iter::once(index),
-                crate::workspace::close_session_confirmation_dialog::OpenDialogSource::CloseOtherTabs { tab_index: 0 },
-                true,
-                false,
-                ctx,
-            );
+            workspace.close_tabs(std::iter::once(index), true, false, ctx);
 
             let closed = workspace.closed_worktrees(ctx);
             assert!(

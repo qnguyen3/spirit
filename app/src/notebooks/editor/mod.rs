@@ -19,16 +19,13 @@ use warpui::fonts::FamilyId;
 use warpui::ui_components::checkbox::HOVER_BACKGROUND_COLOR;
 
 use crate::appearance::Appearance;
-use crate::notebooks::editor::embedded_item::EmbeddedWorkflow;
 use crate::settings::{FontSettings, derived_notebook_font_size};
 use crate::themes::theme::Fill;
 use crate::ui_components::icons::Icon;
 use crate::util::color::{ContrastingColor, MinimumAllowedContrast};
-use crate::workflows::{CloudWorkflow, WorkflowSource, WorkflowType};
+use crate::workflows::{WorkflowSource, WorkflowType};
 
 mod block_insertion_menu;
-mod embedded_item;
-mod embedding_model;
 mod find_bar;
 mod interaction_state_model;
 pub mod keys;
@@ -38,7 +35,6 @@ pub mod notebook_command;
 mod omnibar;
 pub mod view;
 
-pub use block_insertion_menu::BlockInsertionSource;
 const NOTEBOOK_LINE_HEIGHT_RATIO: f32 = 1.5;
 const NOTEBOOK_BASELINE_RATIO: f32 = 0.7;
 
@@ -145,14 +141,12 @@ impl BlockType {
 }
 
 /// The embedded item transformation for notebooks.
+///
+/// Embedded items were Warp Drive workflows, so nothing embeds any more.
 pub(super) fn notebook_embedded_item_conversion(
-    mut mapping: serde_yaml::Mapping,
+    _mapping: serde_yaml::Mapping,
 ) -> Option<Arc<dyn EmbeddedItem>> {
-    use serde_yaml::Value;
-    match mapping.remove(&Value::String("id".to_string())) {
-        Some(Value::String(hashed_id)) => Some(Arc::new(EmbeddedWorkflow::new(hashed_id))),
-        _ => None,
-    }
+    None
 }
 
 pub(crate) fn markdown_table_appearance(appearance: &Appearance) -> MarkdownTableAppearance {
@@ -343,13 +337,6 @@ pub struct NotebookWorkflow {
 }
 
 impl NotebookWorkflow {
-    pub fn from_cloud_workflow(cloud_workflow: Box<CloudWorkflow>) -> Self {
-        Self {
-            source: Some(cloud_workflow.permissions.owner.into()),
-            workflow: UserInput::new(Arc::new(WorkflowType::Cloud(cloud_workflow))),
-        }
-    }
-
     /// Extract the [`WorkflowType`], assigning a name using the given callback if needed.
     pub fn named_workflow<F: FnOnce() -> Option<String>>(&self, name: F) -> Arc<WorkflowType> {
         match &**self.workflow {

@@ -25,7 +25,7 @@ pub enum UseCache {
     No,
 }
 
-/// Singleton model that loads and caches local (non-WarpDrive) workflows.
+/// Singleton model that loads and caches local workflows.
 pub struct LocalWorkflows {
     app_workflows: Vec<Workflow>,
 
@@ -226,7 +226,6 @@ pub fn prompt_chip_logging_workflow(shell_family: ShellFamily) -> Option<Workflo
         author: Some("Warp".into()),
         author_url: None,
         shells: vec![],
-        environment_variables: None,
     })
 }
 

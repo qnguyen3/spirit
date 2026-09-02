@@ -5,9 +5,7 @@ use pathfinder_geometry::rect::RectF;
 use repo_metadata::RepoMetadataModel;
 use repo_metadata::repositories::DetectedRepositories;
 use repo_metadata::watcher::DirectoryWatcher;
-use shared_session::permissions_manager::SessionPermissionsManager;
 use warp_core::features::FeatureFlag;
-use warp_server_client::iap::IapManager;
 use warpui::platform::{WindowBounds, WindowStyle};
 use warpui::windowing::WindowManager;
 use warpui::windowing::state::ApplicationStage;
@@ -15,25 +13,14 @@ use warpui::{App, ModelHandle};
 use watcher::HomeDirectoryWatcher;
 
 use super::*;
-use crate::auth::auth_manager::AuthManager;
-use crate::auth::github_auth_notifier::GitHubAuthNotifier;
 use crate::changelog_model::ChangelogModel;
-use crate::cloud_object::model::persistence::CloudModel;
 use crate::context_chips::prompt::Prompt;
 use crate::launch_configs::launch_config::PaneMode;
 use crate::network::NetworkStatus;
 use crate::notebooks::editor::keys::NotebookKeybindings;
-use crate::notebooks::manager::NotebookManager;
-use crate::notebooks::notebook::NotebookView;
 use crate::persisted_workspace::PersistedWorkspace;
-use crate::pricing::PricingInfoModel;
 use crate::resource_center::TipsCompleted;
 use crate::search::files::model::FileSearchModel;
-use crate::server::cloud_objects::listener::Listener;
-use crate::server::cloud_objects::update_manager::UpdateManager;
-use crate::server::server_api::ServerApiProvider;
-use crate::server::sync_queue::SyncQueue;
-use crate::server::telemetry::context_provider::AppTelemetryContextProvider;
 use crate::settings::PrivacySettings;
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
 use crate::suggestions::ignored_suggestions_model::IgnoredSuggestionsModel;
@@ -41,66 +28,34 @@ use crate::system::SystemStats;
 use crate::terminal::alt_screen_reporting::AltScreenReporting;
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::history::History;
-use crate::terminal::local_tty::TerminalManager;
 use crate::terminal::local_tty::spawner::PtySpawner;
 use crate::terminal::resizable_data::ResizableData;
-use crate::terminal::shared_session::{
-    SharedSessionActionSource, SharedSessionScrollbackType, SharedSessionSource,
-    SharedSessionStatus,
-};
 use crate::test_util::settings::initialize_settings_for_tests;
 use crate::undo_close::UndoCloseStack;
 use crate::warp_managed_paths_watcher::WarpManagedPathsWatcher;
 use crate::workflows::local_workflows::LocalWorkflows;
 use crate::workspace::sync_inputs::SyncedInputState;
 use crate::workspace::{ActiveSession, WorkspaceRegistry};
-use crate::workspaces::team_tester::TeamTesterStatus;
-use crate::workspaces::update_manager::TeamUpdateManager;
-use crate::workspaces::user_profiles::UserProfiles;
-use crate::workspaces::user_workspaces::UserWorkspaces;
-use crate::{GlobalResourceHandles, GlobalResourceHandlesProvider, experiments};
+use crate::{GlobalResourceHandles, GlobalResourceHandlesProvider};
 
 fn initialize_app(app: &mut App) {
     initialize_settings_for_tests(app);
-
-    app.add_singleton_model(|_ctx| ServerApiProvider::new_for_test());
-    // Disabled (`None`) IapManager so shared-session viewer code that reads the
-    // singleton doesn't panic in tests; it is an inert no-op.
-    app.add_singleton_model(|ctx| {
-        IapManager::new(
-            None,
-            Box::new(|_| futures::FutureExt::boxed(futures::future::ready(None::<String>))),
-            None,
-            ctx,
-        )
+    app.add_singleton_model(|_| {
+        ChangelogModel::new(std::sync::Arc::new(http_client::Client::new_for_test()))
     });
-    app.add_singleton_model(|ctx| ChangelogModel::new(ServerApiProvider::as_ref(ctx).get()));
-    app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
-    app.add_singleton_model(AuthManager::new_for_test);
     app.add_singleton_model(|_ctx| PtySpawner::new_for_test());
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| SystemStats::new());
-    app.add_singleton_model(SyncQueue::mock);
-    app.add_singleton_model(CloudModel::mock);
-    app.add_singleton_model(UserWorkspaces::default_mock);
-    app.add_singleton_model(TeamTesterStatus::mock);
-    app.add_singleton_model(TeamUpdateManager::mock);
-    app.add_singleton_model(Listener::mock);
-    app.add_singleton_model(UpdateManager::mock);
     app.add_singleton_model(|_| DetectedRepositories::default());
     app.add_singleton_model(HomeDirectoryWatcher::new_for_test);
     app.add_singleton_model(DirectoryWatcher::new);
     app.add_singleton_model(WarpManagedPathsWatcher::new_for_testing);
-    app.add_singleton_model(|_ctx| UserProfiles::new(Vec::new()));
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(PrivacySettings::mock);
     app.add_singleton_model(|_ctx| SyncedInputState::mock());
     app.add_singleton_model(LocalWorkflows::new);
     app.add_singleton_model(|_| Prompt::mock());
     app.add_singleton_model(|_| ResizableData::default());
-    app.add_singleton_model(NotebookManager::mock);
-    app.add_singleton_model(shared_session::manager::Manager::new);
     app.add_singleton_model(|_| ActiveSession::default());
     let global_resources = GlobalResourceHandles::mock(app);
     app.add_singleton_model(|_| GlobalResourceHandlesProvider::new(global_resources.clone()));
@@ -108,21 +63,17 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(NotebookKeybindings::new);
     app.add_singleton_model(|_| CLIAgentSessionsModel::new());
     app.add_singleton_model(|_| crate::workspace::AgentInboxModel::default());
-    app.add_singleton_model(SessionPermissionsManager::new);
     #[cfg(feature = "local_fs")]
     app.add_singleton_model(RepoMetadataModel::new);
     app.add_singleton_model(FileSearchModel::new);
     app.add_singleton_model(|_| crate::code_review::git_repo_model::GitRepoModels::new());
     crate::terminal::available_shells::register(app);
-    app.update(experiments::init);
     AltScreenReporting::register(app);
     app.add_singleton_model(PersistedWorkspace::new_for_test);
     app.add_singleton_model(|_| WorkspaceRegistry::new());
     app.add_singleton_model(UndoCloseStack::new);
     app.add_singleton_model(|_| IgnoredSuggestionsModel::new(vec![]));
-    app.add_singleton_model(|_| PricingInfoModel::new());
     app.add_singleton_model(|_| History::new(vec![]));
-    app.add_singleton_model(|_| GitHubAuthNotifier::new());
     app.add_singleton_model(remote_server::manager::RemoteServerManager::new);
 }
 
@@ -153,7 +104,6 @@ fn mock_pane_group(app: &mut App, options: MockOptions) -> ViewHandle<PaneGroup>
             PaneGroup::new_with_panes_layout(
                 tips_model,
                 user_default_shell_changed_banner_dismissal_model_handle,
-                ServerApiProvider::as_ref(ctx).get(),
                 options.layout,
                 block_lists,
                 None,
@@ -181,8 +131,14 @@ fn is_active_session(panes: &PaneGroup, pane_id: PaneId, ctx: &AppContext) -> bo
     panes.active_session_id(ctx).map(Into::into) == Some(pane_id)
 }
 
-fn new_notebook(ctx: &mut ViewContext<PaneGroup>) -> ViewHandle<NotebookView> {
-    ctx.add_typed_action_view(NotebookView::new)
+fn new_file_pane(ctx: &mut ViewContext<PaneGroup>) -> FilePane {
+    FilePane::new(
+        None,
+        None,
+        #[cfg(feature = "local_fs")]
+        None,
+        ctx,
+    )
 }
 
 struct PreAttachReturnsFalsePane {
@@ -322,7 +278,7 @@ fn test_active_session_id_reset_on_last_pane_close() {
             // Add a non-terminal pane (Notebook) so the pane group remains alive when terminal is closed.
             panes.add_pane_with_direction(
                 Direction::Right,
-                NotebookPane::new(new_notebook(ctx), ctx),
+                new_file_pane(ctx),
                 false, /* focus_new_pane */
                 ctx,
             );
@@ -375,7 +331,7 @@ fn test_focus_notebook() {
             // Add a notebook to the left.
             panes.add_pane_with_direction(
                 Direction::Left,
-                NotebookPane::new(new_notebook(ctx), ctx),
+                new_file_pane(ctx),
                 true, /* focus_new_pane */
                 ctx,
             );
@@ -456,7 +412,7 @@ fn test_group_without_terminals() {
             // Add a notebook to the left.
             panes.add_pane_with_direction(
                 Direction::Left,
-                NotebookPane::new(new_notebook(ctx), ctx),
+                new_file_pane(ctx),
                 true, /* focus_new_pane */
                 ctx,
             );
@@ -489,7 +445,7 @@ fn test_close_active_session() {
             // Add a notebook to the left.
             panes.add_pane_with_direction(
                 Direction::Left,
-                NotebookPane::new(new_notebook(ctx), ctx),
+                new_file_pane(ctx),
                 true, /* focus_new_pane */
                 ctx,
             );
@@ -750,230 +706,6 @@ fn test_initial_widths_are_computed_correctly() {
 }
 
 #[test]
-fn test_is_terminal_pane_being_shared() {
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        let pane_group = mock_pane_group(&mut app, Default::default());
-        pane_group.update(&mut app, |panes, ctx| {
-            assert!(!panes.is_terminal_pane_being_shared(ctx));
-
-            // Add another pane; the pane group should still be "unshared".
-            panes.add_terminal_pane(Direction::Left, None, ctx);
-            assert!(!panes.is_terminal_pane_being_shared(ctx));
-
-            // Make one of the terminal panes shared. There is now at least one terminal pane being shared.
-            panes
-                .terminal_session_by_pane_index(0)
-                .expect("terminal pane exists")
-                .terminal_manager(ctx)
-                .as_ref(ctx)
-                .model()
-                .lock()
-                .set_shared_session_status(SharedSessionStatus::ActiveSharer);
-            assert!(panes.is_terminal_pane_being_shared(ctx));
-        });
-    });
-}
-
-#[test]
-fn test_number_of_shared_panes() {
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-        let pane_group = mock_pane_group(&mut app, Default::default());
-
-        pane_group.update(&mut app, |panes, ctx| {
-            // We have two terminal sessions. Neither is shared
-            let first_pane_id = get_newly_created_pane_id(panes, &[]);
-            panes.add_terminal_pane(Direction::Up, None, ctx);
-            assert_eq!(panes.number_of_shared_sessions(ctx), 0);
-
-            // Make one pane shared
-            panes
-                .terminal_manager(0, ctx)
-                .unwrap()
-                .as_ref(ctx)
-                .model()
-                .lock()
-                .set_shared_session_status(SharedSessionStatus::ActiveSharer);
-            assert_eq!(panes.number_of_shared_sessions(ctx), 1);
-
-            // Make both panes shared
-            panes
-                .terminal_manager(1, ctx)
-                .unwrap()
-                .as_ref(ctx)
-                .model()
-                .lock()
-                .set_shared_session_status(SharedSessionStatus::ActiveSharer);
-            assert_eq!(panes.number_of_shared_sessions(ctx), 2);
-
-            // Close a pane
-            panes.close_pane(first_pane_id, ctx);
-            assert_eq!(panes.number_of_shared_sessions(ctx), 1);
-        });
-    });
-}
-
-#[test]
-fn test_start_shared_session_from_modal() {
-    let _guard = FeatureFlag::CreatingSharedSessions.override_enabled(true);
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-        let pane_group = mock_pane_group(&mut app, Default::default());
-
-        pane_group.update(&mut app, |pane_group, ctx| {
-            let terminal_pane = pane_group.terminal_session_by_pane_index(0).unwrap();
-            let terminal_pane_id = terminal_pane.terminal_pane_id();
-            let terminal_model = terminal_pane.terminal_manager(ctx).as_ref(ctx).model();
-
-            assert!(matches!(
-                terminal_model.lock().shared_session_status(),
-                SharedSessionStatus::NotShared
-            ));
-
-            pane_group.open_share_session_modal(
-                terminal_pane_id,
-                SharedSessionActionSource::PaneHeader,
-                ctx,
-            );
-            assert!(pane_group.terminal_with_open_share_session_modal.is_some());
-            assert_eq!(
-                pane_group
-                    .share_session_modal
-                    .as_ref(ctx)
-                    .terminal_pane_id(),
-                Some(terminal_pane_id)
-            );
-
-            pane_group.handle_share_session_modal_event(
-                &ShareSessionModalEvent::StartSharing {
-                    terminal_pane_id,
-                    scrollback_type: SharedSessionScrollbackType::None,
-                    source: SharedSessionActionSource::PaneHeader,
-                },
-                ctx,
-            );
-            assert!(pane_group.terminal_with_open_share_session_modal.is_none());
-            assert!(matches!(
-                terminal_model.lock().shared_session_status(),
-                SharedSessionStatus::SharePending
-            ));
-        });
-
-        // Wait for one tick of the event loop for the share to be started.
-        pane_group.read(&app, |pane_group, ctx| {
-            let terminal_view = pane_group
-                .terminal_view_at_pane_index(0, ctx)
-                .unwrap()
-                .to_owned();
-            let model = terminal_view.as_ref(ctx).model.lock();
-            assert!(matches!(
-                model.shared_session_status(),
-                SharedSessionStatus::ActiveSharer
-            ));
-
-            let manager = shared_session::manager::Manager::as_ref(ctx);
-            let shared_views = manager.shared_views(ctx).collect_vec();
-            assert_eq!(shared_views.len(), 1);
-            assert_eq!(shared_views[0].id(), terminal_view.id());
-
-            let terminal_pane = pane_group.terminal_session_by_pane_index(0).unwrap();
-            assert!(
-                terminal_pane
-                    .pane_view()
-                    .as_ref(ctx)
-                    .header()
-                    .as_ref(ctx)
-                    .has_shareable_object(ctx)
-            );
-        });
-    });
-}
-
-/// TODO: look into moving this test somewhere more suitable.
-/// Currently, the pane group is responsible for creating and owning
-/// the terminal manager, which in turn owns the Network model for the share.
-#[test]
-fn test_stop_shared_session() {
-    let _guard = FeatureFlag::CreatingSharedSessions.override_enabled(true);
-
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-        let pane_group = mock_pane_group(&mut app, Default::default());
-
-        // Start the shared session.
-        pane_group.update(&mut app, |pane_group, ctx| {
-            let terminal_pane = pane_group.terminal_session_by_pane_index(0).unwrap();
-            let terminal_view = terminal_pane.terminal_view(ctx);
-            terminal_view.update(ctx, |terminal_view, ctx| {
-                terminal_view.attempt_to_share_session(
-                    SharedSessionScrollbackType::None,
-                    None,
-                    SharedSessionSource::user(None),
-                    ctx,
-                );
-            });
-        });
-
-        // Wait for one tick of the event loop for the share to be started.
-        pane_group.read(&app, |pane_group, ctx| {
-            let terminal_model = pane_group
-                .terminal_session_by_pane_index(0)
-                .unwrap()
-                .to_owned()
-                .terminal_manager(ctx)
-                .as_ref(ctx)
-                .model();
-            assert!(matches!(
-                terminal_model.lock().shared_session_status(),
-                SharedSessionStatus::ActiveSharer
-            ));
-        });
-
-        // Stop the shared session.
-        pane_group.update(&mut app, |pane_group, ctx| {
-            let terminal_pane = pane_group.terminal_session_by_pane_index(0).unwrap();
-            let terminal_view = terminal_pane.terminal_view(ctx);
-            terminal_view.update(ctx, |terminal_view, ctx| {
-                terminal_view.stop_sharing_session(SharedSessionActionSource::PaneHeader, ctx);
-            });
-        });
-
-        // Ensure the state is correct after stopping.
-        pane_group.update(&mut app, |pane_group, ctx| {
-            let terminal_pane = pane_group.terminal_session_by_pane_index(0).unwrap();
-            let terminal_manager = terminal_pane
-                .terminal_manager(ctx)
-                .as_ref(ctx)
-                .as_any()
-                .downcast_ref::<TerminalManager<TerminalView>>()
-                .unwrap();
-            let terminal_model = terminal_pane.terminal_manager(ctx).as_ref(ctx).model();
-
-            assert!(terminal_manager.session_sharer().borrow().is_none());
-            assert!(matches!(
-                terminal_model.lock().shared_session_status(),
-                SharedSessionStatus::NotShared
-            ));
-
-            let manager = shared_session::manager::Manager::as_ref(ctx);
-            let shared_views = manager.shared_views(ctx).collect_vec();
-            assert!(shared_views.is_empty());
-
-            assert!(
-                !terminal_pane
-                    .pane_view()
-                    .as_ref(ctx)
-                    .header()
-                    .as_ref(ctx)
-                    .has_shareable_object(ctx)
-            );
-        });
-    });
-}
-
-#[test]
 fn test_navigation_skips_hidden_closed_panes() {
     let _guard = FeatureFlag::UndoClosedPanes.override_enabled(true);
     App::test((), |mut app| async move {
@@ -1080,7 +812,7 @@ fn test_terminal_pane_headers() {
         pane_group.update(&mut app, |pane_group, ctx| {
             pane_group.add_pane_with_direction(
                 Direction::Left,
-                NotebookPane::new(new_notebook(ctx), ctx),
+                new_file_pane(ctx),
                 true, /* focus_new_pane */
                 ctx,
             );
@@ -1272,7 +1004,6 @@ fn test_focused_pane_is_synchronized_with_application_focus() {
                     PaneGroup::new_with_panes_layout(
                         tips_model,
                         user_default_shell_changed_banner_dismissal_model_handle,
-                        ServerApiProvider::as_ref(ctx).get(),
                         panes_layout,
                         block_lists,
                         None,

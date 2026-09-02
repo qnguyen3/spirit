@@ -525,14 +525,8 @@ impl<T: EventLoopSender> PtyController<T> {
 
             // Explicitly start the block now that the command is executed.
             let outcome = match source {
-                CommandExecutionSource::SharedSession { participant_id, .. } => {
-                    model.start_command_execution_for_shared_session(participant_id)
-                }
                 CommandExecutionSource::User | CommandExecutionSource::QueuedCommand => {
                     model.start_command_execution()
-                }
-                CommandExecutionSource::EnvVarCollection { metadata } => {
-                    model.start_command_execution_from_env_var_collection(metadata)
                 }
             };
             if !outcome.is_accepted() {
@@ -587,8 +581,6 @@ impl<T: EventLoopSender> PtyController<T> {
     /// ioctl system call and updates the terminal model as appropriate.
     pub fn resize_pty(&self, size_update: SizeUpdate, ctx: &mut ModelContext<Self>) {
         // Send a message to the PTY event loop to resize the PTY.
-        // We also need to resize when rows/cols changed without a pane size change
-        // (e.g. ViewerSizeReported on the sharer side).
         if size_update.pane_size_changed()
             || size_update.is_refresh()
             || size_update.rows_or_columns_changed()

@@ -889,43 +889,6 @@ fn test_clear_session_flag_state() {
     })
 }
 
-/// A block's remoteness is a question of fact, so the team's command patterns classify it.
-#[test]
-fn org_command_patterns_classify_a_block_remote() {
-    App::test((), |mut app| async move {
-        initialize_app_for_terminal_view(&mut app);
-        let (window_id, terminal) = add_window_with_id_and_terminal(&mut app, None);
-
-        UserWorkspaces::handle(&app).update(&mut app, |user_workspaces, ctx| {
-            user_workspaces.setup_test_workspace(ctx);
-            user_workspaces.update_current_workspace(
-                |workspace| {
-                    let team = workspace
-                        .teams
-                        .first_mut()
-                        .expect("the fixture workspace has a team");
-                    team.settings
-                        .ai_permissions
-                        .allow_ai_in_remote_sessions
-                        .value = true;
-                    team.settings.ai_permissions.remote_session_regex_list =
-                        vec![Regex::new("^kubectl").expect("test pattern should compile")];
-                },
-                ctx,
-            );
-            let team_uid = user_workspaces
-                .sole_team_uid()
-                .expect("the fixture workspace has exactly one team");
-            user_workspaces.set_team_for_window(window_id, team_uid, ctx);
-        });
-
-        terminal.read(&app, |view, ctx| {
-            assert!(view.is_block_considered_remote(None, Some("kubectl get pods"), ctx));
-            assert!(!view.is_block_considered_remote(None, Some("ls -la"), ctx));
-        });
-    })
-}
-
 fn assert_block_has_find_match(find_model: &TerminalFindModel, block_index: BlockIndex) {
     assert!(
         find_model

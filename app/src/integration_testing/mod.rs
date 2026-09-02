@@ -6,7 +6,6 @@ pub mod assertions;
 pub mod block;
 pub mod block_filtering;
 pub mod clipboard;
-pub mod cloud_object;
 pub mod code_review;
 pub mod command_palette;
 pub mod command_search;
@@ -17,7 +16,6 @@ pub mod input;
 pub mod keybindings;
 pub mod launch_configs;
 pub mod navigation_palette;
-pub mod notebook;
 pub mod pane_group;
 pub mod persistence;
 #[cfg(target_os = "macos")]
@@ -30,11 +28,8 @@ pub mod subshell;
 pub mod tab;
 pub mod terminal;
 pub mod themes;
-pub mod type_getters;
 pub mod view_getters;
-pub mod warp_drive;
 pub mod window;
-pub mod workflow;
 pub mod workspace;
 
 pub fn view_of_type<T: View>(app: &App, window_id: WindowId, tab_index: usize) -> ViewHandle<T> {
@@ -61,4 +56,8 @@ pub fn create_file_with_contents(contents: impl AsRef<[u8]>, file_path: &std::pa
         crate::util::file::create_file(file_path).expect("Should be able to create file");
     std::io::Write::write_all(&mut file, contents.as_ref())
         .expect("Should be able to write to file");
+}
+
+pub fn workflows_dir() -> std::path::PathBuf {
+    crate::user_config::workflows_dir()
 }

@@ -5,17 +5,15 @@ use std::time::Duration;
 
 use instant::Instant;
 pub use remote_server::setup::RemoteServerSetupState;
+use warp_terminal::ImageProtocol;
 pub use warp_terminal::event::{ExecutedExecutorCommandEvent, ParseGeneratorOutputError};
 use warp_util::lazy::Lazy;
 
 use super::history::HistoryEntry;
 use super::model::ansi::FinishUpdateValue;
 use super::model::block::BlockId;
-use super::model::lifecycle::LifecycleRecoveryRecord;
 use super::model::session::{SessionId, SessionInfo};
 use super::model::terminal_model::{BlockIndex, ExitReason};
-use crate::server::ids::SyncId;
-use crate::server::telemetry::ImageProtocol;
 use crate::terminal::ClipboardType;
 use crate::terminal::model::block::{BlockMetadata, SerializedBlock};
 use crate::terminal::model::blocks::BlockList;
@@ -100,16 +98,8 @@ pub enum Event {
     /// the running program. The shell stores these characters, inserts them into its internal line
     /// buffer, and re-echoes them after Precmd.
     Typeahead,
-    /// Emitted when the agent is tagged in or out of the active block.
-    /// Users "Tag an agent in" when they ask the agent to take over a long running command
-    /// that was started outside of a conversation (and they tag the agent out when they take control back).
-    AgentTaggedInChanged {
-        block_id: BlockId,
-        is_tagged_in: bool,
-    },
     Handler(HandlerEvent),
     /// Carries non-UGC lifecycle diagnostics to the model dispatcher for telemetry.
-    LifecycleRecovery(LifecycleRecoveryRecord),
     /// Emitted when the remote server binary has been successfully checked or
     /// installed and is ready. The session is initialized independently on
     /// `Bootstrapped`; when the remote server later connects, the client is
@@ -239,12 +229,6 @@ pub struct AfterBlockCompletedEvent {
     pub command_finished_to_precmd_delay: Option<Duration>,
     pub block_type: BlockType,
     pub num_secrets_obfuscated: usize,
-
-    /// If the completed block was a workflow, this is its id.
-    pub cloud_workflow_id: Option<SyncId>,
-
-    /// If the completed block had an env var object associated.
-    pub cloud_env_var_collection_id: Option<SyncId>,
 }
 
 #[derive(Clone, Debug)]
@@ -455,17 +439,7 @@ impl Debug for Event {
             Event::PromptUpdated => write!(f, "PromptUpdated"),
             Event::HonorPS1OutOfSync => write!(f, "HonorPS1OutOfSync"),
             Event::Typeahead => write!(f, "Typeahead"),
-            Event::AgentTaggedInChanged {
-                block_id,
-                is_tagged_in,
-            } => {
-                write!(
-                    f,
-                    "AgentTaggedInChanged(block_id: {block_id:?}, is_tagged_in: {is_tagged_in})"
-                )
-            }
             Event::Handler(handler_event) => write!(f, "Handler({handler_event:?}))"),
-            Event::LifecycleRecovery(record) => write!(f, "LifecycleRecovery({record:?})"),
             Event::RemoteServerReady { session_id } => {
                 write!(f, "RemoteServerReady(session: {session_id:?})")
             }

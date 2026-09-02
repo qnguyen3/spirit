@@ -89,8 +89,8 @@ pub enum TipAction {
     AiCommandSearch,
     SaveNewLaunchConfig,
     WarpAI,
-    // This toggles Warp Drive rather than opening it. This enum can't directly be
-    // renamed because we serialize it into the welcome tips.
+    // Now toggles the left panel. This variant can't be renamed or removed because we serialize
+    // it into the welcome tips stored in user defaults.
     OpenWarpDrive,
     Changelog,
     // Note that this item has been deprecated from the UI and is not in any section.

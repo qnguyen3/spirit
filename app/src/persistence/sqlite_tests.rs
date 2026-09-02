@@ -2,12 +2,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use chrono::Utc;
-use cloud_object_persistence::to_cloud_object_permissions;
 use diesel::connection::SimpleConnection;
 use pathfinder_geometry::rect::RectF;
 use pathfinder_geometry::vector::Vector2F;
-use warp_core::features::FeatureFlag;
-use warp_graphql::scalars::time::ServerTimestamp;
 
 use super::{
     app_database_file_path, database_file_path_for_current_scope, database_file_path_for_scope,
@@ -19,24 +16,16 @@ use crate::app_state::{
     AppState, CodePaneSnapShot, CodePaneTabSnapshot, LeafContents, LeafSnapshot, PaneNodeSnapshot,
     ProjectScreenSnapshot, TabGroupSnapshot, TabSnapshot, TerminalPaneSnapshot, WindowSnapshot,
 };
-use crate::auth::UserUid;
-use crate::cloud_object::{CloudObjectPermissions, Owner};
 use crate::code::editor_management::CodeSource;
-use crate::notebooks::{CloudNotebook, CloudNotebookModel};
-use crate::persistence::model::{
-    ObjectPermissions, Project as ProjectRow, ProjectWorktree as WorktreeRow,
-};
+use crate::persistence::model::{Project as ProjectRow, ProjectWorktree as WorktreeRow};
 use crate::persistence::{BlockCompleted, ModelEvent, PersistedDataScope, PersistenceScope};
 use crate::projects::{Project, ProjectId, ProjectKind, Worktree, WorktreeId, WorktreeKind};
-use crate::server::ids::{ClientId, ServerId};
 use crate::tab::SelectedTabColor;
 use crate::terminal::ShellLaunchData;
 use crate::terminal::model::block::SerializedBlock;
 use crate::themes::theme::AnsiColorIdentifier;
 use crate::workspace::tab_group::TabGroupId;
 use crate::workspace_metadata::WorkspaceMetadata;
-use crate::workspaces::team::{MembershipRole, Team, TeamMember};
-use crate::workspaces::workspace::Workspace;
 
 #[test]
 fn app_scope_database_path_matches_app_database_path() {
@@ -135,8 +124,8 @@ fn sqlite_read_restores_app_state_and_codebase_metadata() {
     let metadata = test_codebase_metadata("/tmp/remote-repo");
     save_codebase_index_metadata(&mut conn, metadata.clone())
         .expect("codebase index metadata should save");
-    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
-        .expect("persisted data should load");
+    let restored =
+        read_sqlite_data(&mut conn, PersistedDataScope::Full).expect("persisted data should load");
     let restored_app_state = restored
         .app_state
         .expect("app state should be present for the full scope");
@@ -189,17 +178,6 @@ fn sqlite_writer_reuses_codebase_index_metadata_events() {
 }
 #[test]
 fn test_deduplicate_snapshots() {
-    let local_notebook = CloudNotebook::new_local(
-        CloudNotebookModel {
-            title: "Hello".to_string(),
-            data: "World".to_string(),
-            ai_document_id: None,
-            conversation_id: None,
-        },
-        Owner::mock_current_user(),
-        None,
-        ClientId::new(),
-    );
     let completed_block_1 = BlockCompleted {
         pane_id: vec![1, 2, 3],
         block: Arc::new(SerializedBlock::default()),
@@ -227,39 +205,25 @@ fn test_deduplicate_snapshots() {
     };
 
     let original_events = vec![
-        ModelEvent::UpsertNotebook {
-            notebook: local_notebook.clone(),
-        },
         ModelEvent::Snapshot(snapshot_1.clone()),
         ModelEvent::SaveBlock(completed_block_1.clone()),
         ModelEvent::Snapshot(snapshot_2.clone()),
         ModelEvent::SaveBlock(completed_block_2.clone()),
         ModelEvent::Snapshot(snapshot_3.clone()),
-        ModelEvent::UpsertNotebook {
-            notebook: local_notebook.clone(),
-        },
     ];
 
     let filtered_events = deduplicate_events(original_events);
-    assert_eq!(filtered_events.len(), 5);
+    assert_eq!(filtered_events.len(), 3);
 
-    assert!(matches!(
-        &filtered_events[0],
-        &ModelEvent::UpsertNotebook { .. }
-    ));
     // The first snapshot should have been filtered out.
-    assert!(matches!(&filtered_events[1], &ModelEvent::SaveBlock(_)));
+    assert!(matches!(&filtered_events[0], &ModelEvent::SaveBlock(_)));
     // The second snapshot should have been filtered out.
-    assert!(matches!(&filtered_events[2], &ModelEvent::SaveBlock(_)));
+    assert!(matches!(&filtered_events[1], &ModelEvent::SaveBlock(_)));
     // The third snapshot should be preserved.
-    match &filtered_events[3] {
+    match &filtered_events[2] {
         ModelEvent::Snapshot(snapshot) => assert_eq!(snapshot, &snapshot_3),
         other => panic!("Expected ModelEvent::Snapshot, got {other:?}"),
     }
-    assert!(matches!(
-        &filtered_events[4],
-        &ModelEvent::UpsertNotebook { .. }
-    ));
 }
 
 #[test]
@@ -287,6 +251,8 @@ fn legacy_ai_panes_restore_as_terminal_panes() {
         "ai_document",
         "ambient_agent",
         "execution_profile_editor",
+        "workflow",
+        "env_var_collection",
     ] {
         let tempdir = tempfile::tempdir().expect("tempdir should be created");
         let database_path = tempdir.path().join("warp.sqlite");
@@ -307,7 +273,7 @@ fn legacy_ai_panes_restore_as_terminal_panes() {
         ))
         .expect("legacy pane kind should be written");
 
-        let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
+        let restored = read_sqlite_data(&mut conn, PersistedDataScope::Full)
             .unwrap_or_else(|err| panic!("restore must not fail for {legacy_kind}: {err}"));
         let restored_app_state = restored
             .app_state
@@ -336,6 +302,48 @@ fn legacy_ai_panes_restore_as_terminal_panes() {
             "the replacement terminal pane needs its own uuid for {legacy_kind}"
         );
     }
+}
+
+/// A cloud notebook pane keeps its `notebook_panes` row (the table survives for local
+/// Markdown panes), so it reaches the restore path with a null `local_path` and must
+/// degrade to a fresh terminal rather than aborting the whole window.
+#[test]
+fn cloud_notebook_panes_restore_as_terminal_panes() {
+    let tempdir = tempfile::tempdir().expect("tempdir should be created");
+    let database_path = tempdir.path().join("warp.sqlite");
+    let mut conn = setup_database(&database_path).expect("database should initialize");
+
+    let app_state = AppState {
+        windows: vec![test_terminal_window_snapshot(false)],
+        active_window_index: Some(0),
+        block_lists: Default::default(),
+    };
+    save_app_state(&mut conn, &app_state).expect("app state should save");
+
+    conn.batch_execute(
+        "DELETE FROM terminal_panes; \
+         UPDATE pane_leaves SET kind = 'notebook' WHERE kind = 'terminal'; \
+         INSERT INTO notebook_panes (id, kind, notebook_id, local_path) \
+             SELECT pane_node_id, 'notebook', 'cloud-notebook-id', NULL FROM pane_leaves;",
+    )
+    .expect("cloud notebook pane should be written");
+
+    let restored = read_sqlite_data(&mut conn, PersistedDataScope::Full)
+        .expect("restore must not fail for a cloud notebook pane");
+    let restored_app_state = restored.app_state.expect("app state should be present");
+
+    assert_eq!(restored_app_state.windows.len(), 1);
+    let tabs = &restored_app_state.windows[0].tabs();
+    assert_eq!(tabs.len(), 1);
+
+    let PaneNodeSnapshot::Leaf(leaf) = &tabs[0].root else {
+        panic!("restored root should be a leaf");
+    };
+    let LeafContents::Terminal(terminal) = &leaf.contents else {
+        panic!("a cloud notebook pane should restore as a terminal pane");
+    };
+    assert!(terminal.cwd.is_none() && terminal.shell_launch_data.is_none());
+    assert!(!terminal.uuid.is_empty());
 }
 
 fn test_terminal_window_snapshot(vertical_tabs_panel_open: bool) -> WindowSnapshot {
@@ -370,13 +378,11 @@ fn test_terminal_window_snapshot(vertical_tabs_panel_open: bool) -> WindowSnapsh
             }],
         }],
         active_screen_index: 0,
-        team_uid: None,
         bounds: None,
         fullscreen_state: Default::default(),
         quake_mode: false,
         universal_search_width: None,
         voltron_width: None,
-        warp_drive_index_width: None,
         left_panel_open: false,
         vertical_tabs_panel_open,
         left_panel_width: None,
@@ -401,7 +407,7 @@ fn test_sqlite_round_trips_vertical_tabs_panel_open() {
 
     save_app_state(&mut conn, &app_state).expect("app state should save");
 
-    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
+    let restored = read_sqlite_data(&mut conn, PersistedDataScope::Full)
         .expect("app state should load")
         .app_state
         .expect("app state should be present for the full scope");
@@ -415,32 +421,6 @@ fn test_sqlite_round_trips_vertical_tabs_panel_open() {
             .collect::<Vec<_>>(),
         vec![false, true]
     );
-}
-
-#[test]
-fn test_sqlite_round_trips_window_team_uid() {
-    let tempdir = tempfile::tempdir().expect("tempdir should be created");
-    let database_path = tempdir.path().join("warp.sqlite");
-    let mut conn = setup_database(&database_path).expect("database should initialize");
-    let team_uid = ServerId::from(123);
-    let mut assigned_window = test_terminal_window_snapshot(false);
-    assigned_window.team_uid = Some(team_uid);
-
-    let app_state = AppState {
-        windows: vec![assigned_window, test_terminal_window_snapshot(true)],
-        active_window_index: Some(0),
-        block_lists: Default::default(),
-    };
-
-    save_app_state(&mut conn, &app_state).expect("app state should save");
-
-    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
-        .expect("app state should load")
-        .app_state
-        .expect("app state should be present for the full scope");
-
-    assert_eq!(restored.windows[0].team_uid, Some(team_uid));
-    assert_eq!(restored.windows[1].team_uid, None);
 }
 
 #[test]
@@ -481,13 +461,11 @@ fn test_sqlite_round_trips_custom_vertical_tabs_title() {
                 tab_groups: vec![],
             }],
             active_screen_index: 0,
-            team_uid: None,
             bounds: None,
             fullscreen_state: Default::default(),
             quake_mode: false,
             universal_search_width: None,
             voltron_width: None,
-            warp_drive_index_width: None,
             left_panel_open: false,
             vertical_tabs_panel_open: false,
             left_panel_width: None,
@@ -499,7 +477,7 @@ fn test_sqlite_round_trips_custom_vertical_tabs_title() {
 
     save_app_state(&mut conn, &app_state).expect("app state should save");
 
-    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
+    let restored = read_sqlite_data(&mut conn, PersistedDataScope::Full)
         .expect("app state should load")
         .app_state
         .expect("app state should be present for the full scope");
@@ -562,13 +540,11 @@ fn test_sqlite_round_trips_code_pane_with_multiple_tabs() {
                 tab_groups: vec![],
             }],
             active_screen_index: 0,
-            team_uid: None,
             bounds: None,
             fullscreen_state: Default::default(),
             quake_mode: false,
             universal_search_width: None,
             voltron_width: None,
-            warp_drive_index_width: None,
             left_panel_open: false,
             vertical_tabs_panel_open: false,
             left_panel_width: None,
@@ -580,7 +556,7 @@ fn test_sqlite_round_trips_code_pane_with_multiple_tabs() {
 
     save_app_state(&mut conn, &app_state).expect("app state should save");
 
-    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
+    let restored = read_sqlite_data(&mut conn, PersistedDataScope::Full)
         .expect("app state should load")
         .app_state
         .expect("app state should be present for the full scope");
@@ -680,13 +656,11 @@ fn test_sqlite_round_trips_tab_groups() {
                 }],
             }],
             active_screen_index: 0,
-            team_uid: None,
             bounds: None,
             fullscreen_state: Default::default(),
             quake_mode: false,
             universal_search_width: None,
             voltron_width: None,
-            warp_drive_index_width: None,
             left_panel_open: false,
             vertical_tabs_panel_open: false,
             left_panel_width: None,
@@ -698,7 +672,7 @@ fn test_sqlite_round_trips_tab_groups() {
 
     save_app_state(&mut conn, &app_state).expect("app state should save");
 
-    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
+    let restored = read_sqlite_data(&mut conn, PersistedDataScope::Full)
         .expect("app state should load")
         .app_state
         .expect("app state should be present for the full scope");
@@ -830,13 +804,11 @@ fn test_sqlite_round_trips_pinned_state() {
                 ],
             }],
             active_screen_index: 0,
-            team_uid: None,
             bounds: None,
             fullscreen_state: Default::default(),
             quake_mode: false,
             universal_search_width: None,
             voltron_width: None,
-            warp_drive_index_width: None,
             left_panel_open: false,
             vertical_tabs_panel_open: false,
             left_panel_width: None,
@@ -848,7 +820,7 @@ fn test_sqlite_round_trips_pinned_state() {
 
     save_app_state(&mut conn, &app_state).expect("app state should save");
 
-    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
+    let restored = read_sqlite_data(&mut conn, PersistedDataScope::Full)
         .expect("app state should load")
         .app_state
         .expect("app state should be present for the full scope");
@@ -913,43 +885,6 @@ fn test_path_encode_decode() {
     assert_encode_then_decode_preserves_original_path(PathBuf::from("/temp/ñoñàscii/temp.txt"));
     assert_encode_then_decode_preserves_original_path(PathBuf::from("/temp/hindi/हिन्दी"));
     assert_encode_then_decode_preserves_original_path(PathBuf::from("/temp/cjk/狗没有耐心"));
-}
-
-#[test]
-fn test_deserialize_corrupted_guests() {
-    let _ = FeatureFlag::SharedWithMe.override_enabled(true);
-    // Use a hardcoded timestamp to ensure this test works on systems with more-than-microsecond
-    // precision.
-    let permissions_ts_micros = 123456;
-    let permissions_ts =
-        ServerTimestamp::from_unix_timestamp_micros(permissions_ts_micros).unwrap();
-
-    let db_permissions = ObjectPermissions {
-        id: 42,
-        object_metadata_id: 10,
-        subject_type: "TEAM".to_string(),
-        subject_id: Some("7".to_string()),
-        subject_uid: "team_uid12345678912345".to_string(),
-        permissions_last_updated_at: Some(permissions_ts_micros),
-        // This is not a valid set of encoded object guests.
-        object_guests: Some(vec![1, 2, 3]),
-        anyone_with_link_access_level: None,
-        anyone_with_link_source: None,
-    };
-
-    // The overall permissions should successfully convert, minus the object guests.
-    let cloud_permissions = to_cloud_object_permissions(&db_permissions, None);
-    assert_eq!(
-        cloud_permissions,
-        Some(CloudObjectPermissions {
-            owner: Owner::Team {
-                team_uid: crate::server::ids::ServerId::from_string_lossy("team_uid12345678912345"),
-            },
-            permissions_last_updated_ts: Some(permissions_ts),
-            anyone_with_link: None,
-            guests: vec![],
-        })
-    );
 }
 
 // Regression: GH#10083. The macOS green-tile button could leave a 1px-wide
@@ -1024,7 +959,7 @@ fn test_sqlite_drops_too_small_bounds_on_read() {
     )
     .expect("corrupting update should succeed");
 
-    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
+    let restored = read_sqlite_data(&mut conn, PersistedDataScope::Full)
         .expect("app state should load")
         .app_state
         .expect("app state should be present for the full scope");
@@ -1034,68 +969,6 @@ fn test_sqlite_drops_too_small_bounds_on_read() {
         restored.windows[0].bounds.is_none(),
         "tiny persisted bounds must be discarded on read so users recover from a corrupt DB"
     );
-}
-
-#[test]
-fn team_member_is_disabled_round_trips_through_sqlite_cache() {
-    let tempdir = tempfile::tempdir().expect("tempdir should be created");
-    let database_path = tempdir.path().join("warp.sqlite");
-    let conn = setup_database(&database_path).expect("database should initialize");
-
-    let team = Team::from_local_cache(
-        ServerId::from_string_lossy(format!("{:0>22}", "team")),
-        "Team".to_string(),
-        None,
-        None,
-        Some(vec![
-            TeamMember {
-                uid: UserUid::new("active-user"),
-                email: "active@example.com".to_string(),
-                role: MembershipRole::User,
-                is_disabled: false,
-            },
-            TeamMember {
-                uid: UserUid::new("disabled-user"),
-                email: "disabled@example.com".to_string(),
-                role: MembershipRole::User,
-                is_disabled: true,
-            },
-        ]),
-    );
-    let workspace = Workspace::from_local_cache(
-        format!("{:0>22}", "workspace").into(),
-        "Workspace".to_string(),
-        Some(vec![team]),
-    );
-
-    let writer = start_writer(conn, database_path.clone()).expect("writer should start");
-    writer
-        .sender
-        .send(ModelEvent::UpsertWorkspaces {
-            workspaces: vec![workspace],
-        })
-        .expect("upsert workspaces event should send");
-    writer
-        .sender
-        .send(ModelEvent::Terminate)
-        .expect("terminate event should send");
-    writer.handle.join().expect("writer should terminate");
-
-    let mut conn = setup_database(&database_path).expect("database should reopen");
-    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
-        .expect("persisted data should load");
-
-    let members = &restored.workspaces[0].teams[0].members;
-    let active_member = members
-        .iter()
-        .find(|member| member.email == "active@example.com")
-        .expect("active member should be present");
-    let disabled_member = members
-        .iter()
-        .find(|member| member.email == "disabled@example.com")
-        .expect("disabled member should be present");
-    assert!(!active_member.is_disabled);
-    assert!(disabled_member.is_disabled);
 }
 
 #[test]
@@ -1150,8 +1023,8 @@ fn projects_and_worktrees_round_trip_through_sqlite() {
     writer.handle.join().expect("writer should terminate");
 
     let mut conn = setup_database(&database_path).expect("database should reopen");
-    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
-        .expect("persisted data should load");
+    let restored =
+        read_sqlite_data(&mut conn, PersistedDataScope::Full).expect("persisted data should load");
 
     assert_eq!(restored.projects.len(), 1);
     assert_eq!(restored.projects[0].id, project.id);
@@ -1218,8 +1091,8 @@ fn removing_a_project_cascades_its_worktree_rows() {
     writer.handle.join().expect("writer should terminate");
 
     let mut conn = setup_database(&database_path).expect("database should reopen");
-    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
-        .expect("persisted data should load");
+    let restored =
+        read_sqlite_data(&mut conn, PersistedDataScope::Full).expect("persisted data should load");
 
     assert!(restored.projects.is_empty());
     assert!(restored.worktrees.is_empty());
@@ -1262,13 +1135,11 @@ fn test_multi_screen_window(screens: Vec<ProjectScreenSnapshot>, active: usize) 
     WindowSnapshot {
         screens,
         active_screen_index: active,
-        team_uid: None,
         bounds: None,
         fullscreen_state: Default::default(),
         quake_mode: false,
         universal_search_width: None,
         voltron_width: None,
-        warp_drive_index_width: None,
         left_panel_open: false,
         vertical_tabs_panel_open: false,
         left_panel_width: None,
@@ -1317,7 +1188,7 @@ fn screens_round_trip_grouped_by_project() {
     };
     save_app_state(&mut conn, &app_state).expect("app state should save");
 
-    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
+    let restored = read_sqlite_data(&mut conn, PersistedDataScope::Full)
         .expect("persisted data should load")
         .app_state
         .expect("app state should be present");
@@ -1360,7 +1231,7 @@ fn tabs_of_an_unknown_project_fold_into_home() {
     };
     save_app_state(&mut conn, &app_state).expect("app state should save");
 
-    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
+    let restored = read_sqlite_data(&mut conn, PersistedDataScope::Full)
         .expect("persisted data should load")
         .app_state
         .expect("app state should be present");
@@ -1389,7 +1260,7 @@ fn a_legacy_window_restores_into_a_single_home_screen() {
     };
     save_app_state(&mut conn, &app_state).expect("app state should save");
 
-    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
+    let restored = read_sqlite_data(&mut conn, PersistedDataScope::Full)
         .expect("persisted data should load")
         .app_state
         .expect("app state should be present");

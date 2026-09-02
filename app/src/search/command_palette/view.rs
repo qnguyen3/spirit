@@ -22,7 +22,6 @@ use warpui::{
 use super::super::palette_styles as styles;
 use super::CommandPaletteMixer;
 use crate::appearance::Appearance;
-use crate::drive::CloudObjectTypeAndId;
 use crate::features::FeatureFlag;
 use crate::palette::PaletteMode;
 use crate::root_view::OpenLaunchConfigArg;
@@ -38,9 +37,6 @@ use crate::search::result_renderer::QueryResultRenderer;
 use crate::search::search_bar::{
     SearchBar, SearchBarEvent, SearchBarState, SearchResultOrdering, SelectionUpdate,
 };
-use crate::send_telemetry_from_ctx;
-use crate::server::ids::SyncId;
-use crate::server::telemetry::{LaunchConfigUiLocation, TelemetryEvent};
 use crate::session_management::SessionSource;
 use crate::settings::CtrlTabBehavior;
 use crate::terminal::keys_settings::KeysSettings;
@@ -86,14 +82,6 @@ pub enum Event {
     Close {
         accepted_action_type: Option<&'static str>,
     },
-    /// Execute the workflow identified by `id`.
-    ExecuteWorkflow { id: SyncId },
-    /// Invoke the env vars identified by `id`.
-    InvokeEnvironmentVariables { id: SyncId },
-    /// Open a notebook identified by `id`.
-    OpenNotebook { id: SyncId },
-    /// View the relevant object in the Warp Drive sidebar.
-    ViewInWarpDrive { id: CloudObjectTypeAndId },
     /// Open a file at the given path.
     OpenFile {
         path: String,
@@ -132,10 +120,6 @@ pub struct View {
 
     /// The current navigation mode.
     navigation_mode: NavigationMode,
-
-    /// Whether the active session is a shared session viewer.
-    /// This is set by the workspace when opening the palette.
-    is_shared_session_viewer: bool,
 }
 
 impl Entity for View {
@@ -273,7 +257,7 @@ impl View {
 
         let mixer = ctx.add_model(|_| CommandPaletteMixer::new());
         data_source_store.update(ctx, |store, ctx| {
-            store.reset_search_mixer(mixer.clone(), false, ctx);
+            store.reset_search_mixer(mixer.clone(), ctx);
             ctx.notify();
         });
 
@@ -315,7 +299,6 @@ impl View {
             placeholder_query_renderer: placeholder_element,
             suggested_binding_ids,
             zero_state_items,
-            is_shared_session_viewer: false,
         }
     }
 
@@ -392,7 +375,6 @@ impl View {
                 | (PaletteMode::Navigation, QueryFilter::Sessions)
                 | (PaletteMode::LaunchConfig, QueryFilter::LaunchConfigurations)
                 | (PaletteMode::Files, QueryFilter::Files)
-                | (PaletteMode::WarpDrive, QueryFilter::Drive)
         )
     }
 
@@ -404,18 +386,6 @@ impl View {
     ) {
         self.session_source.update(ctx, |binding_source, ctx| {
             *binding_source = session_source;
-            ctx.notify();
-        });
-    }
-
-    /// Sets whether the active session is a shared session viewer.
-    /// This should be called by the workspace before opening the palette.
-    pub fn set_is_shared_session_viewer(&mut self, is_viewer: bool, ctx: &mut ViewContext<Self>) {
-        self.is_shared_session_viewer = is_viewer;
-
-        let mixer = self.search_bar.as_ref(ctx).mixer().clone();
-        self.data_source_store.update(ctx, |store, ctx| {
-            store.reset_search_mixer(mixer.clone(), self.is_shared_session_viewer, ctx);
             ctx.notify();
         });
     }
@@ -605,23 +575,6 @@ impl View {
     }
 
     fn close(&mut self, ctx: &mut ViewContext<Self>, accepted_action_type: Option<&'static str>) {
-        let buffer_length = self.search_bar.as_ref(ctx).query(ctx).len();
-        let filter = self.active_query_filter(ctx);
-        let event = if let Some(result_type) = accepted_action_type {
-            TelemetryEvent::PaletteSearchResultAccepted {
-                result_type,
-                filter,
-                buffer_length,
-            }
-        } else {
-            TelemetryEvent::PaletteSearchExited {
-                filter,
-                buffer_length,
-            }
-        };
-
-        send_telemetry_from_ctx!(event, ctx);
-
         self.state.clipped_scroll_state = Default::default();
         self.reset(ctx);
 
@@ -798,8 +751,6 @@ impl View {
                         &pane_view_locator,
                     );
                 }
-
-                send_telemetry_from_ctx!(TelemetryEvent::SelectNavigationPaletteItem, ctx);
             }
             CommandPaletteItemAction::NavigateToTab {
                 pane_group_id,
@@ -813,7 +764,6 @@ impl View {
                         &pane_group_id,
                     );
                 }
-                send_telemetry_from_ctx!(TelemetryEvent::SelectNavigationPaletteItem, ctx);
             }
             CommandPaletteItemAction::OpenLaunchConfiguration {
                 open_in_active_window,
@@ -824,19 +774,8 @@ impl View {
                     OpenLaunchConfigArg {
                         open_in_active_window,
                         launch_config: config.deref().clone(),
-                        ui_location: LaunchConfigUiLocation::CommandPalette,
                     },
                 );
-            }
-            CommandPaletteItemAction::ExecuteWorkflow { id } => {
-                ctx.emit(Event::ExecuteWorkflow { id })
-            }
-            CommandPaletteItemAction::InvokeEnvironmentVariables { id } => {
-                ctx.emit(Event::InvokeEnvironmentVariables { id })
-            }
-            CommandPaletteItemAction::OpenNotebook { id } => ctx.emit(Event::OpenNotebook { id }),
-            CommandPaletteItemAction::ViewInWarpDrive { id } => {
-                ctx.emit(Event::ViewInWarpDrive { id })
             }
             CommandPaletteItemAction::NewSession { source } => {
                 self.dispatch_typed_action_on_view(source.action().deref(), ctx);
@@ -902,11 +841,6 @@ impl View {
         action: &dyn warpui::Action,
         ctx: &mut ViewContext<Self>,
     ) {
-        send_telemetry_from_ctx!(
-            TelemetryEvent::SelectCommandPaletteOption(format!("{action:?}")),
-            ctx
-        );
-
         let (window_id, view_id) = match self.binding_source.as_ref(ctx) {
             BindingSource::View {
                 window_id, view_id, ..
