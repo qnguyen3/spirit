@@ -87,6 +87,11 @@ pub enum OverviewAction {
         project_id: ProjectId,
         position: Vector2F,
     },
+    ShowHomeCardMenu {
+        index: usize,
+        position: Vector2F,
+    },
+    CloseHome,
     Open(ProjectId),
     StartRename(ProjectId),
     Remove(ProjectId),
@@ -100,6 +105,7 @@ pub enum OverviewEvent {
     OpenProject(ProjectId),
     NewWorkspace,
     RemoveProject(ProjectId),
+    CloseHome,
     RevealProject(ProjectId),
     MissingRoot(ProjectId),
 }
@@ -120,6 +126,7 @@ pub struct WorkspaceOverviewView {
     renaming: Option<ProjectId>,
     rename_editor: ViewHandle<EditorView>,
     open_project_ids: Vec<ProjectId>,
+    home_open: bool,
     card_menu: ViewHandle<Menu<OverviewAction>>,
     card_menu_offset: Option<Vector2F>,
     view_position_id: String,
@@ -149,6 +156,10 @@ impl TypedActionView for WorkspaceOverviewView {
                 project_id,
                 position,
             } => self.show_card_menu(*index, *project_id, *position, ctx),
+            OverviewAction::ShowHomeCardMenu { index, position } => {
+                self.show_home_card_menu(*index, *position, ctx)
+            }
+            OverviewAction::CloseHome => ctx.emit(OverviewEvent::CloseHome),
             OverviewAction::Open(project_id) => ctx.emit(OverviewEvent::OpenProject(*project_id)),
             OverviewAction::StartRename(project_id) => self.start_rename(*project_id, ctx),
             OverviewAction::Remove(project_id) => {
@@ -203,6 +214,7 @@ impl WorkspaceOverviewView {
             renaming: None,
             rename_editor,
             open_project_ids: Vec::new(),
+            home_open: true,
             card_menu,
             card_menu_offset: None,
             view_position_id: format!("workspace_overview_view_{}", ctx.view_id()),
@@ -216,13 +228,24 @@ impl WorkspaceOverviewView {
         ctx.notify();
     }
 
+    pub fn set_home_open(&mut self, home_open: bool, ctx: &mut ViewContext<Self>) {
+        if self.home_open == home_open {
+            return;
+        }
+        self.home_open = home_open;
+        self.rebuild_cards(ctx);
+    }
+
     pub fn refresh(&mut self, ctx: &mut ViewContext<Self>) {
         self.rebuild_cards(ctx);
     }
 
     fn rebuild_cards(&mut self, ctx: &mut ViewContext<Self>) {
         let registry = ProjectRegistryModel::as_ref(ctx);
-        let mut cards = vec![CardKind::Home];
+        let mut cards = Vec::new();
+        if self.home_open {
+            cards.push(CardKind::Home);
+        }
         cards.extend(
             registry
                 .projects_mru()
@@ -295,6 +318,33 @@ impl WorkspaceOverviewView {
             MenuItem::Separator,
             MenuItemFields::new("Remove from Spirit\u{2026}")
                 .with_on_select_action(OverviewAction::Remove(project_id))
+                .into_item(),
+        ];
+        self.card_menu
+            .update(ctx, |menu, ctx| menu.set_items(items, ctx));
+        let view_origin = ctx
+            .element_position_by_id(&self.view_position_id)
+            .map(|bounds| bounds.origin())
+            .unwrap_or_default();
+        self.card_menu_offset = Some(position - view_origin);
+        ctx.focus(&self.card_menu);
+        ctx.notify();
+    }
+
+    fn show_home_card_menu(
+        &mut self,
+        index: usize,
+        position: Vector2F,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.selected_index = index;
+        let items = vec![
+            MenuItemFields::new("Open")
+                .with_on_select_action(OverviewAction::Activate)
+                .into_item(),
+            MenuItem::Separator,
+            MenuItemFields::new("Close Home\u{2026}")
+                .with_on_select_action(OverviewAction::CloseHome)
                 .into_item(),
         ];
         self.card_menu
@@ -596,7 +646,13 @@ impl WorkspaceOverviewView {
                     DispatchEventResult::StopPropagation
                 })
                 .finish(),
-            CardKind::Home | CardKind::New => card_element,
+            CardKind::Home => EventHandler::new(card_element)
+                .on_right_mouse_down(move |ctx, _, position, _| {
+                    ctx.dispatch_typed_action(OverviewAction::ShowHomeCardMenu { index, position });
+                    DispatchEventResult::StopPropagation
+                })
+                .finish(),
+            CardKind::New => card_element,
         }
     }
 }

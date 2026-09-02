@@ -1193,7 +1193,10 @@ fn group_tabs_into_screens(
         }
     }
 
-    let mut screens = vec![home];
+    let mut screens = Vec::new();
+    if !home.tabs.is_empty() || by_project.is_empty() {
+        screens.push(home);
+    }
     for project_id in project_order {
         if let Some(screen) = by_project.remove(project_id) {
             screens.push(screen);

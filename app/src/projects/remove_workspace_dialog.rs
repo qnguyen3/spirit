@@ -36,8 +36,14 @@ pub fn init(app: &mut AppContext) {
     ]);
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RemoveTarget {
+    Project(ProjectId),
+    Home,
+}
+
 pub enum RemoveWorkspaceEvent {
-    Confirm { project_id: ProjectId },
+    Confirm { target: RemoveTarget },
     Cancel,
 }
 
@@ -50,9 +56,9 @@ pub enum RemoveWorkspaceAction {
 pub struct RemoveWorkspaceDialog {
     cancel_button: ViewHandle<ActionButton>,
     confirm_button: ViewHandle<ActionButton>,
-    project_id: Option<ProjectId>,
+    target: Option<RemoveTarget>,
     display_name: String,
-    worktree_note: Option<String>,
+    note: Option<String>,
 }
 
 impl RemoveWorkspaceDialog {
@@ -75,21 +81,28 @@ impl RemoveWorkspaceDialog {
         Self {
             cancel_button,
             confirm_button,
-            project_id: None,
+            target: None,
             display_name: String::new(),
-            worktree_note: None,
+            note: None,
         }
     }
 
     pub fn set_target(
         &mut self,
-        project_id: ProjectId,
+        target: RemoveTarget,
         display_name: String,
-        worktree_note: Option<String>,
+        note: Option<String>,
+        ctx: &mut ViewContext<Self>,
     ) {
-        self.project_id = Some(project_id);
+        self.target = Some(target);
         self.display_name = display_name;
-        self.worktree_note = worktree_note;
+        self.note = note;
+        let confirm_label = match target {
+            RemoveTarget::Project(_) => "Remove",
+            RemoveTarget::Home => "Close",
+        };
+        self.confirm_button
+            .update(ctx, |button, ctx| button.set_label(confirm_label, ctx));
     }
 }
 
@@ -113,10 +126,18 @@ impl View for RemoveWorkspaceDialog {
             .with_margin_right(12.)
             .finish();
 
-        let title = format!("Remove '{}' from Spirit?", self.display_name);
-        let mut body =
-            "The folder on disk is left untouched; only Spirit forgets this Workspace.".to_owned();
-        if let Some(note) = &self.worktree_note {
+        let is_home = matches!(self.target, Some(RemoveTarget::Home));
+        let title = if is_home {
+            "Close Home?".to_owned()
+        } else {
+            format!("Remove '{}' from Spirit?", self.display_name)
+        };
+        let mut body = if is_home {
+            "Home comes back the next time you switch to it.".to_owned()
+        } else {
+            "The folder on disk is left untouched; only Spirit forgets this Workspace.".to_owned()
+        };
+        if let Some(note) = &self.note {
             body.push(' ');
             body.push_str(note);
         }
@@ -158,10 +179,10 @@ impl TypedActionView for RemoveWorkspaceDialog {
     fn handle_action(&mut self, action: &RemoveWorkspaceAction, ctx: &mut ViewContext<Self>) {
         match action {
             RemoveWorkspaceAction::Confirm => {
-                let Some(project_id) = self.project_id else {
+                let Some(target) = self.target else {
                     return;
                 };
-                ctx.emit(RemoveWorkspaceEvent::Confirm { project_id });
+                ctx.emit(RemoveWorkspaceEvent::Confirm { target });
             }
             RemoveWorkspaceAction::Cancel => ctx.emit(RemoveWorkspaceEvent::Cancel),
         }

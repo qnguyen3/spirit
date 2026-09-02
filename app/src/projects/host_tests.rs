@@ -138,3 +138,40 @@ fn a_plain_window_yields_a_single_home_screen() {
     assert_eq!(active, 0);
     assert_eq!(settings[0].0, None);
 }
+
+#[test]
+fn a_restore_without_a_home_screen_keeps_the_project_screens() {
+    let _guard = FeatureFlag::AdeWorkspaces.override_enabled(true);
+    let alpha = ProjectId::new();
+    let beta = ProjectId::new();
+    let snapshot = WindowSnapshot {
+        screens: vec![
+            ProjectScreenSnapshot {
+                project_id: Some(alpha),
+                tabs: vec![tab(1)],
+                active_tab_index: 0,
+                tab_groups: vec![],
+            },
+            ProjectScreenSnapshot {
+                project_id: Some(beta),
+                tabs: vec![tab(2)],
+                active_tab_index: 0,
+                tab_groups: vec![],
+            },
+        ],
+        active_screen_index: 1,
+        ..three_screen_snapshot()
+    };
+
+    let (settings, active) = ProjectHost::screen_settings(restored_source(snapshot));
+
+    assert_eq!(
+        settings
+            .iter()
+            .map(|(project_id, _)| *project_id)
+            .collect::<Vec<_>>(),
+        vec![Some(alpha), Some(beta)],
+        "no Home screen is invented for a session that closed it"
+    );
+    assert_eq!(active, 1);
+}

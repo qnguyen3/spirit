@@ -9,8 +9,8 @@ use pathfinder_geometry::vector::Vector2F;
 use super::{
     app_database_file_path, database_file_path_for_current_scope, database_file_path_for_scope,
     decode_path, deduplicate_events, encode_path, get_all_codebase_index_metadata,
-    read_sqlite_data, save_app_state, save_codebase_index_metadata, save_project, setup_database,
-    start_writer,
+    group_tabs_into_screens, read_sqlite_data, save_app_state, save_codebase_index_metadata,
+    save_project, setup_database, start_writer,
 };
 use crate::app_state::{
     AppState, CodePaneSnapShot, CodePaneTabSnapshot, LeafContents, LeafSnapshot, PaneNodeSnapshot,
@@ -1270,4 +1270,71 @@ fn a_legacy_window_restores_into_a_single_home_screen() {
     assert_eq!(window.screens[0].project_id, None);
     assert_eq!(window.active_screen_index, 0);
     assert_eq!(window.tabs().len(), 1);
+}
+
+fn screen_tab(uuid_seed: u8) -> TabSnapshot {
+    TabSnapshot {
+        custom_title: None,
+        root: PaneNodeSnapshot::Leaf(LeafSnapshot {
+            is_focused: true,
+            custom_vertical_tabs_title: None,
+            contents: LeafContents::Terminal(TerminalPaneSnapshot {
+                uuid: vec![uuid_seed],
+                cwd: None,
+                shell_launch_data: None,
+                is_active: true,
+                is_read_only: false,
+            }),
+        }),
+        default_directory_color: None,
+        selected_color: Default::default(),
+        left_panel: None,
+        right_panel: None,
+        group_id: None,
+        pinned: false,
+        worktree_id: None,
+    }
+}
+
+#[test]
+fn an_empty_home_screen_is_dropped_when_a_project_screen_exists() {
+    let project = ProjectId::new();
+    let screens = group_tabs_into_screens(vec![(Some(project), screen_tab(1))], vec![], &[project]);
+    assert_eq!(
+        screens
+            .iter()
+            .map(|screen| screen.project_id)
+            .collect::<Vec<_>>(),
+        vec![Some(project)],
+        "a closed Home screen stays closed across a restart"
+    );
+}
+
+#[test]
+fn a_home_screen_with_tabs_is_kept_ahead_of_project_screens() {
+    let project = ProjectId::new();
+    let screens = group_tabs_into_screens(
+        vec![(None, screen_tab(1)), (Some(project), screen_tab(2))],
+        vec![],
+        &[project],
+    );
+    assert_eq!(
+        screens
+            .iter()
+            .map(|screen| screen.project_id)
+            .collect::<Vec<_>>(),
+        vec![None, Some(project)]
+    );
+}
+
+#[test]
+fn an_empty_home_screen_is_kept_when_it_is_the_only_screen() {
+    let screens = group_tabs_into_screens(vec![], vec![], &[]);
+    assert_eq!(
+        screens
+            .iter()
+            .map(|screen| screen.project_id)
+            .collect::<Vec<_>>(),
+        vec![None]
+    );
 }

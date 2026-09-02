@@ -16,7 +16,7 @@ use super::git_ops::CloneProgress;
 use super::new_workspace_modal::{NewWorkspaceModal, NewWorkspaceModalEvent, NewWorkspaceMode};
 use super::overview::{OverviewEvent, WorkspaceOverviewView};
 use super::registry::{ProjectRegistryModel, now_ts};
-use super::remove_workspace_dialog::{RemoveWorkspaceDialog, RemoveWorkspaceEvent};
+use super::remove_workspace_dialog::{RemoveTarget, RemoveWorkspaceDialog, RemoveWorkspaceEvent};
 use super::settings::WorkspaceCreationSettings;
 use super::{Project, ProjectId, ProjectKind};
 use crate::app_state::ProjectScreenSnapshot;
@@ -134,6 +134,7 @@ pub struct ProjectHost {
 pub enum ProjectHostAction {
     OpenProject { project_id: ProjectId },
     CloseProjectScreen { project_id: ProjectId },
+    CloseHomeScreen,
     ActivateScreenAt { index: usize },
     ActivateHome,
     NextScreen,
@@ -160,8 +161,9 @@ impl TypedActionView for ProjectHost {
             ProjectHostAction::CloseProjectScreen { project_id } => {
                 self.close_project_screen(*project_id, ctx)
             }
+            ProjectHostAction::CloseHomeScreen => self.show_close_home_dialog(ctx),
             ProjectHostAction::ActivateScreenAt { index } => self.activate_screen(*index, ctx),
-            ProjectHostAction::ActivateHome => self.activate_screen(0, ctx),
+            ProjectHostAction::ActivateHome => self.activate_home(ctx),
             ProjectHostAction::NextScreen => self.cycle_screen(1, ctx),
             ProjectHostAction::PreviousScreen => self.cycle_screen(-1, ctx),
             ProjectHostAction::ShowSwitcherMenu => {
@@ -410,10 +412,13 @@ impl ProjectHost {
     fn build_remove_dialog(ctx: &mut ViewContext<Self>) -> ModalViewState<RemoveWorkspaceDialog> {
         let dialog = ctx.add_typed_action_view(RemoveWorkspaceDialog::new);
         ctx.subscribe_to_view(&dialog, |me, _, event, ctx| match event {
-            RemoveWorkspaceEvent::Confirm { project_id } => {
-                let project_id = *project_id;
+            RemoveWorkspaceEvent::Confirm { target } => {
+                let target = *target;
                 me.remove_dialog.close();
-                me.remove_project(project_id, ctx);
+                match target {
+                    RemoveTarget::Project(project_id) => me.remove_project(project_id, ctx),
+                    RemoveTarget::Home => me.close_home_screen(ctx),
+                }
             }
             RemoveWorkspaceEvent::Cancel => {
                 me.remove_dialog.close();
@@ -555,6 +560,115 @@ impl ProjectHost {
             .position(|screen| screen.project_id == Some(project_id))
     }
 
+    fn home_screen_index(&self) -> Option<usize> {
+        self.screens
+            .iter()
+            .position(|screen| screen.project_id.is_none())
+    }
+
+    fn activate_home(&mut self, ctx: &mut ViewContext<Self>) {
+        match self.home_screen_index() {
+            Some(index) => self.activate_screen(index, ctx),
+            None => self.create_home_screen(ctx),
+        }
+    }
+
+    fn create_home_screen(&mut self, ctx: &mut ViewContext<Self>) {
+        let workspace = ctx.add_typed_action_view(|ctx| {
+            Workspace::new(
+                self.global_resource_handles.clone(),
+                NewWorkspaceSource::Empty {
+                    previous_active_window: None,
+                    shell: None,
+                },
+                None,
+                ctx,
+            )
+        });
+        Self::subscribe_to_workspace(&workspace, ctx);
+        self.screens.insert(
+            0,
+            ProjectScreen {
+                project_id: None,
+                workspace,
+            },
+        );
+        self.active_screen_index = 0;
+        self.sync_overview_home(ctx);
+        self.publish_active_screen(ctx);
+        self.focus_active_screen(ctx);
+        ctx.notify();
+        save_app_state(ctx);
+    }
+
+    fn sync_overview_home(&self, ctx: &mut ViewContext<Self>) {
+        let home_open = self.home_screen_index().is_some();
+        let overview = self.overview.clone();
+        overview.update(ctx, |overview, ctx| {
+            overview.set_home_open(home_open, ctx);
+        });
+    }
+
+    fn show_close_home_dialog(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(index) = self.home_screen_index() else {
+            return;
+        };
+        if self.screens.len() <= 1 {
+            self.toast("Home is the only workspace open.".to_owned(), ctx);
+            return;
+        }
+        let tab_count = self.screens[index].workspace.as_ref(ctx).tab_count();
+        if tab_count == 0 {
+            self.close_home_screen(ctx);
+            return;
+        }
+        let note = Some(match tab_count {
+            1 => "Its 1 open tab will be closed.".to_owned(),
+            count => format!("Its {count} open tabs will be closed."),
+        });
+        let dialog = self.remove_dialog.view.clone();
+        dialog.update(ctx, |dialog, ctx| {
+            dialog.set_target(RemoveTarget::Home, "Home".to_owned(), note, ctx);
+        });
+        self.remove_dialog.open();
+        ctx.focus(&dialog);
+        ctx.notify();
+    }
+
+    fn close_home_screen(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(index) = self.home_screen_index() else {
+            return;
+        };
+        if self.screens.len() <= 1 {
+            self.toast("Home is the only workspace open.".to_owned(), ctx);
+            return;
+        }
+        self.close_screen_at(index, ctx);
+        self.sync_overview_home(ctx);
+    }
+
+    fn close_screen_at(&mut self, index: usize, ctx: &mut ViewContext<Self>) {
+        if self.screens.len() <= 1 || index >= self.screens.len() {
+            return;
+        }
+
+        if self.active_screen_index >= index {
+            self.active_screen_index = self.active_screen_index.saturating_sub(1);
+        }
+
+        let screen = self.screens.remove(index);
+        let workspace_id = screen.workspace.id();
+        screen.workspace.update(ctx, |workspace, ctx| {
+            workspace.close_all_tabs_for_screen_teardown(ctx);
+        });
+        crate::workspace::purge_screen_scoped_state(workspace_id, ctx);
+
+        self.publish_active_screen(ctx);
+        self.focus_active_screen(ctx);
+        ctx.notify();
+        save_app_state(ctx);
+    }
+
     pub fn open_project(&mut self, project_id: ProjectId, ctx: &mut ViewContext<Self>) {
         if let Some(index) = self.screen_index_for_project(project_id) {
             self.activate_screen(index, ctx);
@@ -618,25 +732,16 @@ impl ProjectHost {
     }
 
     pub fn close_project_screen(&mut self, project_id: ProjectId, ctx: &mut ViewContext<Self>) {
+        if self.screen_index_for_project(project_id).is_none() {
+            return;
+        }
+        if self.screens.len() <= 1 {
+            self.create_home_screen(ctx);
+        }
         let Some(index) = self.screen_index_for_project(project_id) else {
             return;
         };
-
-        if self.active_screen_index >= index {
-            self.active_screen_index = self.active_screen_index.saturating_sub(1);
-        }
-
-        let screen = self.screens.remove(index);
-        let workspace_id = screen.workspace.id();
-        screen.workspace.update(ctx, |workspace, ctx| {
-            workspace.close_all_tabs_for_screen_teardown(ctx);
-        });
-        crate::workspace::purge_screen_scoped_state(workspace_id, ctx);
-
-        self.publish_active_screen(ctx);
-        self.focus_active_screen(ctx);
-        ctx.notify();
-        save_app_state(ctx);
+        self.close_screen_at(index, ctx);
     }
 
     pub fn register_and_open_folder(&mut self, path: PathBuf, ctx: &mut ViewContext<Self>) {
@@ -682,8 +787,10 @@ impl ProjectHost {
         self.overview_active = active;
         if active {
             let open = self.open_project_ids();
+            let home_open = self.home_screen_index().is_some();
             let overview = self.overview.clone();
             overview.update(ctx, |overview, ctx| {
+                overview.set_home_open(home_open, ctx);
                 overview.refresh(ctx);
                 overview.set_open_projects(open, ctx);
             });
@@ -870,7 +977,7 @@ impl ProjectHost {
             OverviewEvent::Close => self.set_overview_active(false, ctx),
             OverviewEvent::ActivateHome => {
                 self.set_overview_active(false, ctx);
-                self.activate_screen(0, ctx);
+                self.activate_home(ctx);
             }
             OverviewEvent::OpenProject(project_id) => {
                 let project_id = *project_id;
@@ -879,6 +986,7 @@ impl ProjectHost {
             }
             OverviewEvent::NewWorkspace => self.show_new_workspace_modal(None, ctx),
             OverviewEvent::RemoveProject(project_id) => self.show_remove_dialog(*project_id, ctx),
+            OverviewEvent::CloseHome => self.show_close_home_dialog(ctx),
             OverviewEvent::RevealProject(project_id) => {
                 if let Some(path) = ProjectRegistryModel::as_ref(ctx)
                     .project(*project_id)
@@ -911,8 +1019,13 @@ impl ProjectHost {
         });
 
         let dialog = self.remove_dialog.view.clone();
-        dialog.update(ctx, |dialog, _| {
-            dialog.set_target(project_id, display_name, worktree_note);
+        dialog.update(ctx, |dialog, ctx| {
+            dialog.set_target(
+                RemoveTarget::Project(project_id),
+                display_name,
+                worktree_note,
+                ctx,
+            );
         });
         self.remove_dialog.open();
         ctx.focus(&dialog);
