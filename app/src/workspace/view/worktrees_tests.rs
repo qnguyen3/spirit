@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use warpui::App;
+
 use super::*;
 use crate::projects::{ProjectId, ProjectKind};
 
@@ -135,4 +137,60 @@ fn run_partition_of_unbound_tabs_is_a_single_run() {
 #[test]
 fn run_partition_of_no_tabs_is_empty() {
     assert!(worktree_run_partition(&[]).is_empty());
+}
+
+#[test]
+fn worktree_repo_root_resolves_primary_and_linked_directories_only_for_git_projects() {
+    App::test((), |mut app| async move {
+        let root = std::env::temp_dir().join(format!(
+            "spirit-worktree-root-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let registry = app.add_singleton_model(|_| ProjectRegistryModel::new(None));
+
+        registry.update(&mut app, |registry, ctx| {
+            let git_project = registry.register_project(
+                root.clone(),
+                "repo".to_owned(),
+                ProjectKind::Git,
+                Some("main".to_owned()),
+                ctx,
+            );
+            let primary = registry
+                .primary_worktree_id(git_project)
+                .expect("git project has a primary worktree");
+            let linked = registry.add_linked_worktree(
+                git_project,
+                "auth".to_owned(),
+                root.join("auth"),
+                "auth".to_owned(),
+                "main".to_owned(),
+                ctx,
+            );
+            let folder_project = registry.register_project(
+                root.join("plain"),
+                "plain".to_owned(),
+                ProjectKind::Folder,
+                None,
+                ctx,
+            );
+            let folder_primary = registry
+                .primary_worktree_id(folder_project)
+                .expect("folder project has a primary worktree");
+
+            assert_eq!(
+                worktree_repo_root(registry, primary),
+                Some(dunce::canonicalize(&root).unwrap())
+            );
+            assert_eq!(
+                worktree_repo_root(registry, linked),
+                Some(root.join("auth"))
+            );
+            assert_eq!(worktree_repo_root(registry, folder_primary), None);
+            assert_eq!(worktree_repo_root(registry, WorktreeId::new()), None);
+        });
+
+        std::fs::remove_dir_all(&root).ok();
+    })
 }

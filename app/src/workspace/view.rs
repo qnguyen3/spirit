@@ -236,7 +236,8 @@ use crate::terminal::model::blockgrid::BlockGrid;
 use crate::terminal::model::session::Session;
 use crate::terminal::model::session::SessionId;
 use crate::terminal::resizable_data::{
-    DEFAULT_LEFT_PANEL_WIDTH, DEFAULT_RIGHT_PANEL_WIDTH, ModalSizes, ModalType, ResizableData,
+    DEFAULT_LEFT_PANEL_WIDTH, DEFAULT_RIGHT_PANEL_WIDTH, ModalSizes, ResizableData,
+    right_panel_width_capped_at_default,
 };
 use crate::terminal::safe_mode_settings::SafeModeSettings;
 use crate::terminal::session_settings::{
@@ -1962,15 +1963,11 @@ impl Workspace {
         // reads the sizes from the window snapshot. A new window initializes with all default sizes.
         let resizable_data = ResizableData::handle(ctx);
         let window_id = ctx.window_id();
-        let has_horizontal_split = workspace_setting.has_horizontal_split();
-
-        let (left_panel_size, right_panel_size) =
-            compute_default_panel_widths(ctx, window_id, has_horizontal_split);
         let new_resizable_modal_sizes = match workspace_setting.clone() {
             NewWorkspaceSource::Restored {
                 window_snapshot, ..
-            } => ModalSizes::from_restored(&window_snapshot, left_panel_size, right_panel_size),
-            _ => ModalSizes::default_with_panel_defaults(left_panel_size, right_panel_size),
+            } => ModalSizes::from_restored(&window_snapshot),
+            _ => ModalSizes::default(),
         };
         resizable_data.update(ctx, |model, _| {
             model.insert(window_id, new_resizable_modal_sizes)
@@ -2579,6 +2576,7 @@ impl Workspace {
                             );
                         }
                     });
+                self.normalize_worktree_runs(ctx);
 
                 if self.tab_count() == 0 {
                     if self.should_trigger_get_started_onboarding(ctx) {
@@ -2735,7 +2733,9 @@ impl Workspace {
         if let Some(modal_sizes) = resizable.as_ref(ctx).get_all_handles(self.window_id)
             && let Ok(mut handle) = modal_sizes.right_panel_width.lock()
         {
-            handle.set_size(left_panel_snapshot.width as f32);
+            handle.set_size(right_panel_width_capped_at_default(Some(
+                left_panel_snapshot.width as f32,
+            )));
         }
 
         self.left_panel_view.update(ctx, |lp, ctx| {
@@ -2769,7 +2769,9 @@ impl Workspace {
         if let Some(modal_sizes) = resizable.as_ref(ctx).get_all_handles(self.window_id)
             && let Ok(mut handle) = modal_sizes.right_panel_width.lock()
         {
-            handle.set_size(right_panel_snapshot.width as f32);
+            handle.set_size(right_panel_width_capped_at_default(Some(
+                right_panel_snapshot.width as f32,
+            )));
         }
 
         self.right_panel_view.update(ctx, |rp, ctx| {
@@ -4757,14 +4759,6 @@ impl Workspace {
                     ))
                     .into_item(),
             );
-            for (worktree_id, name) in self.closed_worktrees(ctx) {
-                menu_items.push(
-                    MenuItemFields::new(name)
-                        .with_on_select_action(WorkspaceAction::OpenWorktreeTab { worktree_id })
-                        .with_indent()
-                        .into_item(),
-                );
-            }
         }
 
         // 5. Separator + worktree config entry + new tab config
@@ -6587,33 +6581,7 @@ impl Workspace {
             self.close_left_panel(ctx);
         }
 
-        // If we are opening the panel, set width based on the most recent tab's width if available,
-        // otherwise compute default width from current window size. Also auto-expand the project
-        // explorer if it's the active left panel view.
         if new_state {
-            let window_id = ctx.window_id();
-            let resizable_data = ResizableData::handle(ctx);
-            if let Some(handle) = resizable_data
-                .as_ref(ctx)
-                .get_handle(window_id, ModalType::RightPanelWidth)
-                && let Ok(mut state) = handle.lock()
-            {
-                // Get the current width from ResizableData - this reflects the most recent tab's width
-                let current_width = state.size();
-
-                // Only recompute default if the current width is at the default value
-                // This preserves the width from the most recent tab
-                if current_width == DEFAULT_RIGHT_PANEL_WIDTH {
-                    let has_horizontal_split = active_pane_group
-                        .read(ctx, |pane_group, _| pane_group.has_horizontal_split());
-                    let (_left_width, right_width) =
-                        compute_default_panel_widths(ctx, window_id, has_horizontal_split);
-                    state.set_size(right_width);
-                }
-                // If current_width is not the default, it means we have a width from a previous tab,
-                // so we don't need to do anything - the width is already preserved
-            }
-
             // Auto-expand the file tree when the left panel is opened and the project explorer is
             // the active view.
             let file_tree_active = self
@@ -6645,10 +6613,17 @@ impl Workspace {
                 Some((context.repo_path.clone(), context.diff_state_model.clone()))
             } else {
                 let active_pane_group = self.active_tab_pane_group().clone();
+                let worktree_anchor = self
+                    .worktree_repo_root_for_pane_group(active_pane_group.id(), ctx)
+                    .map(LocalOrRemotePath::Local);
                 // Read repo_path and preferred session from the pane group (immutable context).
                 let read_result = active_pane_group.read(ctx, |pane_group, ctx| {
                     pane_group.active_session_view(ctx).map(|terminal_view| {
-                        let repo_path = terminal_view.as_ref(ctx).current_repo_path().cloned();
+                        let repo_path = terminal_view
+                            .as_ref(ctx)
+                            .current_repo_path()
+                            .cloned()
+                            .or(worktree_anchor);
                         let preferred_session = terminal_view.as_ref(ctx).active_block_session_id();
                         (repo_path, preferred_session)
                     })
@@ -6741,32 +6716,7 @@ impl Workspace {
                 sidebar.restore_active_view_from_snapshot(ToolPanelView::SourceControl, ctx);
             });
             #[cfg(feature = "local_fs")]
-            {
-                let window_id = ctx.window_id();
-                let resizable_data = ResizableData::handle(ctx);
-                if let Some(handle) = resizable_data
-                    .as_ref(ctx)
-                    .get_handle(window_id, ModalType::RightPanelWidth)
-                    && let Ok(mut state) = handle.lock()
-                {
-                    // Get the current width from ResizableData - this reflects the most recent tab's width
-                    let current_width = state.size();
-
-                    // Only recompute default if the current width is at the default value
-                    // This preserves the width from the most recent tab
-                    if current_width == DEFAULT_RIGHT_PANEL_WIDTH {
-                        let has_horizontal_split = panel_update_params
-                            .pane_group
-                            .read(ctx, |pane_group, _| pane_group.has_horizontal_split());
-                        let (_left_width, right_width) =
-                            compute_default_panel_widths(ctx, window_id, has_horizontal_split);
-                        state.set_size(right_width);
-                    }
-                    // If current_width is not the default, it means we have a width from a previous tab,
-                    // so we don't need to do anything - the width is already preserved
-                }
-                self.setup_code_review_panel(panel_update_params.review_pane_context, ctx);
-            }
+            self.setup_code_review_panel(panel_update_params.review_pane_context, ctx);
         } else {
             if self.left_panel_view.as_ref(ctx).is_source_control_active() {
                 self.close_left_panel(ctx);
@@ -8401,7 +8351,7 @@ impl Workspace {
                 let modal_sizes = resizable_data.as_ref(app).get_all_handles(window_id);
 
                 let left_panel_width = modal_sizes.map(|ms| {
-                    ms.right_panel_width
+                    ms.left_panel_width
                         .lock()
                         .expect("should be able to lock left panel handle")
                         .size()
@@ -8521,7 +8471,7 @@ impl Workspace {
         });
 
         let left_panel_width = modal_sizes.map(|ms| {
-            ms.right_panel_width
+            ms.left_panel_width
                 .lock()
                 .map(|guard| guard.size())
                 .unwrap_or(DEFAULT_LEFT_PANEL_WIDTH)
@@ -9386,8 +9336,31 @@ impl Workspace {
         ctx: &mut ViewContext<Self>,
     ) {
         let index = self.active_tab_index;
-        if let Some(tab) = self.tabs.get_mut(index) {
-            tab.worktree_id = worktree_id;
+        let Some(tab) = self.tabs.get_mut(index) else {
+            ctx.notify();
+            return;
+        };
+        tab.worktree_id = worktree_id;
+        let pane_group = tab.pane_group.clone();
+        self.refresh_working_directories_for_pane_group(&pane_group, ctx);
+        #[cfg(feature = "local_fs")]
+        if let Some(anchor) = self.worktree_repo_root_for_pane_group(pane_group.id(), ctx) {
+            let detection = DetectedRepositories::handle(ctx).update(ctx, |repos, ctx| {
+                repos.detect_possible_local_git_repo(
+                    &anchor.to_string_lossy(),
+                    repo_metadata::repositories::RepoDetectionSource::CodeReviewInitialization,
+                    ctx,
+                )
+            });
+            let _ = ctx.spawn(detection, move |me, _root, ctx| {
+                let still_open = me
+                    .tabs
+                    .iter()
+                    .any(|tab| tab.pane_group.id() == pane_group.id());
+                if still_open {
+                    me.refresh_working_directories_for_pane_group(&pane_group, ctx);
+                }
+            });
         }
         ctx.notify();
     }
@@ -9396,10 +9369,6 @@ impl Workspace {
         self.tabs
             .iter()
             .position(|tab| tab.worktree_id == Some(worktree_id))
-    }
-
-    pub fn worktree_ids_with_tabs(&self) -> Vec<WorktreeId> {
-        self.tabs.iter().filter_map(|tab| tab.worktree_id).collect()
     }
 
     fn new_tab_index_and_group(&self, ctx: &AppContext) -> (usize, Option<TabGroupId>) {
@@ -10566,7 +10535,9 @@ impl Workspace {
             .active_session_view(ctx)
             .map(|terminal_view| terminal_view.id());
 
+        let worktree_anchor = self.worktree_repo_root_for_pane_group(pane_group_id, ctx);
         self.working_directories_model.update(ctx, |model, ctx| {
+            model.set_worktree_anchor(pane_group_id, worktree_anchor);
             model.refresh_working_directories_for_pane_group(
                 pane_group_id,
                 terminal_cwds,
@@ -16783,9 +16754,6 @@ impl TypedActionView for Workspace {
             } => {
                 self.show_create_worktree_modal(*agent_catalog_index, ctx);
             }
-            OpenWorktreeTab { worktree_id } => {
-                self.open_worktree_tab(*worktree_id, ctx);
-            }
             DeleteWorktree { worktree_id } => {
                 self.show_delete_worktree_dialog(*worktree_id, ctx);
             }
@@ -18765,23 +18733,11 @@ impl Workspace {
                 return;
             }
 
-            // Worktree runs must stay contiguous: a bound tab never leaves its
-            // section and an unbound tab hops past a foreign section whole.
-            if self.worktree_sections_enabled() {
-                let dragged_worktree = self.resolved_worktree_id_of_tab(current_index, ctx);
-                let neighbor_worktree = self.resolved_worktree_id_of_tab(new_index, ctx);
-                if dragged_worktree != neighbor_worktree {
-                    if dragged_worktree.is_some() {
-                        return;
-                    }
-                    if let Some(worktree_id) = neighbor_worktree
-                        && let Some((first, last)) = self.worktree_run_range(worktree_id)
-                    {
-                        let insert_at = if current_index < first { last } else { first };
-                        self.hop_tab_to_index(current_index, insert_at, ctx);
-                        return;
-                    }
-                }
+            if self.worktree_sections_enabled()
+                && self.resolved_worktree_id_of_tab(current_index, ctx)
+                    != self.resolved_worktree_id_of_tab(new_index, ctx)
+            {
+                return;
             }
 
             self.tabs.swap(new_index, current_index);
@@ -19575,22 +19531,5 @@ fn render_cross_window_ghost_chip(
             .finish()
     } else {
         ConstrainedBox::new(chip).with_max_width(200.).finish()
-    }
-}
-
-fn compute_default_panel_widths(
-    app: &AppContext,
-    window_id: WindowId,
-    has_horizontal_split: bool,
-) -> (f32, f32) {
-    if let Some(bounds) = app.window_bounds(&window_id) {
-        let window_width = bounds.width();
-        let left_ratio = 0.15;
-        let right_ratio = if has_horizontal_split { 0.3 } else { 0.5 };
-        let left = window_width * left_ratio;
-        let right = window_width * right_ratio;
-        (left, right)
-    } else {
-        (DEFAULT_LEFT_PANEL_WIDTH, DEFAULT_RIGHT_PANEL_WIDTH)
     }
 }

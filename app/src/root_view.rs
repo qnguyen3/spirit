@@ -1160,32 +1160,6 @@ pub enum NewWorkspaceSource {
     },
 }
 
-impl NewWorkspaceSource {
-    pub fn has_horizontal_split(&self) -> bool {
-        match self {
-            NewWorkspaceSource::Restored {
-                window_snapshot,
-                screen_index,
-                ..
-            } => {
-                let Some(screen) = window_snapshot.screen(*screen_index) else {
-                    return false;
-                };
-                if screen.tabs.is_empty() {
-                    false
-                } else {
-                    let active_tab = screen
-                        .tabs
-                        .get(screen.active_tab_index)
-                        .unwrap_or(&screen.tabs[0]);
-                    active_tab.root.has_horizontal_split()
-                }
-            }
-            _ => false,
-        }
-    }
-}
-
 /// Args needed to construct a `Workspace`.
 #[derive(Clone)]
 struct WorkspaceArgs {

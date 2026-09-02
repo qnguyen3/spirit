@@ -9,7 +9,7 @@ pub const DEFAULT_UNIVERSAL_SEARCH_WIDTH: f32 = 700.;
 pub const DEFAULT_VOLTRON_WIDTH: f32 = 700.;
 pub const DEFAULT_SETTINGS_PANEL_WIDTH: f32 = 194.;
 pub const DEFAULT_LEFT_PANEL_WIDTH: f32 = 240.;
-pub const DEFAULT_RIGHT_PANEL_WIDTH: f32 = 480.;
+pub const DEFAULT_RIGHT_PANEL_WIDTH: f32 = 320.;
 /// A naming system for the ResizableStateHandles
 pub enum ModalType {
     UniversalSearchWidth,
@@ -31,11 +31,7 @@ pub struct ModalSizes {
 
 impl ModalSizes {
     /// Constructs a ModalSizes struct using a loaded-in WindowSnapshot
-    pub fn from_restored(
-        window_snapshot: &WindowSnapshot,
-        left_panel_size: f32,
-        right_panel_size: f32,
-    ) -> Self {
+    pub fn from_restored(window_snapshot: &WindowSnapshot) -> Self {
         let universal_search_width = window_snapshot
             .universal_search_width
             .unwrap_or(DEFAULT_UNIVERSAL_SEARCH_WIDTH);
@@ -43,10 +39,11 @@ impl ModalSizes {
             .voltron_width
             .unwrap_or(DEFAULT_VOLTRON_WIDTH);
         let settings_panel_width = DEFAULT_SETTINGS_PANEL_WIDTH;
-        let left_panel_width = window_snapshot.left_panel_width.unwrap_or(left_panel_size);
-        let right_panel_width = window_snapshot
-            .right_panel_width
-            .unwrap_or(right_panel_size);
+        let left_panel_width = window_snapshot
+            .left_panel_width
+            .unwrap_or(DEFAULT_LEFT_PANEL_WIDTH);
+        let right_panel_width =
+            right_panel_width_capped_at_default(window_snapshot.right_panel_width);
 
         Self {
             universal_search_width: resizable_state_handle(universal_search_width),
@@ -54,16 +51,6 @@ impl ModalSizes {
             settings_panel_width: resizable_state_handle(settings_panel_width),
             left_panel_width: resizable_state_handle(left_panel_width),
             right_panel_width: resizable_state_handle(right_panel_width),
-        }
-    }
-
-    pub fn default_with_panel_defaults(left_default: f32, right_default: f32) -> Self {
-        ModalSizes {
-            universal_search_width: resizable_state_handle(DEFAULT_UNIVERSAL_SEARCH_WIDTH),
-            voltron_width: resizable_state_handle(DEFAULT_VOLTRON_WIDTH),
-            settings_panel_width: resizable_state_handle(DEFAULT_SETTINGS_PANEL_WIDTH),
-            left_panel_width: resizable_state_handle(left_default),
-            right_panel_width: resizable_state_handle(right_default),
         }
     }
 
@@ -77,6 +64,12 @@ impl ModalSizes {
             ModalType::RightPanelWidth => self.right_panel_width.clone(),
         }
     }
+}
+
+pub fn right_panel_width_capped_at_default(saved: Option<f32>) -> f32 {
+    saved
+        .filter(|width| *width <= DEFAULT_RIGHT_PANEL_WIDTH)
+        .unwrap_or(DEFAULT_RIGHT_PANEL_WIDTH)
 }
 
 impl Default for ModalSizes {

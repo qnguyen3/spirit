@@ -298,6 +298,7 @@ pub struct WorkingDirectoriesModel {
     /// leaves the pane group's session and returns to it later, even if the auto-selection
     /// logic would otherwise pick a different default.
     selected_review_repo: HashMap<EntityId, LocalOrRemotePath>,
+    worktree_anchors: HashMap<EntityId, PathBuf>,
     global_search_views: HashMap<EntityId, ViewHandle<GlobalSearchView>>,
     file_tree_views: HashMap<EntityId, ViewHandle<FileTreeView>>,
 }
@@ -503,6 +504,17 @@ impl WorkingDirectoriesModel {
         self.selected_review_repo.get(&pane_group_id)
     }
 
+    pub fn set_worktree_anchor(&mut self, pane_group_id: EntityId, anchor: Option<PathBuf>) {
+        match anchor {
+            Some(anchor) => {
+                self.worktree_anchors.insert(pane_group_id, anchor);
+            }
+            None => {
+                self.worktree_anchors.remove(&pane_group_id);
+            }
+        }
+    }
+
     /// Persist the repository the user manually selected for the code review panel
     /// in a given pane group. This is only called for explicit user-driven
     /// selections (e.g. via the dropdown), not for auto-selected defaults.
@@ -561,6 +573,7 @@ impl WorkingDirectoriesModel {
         self.code_review_views.remove(&pane_group_id);
         self.focused_repo.remove(&pane_group_id);
         self.selected_review_repo.remove(&pane_group_id);
+        self.worktree_anchors.remove(&pane_group_id);
     }
 
     fn handle_empty_pane_group(&mut self, pane_group_id: EntityId, ctx: &mut ModelContext<Self>) {
@@ -606,7 +619,15 @@ impl WorkingDirectoriesModel {
         focused_terminal_id: Option<EntityId>,
         ctx: &mut ModelContext<Self>,
     ) {
-        if terminal_cwds.is_empty() && editor_paths.is_empty() {
+        let anchor_terminal_id =
+            focused_terminal_id.or_else(|| terminal_cwds.first().map(|(id, _)| *id));
+        let worktree_anchor: Option<LocalOrRemotePath> = anchor_terminal_id.and_then(|_| {
+            self.worktree_anchors
+                .get(&pane_group_id)
+                .and_then(|path| normalize_cwd(&path.to_string_lossy()))
+                .map(LocalOrRemotePath::Local)
+        });
+        if terminal_cwds.is_empty() && editor_paths.is_empty() && worktree_anchor.is_none() {
             self.handle_empty_pane_group(pane_group_id, ctx);
             return;
         }
@@ -727,6 +748,7 @@ impl WorkingDirectoriesModel {
             .cloned()
             .map(LocalOrRemotePath::Local)
             .chain(new_remote_display_roots.iter().cloned())
+            .chain(worktree_anchor.clone())
             .collect();
 
         // Get or create the IndexSet for this pane group
@@ -758,6 +780,11 @@ impl WorkingDirectoriesModel {
             .collect();
         new_root_to_terminal
             .retain(|cwd, _terminal_id| cwd.to_local_path().is_some_and(|p| new_roots.contains(p)));
+        if let (Some(anchor), Some(terminal_id)) = (&worktree_anchor, anchor_terminal_id) {
+            new_root_to_terminal
+                .entry(anchor.clone())
+                .or_insert(terminal_id);
+        }
 
         // Resolve remote terminal CWDs to their repo roots and add to mappings.
         let mut new_remote_repo_roots: Vec<LocalOrRemotePath> = Vec::new();
@@ -803,6 +830,7 @@ impl WorkingDirectoriesModel {
                 new_root_to_terminal.insert(repo_key, focused_id);
             }
         }
+        let focused_repo = focused_repo.or_else(|| worktree_anchor.clone());
 
         // Build the unified set of repo roots (local + remote).
         let mut new_repo_roots_wrapped: Vec<LocalOrRemotePath> = new_local_repo_roots
@@ -810,6 +838,7 @@ impl WorkingDirectoriesModel {
             .map(LocalOrRemotePath::Local)
             .chain(new_remote_repo_roots)
             .chain(new_remote_display_roots)
+            .chain(worktree_anchor)
             .collect();
         // Deduplicate (IndexSet handles this, but avoid duplicates in the input).
         let seen: HashSet<_> = new_repo_roots_wrapped.iter().cloned().collect();
@@ -1023,6 +1052,8 @@ impl WorkingDirectoriesModel {
         _ctx: &mut ModelContext<Self>,
     ) {
     }
+
+    pub fn set_worktree_anchor(&mut self, _pane_group_id: EntityId, _anchor: Option<PathBuf>) {}
 
     pub fn get_or_create_diff_state_model(
         &mut self,

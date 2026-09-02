@@ -65,6 +65,7 @@ pub struct CreateWorktreeModal {
     installed_agents: Vec<bool>,
     shell_path_env: Option<String>,
     existing_branches: HashSet<String>,
+    generated_name: Option<String>,
     in_flight: bool,
     error: Option<String>,
     regenerate_mouse_state: MouseStateHandle,
@@ -140,6 +141,7 @@ impl CreateWorktreeModal {
             installed_agents,
             shell_path_env: None,
             existing_branches: HashSet::new(),
+            generated_name: None,
             in_flight: false,
             error: None,
             regenerate_mouse_state: MouseStateHandle::default(),
@@ -165,6 +167,20 @@ impl CreateWorktreeModal {
         self.regenerate_name(ctx);
         self.request_shell_path(ctx);
         ctx.focus(&self.name_editor);
+        ctx.notify();
+    }
+
+    pub fn extend_existing_branches(
+        &mut self,
+        branches: HashSet<String>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.existing_branches.extend(branches);
+        let typed = self.name_editor.as_ref(ctx).buffer_text(ctx);
+        let untouched = self.generated_name.as_deref() == Some(typed.as_str());
+        if untouched && self.existing_branches.contains(&typed) {
+            self.regenerate_name(ctx);
+        }
         ctx.notify();
     }
 
@@ -215,6 +231,7 @@ impl CreateWorktreeModal {
         self.name_editor.update(ctx, |editor, ctx| {
             editor.set_buffer_text(&name, ctx);
         });
+        self.generated_name = Some(name);
         ctx.notify();
     }
 

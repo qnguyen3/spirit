@@ -456,3 +456,60 @@ async fn num_lines_in_file_if_non_binary_errors_for_directory() {
     let result = LocalDiffStateModel::num_lines_in_file_if_non_binary(dir.path()).await;
     assert!(result.is_err());
 }
+
+#[cfg(feature = "local_fs")]
+async fn await_repo_detection(
+    app: &mut warpui::App,
+    model: &warpui::ModelHandle<LocalDiffStateModel>,
+) {
+    let completion = model.update(app, |model, ctx| {
+        let future_id = model
+            .repo_detection_handle
+            .as_ref()
+            .expect("detection is in flight")
+            .future_id();
+        ctx.await_spawned_future(future_id)
+    });
+    completion.await;
+}
+
+#[cfg(feature = "local_fs")]
+#[test]
+fn not_in_repository_recovers_when_repo_appears_on_reload() {
+    warpui::App::test((), |mut app| async move {
+        app.add_singleton_model(repo_metadata::watcher::DirectoryWatcher::new_for_testing);
+        app.add_singleton_model(|_| repo_metadata::repositories::DetectedRepositories::default());
+
+        let temp_dir = tempfile::TempDir::new().expect("temp dir");
+        let project = temp_dir.path().join("project");
+        std::fs::create_dir_all(&project).expect("create project dir");
+
+        let model = app.add_model(|ctx| {
+            LocalDiffStateModel::new(Some(project.to_string_lossy().into_owned()), ctx)
+        });
+        await_repo_detection(&mut app, &model).await;
+        model.read(&app, |model, _| {
+            assert!(model.repository.is_none());
+            assert!(matches!(model.state, InternalDiffState::NotInRepository));
+        });
+
+        let git_dir = project.join(".git");
+        std::fs::create_dir_all(git_dir.join("objects")).expect("create objects");
+        std::fs::create_dir_all(git_dir.join("refs")).expect("create refs");
+        std::fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").expect("write HEAD");
+        std::fs::write(git_dir.join("config"), "").expect("write config");
+
+        model.update(&mut app, |model, ctx| {
+            model.set_code_review_metadata_refresh_enabled(true, ctx);
+            model.load_diffs_for_current_repo(false, false, ctx);
+            assert!(matches!(model.state, InternalDiffState::Detecting));
+        });
+        await_repo_detection(&mut app, &model).await;
+        model.read(&app, |model, _| {
+            assert!(
+                model.repository.is_some(),
+                "reloading after the folder became a repository picks the repository up"
+            );
+        });
+    });
+}

@@ -74,6 +74,7 @@ pub(crate) fn initialize_app(app: &mut App) {
     app.add_singleton_model(NotebookKeybindings::new);
     app.add_singleton_model(|_| CLIAgentSessionsModel::new());
     app.add_singleton_model(|_| crate::workspace::AgentInboxModel::default());
+    app.add_singleton_model(|_| crate::code_review::GlobalCodeReviewModel);
     app.add_singleton_model(|_| SettingsPaneManager::new());
     app.add_singleton_model(|_| ProjectRegistryModel::new(None));
     app.add_singleton_model(|_| AgentPickerPaneManager::default());
@@ -3666,7 +3667,7 @@ fn a_worktree_tab_spawned_from_elsewhere_lands_at_the_end_of_its_run() {
 }
 
 #[test]
-fn closing_the_last_tab_of_a_worktree_moves_it_to_the_closed_list() {
+fn closing_the_last_tab_of_a_worktree_keeps_it_registered() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
         let _guard = FeatureFlag::AdeWorkspaces.override_enabled(true);
@@ -3702,23 +3703,173 @@ fn closing_the_last_tab_of_a_worktree_moves_it_to_the_closed_list() {
         workspace.update(&mut app, |workspace, ctx| {
             workspace.project_id = Some(project_id);
             workspace.add_tab_in_worktree(linked_id, None, ctx);
-            let closed = workspace.closed_worktrees(ctx);
-            assert!(
-                closed.iter().all(|(id, _)| *id != linked_id),
-                "a worktree with an open tab is not closed"
-            );
 
             let index = workspace
                 .tab_index_for_worktree(linked_id)
                 .expect("the worktree has a tab");
             workspace.close_tabs(std::iter::once(index), true, false, ctx);
 
-            let closed = workspace.closed_worktrees(ctx);
             assert!(
-                closed.iter().any(|(id, _)| *id == linked_id),
-                "a worktree with no tabs reappears in the closed list"
+                workspace.tab_index_for_worktree(linked_id).is_none(),
+                "the worktree has no tab left"
+            );
+            assert!(
+                workspace.worktree_rank(ctx).contains_key(&linked_id),
+                "a worktree with no tabs stays registered so its section keeps rendering"
             );
         });
+    })
+}
+
+#[test]
+fn reopening_the_primary_worktree_from_a_linked_tab_puts_it_back_on_top() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let _guard = FeatureFlag::AdeWorkspaces.override_enabled(true);
+
+        let root = std::env::temp_dir().join(format!(
+            "spirit-worktree-reopen-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+
+        let (project_id, primary_id, linked_id) = app.update(|ctx| {
+            ProjectRegistryModel::handle(ctx).update(ctx, |registry, ctx| {
+                let project_id = registry.register_project(
+                    root.clone(),
+                    "repo".to_owned(),
+                    crate::projects::ProjectKind::Git,
+                    Some("main".to_owned()),
+                    ctx,
+                );
+                let primary_id = registry
+                    .primary_worktree_id(project_id)
+                    .expect("registering a project creates its Primary worktree");
+                let linked_id = registry.add_linked_worktree(
+                    project_id,
+                    "auth".to_owned(),
+                    root.join("auth"),
+                    "auth".to_owned(),
+                    "main".to_owned(),
+                    ctx,
+                );
+                (project_id, primary_id, linked_id)
+            })
+        });
+
+        let workspace = mock_workspace(&mut app);
+        workspace.update(&mut app, |workspace, ctx| {
+            workspace.project_id = Some(project_id);
+            workspace.bind_active_tab_to_worktree(Some(primary_id), ctx);
+            workspace.add_tab_in_worktree(linked_id, None, ctx);
+
+            let primary_index = workspace
+                .tab_index_for_worktree(primary_id)
+                .expect("the primary worktree has a tab");
+            workspace.close_tabs(std::iter::once(primary_index), true, false, ctx);
+            assert_eq!(
+                workspace.tabs[workspace.active_tab_index].worktree_id,
+                Some(linked_id)
+            );
+
+            workspace.add_tab_in_worktree(primary_id, None, ctx);
+
+            let bindings: Vec<_> = workspace.tabs.iter().map(|tab| tab.worktree_id).collect();
+            assert_eq!(
+                bindings,
+                vec![Some(primary_id), Some(linked_id)],
+                "the base branch section goes back above the worktree sections"
+            );
+            assert_eq!(workspace.active_tab_index, 0);
+        });
+
+        std::fs::remove_dir_all(&root).ok();
+    })
+}
+
+#[test]
+fn normalizing_runs_orders_sections_by_registry_order_with_unbound_tabs_last() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let _guard = FeatureFlag::AdeWorkspaces.override_enabled(true);
+
+        let root = std::env::temp_dir().join(format!(
+            "spirit-worktree-order-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+
+        let (project_id, primary_id, linked_a, linked_b) = app.update(|ctx| {
+            ProjectRegistryModel::handle(ctx).update(ctx, |registry, ctx| {
+                let project_id = registry.register_project(
+                    root.clone(),
+                    "repo".to_owned(),
+                    crate::projects::ProjectKind::Git,
+                    Some("main".to_owned()),
+                    ctx,
+                );
+                let primary_id = registry
+                    .primary_worktree_id(project_id)
+                    .expect("registering a project creates its Primary worktree");
+                let linked_a = registry.add_linked_worktree(
+                    project_id,
+                    "alpha".to_owned(),
+                    root.join("alpha"),
+                    "alpha".to_owned(),
+                    "main".to_owned(),
+                    ctx,
+                );
+                let linked_b = registry.add_linked_worktree(
+                    project_id,
+                    "beta".to_owned(),
+                    root.join("beta"),
+                    "beta".to_owned(),
+                    "main".to_owned(),
+                    ctx,
+                );
+                (project_id, primary_id, linked_a, linked_b)
+            })
+        });
+        app.update(|ctx| {
+            ProjectRegistryModel::handle(ctx).update(ctx, |registry, _| {
+                let rank: Vec<_> = registry
+                    .worktrees_for_project(project_id)
+                    .iter()
+                    .map(|worktree| worktree.id)
+                    .collect();
+                assert_eq!(rank, vec![primary_id, linked_a, linked_b]);
+            })
+        });
+
+        let workspace = mock_workspace(&mut app);
+        workspace.update(&mut app, |workspace, ctx| {
+            workspace.project_id = Some(project_id);
+            for _ in 0..3 {
+                workspace.add_tab_in_worktree(linked_a, None, ctx);
+            }
+            assert_eq!(workspace.tabs.len(), 4);
+            let disorder = [Some(linked_b), None, Some(primary_id), Some(linked_a)];
+            for (tab, binding) in workspace.tabs.iter_mut().zip(disorder) {
+                tab.worktree_id = binding;
+            }
+            workspace.active_tab_index = 2;
+            let active_pane_group = workspace.tabs[2].pane_group.id();
+
+            workspace.normalize_worktree_runs(ctx);
+
+            let bindings: Vec<_> = workspace.tabs.iter().map(|tab| tab.worktree_id).collect();
+            assert_eq!(
+                bindings,
+                vec![Some(primary_id), Some(linked_a), Some(linked_b), None]
+            );
+            assert_eq!(
+                workspace.tabs[workspace.active_tab_index].pane_group.id(),
+                active_pane_group,
+                "the active tab follows its pane group through the reorder"
+            );
+        });
+
+        std::fs::remove_dir_all(&root).ok();
     })
 }
 

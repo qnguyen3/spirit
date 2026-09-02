@@ -194,6 +194,10 @@ pub struct LocalDiffStateModel {
     #[cfg(feature = "local_fs")]
     repository: Option<ModelHandle<Repository>>,
     #[cfg(feature = "local_fs")]
+    repo_path: Option<String>,
+    #[cfg(feature = "local_fs")]
+    repo_detection_handle: Option<SpawnedFutureHandle>,
+    #[cfg(feature = "local_fs")]
     subscriber_id: Option<SubscriberId>,
     state: InternalDiffState,
     mode: DiffMode,
@@ -255,13 +259,11 @@ impl LocalDiffStateModel {
             |_, _| {},
         );
 
-        let model = Self {
+        let mut model = Self {
             repository: None,
-            state: if repo_path.is_some() {
-                InternalDiffState::Detecting
-            } else {
-                InternalDiffState::NotInRepository
-            },
+            repo_path,
+            repo_detection_handle: None,
+            state: InternalDiffState::NotInRepository,
             subscriber_id: None,
             mode: DiffMode::default(),
             metadata: None,
@@ -272,36 +274,42 @@ impl LocalDiffStateModel {
             file_invalidation: FileInvalidationState::new(queue),
             pending_file_updates: None,
         };
-
-        if let Some(repo_path) = &repo_path {
-            let fut = DetectedRepositories::handle(ctx).update(ctx, |model, ctx| {
-                model.detect_possible_local_git_repo(
-                    repo_path,
-                    RepoDetectionSource::CodeReviewInitialization,
-                    ctx,
-                )
-            });
-
-            ctx.spawn(fut, move |me, repo_path, ctx| {
-                if let Some(repo_path) = &repo_path
-                    && let Some(repo_handle) = DetectedRepositories::as_ref(ctx)
-                        .get_local_watched_repo_for_path(repo_path, ctx)
-                {
-                    me.set_active_repository(repo_handle, ctx);
-                    return;
-                }
-                // Repo detection completed but found no repository.
-                // Emit so subscribers (e.g. the server model) can drain
-                // pending responses with the NotInRepository state.
-                me.state = InternalDiffState::NotInRepository;
-                me.tracked_diff_load_start_time = None;
-                ctx.emit(DiffStateModelEvent::NewDiffsComputed {
-                    diffs: None,
-                    load_duration: None,
-                });
-            });
-        }
+        model.start_repo_detection(ctx);
         model
+    }
+
+    #[cfg(feature = "local_fs")]
+    fn start_repo_detection(&mut self, ctx: &mut ModelContext<Self>) {
+        let Some(repo_path) = self.repo_path.clone() else {
+            return;
+        };
+        self.state = InternalDiffState::Detecting;
+        let fut = DetectedRepositories::handle(ctx).update(ctx, |model, ctx| {
+            model.detect_possible_local_git_repo(
+                &repo_path,
+                RepoDetectionSource::CodeReviewInitialization,
+                ctx,
+            )
+        });
+
+        self.repo_detection_handle = Some(ctx.spawn(fut, move |me, repo_path, ctx| {
+            if let Some(repo_path) = &repo_path
+                && let Some(repo_handle) = DetectedRepositories::as_ref(ctx)
+                    .get_local_watched_repo_for_path(repo_path, ctx)
+            {
+                me.set_active_repository(repo_handle, ctx);
+                return;
+            }
+            // Repo detection completed but found no repository.
+            // Emit so subscribers (e.g. the server model) can drain
+            // pending responses with the NotInRepository state.
+            me.state = InternalDiffState::NotInRepository;
+            me.tracked_diff_load_start_time = None;
+            ctx.emit(DiffStateModelEvent::NewDiffsComputed {
+                diffs: None,
+                load_duration: None,
+            });
+        }));
     }
 
     #[cfg(not(feature = "local_fs"))]
@@ -525,6 +533,9 @@ impl LocalDiffStateModel {
         }
 
         let Some(current_repository) = &self.repository else {
+            if matches!(self.state, InternalDiffState::NotInRepository) {
+                self.start_repo_detection(ctx);
+            }
             return;
         };
         let current_repository_path = current_repository
@@ -2909,6 +2920,10 @@ impl LocalDiffStateModel {
         Self {
             #[cfg(feature = "local_fs")]
             repository: None,
+            #[cfg(feature = "local_fs")]
+            repo_path: None,
+            #[cfg(feature = "local_fs")]
+            repo_detection_handle: None,
             state: InternalDiffState::default(),
             #[cfg(feature = "local_fs")]
             subscriber_id: None,

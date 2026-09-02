@@ -1,8 +1,8 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use warpui::{AppContext, SingletonEntity, ViewContext, ViewHandle};
+use warpui::{AppContext, EntityId, SingletonEntity, ViewContext, ViewHandle};
 
 use super::Workspace;
 use crate::agent_launcher::pane_manager::AgentPickerPaneManager;
@@ -19,7 +19,7 @@ use crate::projects::git_ops::{
     sanitize_worktree_name,
 };
 use crate::projects::registry::ProjectRegistryModel;
-use crate::projects::{Project, ProjectId, Worktree, WorktreeId, WorktreeKind};
+use crate::projects::{Project, ProjectId, ProjectKind, Worktree, WorktreeId, WorktreeKind};
 use crate::tab::TabData;
 use crate::view_components::DismissibleToast;
 use crate::workspace::ToastStack;
@@ -96,6 +96,19 @@ impl Workspace {
             .map(|worktree| worktree.id)
     }
 
+    pub(crate) fn worktree_repo_root_for_pane_group(
+        &self,
+        pane_group_id: EntityId,
+        ctx: &AppContext,
+    ) -> Option<PathBuf> {
+        let tab_index = self
+            .tabs
+            .iter()
+            .position(|tab| tab.pane_group.id() == pane_group_id)?;
+        let worktree_id = self.resolved_worktree_id_of_tab(tab_index, ctx)?;
+        worktree_repo_root(ProjectRegistryModel::as_ref(ctx), worktree_id)
+    }
+
     pub(crate) fn worktree_run_range(&self, worktree_id: WorktreeId) -> Option<(usize, usize)> {
         let mut members = self
             .tabs
@@ -113,71 +126,49 @@ impl Workspace {
             .map(|(_, last)| last + 1)
     }
 
-    fn place_active_tab_in_worktree_run(
-        &mut self,
-        worktree_id: WorktreeId,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if !self.worktree_sections_enabled() {
-            return;
-        }
-        let new_index = self.active_tab_index();
-        let bound = |tab: &TabData| tab.worktree_id == Some(worktree_id);
-        let adjacent = new_index
-            .checked_sub(1)
-            .and_then(|index| self.tabs.get(index))
-            .is_some_and(bound)
-            || self.tabs.get(new_index + 1).is_some_and(bound);
-        if adjacent {
-            return;
-        }
-        let last_other = self
-            .tabs
+    pub(crate) fn worktree_rank(&self, ctx: &AppContext) -> HashMap<WorktreeId, usize> {
+        let Some(project_id) = self
+            .project_id()
+            .filter(|_| self.worktree_sections_enabled())
+        else {
+            return HashMap::new();
+        };
+        ProjectRegistryModel::as_ref(ctx)
+            .worktrees_for_project(project_id)
             .iter()
             .enumerate()
-            .filter(|(index, tab)| *index != new_index && bound(tab))
-            .map(|(index, _)| index)
-            .next_back();
-        let Some(last_other) = last_other else {
-            return;
-        };
-        let target = if new_index > last_other {
-            last_other + 1
-        } else {
-            last_other
-        };
-        self.move_tab_to_index(new_index, target, ctx);
+            .map(|(rank, worktree)| (worktree.id, rank))
+            .collect()
     }
 
     pub(crate) fn normalize_worktree_runs(&mut self, ctx: &mut ViewContext<Self>) {
         if !self.worktree_sections_enabled() {
             return;
         }
-        while let Some((stray, target)) = self.first_worktree_stray() {
-            self.hop_tab_to_index(stray, target, ctx);
+        let rank = self.worktree_rank(ctx);
+        let start = self.pinned_boundary_index(&self.tabs);
+        let key = |tab: &TabData| {
+            tab.worktree_id
+                .and_then(|worktree_id| rank.get(&worktree_id).copied())
+                .unwrap_or(usize::MAX)
+        };
+        if self.tabs[start..].is_sorted_by_key(key) {
+            return;
         }
-    }
-
-    fn first_worktree_stray(&self) -> Option<(usize, usize)> {
-        let mut run_end: HashMap<WorktreeId, usize> = HashMap::new();
-        let mut previous: Option<WorktreeId> = None;
-        for (index, tab) in self.tabs.iter().enumerate() {
-            if self.is_tab_effectively_pinned(tab) {
-                previous = None;
-                continue;
-            }
-            let current = tab.worktree_id;
-            if let Some(worktree_id) = current {
-                if previous != current
-                    && let Some(end) = run_end.get(&worktree_id)
-                {
-                    return Some((index, *end));
-                }
-                run_end.insert(worktree_id, index + 1);
-            }
-            previous = current;
+        let active_pane_group_id = self
+            .tabs
+            .get(self.active_tab_index)
+            .map(|tab| tab.pane_group.id());
+        self.tabs[start..].sort_by_key(key);
+        if let Some(pane_group_id) = active_pane_group_id
+            && let Some(index) = self
+                .tabs
+                .iter()
+                .position(|tab| tab.pane_group.id() == pane_group_id)
+        {
+            self.active_tab_index = index;
         }
-        None
+        ctx.notify();
     }
 
     pub(crate) fn add_tab_in_worktree(
@@ -207,7 +198,7 @@ impl Workspace {
             ctx,
         );
         self.bind_active_tab_to_worktree(Some(worktree_id), ctx);
-        self.place_active_tab_in_worktree_run(worktree_id, ctx);
+        self.normalize_worktree_runs(ctx);
         self.collapsed_worktree_sections.remove(&worktree_id);
         if let Some(catalog_index) = agent_catalog_index {
             self.launch_agent_in_active_tab(catalog_index, ctx);
@@ -243,7 +234,7 @@ impl Workspace {
             ),
         }
         self.bind_active_tab_to_worktree(Some(worktree_id), ctx);
-        self.place_active_tab_in_worktree_run(worktree_id, ctx);
+        self.normalize_worktree_runs(ctx);
         self.collapsed_worktree_sections.remove(&worktree_id);
         ctx.notify();
     }
@@ -421,7 +412,7 @@ impl Workspace {
         let project_id = self.project_id()?;
         let registry = ProjectRegistryModel::as_ref(ctx);
         let project = registry.project(project_id)?;
-        if !matches!(project.kind, crate::projects::ProjectKind::Git) {
+        if !matches!(project.kind, ProjectKind::Git) {
             return None;
         }
         Some(WorktreeContext {
@@ -435,19 +426,6 @@ impl Workspace {
         self.worktree_context(ctx).is_some()
     }
 
-    pub(crate) fn closed_worktrees(&self, ctx: &AppContext) -> Vec<(WorktreeId, String)> {
-        let Some(project_id) = self.project_id() else {
-            return Vec::new();
-        };
-        let open: HashSet<WorktreeId> = self.worktree_ids_with_tabs().into_iter().collect();
-        ProjectRegistryModel::as_ref(ctx)
-            .worktrees_for_project(project_id)
-            .into_iter()
-            .filter(|worktree| !open.contains(&worktree.id))
-            .map(|worktree| (worktree.id, worktree.name.clone()))
-            .collect()
-    }
-
     pub(crate) fn show_create_worktree_modal(
         &mut self,
         agent_catalog_index: Option<usize>,
@@ -458,11 +436,8 @@ impl Workspace {
         };
         let root_path = context.root_path.clone();
         let primary_branch = context.primary_branch.clone();
-        let existing = ProjectRegistryModel::as_ref(ctx)
-            .worktree_names_for_project(context.project_id)
-            .into_iter()
-            .chain(crate::util::git::list_local_branches_sync(&root_path))
-            .collect::<HashSet<String>>();
+        let existing =
+            ProjectRegistryModel::as_ref(ctx).worktree_names_for_project(context.project_id);
 
         let body = self.create_worktree_modal.view.as_ref(ctx).body().clone();
         body.update(ctx, |body, ctx| {
@@ -470,6 +445,18 @@ impl Workspace {
         });
         self.create_worktree_modal.open();
         ctx.focus(&self.create_worktree_modal.view);
+        let _ = ctx.spawn(
+            async move { git_ops::local_branches(&root_path).await },
+            move |me: &mut Self, branches, ctx| {
+                if !me.create_worktree_modal.is_open() {
+                    return;
+                }
+                let body = me.create_worktree_modal.view.as_ref(ctx).body().clone();
+                body.update(ctx, |body, ctx| {
+                    body.extend_existing_branches(branches, ctx)
+                });
+            },
+        );
         ctx.notify();
     }
 
@@ -571,18 +558,6 @@ impl Workspace {
         }
 
         ctx.notify();
-    }
-
-    pub(crate) fn open_worktree_tab(
-        &mut self,
-        worktree_id: WorktreeId,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if let Some(index) = self.tab_index_for_worktree(worktree_id) {
-            self.activate_tab_internal(index, ctx);
-            return;
-        }
-        self.add_tab_in_worktree(worktree_id, None, ctx);
     }
 
     pub(crate) fn show_delete_worktree_dialog(
@@ -873,6 +848,19 @@ impl Workspace {
             toasts.add_ephemeral_toast(DismissibleToast::error(message), window_id, ctx);
         });
     }
+}
+
+pub(crate) fn worktree_repo_root(
+    registry: &ProjectRegistryModel,
+    worktree_id: WorktreeId,
+) -> Option<PathBuf> {
+    let worktree = registry.worktree(worktree_id)?;
+    let project = registry.project(worktree.project_id)?;
+    if !matches!(project.kind, ProjectKind::Git) {
+        return None;
+    }
+    let directory = registry.worktree_directory(worktree_id)?;
+    Some(dunce::canonicalize(&directory).unwrap_or(directory))
 }
 
 pub(crate) fn worktree_run_partition(

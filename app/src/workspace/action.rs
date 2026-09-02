@@ -544,9 +544,6 @@ pub enum WorkspaceAction {
     ShowCreateWorktreeModal {
         agent_catalog_index: Option<usize>,
     },
-    OpenWorktreeTab {
-        worktree_id: WorktreeId,
-    },
     DeleteWorktree {
         worktree_id: WorktreeId,
     },
@@ -786,7 +783,6 @@ impl WorkspaceAction {
             | OpenSettingsFile
             | ShowWorkspaceSwitcherMenu
             | ShowCreateWorktreeModal { .. }
-            | OpenWorktreeTab { .. }
             | DeleteWorktree { .. }
             | RevealWorktreeFolder { .. }
             | RenameWorktree { .. }

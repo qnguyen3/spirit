@@ -1864,8 +1864,10 @@ fn render_groups(
 ) -> Box<dyn Element> {
     let appearance = Appearance::as_ref(app);
     let theme = appearance.theme();
+    let query = state.search_query.as_str();
+    let registry_sections = workspace.worktree_sections_enabled() && query.is_empty();
 
-    if workspace.tabs.is_empty() {
+    if workspace.tabs.is_empty() && !registry_sections {
         return Container::new(
             Text::new_inline("No tabs open", appearance.ui_font_family(), 12.)
                 .with_color(theme.sub_text_color(theme.background()).into())
@@ -1883,7 +1885,6 @@ fn render_groups(
         }
     };
     let uses_outer_group_container = uses_outer_group_container(display_granularity);
-    let query = state.search_query.as_str();
     let visible_tabs: Vec<(usize, Option<Vec<PaneId>>)> = if query.is_empty() {
         workspace
             .tabs
@@ -2001,7 +2002,7 @@ fn render_groups(
             .collect()
     };
 
-    if visible_tabs.is_empty() {
+    if visible_tabs.is_empty() && !registry_sections {
         if query.is_empty() {
             return Container::new(
                 Text::new_inline("No tabs open", appearance.ui_font_family(), 12.)
@@ -2054,22 +2055,80 @@ fn render_groups(
             }
         })
         .collect();
-    let mut i = 0;
-    for (binding, run_len) in worktree_run_partition(&resolved_bindings) {
-        let run = &visible_tabs[i..i + run_len];
-        let worktree =
-            binding.and_then(|worktree_id| ProjectRegistryModel::as_ref(app).worktree(worktree_id));
-        match worktree {
-            Some(worktree) => {
-                groups.add_child(render_worktree_section(
-                    state, workspace, worktree, run, i, &run_ctx, app,
-                ));
-            }
-            None => {
-                add_tab_run_items(&mut groups, state, workspace, run, i, &run_ctx, app);
-            }
+    let registry_worktrees: Vec<&Worktree> = match workspace.project_id() {
+        Some(project_id) if registry_sections => {
+            ProjectRegistryModel::as_ref(app).worktrees_for_project(project_id)
         }
-        i += run_len;
+        Some(_) | None => Vec::new(),
+    };
+    if registry_worktrees.is_empty() {
+        let mut i = 0;
+        for (binding, run_len) in worktree_run_partition(&resolved_bindings) {
+            let run = &visible_tabs[i..i + run_len];
+            let worktree = binding
+                .and_then(|worktree_id| ProjectRegistryModel::as_ref(app).worktree(worktree_id));
+            let draws_bottom_border = i + run_len == total_visible;
+            match worktree {
+                Some(worktree) => {
+                    groups.add_child(render_worktree_section(
+                        state,
+                        workspace,
+                        worktree,
+                        run,
+                        i,
+                        draws_bottom_border,
+                        &run_ctx,
+                        app,
+                    ));
+                }
+                None => {
+                    add_tab_run_items(&mut groups, state, workspace, run, i, &run_ctx, app);
+                }
+            }
+            i += run_len;
+        }
+    } else {
+        let sections = worktree_sections(&resolved_bindings, &registry_worktrees);
+        let unbound: Vec<(usize, Option<Vec<PaneId>>)> = visible_tabs
+            .iter()
+            .zip(&resolved_bindings)
+            .filter(|(_, binding)| binding.is_none())
+            .map(|(entry, _)| entry.clone())
+            .collect();
+        let last_section = sections.len().saturating_sub(1);
+        for (section_index, (worktree, members)) in sections.into_iter().enumerate() {
+            let run: Vec<(usize, Option<Vec<PaneId>>)> = members
+                .iter()
+                .map(|index| visible_tabs[*index].clone())
+                .collect();
+            let run_offset = members.first().copied().unwrap_or(total_visible);
+            let draws_bottom_border = section_index == last_section && unbound.is_empty();
+            groups.add_child(render_worktree_section(
+                state,
+                workspace,
+                worktree,
+                &run,
+                run_offset,
+                draws_bottom_border,
+                &run_ctx,
+                app,
+            ));
+        }
+        if let Some((first_unbound, _)) = unbound.first() {
+            let run_offset = visible_tabs
+                .iter()
+                .position(|(index, _)| index == first_unbound)
+                .unwrap_or(total_visible);
+            add_tab_run_items(
+                &mut groups,
+                state,
+                workspace,
+                &unbound,
+                run_offset,
+                &run_ctx,
+                app,
+            );
+        }
     }
     // Ghost after all tab groups (fencepost).
     if ghost_insertion_index == Some(workspace.tabs.len()) {
@@ -2084,15 +2143,15 @@ fn render_groups(
         groups.add_child(render_vertical_tab_insertion_target(None, theme));
     }
 
-    let bound_worktree_ids: std::collections::HashSet<WorktreeId> = workspace
-        .tabs
+    let section_worktree_ids: std::collections::HashSet<WorktreeId> = registry_worktrees
         .iter()
-        .filter_map(|tab| tab.worktree_id)
+        .map(|worktree| worktree.id)
+        .chain(workspace.tabs.iter().filter_map(|tab| tab.worktree_id))
         .collect();
     state
         .worktree_section_mouse_states
         .borrow_mut()
-        .retain(|id, _| bound_worktree_ids.contains(id));
+        .retain(|id, _| section_worktree_ids.contains(id));
 
     // Prune stale badge mouse states for panes that no longer exist.
     let all_pane_ids: std::collections::HashSet<PaneId> = workspace
@@ -2131,6 +2190,24 @@ struct TabRunRenderContext {
     is_any_pane_dragging: bool,
     ghost_insertion_index: Option<usize>,
     total_visible: usize,
+}
+
+fn worktree_sections<'a>(
+    bindings: &[Option<WorktreeId>],
+    registry_worktrees: &[&'a Worktree],
+) -> Vec<(&'a Worktree, Vec<usize>)> {
+    registry_worktrees
+        .iter()
+        .map(|worktree| {
+            let members = bindings
+                .iter()
+                .enumerate()
+                .filter(|(_, binding)| **binding == Some(worktree.id))
+                .map(|(index, _)| index)
+                .collect();
+            (*worktree, members)
+        })
+        .collect()
 }
 
 fn resolved_worktree_of_tab<'a>(
@@ -2218,10 +2295,10 @@ fn worktree_section_labels(
     member_count: usize,
     app: &AppContext,
 ) -> (String, String) {
-    let tabs_label = if member_count == 1 {
-        "1 tab".to_owned()
-    } else {
-        format!("{member_count} tabs")
+    let tabs_label = match member_count {
+        0 => "No tabs".to_owned(),
+        1 => "1 tab".to_owned(),
+        count => format!("{count} tabs"),
     };
     if worktree.is_primary() {
         let title = ProjectRegistryModel::as_ref(app)
@@ -2235,12 +2312,14 @@ fn worktree_section_labels(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_worktree_section(
     state: &VerticalTabsPanelState,
     workspace: &Workspace,
     worktree: &Worktree,
     members: &[(usize, Option<Vec<PaneId>>)],
     run_offset: usize,
+    draws_bottom_border: bool,
     run_ctx: &TabRunRenderContext,
     app: &AppContext,
 ) -> Box<dyn Element> {
@@ -2341,12 +2420,7 @@ fn render_worktree_section(
         if needs_outer_horizontal_padding {
             container = container.with_border(
                 Border::new(1.)
-                    .with_sides(
-                        true,
-                        false,
-                        run_offset + members.len() == run_ctx.total_visible,
-                        false,
-                    )
+                    .with_sides(true, false, draws_bottom_border, false)
                     .with_border_fill(internal_colors::fg_overlay_1(theme)),
             );
         } else {

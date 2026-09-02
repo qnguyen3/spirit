@@ -172,12 +172,8 @@ impl ReviewActionTargetProvider for RightPanelReviewActionTargetProvider {
 struct CodeReviewState {
     dropdown: ViewHandle<Dropdown<RightPanelAction>>,
     available_repos: Vec<LocalOrRemotePath>,
-    /// The repository path of the focused terminal
-    focused_repo_path: Option<LocalOrRemotePath>,
     /// The repository path of the repository selected in the dropdown
     selected_repo_path: Option<LocalOrRemotePath>,
-    /// Avoid showing the jump-to-repo button if the focused repo has not changed
-    did_focused_repo_change: bool,
 }
 
 #[cfg(feature = "local_fs")]
@@ -236,8 +232,6 @@ impl CodeReviewState {
             }),
             available_repos: vec![],
             selected_repo_path: None,
-            focused_repo_path: None,
-            did_focused_repo_change: false,
         }
     }
 
@@ -292,16 +286,6 @@ impl CodeReviewState {
         self.set_selected_repo_internal(repo_path, true, ctx);
     }
 
-    pub fn set_focused_repo(
-        &mut self,
-        repo_path: Option<LocalOrRemotePath>,
-        ctx: &mut ViewContext<RightPanelView>,
-    ) {
-        self.did_focused_repo_change = true;
-        self.focused_repo_path = repo_path;
-        ctx.notify();
-    }
-
     /// Internal method to set the selected repo with control over whether to update the dropdown.
     /// When `update_dropdown` is false, we skip updating the dropdown (useful when the change
     /// is coming from the dropdown itself to avoid circular updates).
@@ -319,7 +303,6 @@ impl CodeReviewState {
             return;
         }
 
-        self.did_focused_repo_change = false;
         self.selected_repo_path = Some(repo_path.clone());
 
         // Only update the dropdown if requested (not when selection came from dropdown itself)
@@ -619,17 +602,44 @@ impl RightPanelView {
                     return;
                 }
 
-                // When the focused terminal changes repos (via CD or pane focus),
-                // update the dropdown to match the focused terminal's repo
-                if let Some(state) = self.code_review_state.as_mut() {
-                    state.set_focused_repo(focused_repo.clone(), ctx);
-                }
-
+                self.follow_focused_repo(*pane_group_id, focused_repo.clone(), ctx);
                 self.recompute_terminal_availability(ctx);
                 ctx.notify();
             }
             _ => {}
         }
+    }
+
+    fn follow_focused_repo(
+        &mut self,
+        pane_group_id: EntityId,
+        focused_repo: Option<LocalOrRemotePath>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let Some(focused_repo) = focused_repo else {
+            return;
+        };
+        let has_manual_selection = self
+            .working_directories_model
+            .as_ref(ctx)
+            .get_selected_review_repo(pane_group_id)
+            .is_some();
+        if has_manual_selection {
+            return;
+        }
+        let Some(state) = &self.code_review_state else {
+            return;
+        };
+        if !state.available_repos.contains(&focused_repo)
+            || state.selected_repo_path.as_ref() == Some(&focused_repo)
+        {
+            return;
+        }
+        self.close_active_code_review_view(ctx);
+        if let Some(state) = self.code_review_state.as_mut() {
+            state.set_selected_repo(focused_repo.clone(), ctx);
+        }
+        self.ensure_code_review_view_exists(&focused_repo, ctx);
     }
 
     pub fn set_active_pane_group(

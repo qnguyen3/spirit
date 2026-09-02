@@ -590,3 +590,152 @@ fn clear_selected_review_repo_removes_only_the_targeted_pane_group_entry() {
         });
     });
 }
+
+fn anchor_dir(temp_dir: &tempfile::TempDir, name: &str) -> (PathBuf, PathBuf) {
+    let dir = temp_dir.path().join(name);
+    fs::create_dir_all(&dir).expect("create dir");
+    let canonical = dunce::canonicalize(&dir).expect("canonical dir");
+    (dir, canonical)
+}
+
+#[test]
+fn worktree_anchor_is_reported_before_terminal_reports_cwd() {
+    App::test((), |mut app| async move {
+        app.add_singleton_model(|_| DetectedRepositories::default());
+        let temp_dir = tempfile::TempDir::new().expect("temp dir");
+        let (anchor, canonical_anchor) = anchor_dir(&temp_dir, "repo");
+        let pane_group_id = EntityId::new();
+        let terminal = EntityId::new();
+
+        let handle = app.add_model(|_| WorkingDirectoriesModel::new());
+        handle.update(&mut app, |model, ctx| {
+            model.set_worktree_anchor(pane_group_id, Some(anchor));
+            model.refresh_working_directories_for_pane_group(
+                pane_group_id,
+                vec![],
+                vec![],
+                Some(terminal),
+                ctx,
+            );
+
+            let repos: Vec<LocalOrRemotePath> = model
+                .most_recent_repositories_for_pane_group(pane_group_id)
+                .expect("pane group exists")
+                .collect();
+            assert_eq!(repos, vec![local(&canonical_anchor)]);
+            assert_eq!(
+                model.get_terminal_id_for_root_path(pane_group_id, &local(&canonical_anchor)),
+                Some(terminal)
+            );
+            assert_eq!(
+                model.focused_repo.get(&pane_group_id).cloned().flatten(),
+                Some(local(&canonical_anchor))
+            );
+        });
+    });
+}
+
+#[test]
+fn worktree_anchor_is_ignored_without_any_terminal() {
+    App::test((), |mut app| async move {
+        app.add_singleton_model(|_| DetectedRepositories::default());
+        let temp_dir = tempfile::TempDir::new().expect("temp dir");
+        let (anchor, _) = anchor_dir(&temp_dir, "repo");
+        let pane_group_id = EntityId::new();
+
+        let handle = app.add_model(|_| WorkingDirectoriesModel::new());
+        handle.update(&mut app, |model, ctx| {
+            model.set_worktree_anchor(pane_group_id, Some(anchor));
+            model.refresh_working_directories_for_pane_group(
+                pane_group_id,
+                vec![],
+                vec![],
+                None,
+                ctx,
+            );
+            let repo_count = model
+                .most_recent_repositories_for_pane_group(pane_group_id)
+                .map(|repos| repos.count())
+                .unwrap_or(0);
+            assert_eq!(repo_count, 0);
+        });
+    });
+}
+
+#[test]
+fn worktree_anchor_survives_non_repo_cwd_and_is_focused_fallback() {
+    App::test((), |mut app| async move {
+        app.add_singleton_model(|_| DetectedRepositories::default());
+        let temp_dir = tempfile::TempDir::new().expect("temp dir");
+        let (anchor, canonical_anchor) = anchor_dir(&temp_dir, "repo");
+        let (elsewhere, canonical_elsewhere) = anchor_dir(&temp_dir, "elsewhere");
+        let pane_group_id = EntityId::new();
+        let terminal = EntityId::new();
+
+        let handle = app.add_model(|_| WorkingDirectoriesModel::new());
+        handle.update(&mut app, |model, ctx| {
+            model.set_worktree_anchor(pane_group_id, Some(anchor));
+            model.refresh_working_directories_for_pane_group(
+                pane_group_id,
+                vec![(terminal, local(&elsewhere))],
+                vec![],
+                Some(terminal),
+                ctx,
+            );
+
+            let repos: Vec<LocalOrRemotePath> = model
+                .most_recent_repositories_for_pane_group(pane_group_id)
+                .expect("pane group exists")
+                .collect();
+            assert_eq!(repos, vec![local(&canonical_anchor)]);
+            let directories: HashSet<LocalOrRemotePath> = model
+                .most_recent_directories_for_pane_group(pane_group_id)
+                .expect("pane group exists")
+                .map(|dir| dir.path)
+                .collect();
+            assert!(directories.contains(&local(&canonical_elsewhere)));
+            assert!(directories.contains(&local(&canonical_anchor)));
+            assert_eq!(
+                model.focused_repo.get(&pane_group_id).cloned().flatten(),
+                Some(local(&canonical_anchor))
+            );
+        });
+    });
+}
+
+#[test]
+fn worktree_anchor_is_cleared_on_remove_pane_group() {
+    App::test((), |mut app| async move {
+        app.add_singleton_model(|_| DetectedRepositories::default());
+        let temp_dir = tempfile::TempDir::new().expect("temp dir");
+        let (anchor, _) = anchor_dir(&temp_dir, "repo");
+        let pane_group_id = EntityId::new();
+        let terminal = EntityId::new();
+
+        let handle = app.add_model(|_| WorkingDirectoriesModel::new());
+        handle.update(&mut app, |model, ctx| {
+            model.set_worktree_anchor(pane_group_id, Some(anchor));
+            model.refresh_working_directories_for_pane_group(
+                pane_group_id,
+                vec![],
+                vec![],
+                Some(terminal),
+                ctx,
+            );
+            model.remove_pane_group(pane_group_id, ctx);
+            assert!(!model.worktree_anchors.contains_key(&pane_group_id));
+            model.refresh_working_directories_for_pane_group(
+                pane_group_id,
+                vec![],
+                vec![],
+                Some(terminal),
+                ctx,
+            );
+            let repo_count = model
+                .most_recent_repositories_for_pane_group(pane_group_id)
+                .map(|repos| repos.count())
+                .unwrap_or(0);
+            assert_eq!(repo_count, 0);
+        });
+    });
+}
