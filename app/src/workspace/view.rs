@@ -680,6 +680,7 @@ pub struct Workspace {
     window_id: WindowId,
     screen_id: EntityId,
     project_id: Option<ProjectId>,
+    screen_teardown_in_progress: bool,
     pub(crate) tabs: Vec<TabData>,
     active_tab_index: usize,
     /// Tracks tab activation order (most-recently-used first).
@@ -818,6 +819,7 @@ pub enum WorkspaceEvent {
         project_id: Option<ProjectId>,
         locator: PaneViewLocator,
     },
+    CloseScreenRequested,
 }
 
 impl Workspace {
@@ -2160,6 +2162,7 @@ impl Workspace {
         let mut ws = Self {
             screen_id: ctx.view_id(),
             project_id,
+            screen_teardown_in_progress: false,
             tabs: Vec::new(),
             active_tab_index: 0,
             tab_mru_order: Vec::new(),
@@ -3107,6 +3110,7 @@ impl Workspace {
         if self.tabs.is_empty() {
             return;
         }
+        self.screen_teardown_in_progress = true;
         self.close_tabs((0..self.tabs.len()).rev(), true, false, ctx);
     }
 
@@ -4042,7 +4046,7 @@ impl Workspace {
         menu
     }
 
-    fn workspace_switcher_label(&self, ctx: &AppContext) -> String {
+    pub(crate) fn workspace_switcher_label(&self, ctx: &AppContext) -> String {
         match self.project_id {
             None => "Home".to_owned(),
             Some(project_id) => ProjectRegistryModel::as_ref(ctx)
@@ -8694,35 +8698,17 @@ impl Workspace {
         self.vertical_tabs_panel
             .clear_detail_sidecar_if_for_pane_group(pane_group.id());
 
-        // If this is the last tab, close the window instead of actually removing
-        // the tab.
         if self.tabs.len() == 1 {
-            if ContextFlag::CloseWindow.is_enabled() {
-                ctx.close_window();
+            if self.screen_teardown_in_progress {
+                self.detach_panes_for_tab_close(&pane_group, ctx);
+            } else {
+                self.close_screen_or_window(ctx);
             }
             return;
         }
 
         if detach_panes_for_close {
-            let working_directories_model = self.working_directories_model.clone();
-            pane_group.update(ctx, |pane_group, ctx| {
-                pane_group.for_all_terminal_panes(
-                    |terminal_view, ctx| {
-                        if terminal_view
-                            .model
-                            .lock()
-                            .block_list()
-                            .active_block()
-                            .is_active_and_long_running()
-                        {
-                            terminal_view.shutdown_pty(ctx);
-                        }
-                    },
-                    ctx,
-                );
-
-                pane_group.detach_panes_for_close(&working_directories_model, ctx);
-            });
+            self.detach_panes_for_tab_close(&pane_group, ctx);
         }
 
         let tab_data = self.tabs.remove(index);
@@ -8762,8 +8748,51 @@ impl Workspace {
             _ => {}
         }
 
-        ctx.dispatch_global_action("workspace:save_app", ());
+        if !self.screen_teardown_in_progress {
+            ctx.dispatch_global_action("workspace:save_app", ());
+        }
         ctx.notify();
+    }
+
+    fn detach_panes_for_tab_close(
+        &self,
+        pane_group: &ViewHandle<PaneGroup>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let working_directories_model = self.working_directories_model.clone();
+        pane_group.update(ctx, |pane_group, ctx| {
+            pane_group.for_all_terminal_panes(
+                |terminal_view, ctx| {
+                    if terminal_view
+                        .model
+                        .lock()
+                        .block_list()
+                        .active_block()
+                        .is_active_and_long_running()
+                    {
+                        terminal_view.shutdown_pty(ctx);
+                    }
+                },
+                ctx,
+            );
+
+            pane_group.detach_panes_for_close(&working_directories_model, ctx);
+        });
+    }
+
+    fn close_screen_or_window(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.window_has_other_screens(ctx) {
+            ctx.emit(WorkspaceEvent::CloseScreenRequested);
+        } else if ContextFlag::CloseWindow.is_enabled() {
+            ctx.close_window();
+        }
+    }
+
+    fn window_has_other_screens(&self, ctx: &AppContext) -> bool {
+        WorkspaceRegistry::as_ref(ctx)
+            .screen_ids_for_window(self.window_id)
+            .len()
+            > 1
     }
 
     /// Checks if the provided tab indices need to be confirmed before closing, unless skip_confirmation is true.
@@ -8859,10 +8888,11 @@ impl Workspace {
         if !ContextFlag::CloseWindow.is_enabled() && is_last_tab {
             return;
         }
+        let closes_window = is_last_tab && !self.window_has_other_screens(ctx);
 
         let tabs_closed = self.close_tabs(
             vec![index].into_iter(),
-            skip_confirmation || is_last_tab, // If this is the last tab, the confirmation dialog will be handled by the window close.
+            skip_confirmation || closes_window, // Closing the window shows its own confirmation dialog.
             add_to_undo_stack,
             ctx,
         );

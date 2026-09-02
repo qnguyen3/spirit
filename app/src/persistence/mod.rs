@@ -124,6 +124,16 @@ pub fn initialize(
     }
 }
 
+pub fn read_persisted_app_state() -> Option<AppState> {
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "local_fs")] {
+            sqlite::read_persisted_app_state()
+        } else {
+            None
+        }
+    }
+}
+
 /// Holds interfaces to the writer thread.
 pub struct WriterHandles {
     pub handle: JoinHandle<()>,

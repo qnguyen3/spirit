@@ -1524,6 +1524,270 @@ fn read_node(conn: &mut SqliteConnection, node: model::PaneNode) -> Result<PaneN
     }
 }
 
+pub fn read_persisted_app_state() -> Option<AppState> {
+    let database_path = database_file_path_for_current_scope();
+    let db_url = database_path.to_str()?;
+    let mut conn = match establish_ro_connection(db_url) {
+        Ok(conn) => conn,
+        Err(err) => {
+            report_db_error("reading the persisted session", err, &database_path);
+            return None;
+        }
+    };
+    let restored_projects = match get_all_projects(&mut conn) {
+        Ok(projects) => projects,
+        Err(err) => {
+            report_error!(anyhow::Error::new(err).context("Failed to read persisted projects"));
+            return None;
+        }
+    };
+    match read_app_state(&mut conn, &restored_projects) {
+        Ok(app_state) => Some(app_state),
+        Err(err) => {
+            report_error!(anyhow::Error::new(err).context("Failed to read the persisted session"));
+            None
+        }
+    }
+}
+
+fn read_app_state(
+    conn: &mut SqliteConnection,
+    restored_projects: &[Project],
+) -> Result<AppState, Error> {
+    use schema::windows::dsl::*;
+
+    let known_project_ids: HashSet<ProjectId> =
+        restored_projects.iter().map(|project| project.id).collect();
+    let mut projects_by_recency: Vec<&Project> = restored_projects.iter().collect();
+    projects_by_recency.sort_by_key(|project| std::cmp::Reverse(project.last_opened_ts));
+    let project_order: Vec<ProjectId> = projects_by_recency
+        .into_iter()
+        .map(|project| project.id)
+        .collect();
+
+    let active_window_id = schema::app::dsl::app
+        .select(schema::app::dsl::active_window_id)
+        .first::<Option<i32>>(conn)
+        .optional()?
+        .flatten();
+    let db_windows = windows.load::<Window>(conn)?;
+
+    let mut active_window_index: Option<usize> = None;
+
+    let db_tabs = Tab::belonging_to(&db_windows)
+        .order_by(schema::tabs::columns::id.asc())
+        .load::<Tab>(conn)?
+        .grouped_by(&db_windows);
+
+    let db_panels = schema::panels::dsl::panels
+        .load::<model::Panel>(conn)?
+        .into_iter()
+        .map(|p| (p.tab_id, p))
+        .collect::<HashMap<_, _>>();
+
+    // Load tab groups grouped per window so we can resolve `tabs.tab_group_id`
+    // through a per-window row-id lookup.
+    let db_tab_groups = TabGroup::belonging_to(&db_windows)
+        .order_by(schema::tab_groups::columns::id.asc())
+        .load::<TabGroup>(conn)?
+        .grouped_by(&db_windows);
+
+    let saved_windows: Vec<_> = db_windows
+        .into_iter()
+        .enumerate()
+        .zip(db_tabs)
+        .zip(db_tab_groups)
+        .map(
+            |(((idx, window), tabs_for_window), tab_groups_for_window)| {
+                // Mint a fresh `TabGroupId` per row and build a `row id -> TabGroupId`
+                // map so tabs can be reattached to their group below.
+                let mut tab_group_id_by_row_id: HashMap<i32, TabGroupId> = HashMap::new();
+                let mut tab_groups_snapshots: Vec<(Option<ProjectId>, TabGroupSnapshot)> =
+                    Vec::new();
+                for group in tab_groups_for_window {
+                    let tab_group_id = TabGroupId::new();
+                    tab_group_id_by_row_id.insert(group.id, tab_group_id);
+                    let color = group
+                        .color
+                        .as_deref()
+                        .and_then(|s| serde_yaml::from_str::<SelectedTabColor>(s).ok())
+                        .unwrap_or_default();
+                    let screen_project_id =
+                        known_project_id(group.project_id.as_deref(), &known_project_ids);
+                    tab_groups_snapshots.push((
+                        screen_project_id,
+                        TabGroupSnapshot {
+                            id: tab_group_id,
+                            name: group.name,
+                            color,
+                            collapsed: group.collapsed,
+                            pinned: group.pinned,
+                        },
+                    ));
+                }
+                let saved_tabs: Vec<(Option<ProjectId>, TabSnapshot)> = tabs_for_window
+                    .into_iter()
+                    .filter_map(|tab| {
+                        let root = read_root_node(conn, tab.id).ok()?;
+                        let panel = db_panels.get(&tab.id);
+
+                        let left_panel = panel
+                            .and_then(|p| p.left_panel.as_ref())
+                            .and_then(|s| serde_json::from_str::<LeftPanelSnapshot>(s).ok());
+
+                        let right_panel = panel
+                            .and_then(|p| p.right_panel.as_ref())
+                            .and_then(|s| serde_json::from_str::<RightPanelSnapshot>(s).ok());
+
+                        let group_id = tab
+                            .tab_group_id
+                            .and_then(|row_id| tab_group_id_by_row_id.get(&row_id).copied());
+                        let screen_project_id =
+                            known_project_id(tab.project_id.as_deref(), &known_project_ids);
+                        Some((
+                            screen_project_id,
+                            TabSnapshot {
+                                root,
+                                custom_title: tab.custom_title,
+                                default_directory_color: None,
+                                selected_color: tab
+                                    .color
+                                    .as_deref()
+                                    .and_then(|s| {
+                                        serde_yaml::from_str::<SelectedTabColor>(s).ok().or_else(
+                                            || {
+                                                // Fall back to the old format which stored a bare AnsiColorIdentifier
+                                                serde_yaml::from_str::<AnsiColorIdentifier>(s)
+                                                    .ok()
+                                                    .map(SelectedTabColor::Color)
+                                            },
+                                        )
+                                    })
+                                    .unwrap_or_default(),
+                                left_panel,
+                                right_panel,
+                                group_id,
+                                pinned: tab.pinned,
+                                worktree_id: tab
+                                    .worktree_id
+                                    .as_deref()
+                                    .and_then(|value| value.parse::<WorktreeId>().ok()),
+                            },
+                        ))
+                    })
+                    .collect();
+
+                if active_window_id
+                    .map(|window_id| window.id == window_id)
+                    .unwrap_or(false)
+                {
+                    active_window_index = Some(idx);
+                }
+
+                // Default active tab index to 0 if we overflow when converting.
+                let tab_index: usize = window.active_tab_index.try_into().unwrap_or(0);
+
+                let active_screen_project_id =
+                    known_project_id(window.active_project_id.as_deref(), &known_project_ids);
+                let mut screens =
+                    group_tabs_into_screens(saved_tabs, tab_groups_snapshots, &project_order);
+                let active_screen_index = screens
+                    .iter()
+                    .position(|screen| screen.project_id == active_screen_project_id)
+                    .unwrap_or(0);
+                if let Some(active_screen) = screens.get_mut(active_screen_index) {
+                    active_screen.active_tab_index =
+                        tab_index.min(active_screen.tabs.len().saturating_sub(1));
+                }
+                let active_screen_tabs = screens
+                    .get(active_screen_index)
+                    .map(|screen| screen.tabs.as_slice())
+                    .unwrap_or_default();
+                let active_tab_of_active_screen = screens
+                    .get(active_screen_index)
+                    .and_then(|screen| active_screen_tabs.get(screen.active_tab_index));
+
+                let fullscreen_state_val =
+                    FullscreenState::from_i32(window.fullscreen_state).unwrap_or_default();
+
+                // The origin and size of the bound should be all null or all non-null.
+                // Reject bounds smaller than the platform minimum window size so users
+                // with an already-corrupted warp.sqlite (see GH#10083) restore to
+                // default geometry instead of a sliver.
+                let bounds = match (
+                    window.window_width,
+                    window.window_height,
+                    window.origin_x,
+                    window.origin_y,
+                ) {
+                    (Some(mut width), Some(mut height), Some(x), Some(y))
+                        if width >= MIN_WINDOW_WIDTH && height >= MIN_WINDOW_HEIGHT =>
+                    {
+                        // When fullscreen or maximized, the `inner_size` we snapshotted will be the
+                        // size of the full screen. This will cause problems with winit. When you set
+                        // maximized/fullscreen, setting the inner_size will by the size the window
+                        // takes _after_ the user toggles _out_ of fullscreen/maximized. Therefore, we
+                        // don't want to set the size to take the full screen because the window will
+                        // appear to remain in maximized/fullscreen. We multiply each dimension by 0.8
+                        // to prevent taking the full screen while choosing a reasonable size.
+                        if !cfg!(target_os = "macos")
+                            && fullscreen_state_val != FullscreenState::Normal
+                        {
+                            width *= 0.8;
+                            height *= 0.8;
+                        }
+                        Some(RectF::new(
+                            Vector2F::new(x, y),
+                            Vector2F::new(width, height),
+                        ))
+                    }
+                    _ => None,
+                };
+
+                let left_panel_width: Option<f32> =
+                    active_tab_of_active_screen.and_then(|tab| match tab.left_panel.as_ref() {
+                        Some(LeftPanelSnapshot { width, .. }) => Some(*width as f32),
+                        _ => None,
+                    });
+
+                let right_panel_width: Option<f32> =
+                    active_tab_of_active_screen.and_then(|tab| match tab.right_panel.as_ref() {
+                        Some(RightPanelSnapshot { width, .. }) => Some(*width as f32),
+                        _ => None,
+                    });
+
+                let window_left_panel_open = window.left_panel_open.unwrap_or_else(|| {
+                    active_tab_of_active_screen
+                        .and_then(|tab| tab.left_panel.as_ref())
+                        .is_some()
+                });
+
+                WindowSnapshot {
+                    screens,
+                    active_screen_index,
+                    quake_mode: window.quake_mode,
+                    bounds,
+                    universal_search_width: window.universal_search_width,
+                    voltron_width: window.voltron_width,
+                    left_panel_open: window_left_panel_open,
+                    vertical_tabs_panel_open: window.vertical_tabs_panel_open.unwrap_or(false),
+                    fullscreen_state: fullscreen_state_val,
+                    left_panel_width,
+                    right_panel_width,
+                }
+            },
+        )
+        .collect();
+
+    let restored_blocks = get_all_restored_blocks(conn)?;
+
+    Ok(AppState {
+        windows: saved_windows,
+        active_window_index,
+        block_lists: Arc::new(restored_blocks),
+    })
+}
+
 /// This is not in a transaction. The interface for a transaction is a bit awkward,
 /// and makes it invalid to write the logic recursively. It's ok it's not in a
 /// transaction because we should be the only connection using the database.
@@ -1553,240 +1817,7 @@ fn read_sqlite_data(
     let restored_worktrees = get_all_project_worktrees(conn)?;
 
     let app_state = if data_scope.session_restoration() {
-        use schema::windows::dsl::*;
-
-        let known_project_ids: HashSet<ProjectId> =
-            restored_projects.iter().map(|project| project.id).collect();
-        let mut projects_by_recency: Vec<&Project> = restored_projects.iter().collect();
-        projects_by_recency.sort_by_key(|project| std::cmp::Reverse(project.last_opened_ts));
-        let project_order: Vec<ProjectId> = projects_by_recency
-            .into_iter()
-            .map(|project| project.id)
-            .collect();
-
-        let active_window_id = schema::app::dsl::app
-            .select(schema::app::dsl::active_window_id)
-            .first::<Option<i32>>(conn)
-            .optional()?
-            .flatten();
-        let db_windows = windows.load::<Window>(conn)?;
-
-        let mut active_window_index: Option<usize> = None;
-
-        let db_tabs = Tab::belonging_to(&db_windows)
-            .order_by(schema::tabs::columns::id.asc())
-            .load::<Tab>(conn)?
-            .grouped_by(&db_windows);
-
-        let db_panels = schema::panels::dsl::panels
-            .load::<model::Panel>(conn)?
-            .into_iter()
-            .map(|p| (p.tab_id, p))
-            .collect::<HashMap<_, _>>();
-
-        // Load tab groups grouped per window so we can resolve `tabs.tab_group_id`
-        // through a per-window row-id lookup.
-        let db_tab_groups = TabGroup::belonging_to(&db_windows)
-            .order_by(schema::tab_groups::columns::id.asc())
-            .load::<TabGroup>(conn)?
-            .grouped_by(&db_windows);
-
-        let saved_windows: Vec<_> = db_windows
-            .into_iter()
-            .enumerate()
-            .zip(db_tabs)
-            .zip(db_tab_groups)
-            .map(
-                |(((idx, window), tabs_for_window), tab_groups_for_window)| {
-                    // Mint a fresh `TabGroupId` per row and build a `row id -> TabGroupId`
-                    // map so tabs can be reattached to their group below.
-                    let mut tab_group_id_by_row_id: HashMap<i32, TabGroupId> = HashMap::new();
-                    let mut tab_groups_snapshots: Vec<(Option<ProjectId>, TabGroupSnapshot)> =
-                        Vec::new();
-                    for group in tab_groups_for_window {
-                        let tab_group_id = TabGroupId::new();
-                        tab_group_id_by_row_id.insert(group.id, tab_group_id);
-                        let color = group
-                            .color
-                            .as_deref()
-                            .and_then(|s| serde_yaml::from_str::<SelectedTabColor>(s).ok())
-                            .unwrap_or_default();
-                        let screen_project_id =
-                            known_project_id(group.project_id.as_deref(), &known_project_ids);
-                        tab_groups_snapshots.push((
-                            screen_project_id,
-                            TabGroupSnapshot {
-                                id: tab_group_id,
-                                name: group.name,
-                                color,
-                                collapsed: group.collapsed,
-                                pinned: group.pinned,
-                            },
-                        ));
-                    }
-                    let saved_tabs: Vec<(Option<ProjectId>, TabSnapshot)> = tabs_for_window
-                        .into_iter()
-                        .filter_map(|tab| {
-                            let root = read_root_node(conn, tab.id).ok()?;
-                            let panel = db_panels.get(&tab.id);
-
-                            let left_panel = panel
-                                .and_then(|p| p.left_panel.as_ref())
-                                .and_then(|s| serde_json::from_str::<LeftPanelSnapshot>(s).ok());
-
-                            let right_panel = panel
-                                .and_then(|p| p.right_panel.as_ref())
-                                .and_then(|s| serde_json::from_str::<RightPanelSnapshot>(s).ok());
-
-                            let group_id = tab
-                                .tab_group_id
-                                .and_then(|row_id| tab_group_id_by_row_id.get(&row_id).copied());
-                            let screen_project_id =
-                                known_project_id(tab.project_id.as_deref(), &known_project_ids);
-                            Some((
-                                screen_project_id,
-                                TabSnapshot {
-                                    root,
-                                    custom_title: tab.custom_title,
-                                    default_directory_color: None,
-                                    selected_color: tab
-                                        .color
-                                        .as_deref()
-                                        .and_then(|s| {
-                                            serde_yaml::from_str::<SelectedTabColor>(s)
-                                                .ok()
-                                                .or_else(|| {
-                                                    // Fall back to the old format which stored a bare AnsiColorIdentifier
-                                                    serde_yaml::from_str::<AnsiColorIdentifier>(s)
-                                                        .ok()
-                                                        .map(SelectedTabColor::Color)
-                                                })
-                                        })
-                                        .unwrap_or_default(),
-                                    left_panel,
-                                    right_panel,
-                                    group_id,
-                                    pinned: tab.pinned,
-                                    worktree_id: tab
-                                        .worktree_id
-                                        .as_deref()
-                                        .and_then(|value| value.parse::<WorktreeId>().ok()),
-                                },
-                            ))
-                        })
-                        .collect();
-
-                    if active_window_id
-                        .map(|window_id| window.id == window_id)
-                        .unwrap_or(false)
-                    {
-                        active_window_index = Some(idx);
-                    }
-
-                    // Default active tab index to 0 if we overflow when converting.
-                    let tab_index: usize = window.active_tab_index.try_into().unwrap_or(0);
-
-                    let active_screen_project_id =
-                        known_project_id(window.active_project_id.as_deref(), &known_project_ids);
-                    let mut screens =
-                        group_tabs_into_screens(saved_tabs, tab_groups_snapshots, &project_order);
-                    let active_screen_index = screens
-                        .iter()
-                        .position(|screen| screen.project_id == active_screen_project_id)
-                        .unwrap_or(0);
-                    if let Some(active_screen) = screens.get_mut(active_screen_index) {
-                        active_screen.active_tab_index =
-                            tab_index.min(active_screen.tabs.len().saturating_sub(1));
-                    }
-                    let active_screen_tabs = screens
-                        .get(active_screen_index)
-                        .map(|screen| screen.tabs.as_slice())
-                        .unwrap_or_default();
-                    let active_tab_of_active_screen = screens
-                        .get(active_screen_index)
-                        .and_then(|screen| active_screen_tabs.get(screen.active_tab_index));
-
-                    let fullscreen_state_val =
-                        FullscreenState::from_i32(window.fullscreen_state).unwrap_or_default();
-
-                    // The origin and size of the bound should be all null or all non-null.
-                    // Reject bounds smaller than the platform minimum window size so users
-                    // with an already-corrupted warp.sqlite (see GH#10083) restore to
-                    // default geometry instead of a sliver.
-                    let bounds = match (
-                        window.window_width,
-                        window.window_height,
-                        window.origin_x,
-                        window.origin_y,
-                    ) {
-                        (Some(mut width), Some(mut height), Some(x), Some(y))
-                            if width >= MIN_WINDOW_WIDTH && height >= MIN_WINDOW_HEIGHT =>
-                        {
-                            // When fullscreen or maximized, the `inner_size` we snapshotted will be the
-                            // size of the full screen. This will cause problems with winit. When you set
-                            // maximized/fullscreen, setting the inner_size will by the size the window
-                            // takes _after_ the user toggles _out_ of fullscreen/maximized. Therefore, we
-                            // don't want to set the size to take the full screen because the window will
-                            // appear to remain in maximized/fullscreen. We multiply each dimension by 0.8
-                            // to prevent taking the full screen while choosing a reasonable size.
-                            if !cfg!(target_os = "macos")
-                                && fullscreen_state_val != FullscreenState::Normal
-                            {
-                                width *= 0.8;
-                                height *= 0.8;
-                            }
-                            Some(RectF::new(
-                                Vector2F::new(x, y),
-                                Vector2F::new(width, height),
-                            ))
-                        }
-                        _ => None,
-                    };
-
-                    let left_panel_width: Option<f32> =
-                        active_tab_of_active_screen.and_then(|tab| match tab.left_panel.as_ref() {
-                            Some(LeftPanelSnapshot { width, .. }) => Some(*width as f32),
-                            _ => None,
-                        });
-
-                    let right_panel_width: Option<f32> =
-                        active_tab_of_active_screen.and_then(|tab| {
-                            match tab.right_panel.as_ref() {
-                                Some(RightPanelSnapshot { width, .. }) => Some(*width as f32),
-                                _ => None,
-                            }
-                        });
-
-                    let window_left_panel_open = window.left_panel_open.unwrap_or_else(|| {
-                        active_tab_of_active_screen
-                            .and_then(|tab| tab.left_panel.as_ref())
-                            .is_some()
-                    });
-
-                    WindowSnapshot {
-                        screens,
-                        active_screen_index,
-                        quake_mode: window.quake_mode,
-                        bounds,
-                        universal_search_width: window.universal_search_width,
-                        voltron_width: window.voltron_width,
-                        left_panel_open: window_left_panel_open,
-                        vertical_tabs_panel_open: window.vertical_tabs_panel_open.unwrap_or(false),
-                        fullscreen_state: fullscreen_state_val,
-                        left_panel_width,
-                        right_panel_width,
-                    }
-                },
-            )
-            .collect();
-
-        let restored_blocks = get_all_restored_blocks(conn)?;
-
-        Some(AppState {
-            windows: saved_windows,
-            active_window_index,
-            block_lists: Arc::new(restored_blocks),
-        })
+        Some(read_app_state(conn, &restored_projects)?)
     } else {
         None
     };

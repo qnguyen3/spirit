@@ -1,6 +1,6 @@
 use settings::macros::define_settings_group;
 use settings::{RespectUserSyncSetting, SupportedPlatforms, SyncToCloud};
-use warpui::{AppContext, WindowId};
+use warpui::{AppContext, SingletonEntity, WindowId};
 
 define_settings_group!(WindowSettings, settings: [
     background_blur_radius: BackgroundBlurRadius {
@@ -99,6 +99,17 @@ impl ZoomLevel {
     /// Returns the current [`ZoomLevel`] as a percentage (so that it be can be used as a zoom factor).
     pub fn as_zoom_factor(&self) -> f32 {
         self.inner as f32 / 100.0
+    }
+}
+
+impl WindowSettings {
+    pub fn apply_background_blur_to_all_windows(ctx: &mut AppContext) {
+        let blur_radius = *Self::as_ref(ctx).background_blur_radius;
+        let use_blur_texture = *Self::as_ref(ctx).background_blur_texture;
+        ctx.windows()
+            .set_all_windows_background_blur_radius(blur_radius);
+        ctx.windows()
+            .set_all_windows_background_blur_texture(use_blur_texture);
     }
 }
 

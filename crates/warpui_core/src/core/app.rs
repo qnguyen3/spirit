@@ -48,8 +48,8 @@ use crate::platform::app::TerminationResult;
 use crate::platform::file_picker::{FilePickerConfiguration, FilePickerError};
 use crate::platform::keyboard::KeyCode;
 use crate::platform::{
-    self, Cursor, FullscreenState, MicrophoneAccessState, SaveFilePickerConfiguration, SystemTheme,
-    TerminationMode, WindowBounds, WindowContext, WindowOptions, WindowStyle,
+    self, Cursor, FullscreenState, MicrophoneAccessState, SaveFilePickerConfiguration, StatusItem,
+    SystemTheme, TerminationMode, WindowBounds, WindowContext, WindowOptions, WindowStyle,
 };
 use crate::presenter::{CursorUpdate, DispatchedActionKind};
 use crate::util::post_inc;
@@ -1215,6 +1215,14 @@ impl AppContext {
     /// Show or hide the Dock icon (macOS only — no-op elsewhere).
     pub fn set_dock_icon_visible(&self, visible: bool) {
         self.platform_delegate.set_dock_icon_visible(visible);
+    }
+
+    pub fn set_status_item(&self, status_item: Option<StatusItem>) {
+        self.platform_delegate.set_status_item(status_item);
+    }
+
+    pub fn status_item_action_triggered(&mut self, action: &'static str, argument: String) {
+        self.dispatch_global_action(action, &argument);
     }
 
     fn dispatch_draw_frame_error_callback(&mut self, window_id: WindowId) {

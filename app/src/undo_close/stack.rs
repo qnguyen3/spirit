@@ -2,14 +2,16 @@ use uuid::Uuid;
 use warp_errors::report_error;
 use warpui::r#async::SpawnedFutureHandle;
 use warpui::{
-    AppContext, ClosedWindowData, Entity, ModelContext, SingletonEntity, ViewHandle,
+    AppContext, ClosedWindowData, Entity, EntityId, ModelContext, SingletonEntity, ViewHandle,
     WeakViewHandle, WindowId,
 };
 
 use super::UndoCloseSettings;
 use super::settings::UndoCloseSettingsChangedEvent;
 use crate::pane_group::{PaneGroup, PaneId};
+use crate::root_view::RootView;
 use crate::tab::TabData;
+use crate::window_settings::WindowSettings;
 use crate::workspace::Workspace;
 
 /// A unique identifier for an item in the undo close stack.
@@ -68,7 +70,7 @@ impl ClosedItem {
         match self {
             ClosedItem::Window(data) => {
                 let ClosedWindowData { window_id, .. } = *data;
-                if let Some(workspace) = window_workspace(window_id, ctx) {
+                for workspace in window_workspaces(window_id, ctx) {
                     workspace.update(ctx, |workspace, ctx| {
                         for pane_group in workspace.tab_views() {
                             Self::clean_up_pane_group(pane_group, ctx);
@@ -165,6 +167,18 @@ impl UndoCloseStack {
         self.push_item(ClosedItem::Pane { data: pane_data }, ctx);
     }
 
+    pub fn reopen_last_closed_window(&mut self, ctx: &mut AppContext) -> bool {
+        let last_closed_window = self
+            .stack
+            .last()
+            .is_some_and(|item| matches!(item.closed_item, ClosedItem::Window(_)));
+        if !last_closed_window {
+            return false;
+        }
+        self.undo_close(ctx);
+        true
+    }
+
     /// Undoes the last close action in the stack, if possible.
     pub fn undo_close(&mut self, ctx: &mut AppContext) {
         let Some(UndoData { closed_item, .. }) = self.stack.pop() else {
@@ -175,12 +189,8 @@ impl UndoCloseStack {
             ClosedItem::Window(data) => {
                 let window_id = data.window_id;
                 ctx.reopen_closed_window(*data);
-
-                if let Some(workspace) = window_workspace(window_id, ctx) {
-                    workspace.update(ctx, |workspace, ctx| {
-                        workspace.handle_reopen(ctx);
-                    });
-                }
+                WindowSettings::apply_background_blur_to_all_windows(ctx);
+                reopen_window_screens(window_id, ctx);
 
                 // Make sure we update our session restoration state now that the
                 // window has been reopened.
@@ -216,7 +226,9 @@ impl UndoCloseStack {
                         ctx.windows().show_window_and_focus_app(window_id);
 
                         // Now properly focus the restored pane by activating its tab and focusing the pane
-                        if let Some(workspace) = window_workspace(window_id, ctx) {
+                        if let Some(workspace) =
+                            workspace_owning_pane_group(window_id, pane_group_id, ctx)
+                        {
                             workspace.update(ctx, |workspace, ctx| {
                                 let locator = crate::workspace::PaneViewLocator {
                                     pane_group_id,
@@ -290,9 +302,38 @@ impl UndoCloseStack {
 }
 
 /// Find the root [`Workspace`] view for a window.
-fn window_workspace(window_id: WindowId, ctx: &mut AppContext) -> Option<ViewHandle<Workspace>> {
+fn window_workspaces(window_id: WindowId, ctx: &mut AppContext) -> Vec<ViewHandle<Workspace>> {
     ctx.views_of_type::<Workspace>(window_id)
-        .and_then(|views| views.first().cloned())
+        .unwrap_or_default()
+}
+
+fn workspace_owning_pane_group(
+    window_id: WindowId,
+    pane_group_id: EntityId,
+    ctx: &mut AppContext,
+) -> Option<ViewHandle<Workspace>> {
+    window_workspaces(window_id, ctx)
+        .into_iter()
+        .find(|workspace| {
+            workspace
+                .as_ref(ctx)
+                .tab_views()
+                .any(|pane_group| pane_group.id() == pane_group_id)
+        })
+}
+
+fn reopen_window_screens(window_id: WindowId, ctx: &mut AppContext) {
+    let host = ctx
+        .root_view::<RootView>(window_id)
+        .and_then(|root| root.as_ref(ctx).project_host_view().cloned());
+    match host {
+        Some(host) => host.update(ctx, |host, ctx| host.handle_reopen(ctx)),
+        None => {
+            for workspace in window_workspaces(window_id, ctx) {
+                workspace.update(ctx, |workspace, ctx| workspace.handle_reopen(ctx));
+            }
+        }
+    }
 }
 
 impl Entity for UndoCloseStack {

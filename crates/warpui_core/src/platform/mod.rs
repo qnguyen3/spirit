@@ -2,6 +2,7 @@ pub mod app;
 pub mod file_picker;
 pub mod keyboard;
 pub mod menu;
+pub mod status_item;
 
 pub mod test;
 #[cfg(target_family = "wasm")]
@@ -26,6 +27,7 @@ use lazy_static::lazy_static;
 use pathfinder_geometry::rect::{RectF, RectI};
 use pathfinder_geometry::vector::{Vector2F, Vector2I};
 use serde::{Deserialize, Serialize};
+pub use status_item::{StatusItem, StatusItemEntry};
 use warp_util::path::ShellFamily;
 
 use crate::accessibility::AccessibilityContent;
@@ -260,6 +262,8 @@ pub trait Delegate: 'static {
     /// Show or hide the application's Dock icon (macOS only).
     /// Default no-op for platforms without a Dock concept.
     fn set_dock_icon_visible(&self, _visible: bool) {}
+
+    fn set_status_item(&self, _status_item: Option<StatusItem>) {}
 
     fn terminate_app(&self, termination_mode: TerminationMode);
 

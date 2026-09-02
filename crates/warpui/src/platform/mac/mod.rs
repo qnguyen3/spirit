@@ -11,6 +11,7 @@ mod keycode;
 mod menus;
 mod notification;
 pub(super) mod rendering;
+mod status_item;
 mod text_layout;
 pub mod utils;
 mod window;

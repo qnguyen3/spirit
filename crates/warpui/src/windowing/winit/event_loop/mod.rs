@@ -245,6 +245,22 @@ struct State {
 
     #[cfg(windows)]
     network_connection_listener: Option<WindowsNetworkConnectionPoint>,
+
+    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
+    status_item: Option<super::status_item::StatusItemHandle>,
+}
+
+impl State {
+    fn status_item_installed(&self) -> bool {
+        #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
+        {
+            self.status_item.is_some()
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "freebsd")))]
+        {
+            false
+        }
+    }
 }
 
 /// This enum holds the state needed to convert multiple emitted
@@ -648,6 +664,15 @@ impl EventLoop {
             Event::UserEvent(CustomEvent::GlobalShortcutTriggered(shortcut)) => {
                 self.callbacks.global_shortcut_triggered(shortcut)
             }
+            #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
+            Event::UserEvent(CustomEvent::SetStatusItem(status_item)) => {
+                self.set_status_item(status_item);
+            }
+            #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
+            Event::UserEvent(CustomEvent::StatusItemActionTriggered(action, argument)) => {
+                self.callbacks
+                    .status_item_action_triggered(action, argument);
+            }
             Event::UserEvent(CustomEvent::CloseWindow {
                 window_id,
                 termination_mode,
@@ -862,7 +887,10 @@ impl EventLoop {
             } => {
                 // TODO(vorporeal): Should we be calling approve_termination() here?
                 // i.e.: should we invoke a helper shared with CustomEvent::Terminate?
-                if cfg!(not(target_os = "macos")) && self.state.windows.is_empty() {
+                if cfg!(not(target_os = "macos"))
+                    && self.state.windows.is_empty()
+                    && !self.state.status_item_installed()
+                {
                     window_target.exit();
                 }
 
@@ -942,6 +970,11 @@ impl EventLoop {
                 #[cfg(windows)]
                 if let Some(network_listener) = self.state.network_connection_listener.take() {
                     network_listener.clean_up();
+                }
+
+                #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
+                {
+                    self.state.status_item = None;
                 }
 
                 self.callbacks.app_will_terminate();
@@ -1462,6 +1495,23 @@ impl EventLoop {
 
     /// Handles a request to close the window with the given warpui and winit
     /// IDs.
+    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
+    fn set_status_item(&mut self, status_item: Option<platform::StatusItem>) {
+        let Some(status_item) = status_item else {
+            self.state.status_item = None;
+            return;
+        };
+        if let Some(handle) = self.state.status_item.as_mut() {
+            handle.update(status_item);
+            return;
+        }
+        self.state.status_item = super::status_item::install(
+            status_item,
+            self.window_class.as_deref().unwrap_or("warp"),
+            self.proxy.clone(),
+        );
+    }
+
     fn close_window_requested(
         &mut self,
         window_id: crate::WindowId,

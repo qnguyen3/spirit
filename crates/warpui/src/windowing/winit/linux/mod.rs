@@ -1,6 +1,7 @@
 mod app;
 pub mod clipboard;
 mod cursor_theme;
+pub(crate) mod status_item;
 mod window_manager;
 mod zbus;
 

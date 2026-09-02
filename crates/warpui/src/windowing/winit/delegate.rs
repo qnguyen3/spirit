@@ -31,7 +31,7 @@ use crate::platform::file_picker::{
 };
 use crate::platform::{
     Cursor, MicrophoneAccessState, RequestNotificationPermissionsCallback,
-    SendNotificationErrorCallback, TerminationMode,
+    SendNotificationErrorCallback, StatusItem, TerminationMode,
 };
 use crate::windowing::winit::app::CustomEvent::UpdateUIApp;
 use crate::windowing::{self, WindowCallbacks, WindowManager};
@@ -275,6 +275,12 @@ impl platform::Delegate for AppDelegate {
     fn request_user_attention(&self, window_id: WindowId) {
         self.event_loop_proxy
             .send_event(CustomEvent::RequestUserAttention { window_id });
+    }
+
+    fn set_status_item(&self, status_item: Option<StatusItem>) {
+        let _ = self
+            .event_loop_proxy
+            .send_event(CustomEvent::SetStatusItem(status_item));
     }
 
     fn clipboard(&mut self) -> &mut dyn crate::Clipboard {

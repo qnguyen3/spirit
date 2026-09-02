@@ -291,6 +291,11 @@ impl AppCallbackDispatcher {
             .update(|ctx| ctx.on_global_shortcut_triggered(shortcut))
     }
 
+    pub fn status_item_action_triggered(&mut self, action: &'static str, argument: String) {
+        self.ui_app
+            .update(|ctx| ctx.status_item_action_triggered(action, argument))
+    }
+
     #[cfg_attr(not(target_os = "macos"), allow(unused))]
     pub fn can_borrow_mut(&self) -> bool {
         self.ui_app.can_borrow_mut()

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use settings::Setting;
+use warp_core::context_flag::ContextFlag;
 use warpui::elements::{ParentElement, Stack};
 use warpui::platform::FilePickerConfiguration;
 use warpui::presenter::ChildView;
@@ -250,19 +251,53 @@ impl View for ProjectHost {
 
 impl ProjectHost {
     fn subscribe_to_workspace(workspace: &ViewHandle<Workspace>, ctx: &mut ViewContext<Self>) {
-        ctx.subscribe_to_view(workspace, |host, _, event, ctx| {
-            host.handle_workspace_event(event, ctx);
+        ctx.subscribe_to_view(workspace, |host, workspace, event, ctx| {
+            host.handle_workspace_event(workspace.id(), event, ctx);
         });
     }
 
-    fn handle_workspace_event(&mut self, event: &WorkspaceEvent, ctx: &mut ViewContext<Self>) {
+    fn handle_workspace_event(
+        &mut self,
+        workspace_id: EntityId,
+        event: &WorkspaceEvent,
+        ctx: &mut ViewContext<Self>,
+    ) {
         match event {
             WorkspaceEvent::NavigateToNotification {
                 window_id,
                 project_id,
                 locator,
             } => self.navigate_to_notification(*window_id, *project_id, locator, ctx),
+            WorkspaceEvent::CloseScreenRequested => {
+                self.close_screen_for_workspace(workspace_id, ctx)
+            }
         }
+    }
+
+    fn close_screen_for_workspace(&mut self, workspace_id: EntityId, ctx: &mut ViewContext<Self>) {
+        let Some(index) = self
+            .screens
+            .iter()
+            .position(|screen| screen.workspace.id() == workspace_id)
+        else {
+            return;
+        };
+        if self.screens.len() <= 1 {
+            if ContextFlag::CloseWindow.is_enabled() {
+                ctx.close_window();
+            }
+            return;
+        }
+        self.close_screen_at(index, ctx);
+        self.sync_overview_home(ctx);
+    }
+
+    pub fn handle_reopen(&self, ctx: &mut ViewContext<Self>) {
+        for screen in &self.screens {
+            let workspace = screen.workspace.clone();
+            workspace.update(ctx, |workspace, ctx| workspace.handle_reopen(ctx));
+        }
+        self.publish_active_screen(ctx);
     }
 
     fn navigate_to_notification(
@@ -566,7 +601,7 @@ impl ProjectHost {
             .position(|screen| screen.project_id.is_none())
     }
 
-    fn activate_home(&mut self, ctx: &mut ViewContext<Self>) {
+    pub(crate) fn activate_home(&mut self, ctx: &mut ViewContext<Self>) {
         match self.home_screen_index() {
             Some(index) => self.activate_screen(index, ctx),
             None => self.create_home_screen(ctx),

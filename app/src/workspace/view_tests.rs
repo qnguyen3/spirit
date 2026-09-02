@@ -1,4 +1,6 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use pane_group::{FilePane, PaneState, SplitPaneState, TerminalPaneId};
 #[cfg(feature = "local_fs")]
@@ -3718,6 +3720,100 @@ fn closing_the_last_tab_of_a_worktree_keeps_it_registered() {
                 "a worktree with no tabs stays registered so its section keeps rendering"
             );
         });
+    })
+}
+
+fn sibling_screen(window_id: WindowId, app: &mut App) -> ViewHandle<Workspace> {
+    let global_resource_handles = GlobalResourceHandles::mock(app);
+    app.add_view(window_id, |ctx| {
+        Workspace::new(
+            global_resource_handles,
+            NewWorkspaceSource::Empty {
+                previous_active_window: None,
+                shell: None,
+            },
+            None,
+            ctx,
+        )
+    })
+}
+
+fn recorded_events(
+    workspace: &ViewHandle<Workspace>,
+    app: &mut App,
+) -> Rc<RefCell<Vec<WorkspaceEvent>>> {
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let sink = events.clone();
+    app.update(|ctx| {
+        ctx.subscribe_to_view(workspace, move |_, event, _| {
+            sink.borrow_mut().push(event.clone());
+        });
+    });
+    events
+}
+
+#[test]
+fn closing_the_last_tab_asks_to_close_the_screen_when_the_window_has_other_screens() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let workspace = mock_workspace(&mut app);
+        let window_id = app.read(|ctx| workspace.window_id(ctx));
+        let _sibling = sibling_screen(window_id, &mut app);
+        let events = recorded_events(&workspace, &mut app);
+
+        workspace.update(&mut app, |workspace, ctx| {
+            workspace.close_tabs(std::iter::once(0), true, false, ctx);
+            assert_eq!(
+                workspace.tab_count(),
+                1,
+                "the tab stays until the host tears the screen down"
+            );
+        });
+
+        assert!(matches!(
+            events.borrow().as_slice(),
+            [WorkspaceEvent::CloseScreenRequested]
+        ));
+    })
+}
+
+#[test]
+fn closing_the_last_tab_of_the_only_screen_does_not_ask_to_close_the_screen() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let workspace = mock_workspace(&mut app);
+        let events = recorded_events(&workspace, &mut app);
+
+        workspace.update(&mut app, |workspace, ctx| {
+            workspace.close_tabs(std::iter::once(0), true, false, ctx);
+            assert_eq!(workspace.tab_count(), 1);
+        });
+
+        assert!(
+            events.borrow().is_empty(),
+            "the only screen's last tab closes the window, not the screen"
+        );
+    })
+}
+
+#[test]
+fn screen_teardown_keeps_one_tab_and_never_asks_to_close_the_screen() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let workspace = mock_workspace(&mut app);
+        let window_id = app.read(|ctx| workspace.window_id(ctx));
+        let _sibling = sibling_screen(window_id, &mut app);
+        let events = recorded_events(&workspace, &mut app);
+
+        workspace.update(&mut app, |workspace, ctx| {
+            workspace.add_terminal_tab(true, ctx);
+            workspace.add_terminal_tab(true, ctx);
+            assert_eq!(workspace.tab_count(), 3);
+            workspace.close_all_tabs_for_screen_teardown(ctx);
+            assert_eq!(workspace.tab_count(), 1);
+        });
+
+        assert!(events.borrow().is_empty());
     })
 }
 

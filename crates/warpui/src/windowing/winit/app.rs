@@ -9,7 +9,7 @@ use super::window::{IntegrationTestWindowManager, WindowManager};
 use crate::clipboard::ClipboardContent;
 use crate::integration::TestDriver;
 use crate::notification::RequestPermissionsOutcome;
-use crate::platform::{self, NotificationInfo, TerminationMode};
+use crate::platform::{self, NotificationInfo, StatusItem, TerminationMode};
 use crate::{AppContext, AssetProvider, WindowId, keymap};
 
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
@@ -38,6 +38,9 @@ pub enum CustomEvent {
     /// A global hotkey was pressed. Global hotkeys are not yet supported on wasm.
     #[cfg_attr(target_family = "wasm", allow(dead_code))]
     GlobalShortcutTriggered(keymap::Keystroke),
+    SetStatusItem(Option<StatusItem>),
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
+    StatusItemActionTriggered(&'static str, String),
     /// The active window changed.
     ///
     /// We use this to trigger [`platform::AppCallbacks::on_active_window_changed`] instead of

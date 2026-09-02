@@ -1,6 +1,7 @@
 pub mod clipboard;
 mod network;
 mod registry;
+pub(crate) mod status_item;
 mod system_caption_buttons;
 mod window_attribute;
 mod window_ext;

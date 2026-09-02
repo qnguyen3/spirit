@@ -215,9 +215,9 @@ impl PaneContent for TerminalPane {
         let terminal_view_id = self.terminal_view(ctx).id();
         let _ = &terminal_view_ids;
 
-        // Clean up any active CLI agent session so its notification is removed.
-        // Skip this for moves — the session is still running and will re-register in the new tab.
-        if !matches!(detach_type, DetachType::Moved) {
+        // Clean up any active CLI agent session so its notification is removed. Skip this for
+        // moves and restorable window closes — the session is still running.
+        if !matches!(detach_type, DetachType::Moved | DetachType::HiddenForClose) {
             CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions, ctx| {
                 sessions.remove_session(terminal_view_id, ctx);
             });

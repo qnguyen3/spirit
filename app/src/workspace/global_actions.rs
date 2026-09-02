@@ -90,6 +90,9 @@ fn save_app(_: &(), ctx: &mut AppContext) {
 
     // Only compute the app state if we're definitely going to use it.
     let app_state = get_app_state(ctx);
+    if app_state.windows.is_empty() {
+        return;
+    }
     let event = ModelEvent::Snapshot(app_state);
 
     if let Err(err) = model_event_sender.send(event) {

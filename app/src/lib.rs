@@ -56,6 +56,7 @@ mod safe_triangle;
 mod search_bar;
 mod session_management;
 mod shell_indicator;
+mod status_item;
 mod suggestions;
 mod system;
 mod tab;
@@ -175,7 +176,8 @@ use crate::persisted_workspace::PersistedWorkspace;
 use crate::persistence::PersistenceWriter;
 use crate::projects::registry::ProjectRegistryModel;
 use crate::root_view::{
-    OpenFromRestoredArg, OpenPath, quake_mode_window_id, quake_mode_window_is_open,
+    OpenFromRestoredArg, OpenPath, open_new_or_restore_session, quake_mode_window_id,
+    quake_mode_window_is_open,
 };
 use crate::session_management::{RunningSessionSummary, SessionNavigationData};
 use crate::settings::manager::SettingsManager;
@@ -1155,6 +1157,7 @@ pub(crate) fn initialize_app(
     themes::theme_creator_modal::init(ctx);
     themes::theme_deletion_modal::init(ctx);
     root_view::init(ctx);
+    status_item::init(ctx);
     voltron::init(ctx);
     crate::view_components::find::init(ctx);
     prompt::editor_modal::init(ctx);
@@ -1464,7 +1467,7 @@ pub(crate) fn app_callbacks(is_integration_test: bool) -> warpui::platform::AppC
             // e.g. clicking on the Dock icon. It is NOT called from the New Window
             // menu item.
             App::record_last_active_timestamp();
-            ctx.dispatch_global_action("root_view:open_new", &());
+            open_new_or_restore_session(ctx);
             ctx.dispatch_global_action("workspace:save_app", &());
         })),
         on_open_urls: Some(Box::new(move |urls, ctx| {
@@ -1631,6 +1634,7 @@ fn launch(ctx: &mut warpui::AppContext, app_state: Option<AppState>, launch_mode
             IntervalTimer::handle(ctx).update(ctx, |timer, _| {
                 timer.mark_interval_end("WINDOWS_CREATED");
             });
+            status_item::install(ctx);
 
             // TODO(ben): We should skip this for LaunchMode::Test.
             #[cfg(any(target_os = "macos", target_os = "windows"))]

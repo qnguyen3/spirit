@@ -17,7 +17,7 @@ use warpui_core::notification::{
 };
 use warpui_core::platform::{
     Cursor, FilePickerCallback, FilePickerConfiguration, MicrophoneAccessState,
-    SendNotificationErrorCallback, TerminationMode,
+    SendNotificationErrorCallback, StatusItem, TerminationMode,
 };
 use warpui_core::{ApplicationBundleInfo, WindowId, platform};
 
@@ -409,6 +409,10 @@ impl platform::Delegate for AppDelegate {
             // SAFETY: messaging the app delegate on the main thread.
             let _: BOOL = unsafe { msg_send![&*app_delegate, setDockIconVisible: value] };
         });
+    }
+
+    fn set_status_item(&self, status_item: Option<StatusItem>) {
+        super::status_item::set_status_item(status_item);
     }
 
     fn terminate_app(&self, termination_mode: TerminationMode) {
