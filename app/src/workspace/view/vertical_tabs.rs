@@ -1586,6 +1586,7 @@ fn render_new_worktree_button(
     .on_click(|ctx, _, _| {
         ctx.dispatch_typed_action(WorkspaceAction::ShowCreateWorktreeModal {
             agent_catalog_index: None,
+            approval_mode: None,
         });
     })
     .with_cursor(Cursor::PointingHand)

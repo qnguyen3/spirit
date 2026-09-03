@@ -3,9 +3,10 @@ use pathfinder_geometry::vector::vec2f;
 use warp_core::ui::icons::Icon as WarpIcon;
 use warp_core::ui::theme::color::internal_colors;
 use warp_core::ui::theme::{ColorScheme, Fill as WarpThemeFill, WarpTheme};
+use warpui::assets::asset_cache::AssetSource;
 use warpui::elements::{
-    ChildAnchor, ConstrainedBox, Container, CornerRadius, Element, OffsetPositioning, ParentAnchor,
-    ParentElement, ParentOffsetBounds, Radius, Stack,
+    CacheOption, ChildAnchor, ConstrainedBox, Container, CornerRadius, Element, Image,
+    OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Radius, Stack,
 };
 
 use crate::terminal::CLIAgent;
@@ -27,6 +28,7 @@ const OZ_AMBIENT_BACKGROUND_COLOR: ColorU = ColorU {
 // brand circle (not on its edge). `CIRCLE_RATIO` is `pub(crate)` so callers can size
 // their own artwork consistently with the other variants.
 pub(crate) const CIRCLE_RATIO: f32 = 0.76;
+const IMAGE_CORNER_RADIUS_RATIO: f32 = 0.23;
 const ICON_RATIO: f32 = 0.43;
 const DEFAULT_BADGE_RATIO: f32 = 0.57;
 const DEFAULT_BADGE_ICON_RATIO: f32 = 0.34;
@@ -218,20 +220,25 @@ pub(crate) fn render_icon_with_status_with_badge_style(
             status,
             is_ambient,
         } => {
-            let brand_color = agent
-                .brand_color()
-                .unwrap_or(ColorU::new(100, 100, 100, 255));
-            let icon_color = agent.brand_icon_color();
-            let icon_element = agent
-                .icon()
-                .map(|icon| {
-                    icon.to_warpui_icon(WarpThemeFill::Solid(icon_color))
-                        .finish()
-                })
-                .unwrap_or_else(|| WarpIcon::Terminal.to_warpui_icon(sub_text).finish());
-            let circle = render_circle(icon_element, ThemeFill::Solid(brand_color), total_size);
+            let base = match agent.image_icon() {
+                Some(path) => render_agent_artwork(path, total_size),
+                None => {
+                    let brand_color = agent
+                        .brand_color()
+                        .unwrap_or(ColorU::new(100, 100, 100, 255));
+                    let icon_color = agent.brand_icon_color();
+                    let icon_element = agent
+                        .icon()
+                        .map(|icon| {
+                            icon.to_warpui_icon(WarpThemeFill::Solid(icon_color))
+                                .finish()
+                        })
+                        .unwrap_or_else(|| WarpIcon::Terminal.to_warpui_icon(sub_text).finish());
+                    render_circle(icon_element, ThemeFill::Solid(brand_color), total_size)
+                }
+            };
             attach_status_overlay(
-                circle,
+                base,
                 status.as_ref(),
                 is_ambient,
                 total_size,
@@ -280,6 +287,20 @@ fn render_circle(
             circle_size(total_size) / 2.,
         )))
         .finish()
+}
+
+fn render_agent_artwork(path: &'static str, total_size: f32) -> Box<dyn Element> {
+    let size = circle_size(total_size);
+    ConstrainedBox::new(
+        Image::new(AssetSource::Bundled { path }, CacheOption::BySize)
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
+                size * IMAGE_CORNER_RADIUS_RATIO,
+            )))
+            .finish(),
+    )
+    .with_width(size)
+    .with_height(size)
+    .finish()
 }
 
 /// Builds the neutral circle: a full-`total_size` container with the glyph at

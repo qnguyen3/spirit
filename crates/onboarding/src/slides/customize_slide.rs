@@ -26,6 +26,7 @@ enum SettingCard {
     TabStyling,
     ToolsPanel,
     CodeReview,
+    AgentApproval,
 }
 
 /// Sub-settings within the right sidebar.
@@ -44,6 +45,7 @@ pub enum CustomizeSlideAction {
     ToggleToolsSubSetting { setting: ToolsPanelSubSetting },
     HoverToolsChip { setting: ToolsPanelSubSetting },
     SetCodeReviewEnabled { enabled: bool },
+    SetAgentApprovalYolo { yolo: bool },
     BackClicked,
     NextClicked,
 }
@@ -58,6 +60,7 @@ pub struct CustomizeUISlide {
     tab_styling_mouse_state: MouseStateHandle,
     tools_panel_mouse_state: MouseStateHandle,
     code_review_mouse_state: MouseStateHandle,
+    agent_approval_mouse_state: MouseStateHandle,
     // Mouse states for segmented control options (2 per card)
     tab_seg_left_mouse: MouseStateHandle,
     tab_seg_right_mouse: MouseStateHandle,
@@ -65,6 +68,8 @@ pub struct CustomizeUISlide {
     tools_seg_right_mouse: MouseStateHandle,
     code_seg_left_mouse: MouseStateHandle,
     code_seg_right_mouse: MouseStateHandle,
+    agent_approval_seg_left_mouse: MouseStateHandle,
+    agent_approval_seg_right_mouse: MouseStateHandle,
     // Mouse states for right sidebar chip buttons
     chip_file_explorer_mouse: MouseStateHandle,
     chip_global_search_mouse: MouseStateHandle,
@@ -83,12 +88,15 @@ impl CustomizeUISlide {
             tab_styling_mouse_state: MouseStateHandle::default(),
             tools_panel_mouse_state: MouseStateHandle::default(),
             code_review_mouse_state: MouseStateHandle::default(),
+            agent_approval_mouse_state: MouseStateHandle::default(),
             tab_seg_left_mouse: MouseStateHandle::default(),
             tab_seg_right_mouse: MouseStateHandle::default(),
             tools_seg_left_mouse: MouseStateHandle::default(),
             tools_seg_right_mouse: MouseStateHandle::default(),
             code_seg_left_mouse: MouseStateHandle::default(),
             code_seg_right_mouse: MouseStateHandle::default(),
+            agent_approval_seg_left_mouse: MouseStateHandle::default(),
+            agent_approval_seg_right_mouse: MouseStateHandle::default(),
             chip_file_explorer_mouse: MouseStateHandle::default(),
             chip_global_search_mouse: MouseStateHandle::default(),
             back_button: button::Button::default(),
@@ -112,7 +120,7 @@ impl CustomizeUISlide {
         slide_content::onboarding_slide_content(
             vec![
                 Align::new(self.render_header(appearance)).left().finish(),
-                self.render_setting_cards(appearance, ui),
+                self.render_setting_cards(appearance, ui, app),
             ],
             bottom_nav,
             self.scroll_state.clone(),
@@ -165,10 +173,12 @@ impl CustomizeUISlide {
         &self,
         appearance: &Appearance,
         ui: &UICustomizationSettings,
+        app: &AppContext,
     ) -> Box<dyn Element> {
         let tab_card = self.render_tab_styling_card(appearance, ui);
         let tools_card = self.render_tools_panel_card(appearance, ui);
         let code_card = self.render_code_review_card(appearance, ui);
+        let agent_approval_card = self.render_agent_approval_card(appearance, app);
 
         Container::new(
             Flex::column()
@@ -178,6 +188,7 @@ impl CustomizeUISlide {
                 .with_child(tab_card)
                 .with_child(tools_card)
                 .with_child(code_card)
+                .with_child(agent_approval_card)
                 .finish(),
         )
         .with_margin_top(12.)
@@ -337,6 +348,45 @@ impl CustomizeUISlide {
         )
     }
 
+    fn render_agent_approval_card(
+        &self,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let is_selected = self.selected_setting == Some(SettingCard::AgentApproval);
+        let yolo = self.onboarding_state.as_ref(app).agent_approval_yolo();
+
+        render_toggle_card(
+            appearance,
+            ToggleCardSpec {
+                title: "Agent Approval Mode",
+                is_expanded: is_selected,
+                is_left_selected: yolo,
+                left_label: "YOLO",
+                right_label: "Normal",
+                card_mouse_state: self.agent_approval_mouse_state.clone(),
+                on_expand: Box::new(|ctx, _, _| {
+                    ctx.dispatch_typed_action(CustomizeSlideAction::SelectSettingCard {
+                        card_index: 3,
+                    });
+                }),
+                left_mouse: self.agent_approval_seg_left_mouse.clone(),
+                right_mouse: self.agent_approval_seg_right_mouse.clone(),
+                on_left: Box::new(|ctx, _, _| {
+                    ctx.dispatch_typed_action(CustomizeSlideAction::SetAgentApprovalYolo {
+                        yolo: true,
+                    });
+                }),
+                on_right: Box::new(|ctx, _, _| {
+                    ctx.dispatch_typed_action(CustomizeSlideAction::SetAgentApprovalYolo {
+                        yolo: false,
+                    });
+                }),
+                chips: vec![],
+            },
+        )
+    }
+
     // --- Bottom nav ---
 
     fn render_bottom_nav(&self, appearance: &Appearance, app: &AppContext) -> Box<dyn Element> {
@@ -473,15 +523,18 @@ impl CustomizeUISlide {
                     "async/png/onboarding/terminal_intention/terminal_codereview_disabled.png"
                 }
             }
+            Some(SettingCard::AgentApproval) => "async/png/onboarding/welcome_terminal.png",
         }
     }
 
     fn render_visual(&self, ui: &UICustomizationSettings) -> Box<dyn Element> {
         let path = Self::visual_image_path(self.selected_setting, self.hovered_chip, ui);
         let fg_layout = match self.selected_setting {
-            None => layout::FOREGROUND_LAYOUT_DEFAULT,
+            None | Some(SettingCard::AgentApproval) => layout::FOREGROUND_LAYOUT_DEFAULT,
             Some(SettingCard::CodeReview) => layout::FOREGROUND_LAYOUT_CODE_REVIEW,
-            _ => layout::FOREGROUND_LAYOUT_WIDE,
+            Some(SettingCard::TabStyling) | Some(SettingCard::ToolsPanel) => {
+                layout::FOREGROUND_LAYOUT_WIDE
+            }
         };
         layout::onboarding_right_panel_with_bg(path, fg_layout)
     }
@@ -513,6 +566,7 @@ impl CustomizeUISlide {
             0 => SettingCard::TabStyling,
             1 => SettingCard::ToolsPanel,
             2 => SettingCard::CodeReview,
+            3 => SettingCard::AgentApproval,
             _ => return,
         };
         // Only select — don't toggle. Clicking a different card replaces the selection.
@@ -535,7 +589,8 @@ impl OnboardingSlide for CustomizeUISlide {
         self.selected_setting = match self.selected_setting {
             Some(SettingCard::ToolsPanel) => Some(SettingCard::TabStyling),
             Some(SettingCard::CodeReview) => Some(SettingCard::ToolsPanel),
-            _ => self.selected_setting,
+            Some(SettingCard::AgentApproval) => Some(SettingCard::CodeReview),
+            Some(SettingCard::TabStyling) | None => self.selected_setting,
         };
         ctx.notify();
     }
@@ -544,8 +599,9 @@ impl OnboardingSlide for CustomizeUISlide {
         self.selected_setting = match self.selected_setting {
             Some(SettingCard::TabStyling) => Some(SettingCard::ToolsPanel),
             Some(SettingCard::ToolsPanel) => Some(SettingCard::CodeReview),
+            Some(SettingCard::CodeReview) => Some(SettingCard::AgentApproval),
             None => Some(SettingCard::TabStyling),
-            other => other,
+            Some(SettingCard::AgentApproval) => self.selected_setting,
         };
         ctx.notify();
     }
@@ -567,6 +623,12 @@ impl OnboardingSlide for CustomizeUISlide {
             Some(SettingCard::CodeReview) => {
                 self.onboarding_state.update(ctx, |model, ctx| {
                     model.set_show_code_review_button(true, ctx);
+                });
+                ctx.notify();
+            }
+            Some(SettingCard::AgentApproval) => {
+                self.onboarding_state.update(ctx, |model, ctx| {
+                    model.set_agent_approval_yolo(true, ctx);
                 });
                 ctx.notify();
             }
@@ -592,6 +654,12 @@ impl OnboardingSlide for CustomizeUISlide {
             Some(SettingCard::CodeReview) => {
                 self.onboarding_state.update(ctx, |model, ctx| {
                     model.set_show_code_review_button(false, ctx);
+                });
+                ctx.notify();
+            }
+            Some(SettingCard::AgentApproval) => {
+                self.onboarding_state.update(ctx, |model, ctx| {
+                    model.set_agent_approval_yolo(false, ctx);
                 });
                 ctx.notify();
             }
@@ -656,6 +724,13 @@ impl TypedActionView for CustomizeUISlide {
                 let value = *enabled;
                 self.onboarding_state.update(ctx, |model, ctx| {
                     model.set_show_code_review_button(value, ctx);
+                });
+                ctx.notify();
+            }
+            CustomizeSlideAction::SetAgentApprovalYolo { yolo } => {
+                let value = *yolo;
+                self.onboarding_state.update(ctx, |model, ctx| {
+                    model.set_agent_approval_yolo(value, ctx);
                 });
                 ctx.notify();
             }

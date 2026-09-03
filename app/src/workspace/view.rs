@@ -114,7 +114,7 @@ use super::util::{
     WorkspaceMouseStates, WorkspaceState, active_screen_id,
 };
 use super::{ActiveSession, TabBarDropTargetData, TabBarLocation, WorkspaceRegistry, util};
-use crate::agent_launcher::catalog::agent_catalog;
+use crate::agent_launcher::catalog::{AgentLaunchRequest, agent_catalog};
 use crate::agent_launcher::pane_manager::AgentPickerPaneManager;
 use crate::app_state::{
     LeafContents, LeafSnapshot, LeftPanelDisplayedTab, LeftPanelSnapshot, NotebookPaneSnapshot,
@@ -4755,6 +4755,7 @@ impl Workspace {
                 MenuItemFields::new("New Worktree\u{2026}")
                     .with_on_select_action(WorkspaceAction::ShowCreateWorktreeModal {
                         agent_catalog_index: None,
+                        approval_mode: None,
                     })
                     .with_icon(icons::Icon::Dataflow02)
                     .with_key_shortcut_label(keybinding_name_to_display_string(
@@ -9138,7 +9139,12 @@ impl Workspace {
         ctx.notify();
     }
 
-    fn launch_agent_from_picker(&mut self, catalog_index: usize, ctx: &mut ViewContext<Self>) {
+    fn launch_agent_from_picker(
+        &mut self,
+        request: AgentLaunchRequest,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let catalog_index = request.catalog_index;
         let Some(agent) = agent_catalog().get(catalog_index) else {
             log::warn!("Agent launcher: no catalog entry at index {catalog_index}");
             return;
@@ -9156,7 +9162,7 @@ impl Workspace {
 
         match picker_worktree_id {
             Some(worktree_id) => {
-                self.add_tab_in_worktree(worktree_id, Some(catalog_index), ctx);
+                self.add_tab_in_worktree(worktree_id, Some(request), ctx);
             }
             None => {
                 let startup_directory = self.get_new_tab_startup_directory(
@@ -9182,8 +9188,9 @@ impl Workspace {
                     .active_session_view(ctx)
                 {
                     Some(terminal_view) => {
+                        let command = agent.launch_command(request.approval_mode);
                         terminal_view.update(ctx, |terminal_view, ctx| {
-                            terminal_view.execute_command_or_set_pending(agent.command, ctx);
+                            terminal_view.execute_command_or_set_pending(&command, ctx);
                         });
                     }
                     None => {
@@ -9211,9 +9218,10 @@ impl Workspace {
 
     pub(crate) fn launch_agent_in_active_tab(
         &mut self,
-        catalog_index: usize,
+        request: AgentLaunchRequest,
         ctx: &mut ViewContext<Self>,
     ) {
+        let catalog_index = request.catalog_index;
         let Some(agent) = agent_catalog().get(catalog_index) else {
             log::warn!("Agent launcher: no catalog entry at index {catalog_index}");
             return;
@@ -9224,8 +9232,9 @@ impl Workspace {
             .active_session_view(ctx)
         {
             Some(terminal_view) => {
+                let command = agent.launch_command(request.approval_mode);
                 terminal_view.update(ctx, |terminal_view, ctx| {
-                    terminal_view.execute_command_or_set_pending(agent.command, ctx);
+                    terminal_view.execute_command_or_set_pending(&command, ctx);
                 });
             }
             None => {
@@ -15915,9 +15924,16 @@ impl TypedActionView for Workspace {
             AddTabWithShell { shell } => self.add_tab_with_shell(shell.clone(), ctx),
             AddGetStartedTab => self.add_get_started_tab(ctx),
             AddAgentPickerTab => self.add_agent_picker_tab(ctx),
-            LaunchAgentFromPicker { catalog_index } => {
-                self.launch_agent_from_picker(*catalog_index, ctx)
-            }
+            LaunchAgentFromPicker {
+                catalog_index,
+                approval_mode,
+            } => self.launch_agent_from_picker(
+                AgentLaunchRequest {
+                    catalog_index: *catalog_index,
+                    approval_mode: *approval_mode,
+                },
+                ctx,
+            ),
             AddDockerSandboxTab => self.add_docker_sandbox_tab(ctx),
             OpenNewSessionMenu { anchor } => self.open_new_session_dropdown_menu(*anchor, ctx),
             ToggleTabConfigsMenu => self.toggle_tab_configs_menu(ctx),
@@ -16781,8 +16797,9 @@ impl TypedActionView for Workspace {
             }
             ShowCreateWorktreeModal {
                 agent_catalog_index,
+                approval_mode,
             } => {
-                self.show_create_worktree_modal(*agent_catalog_index, ctx);
+                self.show_create_worktree_modal(*agent_catalog_index, *approval_mode, ctx);
             }
             DeleteWorktree { worktree_id } => {
                 self.show_delete_worktree_dialog(*worktree_id, ctx);

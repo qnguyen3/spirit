@@ -59,3 +59,26 @@ fn progress_reports_terminal_path_uses_three_dot_variant() {
         }
     });
 }
+
+#[test]
+fn agent_approval_yolo_defaults_on_and_flows_into_selected_settings() {
+    App::test((), |mut app| async move {
+        let model = add_test_model(&mut app);
+
+        assert!(model.read(&app, |model, _| model.agent_approval_yolo()));
+        assert!(model.read(&app, |model, _| model.settings().agent_approval_yolo));
+
+        model.update(&mut app, |model, ctx| {
+            model.set_agent_approval_yolo(false, ctx)
+        });
+
+        assert!(!model.read(&app, |model, _| model.agent_approval_yolo()));
+        assert!(!model.read(&app, |model, _| model.settings().agent_approval_yolo));
+
+        model.update(&mut app, |model, ctx| {
+            model.set_agent_approval_yolo(true, ctx)
+        });
+
+        assert!(model.read(&app, |model, _| model.settings().agent_approval_yolo));
+    });
+}

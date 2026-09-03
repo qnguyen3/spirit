@@ -128,6 +128,48 @@ const MISTRAL_ORANGE: ColorU = ColorU {
     a: 255,
 };
 
+const GROK_COLOR: ColorU = ColorU {
+    r: 0,
+    g: 0,
+    b: 0,
+    a: 255,
+};
+
+const TRAE_COLOR: ColorU = ColorU {
+    r: 50,
+    g: 240,
+    b: 140,
+    a: 255,
+};
+
+const CLINE_COLOR: ColorU = ColorU {
+    r: 51,
+    g: 60,
+    b: 68,
+    a: 255,
+};
+
+const QWEN_COLOR: ColorU = ColorU {
+    r: 101,
+    g: 52,
+    b: 239,
+    a: 255,
+};
+
+const DEVIN_COLOR: ColorU = ColorU {
+    r: 14,
+    g: 16,
+    b: 21,
+    a: 255,
+};
+
+pub(crate) const TRAE_ICON_PATH: &str = "bundled/png/agent_icons/trae.png";
+pub(crate) const CLINE_ICON_PATH: &str = "bundled/png/agent_icons/cline.png";
+pub(crate) const QWEN_CODE_ICON_PATH: &str = "bundled/png/agent_icons/qwen_code.png";
+pub(crate) const MISTRAL_VIBE_ICON_PATH: &str = "bundled/png/agent_icons/mistral_vibe.png";
+pub(crate) const DEVIN_ICON_PATH: &str = "bundled/png/agent_icons/devin.png";
+pub(crate) const HERMES_ICON_PATH: &str = "bundled/png/agent_icons/hermes.png";
+
 /// Represents a CLI agent (e.g., Claude Code, Gemini CLI, Codex, Amp, Droid, OpenCode, Copilot, Pi, Auggie, Cursor, Goose, Hermes, Mistral Vibe)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Sequence, Serialize, Deserialize)]
 pub enum CLIAgent {
@@ -146,6 +188,11 @@ pub enum CLIAgent {
     Hermes,
     Vibe,
     Antigravity,
+    Grok,
+    Trae,
+    Cline,
+    QwenCode,
+    Devin,
     /// Represents an unknown/custom CLI agent matched by user-configured regex patterns.
     Unknown,
 }
@@ -169,6 +216,11 @@ impl CLIAgent {
             CLIAgent::Hermes => &["hermes"],
             CLIAgent::Vibe => &["vibe", "vibe-acp"],
             CLIAgent::Antigravity => &["agy"],
+            CLIAgent::Grok => &["grok"],
+            CLIAgent::Trae => &["traecli"],
+            CLIAgent::Cline => &["cline"],
+            CLIAgent::QwenCode => &["qwen"],
+            CLIAgent::Devin => &["devin"],
             CLIAgent::Unknown => &[],
         }
     }
@@ -209,6 +261,11 @@ impl CLIAgent {
             CLIAgent::Hermes => "Hermes",
             CLIAgent::Vibe => "Mistral Vibe",
             CLIAgent::Antigravity => "Antigravity",
+            CLIAgent::Grok => "Grok",
+            CLIAgent::Trae => "Trae",
+            CLIAgent::Cline => "Cline",
+            CLIAgent::QwenCode => "Qwen Code",
+            CLIAgent::Devin => "Devin",
             CLIAgent::Unknown => "CLI Agent",
         }
     }
@@ -229,12 +286,40 @@ impl CLIAgent {
             CLIAgent::CursorCli => Some(Icon::CursorLogo),
             CLIAgent::Goose => Some(Icon::GooseLogo),
             CLIAgent::Hermes => None,
-            // Vibe is recognized but ships without a brand asset. The brand color
-            // still drives the toolbar tile; an `Icon::MistralLogo` can be wired
-            // up in a follow-up once an officially licensed SVG is available.
             CLIAgent::Vibe => None,
             CLIAgent::Antigravity => Some(Icon::AntigravityLogo),
+            CLIAgent::Grok => Some(Icon::GrokLogo),
+            CLIAgent::Trae => None,
+            CLIAgent::Cline => None,
+            CLIAgent::QwenCode => None,
+            CLIAgent::Devin => None,
             CLIAgent::Unknown => None,
+        }
+    }
+
+    pub fn image_icon(&self) -> Option<&'static str> {
+        match self {
+            CLIAgent::Trae => Some(TRAE_ICON_PATH),
+            CLIAgent::Cline => Some(CLINE_ICON_PATH),
+            CLIAgent::QwenCode => Some(QWEN_CODE_ICON_PATH),
+            CLIAgent::Vibe => Some(MISTRAL_VIBE_ICON_PATH),
+            CLIAgent::Devin => Some(DEVIN_ICON_PATH),
+            CLIAgent::Hermes => Some(HERMES_ICON_PATH),
+            CLIAgent::Claude
+            | CLIAgent::Gemini
+            | CLIAgent::Codex
+            | CLIAgent::Amp
+            | CLIAgent::Droid
+            | CLIAgent::OpenCode
+            | CLIAgent::Copilot
+            | CLIAgent::Pi
+            | CLIAgent::OhMyPi
+            | CLIAgent::Auggie
+            | CLIAgent::CursorCli
+            | CLIAgent::Goose
+            | CLIAgent::Antigravity
+            | CLIAgent::Grok
+            | CLIAgent::Unknown => None,
         }
     }
 
@@ -266,6 +351,11 @@ impl CLIAgent {
             CLIAgent::Hermes => &[SkillProvider::Agents],
             CLIAgent::Vibe => &[SkillProvider::Agents],
             CLIAgent::Antigravity => &[],
+            CLIAgent::Grok => &[SkillProvider::Agents],
+            CLIAgent::Trae => &[SkillProvider::Agents],
+            CLIAgent::Cline => &[SkillProvider::Agents],
+            CLIAgent::QwenCode => &[SkillProvider::Agents],
+            CLIAgent::Devin => &[SkillProvider::Agents],
             CLIAgent::Unknown => &[],
         }
     }
@@ -310,6 +400,11 @@ impl CLIAgent {
             CLIAgent::Hermes => Some(HERMES_PURPLE),
             CLIAgent::Vibe => Some(MISTRAL_ORANGE),
             CLIAgent::Antigravity => Some(ANTIGRAVITY_COLOR),
+            CLIAgent::Grok => Some(GROK_COLOR),
+            CLIAgent::Trae => Some(TRAE_COLOR),
+            CLIAgent::Cline => Some(CLINE_COLOR),
+            CLIAgent::QwenCode => Some(QWEN_COLOR),
+            CLIAgent::Devin => Some(DEVIN_COLOR),
             CLIAgent::Unknown => None,
         }
     }

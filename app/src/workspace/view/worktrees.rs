@@ -5,6 +5,7 @@ use std::sync::Arc;
 use warpui::{AppContext, EntityId, SingletonEntity, ViewContext, ViewHandle};
 
 use super::Workspace;
+use crate::agent_launcher::catalog::AgentLaunchRequest;
 use crate::agent_launcher::pane_manager::AgentPickerPaneManager;
 use crate::app_state::{LeafContents, LeafSnapshot, PaneNodeSnapshot, PaneUuid};
 use crate::appearance::Appearance;
@@ -20,6 +21,7 @@ use crate::projects::git_ops::{
 };
 use crate::projects::registry::ProjectRegistryModel;
 use crate::projects::{Project, ProjectId, ProjectKind, Worktree, WorktreeId, WorktreeKind};
+use crate::settings::AgentApprovalMode;
 use crate::tab::TabData;
 use crate::view_components::DismissibleToast;
 use crate::workspace::ToastStack;
@@ -36,7 +38,7 @@ pub(crate) struct WorktreeCreation {
     pub branch: String,
     pub path: PathBuf,
     pub base_branch: String,
-    pub agent_catalog_index: Option<usize>,
+    pub agent_launch: Option<AgentLaunchRequest>,
 }
 
 impl Workspace {
@@ -49,7 +51,14 @@ impl Workspace {
             CreateWorktreeModalEvent::Submit {
                 name,
                 agent_catalog_index,
-            } => me.start_worktree_creation(name.clone(), *agent_catalog_index, ctx),
+                approval_mode,
+            } => {
+                let agent_launch = agent_catalog_index.map(|catalog_index| AgentLaunchRequest {
+                    catalog_index,
+                    approval_mode: *approval_mode,
+                });
+                me.start_worktree_creation(name.clone(), agent_launch, ctx)
+            }
         });
         let modal = ctx.add_typed_action_view(|ctx| Modal::new(None, body, ctx));
         ctx.subscribe_to_view(&modal, |me, _, event, ctx| {
@@ -174,7 +183,7 @@ impl Workspace {
     pub(crate) fn add_tab_in_worktree(
         &mut self,
         worktree_id: WorktreeId,
-        agent_catalog_index: Option<usize>,
+        agent_launch: Option<AgentLaunchRequest>,
         ctx: &mut ViewContext<Self>,
     ) {
         let registry = ProjectRegistryModel::as_ref(ctx);
@@ -200,8 +209,8 @@ impl Workspace {
         self.bind_active_tab_to_worktree(Some(worktree_id), ctx);
         self.normalize_worktree_runs(ctx);
         self.collapsed_worktree_sections.remove(&worktree_id);
-        if let Some(catalog_index) = agent_catalog_index {
-            self.launch_agent_in_active_tab(catalog_index, ctx);
+        if let Some(request) = agent_launch {
+            self.launch_agent_in_active_tab(request, ctx);
         }
         ctx.notify();
     }
@@ -429,6 +438,7 @@ impl Workspace {
     pub(crate) fn show_create_worktree_modal(
         &mut self,
         agent_catalog_index: Option<usize>,
+        approval_mode: Option<AgentApprovalMode>,
         ctx: &mut ViewContext<Self>,
     ) {
         let Some(context) = self.worktree_context(ctx) else {
@@ -441,7 +451,13 @@ impl Workspace {
 
         let body = self.create_worktree_modal.view.as_ref(ctx).body().clone();
         body.update(ctx, |body, ctx| {
-            body.on_open(primary_branch, existing, agent_catalog_index, ctx);
+            body.on_open(
+                primary_branch,
+                existing,
+                agent_catalog_index,
+                approval_mode,
+                ctx,
+            );
         });
         self.create_worktree_modal.open();
         ctx.focus(&self.create_worktree_modal.view);
@@ -469,7 +485,7 @@ impl Workspace {
     fn start_worktree_creation(
         &mut self,
         name: String,
-        agent_catalog_index: Option<usize>,
+        agent_launch: Option<AgentLaunchRequest>,
         ctx: &mut ViewContext<Self>,
     ) {
         let Some(context) = self.worktree_context(ctx) else {
@@ -512,7 +528,7 @@ impl Workspace {
                         branch,
                         path,
                         base_branch,
-                        agent_catalog_index,
+                        agent_launch,
                     },
                     report,
                 ))
@@ -551,7 +567,7 @@ impl Workspace {
             )
         });
 
-        self.add_tab_in_worktree(worktree_id, creation.agent_catalog_index, ctx);
+        self.add_tab_in_worktree(worktree_id, creation.agent_launch, ctx);
 
         if let Some(message) = include_report.summary() {
             self.toast_worktree_message(message, ctx);
@@ -804,6 +820,7 @@ impl Workspace {
             MenuItemFields::new("New Worktree\u{2026}")
                 .with_on_select_action(WorkspaceAction::ShowCreateWorktreeModal {
                     agent_catalog_index: None,
+                    approval_mode: None,
                 })
                 .into_item(),
         ];

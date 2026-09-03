@@ -1,6 +1,9 @@
 use std::collections::HashSet;
 
-use super::agent_catalog;
+use warpui::AssetProvider as _;
+
+use super::{AgentIcon, agent_catalog};
+use crate::settings::AgentApprovalMode;
 
 #[test]
 fn catalog_is_non_empty() {
@@ -33,6 +36,101 @@ fn commands_start_with_binary_name() {
             "command for {} must start with its binary name",
             def.display_name
         );
+    }
+}
+
+#[test]
+fn yolo_launch_commands_start_with_binary_name() {
+    for def in agent_catalog() {
+        let launch_command = def.launch_command(AgentApprovalMode::Yolo);
+        let first_token = launch_command
+            .split_whitespace()
+            .next()
+            .expect("launch command must not be empty");
+        assert_eq!(
+            first_token, def.binary,
+            "YOLO launch command for {} must start with its binary name",
+            def.display_name
+        );
+    }
+}
+
+#[test]
+fn normal_launch_command_is_the_base_command() {
+    for def in agent_catalog() {
+        assert_eq!(
+            def.launch_command(AgentApprovalMode::Normal),
+            def.command,
+            "Normal launch command for {} must be its base command",
+            def.display_name
+        );
+    }
+}
+
+#[test]
+fn yolo_launch_command_appends_yolo_args() {
+    for def in agent_catalog() {
+        let launch_command = def.launch_command(AgentApprovalMode::Yolo);
+        match def.yolo_args {
+            Some(args) => assert_eq!(
+                launch_command,
+                format!("{} {args}", def.command),
+                "YOLO launch command for {} must append its YOLO args",
+                def.display_name
+            ),
+            None => assert_eq!(
+                launch_command, def.command,
+                "{} has no YOLO args, so YOLO must launch its base command",
+                def.display_name
+            ),
+        }
+    }
+}
+
+#[test]
+fn claude_yolo_launch_command_appends_its_flag() {
+    let claude = agent_catalog()
+        .iter()
+        .find(|def| def.display_name == "Claude Code")
+        .expect("catalog must contain Claude Code");
+    assert_eq!(
+        claude.launch_command(AgentApprovalMode::Yolo),
+        "claude --dangerously-skip-permissions"
+    );
+    assert_eq!(claude.launch_command(AgentApprovalMode::Normal), "claude");
+}
+
+#[test]
+fn image_icons_resolve_through_the_bundled_asset_provider() {
+    for def in agent_catalog() {
+        let AgentIcon::Image(path) = def.icon else {
+            continue;
+        };
+        assert!(
+            warp_assets::Assets.get(path).is_ok(),
+            "bundled asset {path:?} for {} does not exist",
+            def.display_name
+        );
+    }
+}
+
+#[test]
+fn image_icons_match_the_agents_artwork() {
+    for def in agent_catalog() {
+        match def.icon {
+            AgentIcon::Image(path) => assert_eq!(
+                Some(path),
+                def.cli_agent.image_icon(),
+                "catalog artwork for {} must match its CLI agent's artwork",
+                def.display_name
+            ),
+            AgentIcon::Glyph(_) => assert_eq!(
+                None,
+                def.cli_agent.image_icon(),
+                "{} renders a glyph, so its CLI agent must not carry artwork",
+                def.display_name
+            ),
+        }
     }
 }
 

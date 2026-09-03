@@ -20,6 +20,7 @@ use crate::palette::{PaletteMode, PaletteSource};
 use crate::projects::WorktreeId;
 use crate::prompt::editor_modal::OpenSource as PromptEditorOpenSource;
 use crate::search;
+use crate::settings::AgentApprovalMode;
 use crate::settings_view::{SettingsAction as SettingsTabAction, SettingsSection};
 use crate::tab::{NewSessionMenuItem, SelectedTabColor};
 use crate::tab_configs::TabConfig;
@@ -241,6 +242,7 @@ pub enum WorkspaceAction {
     AddAgentPickerTab,
     LaunchAgentFromPicker {
         catalog_index: usize,
+        approval_mode: AgentApprovalMode,
     },
     /// Add a new tab running a local Docker sandbox via `sbx`.
     AddDockerSandboxTab,
@@ -543,6 +545,7 @@ pub enum WorkspaceAction {
     ShowWorkspaceSwitcherMenu,
     ShowCreateWorktreeModal {
         agent_catalog_index: Option<usize>,
+        approval_mode: Option<AgentApprovalMode>,
     },
     DeleteWorktree {
         worktree_id: WorktreeId,

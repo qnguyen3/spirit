@@ -105,6 +105,7 @@ pub fn init(app: &mut AppContext) {
         "New Worktree\u{2026}",
         WorkspaceAction::ShowCreateWorktreeModal {
             agent_catalog_index: None,
+            approval_mode: None,
         },
     )
     .with_context_predicate(id!("Workspace"))

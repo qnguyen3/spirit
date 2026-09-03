@@ -14,10 +14,11 @@ use super::initializer::SettingsInitializer;
 use super::native_preference::NativePreferenceSettings;
 use super::{
     AccessibilitySettings, AliasExpansionSettings, AppEditorSettings, BlockVisibilitySettings,
-    ChangelogSettings, CodeSettings, DebugSettings, EmacsBindingsSettings, FontSettings,
-    FontSettingsChangedEvent, GPUSettings, InputBoxType, InputModeSettings, InputSettings,
-    LocalControlSettings, NewSessionSettings, PaneSettings, SameLinePromptBlockSettings,
-    ScrollSettings, SelectionSettings, SshSettings, ThemeSettings, VimBannerSettings,
+    CLIAgentSettings, ChangelogSettings, CodeSettings, DebugSettings, EmacsBindingsSettings,
+    FontSettings, FontSettingsChangedEvent, GPUSettings, InputBoxType, InputModeSettings,
+    InputSettings, LocalControlSettings, NewSessionSettings, PaneSettings,
+    SameLinePromptBlockSettings, ScrollSettings, SelectionSettings, SshSettings, ThemeSettings,
+    VimBannerSettings,
 };
 use crate::banner::BannerState;
 use crate::resource_center::TipsCompleted;
@@ -65,6 +66,7 @@ pub fn register_all_settings(ctx: &mut AppContext) {
     LigatureSettings::register(ctx);
     GPUSettings::register(ctx);
     ChangelogSettings::register(ctx);
+    CLIAgentSettings::register(ctx);
     GeneralSettings::register(ctx);
     NewSessionSettings::register(ctx);
     crate::projects::settings::WorkspaceCreationSettings::register(ctx);

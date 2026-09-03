@@ -1,6 +1,6 @@
 use about_page::{AboutPageAction, AboutPageEvent, AboutPageView};
 use appearance_page::{AppearancePageAction, AppearanceSettingsPageView};
-use cli_agents_page::CLIAgentsPageView;
+use cli_agents_page::{CLIAgentsPageAction, CLIAgentsPageView};
 use code_editor_review_page::{EditorAndCodeReviewPageAction, EditorAndCodeReviewPageView};
 use features_page::{FeaturesPageView, FeaturesSettingsPageEvent};
 use itertools::Itertools as _;
@@ -485,6 +485,7 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
     warpify_page::init_actions_from_parent_view(app, context, builder);
     privacy_page::init_actions_from_parent_view(app, context, builder);
     code_editor_review_page::init_actions_from_parent_view(app, context, builder);
+    cli_agents_page::init_actions_from_parent_view(app, context, builder);
 
     if ChannelState::enable_debug_features() || cfg!(windows) {
         ToggleSettingActionPair::add_toggle_setting_action_pairs_as_bindings(
@@ -787,6 +788,7 @@ pub enum SettingsAction {
     FeaturesPageToggle(FeaturesPageAction),
     PrivacyPageToggle(PrivacyPageAction),
     EditorAndCodeReview(EditorAndCodeReviewPageAction),
+    CLIAgents(CLIAgentsPageAction),
     WarpifyPageToggle(WarpifyPageAction),
     Tab,
     Split(Direction),
@@ -995,7 +997,7 @@ impl SettingsView {
         });
 
         // Third party CLI agents page, under the Agents umbrella
-        let cli_agents_page_handle = ctx.add_view(|_| CLIAgentsPageView::new());
+        let cli_agents_page_handle = ctx.add_typed_action_view(CLIAgentsPageView::new);
 
         // Keybindings page
         let keybindings_handle = ctx.add_typed_action_view(KeybindingsView::new);
@@ -2087,6 +2089,15 @@ impl TypedActionView for SettingsView {
             SettingsAction::EditorAndCodeReview(action) => {
                 if let Some(page) = self.settings_page(SettingsSection::EditorAndCodeReview)
                     && let SettingsPageViewHandle::EditorAndCodeReview(view) = &page.view_handle
+                {
+                    view.update(ctx, |view, ctx| {
+                        view.handle_action(action, ctx);
+                    })
+                }
+            }
+            SettingsAction::CLIAgents(action) => {
+                if let Some(page) = self.settings_page(SettingsSection::ThirdPartyCLIAgents)
+                    && let SettingsPageViewHandle::CLIAgents(view) = &page.view_handle
                 {
                     view.update(ctx, |view, ctx| {
                         view.handle_action(action, ctx);

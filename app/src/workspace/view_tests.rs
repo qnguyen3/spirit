@@ -9,6 +9,7 @@ use repo_metadata::CanonicalizedPath;
 use repo_metadata::RepoMetadataModel;
 use repo_metadata::repositories::DetectedRepositories;
 use repo_metadata::watcher::DirectoryWatcher;
+use settings::Setting as _;
 #[cfg(feature = "local_fs")]
 use tempfile::TempDir;
 use terminal::view::ActiveSessionState;
@@ -28,7 +29,7 @@ use crate::notebooks::editor::keys::NotebookKeybindings;
 use crate::pane_group::{Direction, PaneGroupAction, PaneId};
 use crate::persisted_workspace::PersistedWorkspace;
 use crate::projects::registry::ProjectRegistryModel;
-use crate::settings::PrivacySettings;
+use crate::settings::{AgentApprovalMode, CLIAgentSettings, PrivacySettings};
 use crate::settings_view::DisplayCount;
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
 use crate::suggestions::ignored_suggestions_model::IgnoredSuggestionsModel;
@@ -3505,11 +3506,20 @@ fn launch_agent_from_picker_stages_the_agent_command_and_closes_the_picker() {
             workspace.add_agent_picker_tab(ctx);
         });
 
+        let approval_mode = workspace.update(&mut app, |_, ctx| {
+            *CLIAgentSettings::as_ref(ctx).agent_approval_mode.value()
+        });
         workspace.update(&mut app, |workspace, ctx| {
-            workspace.launch_agent_from_picker(0, ctx);
+            workspace.launch_agent_from_picker(
+                AgentLaunchRequest {
+                    catalog_index: 0,
+                    approval_mode,
+                },
+                ctx,
+            );
         });
 
-        let expected_command = agent_catalog()[0].command;
+        let expected_command = agent_catalog()[0].launch_command(approval_mode);
         workspace.update(&mut app, |workspace, ctx| {
             let terminal_view = workspace
                 .active_tab_pane_group()
@@ -3530,6 +3540,55 @@ fn launch_agent_from_picker_stages_the_agent_command_and_closes_the_picker() {
                     .find_pane(ctx.view_id())
                     .is_none(),
                 "the picker tab should be closed after launching an agent"
+            );
+        });
+    });
+}
+
+#[test]
+fn a_one_shot_approval_override_launches_that_mode_without_saving_it() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let workspace = mock_workspace(&mut app);
+
+        let saved_mode = workspace.update(&mut app, |_, ctx| {
+            *CLIAgentSettings::as_ref(ctx).agent_approval_mode.value()
+        });
+        assert_eq!(saved_mode, AgentApprovalMode::Yolo);
+        let override_mode = saved_mode.toggled();
+
+        workspace.update(&mut app, |workspace, ctx| {
+            workspace.add_agent_picker_tab(ctx);
+            workspace.launch_agent_from_picker(
+                AgentLaunchRequest {
+                    catalog_index: 0,
+                    approval_mode: override_mode,
+                },
+                ctx,
+            );
+        });
+
+        let expected_command = agent_catalog()[0].launch_command(override_mode);
+        assert_ne!(
+            expected_command,
+            agent_catalog()[0].launch_command(saved_mode),
+            "the override must resolve to a different command than the saved mode"
+        );
+
+        workspace.update(&mut app, |workspace, ctx| {
+            let terminal_view = workspace
+                .active_tab_pane_group()
+                .as_ref(ctx)
+                .active_session_view(ctx)
+                .expect("expected a terminal view for the launched agent");
+            let input = terminal_view.as_ref(ctx).input().clone();
+            input.read(ctx, |input, ctx| {
+                assert_eq!(input.buffer_text(ctx), expected_command);
+            });
+            assert_eq!(
+                *CLIAgentSettings::as_ref(ctx).agent_approval_mode.value(),
+                saved_mode,
+                "a one-shot override must never be written back to settings"
             );
         });
     });

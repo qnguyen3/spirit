@@ -34,6 +34,7 @@ pub struct SelectedSettings {
     pub ui_customization: Option<UICustomizationSettings>,
     pub cli_agent_toolbar_enabled: bool,
     pub show_agent_notifications: bool,
+    pub agent_approval_yolo: bool,
 }
 
 impl SelectedSettings {}
@@ -57,6 +58,7 @@ pub(crate) struct OnboardingStateModel {
     ui_customization: UICustomizationSettings,
     cli_agent_toolbar_enabled: bool,
     show_agent_notifications: bool,
+    agent_approval_yolo: bool,
 }
 
 impl OnboardingStateModel {
@@ -67,6 +69,7 @@ impl OnboardingStateModel {
             ui_customization: UICustomizationSettings::terminal_defaults(),
             cli_agent_toolbar_enabled: true,
             show_agent_notifications: false,
+            agent_approval_yolo: true,
         }
     }
 
@@ -75,6 +78,7 @@ impl OnboardingStateModel {
             ui_customization: Some(self.ui_customization.clone()),
             cli_agent_toolbar_enabled: self.cli_agent_toolbar_enabled,
             show_agent_notifications: self.show_agent_notifications,
+            agent_approval_yolo: self.agent_approval_yolo,
         }
     }
 
@@ -84,6 +88,10 @@ impl OnboardingStateModel {
 
     pub fn ui_customization(&self) -> &UICustomizationSettings {
         &self.ui_customization
+    }
+
+    pub fn agent_approval_yolo(&self) -> bool {
+        self.agent_approval_yolo
     }
 
     pub(crate) fn set_use_vertical_tabs(&mut self, value: bool, ctx: &mut ModelContext<Self>) {
@@ -138,6 +146,14 @@ impl OnboardingStateModel {
             return;
         }
         self.ui_customization.show_code_review_button = value;
+        ctx.notify();
+    }
+
+    pub(crate) fn set_agent_approval_yolo(&mut self, value: bool, ctx: &mut ModelContext<Self>) {
+        if self.agent_approval_yolo == value {
+            return;
+        }
+        self.agent_approval_yolo = value;
         ctx.notify();
     }
 

@@ -1,22 +1,29 @@
+use settings::Setting as _;
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::color::blend::Blend as _;
 use warp_core::ui::theme::Fill;
+use warpui::assets::asset_cache::AssetSource;
 use warpui::elements::{
-    Align, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, DispatchEventResult,
-    EventHandler, Flex, Hoverable, MouseStateHandle, ParentElement as _, Radius,
+    Align, CacheOption, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
+    DispatchEventResult, EventHandler, Fill as UiFill, Flex, Hoverable, Image, MouseStateHandle,
+    ParentElement as _, Radius,
 };
 use warpui::keymap::FixedBinding;
 use warpui::platform::Cursor;
-use warpui::ui_components::components::{UiComponent, UiComponentStyles};
+use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
+use warpui::ui_components::segmented_control::{
+    LabelConfig, RenderableOptionConfig, SegmentedControl, SegmentedControlEvent,
+};
 use warpui::{
     AppContext, Element, Entity, ModelHandle, SingletonEntity as _, TypedActionView, View,
-    ViewContext,
+    ViewContext, ViewHandle,
 };
 
-use crate::agent_launcher::catalog::{self, AgentDefinition};
+use crate::agent_launcher::catalog::{self, AgentDefinition, AgentIcon};
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::pane_group::pane::view;
 use crate::pane_group::{BackingView, PaneConfiguration, PaneEvent};
+use crate::settings::{AgentApprovalMode, CLIAgentSettings};
 #[cfg(all(not(target_family = "wasm"), feature = "local_tty"))]
 use crate::terminal::local_shell::LocalShellState;
 use crate::ui_components::icons::Icon;
@@ -35,10 +42,15 @@ const ROW_CORNER_RADIUS: f32 = 6.;
 const ROW_HORIZONTAL_PADDING: f32 = 10.;
 const ROW_VERTICAL_PADDING: f32 = 8.;
 const ROW_DETAIL_INSET: f32 = ICON_GLYPH_SIZE + 2. * ICON_CIRCLE_PADDING + ROW_ICON_MARGIN_RIGHT;
+const ICON_FOOTPRINT: f32 = ICON_GLYPH_SIZE + 2. * ICON_CIRCLE_PADDING;
+const ICON_IMAGE_CORNER_RADIUS: f32 = ICON_FOOTPRINT * 0.23;
 const ROW_ICON_MARGIN_RIGHT: f32 = 10.;
 const CHEVRON_SIZE: f32 = 14.;
 const CHEVRON_MARGIN_RIGHT: f32 = 6.;
 const NOT_INSTALLED_SECTION_MARGIN_TOP: f32 = 8.;
+const APPROVAL_ROW_MARGIN_BOTTOM: f32 = 16.;
+const APPROVAL_CONTROL_HEIGHT: f32 = 24.;
+const APPROVAL_OPTION_WIDTH: f32 = 52.;
 
 pub fn init(app: &mut AppContext) {
     use warpui::keymap::macros::*;
@@ -93,6 +105,8 @@ pub struct AgentPickerView {
     shell_path_requested: bool,
     not_installed_expanded: bool,
     not_installed_header_mouse_state: MouseStateHandle,
+    approval_mode: AgentApprovalMode,
+    approval_control: ViewHandle<SegmentedControl<AgentApprovalMode>>,
 }
 
 impl AgentPickerView {
@@ -108,6 +122,26 @@ impl AgentPickerView {
             })
             .collect();
         let selected_index = rows.iter().position(|row| row.is_installed);
+        let approval_mode = *CLIAgentSettings::as_ref(ctx).agent_approval_mode.value();
+        let approval_control = ctx.add_typed_action_view(move |ctx| {
+            SegmentedControl::new(
+                vec![AgentApprovalMode::Yolo, AgentApprovalMode::Normal],
+                approval_option_config,
+                approval_mode,
+                approval_control_styles(ctx),
+            )
+        });
+        ctx.subscribe_to_view(&approval_control, |me, _, event, ctx| {
+            let SegmentedControlEvent::OptionSelected(mode) = event;
+            me.approval_mode = *mode;
+            ctx.notify();
+        });
+        ctx.subscribe_to_model(&Appearance::handle(ctx), |me, _, _, ctx| {
+            me.approval_control.update(ctx, |control, ctx| {
+                control.set_styles(approval_control_styles(ctx), ctx);
+            });
+            ctx.notify();
+        });
         Self {
             pane_configuration,
             focus_handle: None,
@@ -117,6 +151,8 @@ impl AgentPickerView {
             shell_path_requested: false,
             not_installed_expanded: selected_index.is_none(),
             not_installed_header_mouse_state: MouseStateHandle::default(),
+            approval_mode,
+            approval_control,
         }
     }
 
@@ -254,6 +290,7 @@ impl AgentPickerView {
         self.selected_index = Some(index);
         ctx.dispatch_typed_action(&WorkspaceAction::LaunchAgentFromPicker {
             catalog_index: index,
+            approval_mode: self.approval_mode,
         });
     }
 
@@ -320,6 +357,7 @@ impl AgentPickerView {
     ) -> Box<dyn Element> {
         let row = &self.rows[index];
         if row.is_installed {
+            let approval_mode = self.approval_mode;
             let clickable = Hoverable::new(row.mouse_state.clone(), |state| {
                 self.render_row_contents(index, def, state.is_hovered(), app)
             })
@@ -332,6 +370,7 @@ impl AgentPickerView {
                 .on_right_mouse_down(move |ctx, _, _, _| {
                     ctx.dispatch_typed_action(WorkspaceAction::ShowCreateWorktreeModal {
                         agent_catalog_index: Some(index),
+                        approval_mode: Some(approval_mode),
                     });
                     DispatchEventResult::StopPropagation
                 })
@@ -354,27 +393,43 @@ impl AgentPickerView {
         let is_selected = self.selected_index == Some(index);
         let muted_color = theme.disabled_text_color(theme.background()).into_solid();
 
-        let icon = Container::new(
-            ConstrainedBox::new(
-                def.icon
-                    .to_warpui_icon(Fill::from(def.cli_agent.brand_icon_color()))
-                    .finish(),
+        let icon = match def.icon {
+            AgentIcon::Image(path) => Container::new(
+                ConstrainedBox::new(
+                    Image::new(AssetSource::Bundled { path }, CacheOption::BySize)
+                        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
+                            ICON_IMAGE_CORNER_RADIUS,
+                        )))
+                        .finish(),
+                )
+                .with_width(ICON_FOOTPRINT)
+                .with_height(ICON_FOOTPRINT)
+                .finish(),
             )
-            .with_width(ICON_GLYPH_SIZE)
-            .with_height(ICON_GLYPH_SIZE)
+            .with_margin_right(ROW_ICON_MARGIN_RIGHT)
             .finish(),
-        )
-        .with_uniform_padding(ICON_CIRCLE_PADDING)
-        .with_background_color(
-            def.cli_agent
-                .brand_color()
-                .unwrap_or_else(|| theme.foreground().into_solid()),
-        )
-        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
-            ICON_GLYPH_SIZE / 2. + ICON_CIRCLE_PADDING,
-        )))
-        .with_margin_right(ROW_ICON_MARGIN_RIGHT)
-        .finish();
+            AgentIcon::Glyph(glyph) => Container::new(
+                ConstrainedBox::new(
+                    glyph
+                        .to_warpui_icon(Fill::from(def.cli_agent.brand_icon_color()))
+                        .finish(),
+                )
+                .with_width(ICON_GLYPH_SIZE)
+                .with_height(ICON_GLYPH_SIZE)
+                .finish(),
+            )
+            .with_uniform_padding(ICON_CIRCLE_PADDING)
+            .with_background_color(
+                def.cli_agent
+                    .brand_color()
+                    .unwrap_or_else(|| theme.foreground().into_solid()),
+            )
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
+                ICON_GLYPH_SIZE / 2. + ICON_CIRCLE_PADDING,
+            )))
+            .with_margin_right(ROW_ICON_MARGIN_RIGHT)
+            .finish(),
+        };
 
         let mut name = appearance
             .ui_builder()
@@ -494,14 +549,37 @@ impl View for AgentPickerView {
         )
         .finish();
 
+        let approval_row = Container::new(
+            Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_spacing(8.)
+                .with_child(
+                    appearance
+                        .ui_builder()
+                        .paragraph("Agent Approval Mode")
+                        .with_style(UiComponentStyles {
+                            font_size: Some(DETAIL_FONT_SIZE),
+                            font_color: Some(
+                                theme.disabled_text_color(theme.background()).into_solid(),
+                            ),
+                            ..Default::default()
+                        })
+                        .build()
+                        .finish(),
+                )
+                .with_child(ChildView::new(&self.approval_control).finish())
+                .finish(),
+        )
+        .with_horizontal_padding(ROW_HORIZONTAL_PADDING)
+        .with_margin_bottom(APPROVAL_ROW_MARGIN_BOTTOM)
+        .finish();
+
         let mut column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_children([
                 title,
-                Container::new(subtitle)
-                    .with_margin_top(4.)
-                    .with_margin_bottom(16.)
-                    .finish(),
+                Container::new(subtitle).with_margin_top(4.).finish(),
+                approval_row,
             ]);
         let (installed, not_installed): (Vec<_>, Vec<_>) = catalog::agent_catalog()
             .iter()
@@ -563,6 +641,49 @@ impl BackingView for AgentPickerView {
 
     fn set_focus_handle(&mut self, focus_handle: PaneFocusHandle, _ctx: &mut ViewContext<Self>) {
         self.focus_handle = Some(focus_handle);
+    }
+}
+
+fn approval_option_config(
+    mode: AgentApprovalMode,
+    is_selected: bool,
+    app: &AppContext,
+) -> Option<RenderableOptionConfig> {
+    let theme = Appearance::as_ref(app).theme();
+    Some(RenderableOptionConfig {
+        icon_path: "",
+        icon_color: theme.main_text_color(theme.background()).into(),
+        label: Some(LabelConfig {
+            label: mode.dropdown_item_label().into(),
+            width_override: Some(APPROVAL_OPTION_WIDTH),
+            color: if is_selected {
+                theme.accent().into()
+            } else {
+                theme.main_text_color(theme.background()).into()
+            },
+        }),
+        tooltip: None,
+        background: if is_selected {
+            UiFill::Solid(theme.surface_3().into())
+        } else {
+            UiFill::None
+        },
+    })
+}
+
+fn approval_control_styles(app: &AppContext) -> UiComponentStyles {
+    let appearance = Appearance::as_ref(app);
+    let theme = appearance.theme();
+    UiComponentStyles {
+        font_family_id: Some(appearance.ui_font_family()),
+        font_size: Some(appearance.ui_font_size()),
+        border_radius: Some(CornerRadius::with_all(Radius::Pixels(4.))),
+        border_width: Some(1.),
+        border_color: Some(UiFill::Solid(theme.surface_3().into())),
+        background: Some(UiFill::Solid(theme.background().into())),
+        height: Some(APPROVAL_CONTROL_HEIGHT),
+        padding: Some(Coords::uniform(0.)),
+        ..Default::default()
     }
 }
 

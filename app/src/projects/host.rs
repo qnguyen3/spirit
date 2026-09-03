@@ -187,7 +187,7 @@ impl TypedActionView for ProjectHost {
             ProjectHostAction::ShowCreateWorktreeModal => {
                 let workspace = self.active_workspace().clone();
                 workspace.update(ctx, |workspace, ctx| {
-                    workspace.show_create_worktree_modal(None, ctx);
+                    workspace.show_create_worktree_modal(None, None, ctx);
                 });
             }
         }

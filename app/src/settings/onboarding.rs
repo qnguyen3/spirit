@@ -3,7 +3,7 @@ use settings::Setting as _;
 use warp_errors::report_if_error;
 use warpui::{AppContext, SingletonEntity as _};
 
-use crate::settings::CodeSettings;
+use crate::settings::{AgentApprovalMode, CLIAgentSettings, CodeSettings};
 use crate::workspace::tab_settings::TabSettings;
 
 /// Applies onboarding settings based on the user's selected mode.
@@ -14,6 +14,20 @@ pub(crate) fn apply_onboarding_settings(
     if let Some(ui) = &selected_settings.ui_customization {
         apply_ui_customization_settings(ui, app);
     }
+
+    apply_agent_approval_mode(selected_settings.agent_approval_yolo, app);
+}
+
+fn apply_agent_approval_mode(yolo: bool, app: &mut AppContext) {
+    let mode = if yolo {
+        AgentApprovalMode::Yolo
+    } else {
+        AgentApprovalMode::Normal
+    };
+
+    CLIAgentSettings::handle(app).update(app, |settings, ctx| {
+        report_if_error!(settings.agent_approval_mode.set_value(mode, ctx));
+    });
 }
 
 /// Applies the explicit UI customization settings chosen during the

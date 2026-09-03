@@ -458,6 +458,31 @@ fn test_from_serialized_name_falls_back_to_unknown() {
 }
 
 #[test]
+fn test_agents_have_either_a_glyph_or_artwork_but_not_both() {
+    for agent in enum_iterator::all::<CLIAgent>() {
+        assert!(
+            agent.icon().is_none() || agent.image_icon().is_none(),
+            "{agent:?} declares both a glyph and vendor artwork"
+        );
+    }
+}
+
+#[test]
+fn test_agent_artwork_resolves_through_the_bundled_asset_provider() {
+    use warpui::AssetProvider as _;
+
+    for agent in enum_iterator::all::<CLIAgent>() {
+        let Some(path) = agent.image_icon() else {
+            continue;
+        };
+        assert!(
+            warp_assets::Assets.get(path).is_ok(),
+            "bundled asset {path:?} for {agent:?} does not exist"
+        );
+    }
+}
+
+#[test]
 fn test_oh_my_pi_supports_bash_mode() {
     assert!(CLIAgent::OhMyPi.supports_bash_mode());
 }

@@ -2,15 +2,20 @@ use std::collections::HashSet;
 
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
+use settings::Setting as _;
 use warp_core::ui::theme::color::internal_colors;
 use warpui::elements::{
     Align, ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
-    Element, Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning,
-    Padding, ParentAnchor, ParentElement, ParentOffsetBounds, Radius, Shrinkable, Stack, Text,
+    Element, Fill as UiFill, Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle,
+    OffsetPositioning, Padding, ParentAnchor, ParentElement, ParentOffsetBounds, Radius,
+    Shrinkable, Stack, Text,
 };
 use warpui::keymap::FixedBinding;
 use warpui::platform::Cursor;
 use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
+use warpui::ui_components::segmented_control::{
+    LabelConfig, RenderableOptionConfig, SegmentedControl, SegmentedControlEvent,
+};
 use warpui::ui_components::text_input::TextInput;
 use warpui::{AppContext, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle};
 
@@ -19,6 +24,7 @@ use crate::agent_launcher::catalog::{self, AgentDefinition};
 use crate::appearance::Appearance;
 use crate::editor::{EditorView, Event as EditorEvent, SingleLineEditorOptions};
 use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields};
+use crate::settings::{AgentApprovalMode, CLIAgentSettings};
 
 const SECTION_GAP: f32 = 14.;
 const CONTENT_PADDING: f32 = 24.;
@@ -26,6 +32,7 @@ const TITLE_FONT_SIZE: f32 = 16.;
 const LABEL_FONT_SIZE: f32 = 12.;
 const BUTTON_HEIGHT: f32 = 32.;
 const BUTTON_RADIUS: Radius = Radius::Pixels(4.);
+const APPROVAL_OPTION_WIDTH: f32 = 52.;
 const ERROR_TEXT_COLOR: u32 = 0xBC362AFF;
 
 pub fn init(app: &mut AppContext) {
@@ -43,6 +50,7 @@ pub enum CreateWorktreeModalEvent {
     Submit {
         name: String,
         agent_catalog_index: Option<usize>,
+        approval_mode: AgentApprovalMode,
     },
 }
 
@@ -62,6 +70,8 @@ pub struct CreateWorktreeModal {
     agent_menu: ViewHandle<Menu<CreateWorktreeModalAction>>,
     show_agent_menu: bool,
     selected_agent: Option<usize>,
+    approval_mode: AgentApprovalMode,
+    approval_control: ViewHandle<SegmentedControl<AgentApprovalMode>>,
     installed_agents: Vec<bool>,
     shell_path_env: Option<String>,
     existing_branches: HashSet<String>,
@@ -127,6 +137,27 @@ impl CreateWorktreeModal {
             }
         });
 
+        let approval_mode = AgentApprovalMode::default();
+        let approval_control = ctx.add_typed_action_view(move |ctx| {
+            SegmentedControl::new(
+                vec![AgentApprovalMode::Yolo, AgentApprovalMode::Normal],
+                approval_option_config,
+                approval_mode,
+                approval_control_styles(ctx),
+            )
+        });
+        ctx.subscribe_to_view(&approval_control, |me, _, event, ctx| {
+            let SegmentedControlEvent::OptionSelected(mode) = event;
+            me.approval_mode = *mode;
+            ctx.notify();
+        });
+        ctx.subscribe_to_model(&Appearance::handle(ctx), |me, _, _, ctx| {
+            me.approval_control.update(ctx, |control, ctx| {
+                control.set_styles(approval_control_styles(ctx), ctx);
+            });
+            ctx.notify();
+        });
+
         let installed_agents = catalog::agent_catalog()
             .iter()
             .map(|definition| catalog::is_installed(definition, None))
@@ -138,6 +169,8 @@ impl CreateWorktreeModal {
             agent_menu,
             show_agent_menu: false,
             selected_agent: None,
+            approval_mode,
+            approval_control,
             installed_agents,
             shell_path_env: None,
             existing_branches: HashSet::new(),
@@ -156,11 +189,18 @@ impl CreateWorktreeModal {
         primary_branch: String,
         existing_branches: HashSet<String>,
         agent_catalog_index: Option<usize>,
+        approval_mode: Option<AgentApprovalMode>,
         ctx: &mut ViewContext<Self>,
     ) {
         self.primary_branch = primary_branch;
         self.existing_branches = existing_branches;
         self.selected_agent = agent_catalog_index;
+        self.approval_mode = approval_mode
+            .unwrap_or_else(|| *CLIAgentSettings::as_ref(ctx).agent_approval_mode.value());
+        let selected_approval_mode = self.approval_mode;
+        self.approval_control.update(ctx, |control, ctx| {
+            control.set_selected_option(selected_approval_mode, ctx);
+        });
         self.show_agent_menu = false;
         self.in_flight = false;
         self.error = None;
@@ -284,6 +324,7 @@ impl CreateWorktreeModal {
         ctx.emit(CreateWorktreeModalEvent::Submit {
             name,
             agent_catalog_index: self.selected_agent,
+            approval_mode: self.approval_mode,
         });
     }
 
@@ -450,7 +491,12 @@ impl View for CreateWorktreeModal {
                 )
                 .with_color(muted.into())
                 .finish(),
-                self.render_agent_control(agent_label, appearance),
+                Flex::row()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_spacing(8.)
+                    .with_child(self.render_agent_control(agent_label, appearance))
+                    .with_child(ChildView::new(&self.approval_control).finish())
+                    .finish(),
             ]);
 
         if let Some(error) = &self.error {
@@ -495,6 +541,49 @@ impl View for CreateWorktreeModal {
         Container::new(body.finish())
             .with_padding(Padding::uniform(CONTENT_PADDING))
             .finish()
+    }
+}
+
+fn approval_option_config(
+    mode: AgentApprovalMode,
+    is_selected: bool,
+    app: &AppContext,
+) -> Option<RenderableOptionConfig> {
+    let theme = Appearance::as_ref(app).theme();
+    Some(RenderableOptionConfig {
+        icon_path: "",
+        icon_color: theme.main_text_color(theme.background()).into(),
+        label: Some(LabelConfig {
+            label: mode.dropdown_item_label().into(),
+            width_override: Some(APPROVAL_OPTION_WIDTH),
+            color: if is_selected {
+                theme.accent().into()
+            } else {
+                theme.main_text_color(theme.background()).into()
+            },
+        }),
+        tooltip: None,
+        background: if is_selected {
+            UiFill::Solid(theme.surface_3().into())
+        } else {
+            UiFill::None
+        },
+    })
+}
+
+fn approval_control_styles(app: &AppContext) -> UiComponentStyles {
+    let appearance = Appearance::as_ref(app);
+    let theme = appearance.theme();
+    UiComponentStyles {
+        font_family_id: Some(appearance.ui_font_family()),
+        font_size: Some(appearance.ui_font_size()),
+        border_radius: Some(CornerRadius::with_all(BUTTON_RADIUS)),
+        border_width: Some(1.),
+        border_color: Some(UiFill::Solid(theme.surface_3().into())),
+        background: Some(UiFill::Solid(theme.background().into())),
+        height: Some(BUTTON_HEIGHT),
+        padding: Some(Coords::uniform(0.)),
+        ..Default::default()
     }
 }
 
