@@ -4,9 +4,9 @@ use warp_core::ui::color::blend::Blend as _;
 use warp_core::ui::theme::Fill;
 use warpui::assets::asset_cache::AssetSource;
 use warpui::elements::{
-    Align, CacheOption, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
-    DispatchEventResult, EventHandler, Fill as UiFill, Flex, Hoverable, Image, MouseStateHandle,
-    ParentElement as _, Radius,
+    Align, CacheOption, ChildView, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox,
+    Container, CornerRadius, CrossAxisAlignment, DispatchEventResult, EventHandler, Fill as UiFill,
+    Flex, Hoverable, Image, MouseStateHandle, ParentElement as _, Radius, ScrollbarWidth,
 };
 use warpui::keymap::FixedBinding;
 use warpui::platform::Cursor;
@@ -48,7 +48,11 @@ const ROW_ICON_MARGIN_RIGHT: f32 = 10.;
 const CHEVRON_SIZE: f32 = 14.;
 const CHEVRON_MARGIN_RIGHT: f32 = 6.;
 const NOT_INSTALLED_SECTION_MARGIN_TOP: f32 = 8.;
-const APPROVAL_ROW_MARGIN_BOTTOM: f32 = 16.;
+const SUBTITLE_MARGIN_TOP: f32 = 6.;
+const APPROVAL_ROW_MARGIN_TOP: f32 = 28.;
+const APPROVAL_ROW_MARGIN_BOTTOM: f32 = 20.;
+const CONTENT_VERTICAL_PADDING: f32 = 32.;
+const SCROLLBAR_WIDTH: ScrollbarWidth = ScrollbarWidth::Custom(8.);
 const APPROVAL_CONTROL_HEIGHT: f32 = 24.;
 const APPROVAL_OPTION_WIDTH: f32 = 52.;
 
@@ -107,6 +111,7 @@ pub struct AgentPickerView {
     not_installed_header_mouse_state: MouseStateHandle,
     approval_mode: AgentApprovalMode,
     approval_control: ViewHandle<SegmentedControl<AgentApprovalMode>>,
+    scroll_state: ClippedScrollStateHandle,
 }
 
 impl AgentPickerView {
@@ -153,6 +158,7 @@ impl AgentPickerView {
             not_installed_header_mouse_state: MouseStateHandle::default(),
             approval_mode,
             approval_control,
+            scroll_state: ClippedScrollStateHandle::default(),
         }
     }
 
@@ -571,6 +577,7 @@ impl View for AgentPickerView {
                 .finish(),
         )
         .with_horizontal_padding(ROW_HORIZONTAL_PADDING)
+        .with_margin_top(APPROVAL_ROW_MARGIN_TOP)
         .with_margin_bottom(APPROVAL_ROW_MARGIN_BOTTOM)
         .finish();
 
@@ -578,7 +585,9 @@ impl View for AgentPickerView {
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_children([
                 title,
-                Container::new(subtitle).with_margin_top(4.).finish(),
+                Container::new(subtitle)
+                    .with_margin_top(SUBTITLE_MARGIN_TOP)
+                    .finish(),
                 approval_row,
             ]);
         let (installed, not_installed): (Vec<_>, Vec<_>) = catalog::agent_catalog()
@@ -601,11 +610,26 @@ impl View for AgentPickerView {
             }
         }
 
-        Align::new(
-            ConstrainedBox::new(column.finish())
-                .with_max_width(CONTENT_MAX_WIDTH)
-                .finish(),
+        let centered_content = Align::new(
+            Container::new(
+                ConstrainedBox::new(column.finish())
+                    .with_max_width(CONTENT_MAX_WIDTH)
+                    .finish(),
+            )
+            .with_vertical_padding(CONTENT_VERTICAL_PADDING)
+            .finish(),
         )
+        .finish();
+
+        ClippedScrollable::vertical_centered(
+            self.scroll_state.clone(),
+            centered_content,
+            SCROLLBAR_WIDTH,
+            theme.disabled_text_color(theme.background()).into(),
+            theme.main_text_color(theme.background()).into(),
+            UiFill::None,
+        )
+        .with_overlayed_scrollbar()
         .finish()
     }
 }
