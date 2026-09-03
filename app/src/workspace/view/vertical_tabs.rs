@@ -1251,11 +1251,15 @@ const SEARCH_ICON_SIZE: f32 = 12.;
 const SEARCH_BAR_HEIGHT: f32 = 24.;
 const CONTROL_BAR_BUTTON_RADIUS: Radius = Radius::Pixels(4.);
 const SPLIT_BUTTON_HEIGHT: f32 = SEARCH_BAR_HEIGHT;
-pub(super) const VERTICAL_TABS_ADD_TAB_POSITION_ID: &str = "vertical_tabs_add_tab_button";
+pub const VERTICAL_TABS_ADD_TAB_POSITION_ID: &str = "vertical_tabs_add_tab_button";
 pub(super) const VERTICAL_TABS_SETTINGS_BUTTON_POSITION_ID: &str = "vertical_tabs_settings_button";
 
 pub(super) fn vtab_action_buttons_position_id(tab_index: usize) -> String {
     format!("vtab_action_buttons_{tab_index}")
+}
+
+pub fn vtab_close_button_position_id(tab_index: usize) -> String {
+    format!("vtab_close_button_{tab_index}")
 }
 const COMPACT_ICON_SIZE: f32 = 16.;
 const GROUP_INSERTION_TARGET_HEIGHT: f32 = 6.;
@@ -3226,6 +3230,8 @@ fn render_group_action_buttons(
         ctx.dispatch_typed_action(WorkspaceAction::CloseTab(tab_index));
     })
     .finish();
+    let close_button =
+        SavePosition::new(close_button, &vtab_close_button_position_id(tab_index)).finish();
 
     let button_row = Flex::row()
         .with_main_axis_size(MainAxisSize::Min)

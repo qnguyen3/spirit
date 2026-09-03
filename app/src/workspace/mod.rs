@@ -29,9 +29,11 @@ pub use util::{
     NotificationOrigin, PaneViewLocator, TabMovement, active_screen_id, active_terminal_in_window,
     owning_screen_id,
 };
+pub use view::vertical_tabs::{VERTICAL_TABS_ADD_TAB_POSITION_ID, vtab_close_button_position_id};
 pub use view::{
-    NEW_SESSION_MENU_BUTTON_POSITION_ID, NEW_TAB_BUTTON_POSITION_ID, PANEL_HEADER_HEIGHT,
-    TAB_BAR_HEIGHT, TOTAL_TAB_BAR_HEIGHT, WORKSPACE_PADDING, Workspace, WorkspaceEvent,
+    NEW_SESSION_MENU_BUTTON_POSITION_ID, NEW_SESSION_MENU_TERMINAL_LABEL,
+    NEW_TAB_BUTTON_POSITION_ID, PANEL_HEADER_HEIGHT, TAB_BAR_HEIGHT, TOTAL_TAB_BAR_HEIGHT,
+    WORKSPACE_PADDING, Workspace, WorkspaceEvent,
 };
 use warp_core::context_flag::ContextFlag;
 use warpui::AppContext;

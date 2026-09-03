@@ -1,9 +1,14 @@
 use warpui::integration::TestStep;
 use warpui::{SingletonEntity, async_assert};
 
+use crate::integration_testing::step::new_step_with_default_assertions;
 use crate::integration_testing::view_getters::workspace_view;
+use crate::tab::{tab_position_id, vertical_tabs_forced};
 use crate::undo_close::UndoCloseStack;
-use crate::workspace::Workspace;
+use crate::workspace::{
+    NEW_SESSION_MENU_TERMINAL_LABEL, VERTICAL_TABS_ADD_TAB_POSITION_ID, Workspace,
+    vtab_close_button_position_id,
+};
 
 /// Mock pressing a button on the Warp-native quit modal. Note that this modal is currently only
 /// used on Linux, not macOS.
@@ -42,4 +47,28 @@ pub fn trigger_undo_close() -> TestStep {
             });
         });
     })
+}
+
+pub fn add_terminal_tab_with_new_tab_button() -> Vec<TestStep> {
+    vec![
+        new_step_with_default_assertions("Open the new session menu from the add tab button")
+            .with_click_on_saved_position(VERTICAL_TABS_ADD_TAB_POSITION_ID),
+        new_step_with_default_assertions("Pick the terminal entry in the new session menu")
+            .with_click_on_saved_position(NEW_SESSION_MENU_TERMINAL_LABEL),
+    ]
+}
+
+pub fn close_tab_with_close_button(tab_index: usize) -> Vec<TestStep> {
+    vec![
+        // The close button only exists while the row is hovered, so the hover needs its own frame.
+        new_step_with_default_assertions("Hover the tab to reveal its close button")
+            .with_hover_over_saved_position(tab_position_id(tab_index)),
+        new_step_with_default_assertions("Close the tab with its close button")
+            .with_hover_over_saved_position(vtab_close_button_position_id(tab_index))
+            .with_click_on_saved_position(vtab_close_button_position_id(tab_index)),
+    ]
+}
+
+pub fn horizontal_tab_bar_available() -> bool {
+    !vertical_tabs_forced()
 }

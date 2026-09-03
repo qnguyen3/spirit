@@ -9,7 +9,7 @@ use settings::Setting as _;
 use warp::cmd_or_ctrl_shift;
 use warp::features::FeatureFlag;
 use warp::integration_testing::clipboard::assert_clipboard_contains_string;
-use warp::integration_testing::command_palette::assert_command_palette_is_closed;
+use warp::integration_testing::command_palette::{TestStepsExt, assert_command_palette_is_closed};
 use warp::integration_testing::pane_group::assert_focused_pane_index;
 use warp::integration_testing::step::new_step_with_default_assertions;
 use warp::integration_testing::terminal::util::{
@@ -29,14 +29,15 @@ use warp::integration_testing::window::{
     add_and_save_window, assert_num_windows_open, save_active_window_id,
 };
 use warp::integration_testing::workspace::{
-    assert_focused_tab_index, assert_tab_count, press_native_modal_button,
+    add_terminal_tab_with_new_tab_button, assert_focused_tab_index, assert_tab_count,
+    close_tab_with_close_button, horizontal_tab_bar_available, press_native_modal_button,
 };
 use warp::search::command_palette::mixer::CommandPaletteItemAction;
 use warp::settings::PaneSettings;
 use warp::terminal::shell::ShellType;
 use warp::themes::theme::AnsiColorIdentifier;
+use warp::workspace::WorkspaceAction;
 use warp::workspace::tab_settings::{TabSettings, VerticalTabsDisplayGranularity};
-use warp::workspace::{NEW_TAB_BUTTON_POSITION_ID, WorkspaceAction};
 use warpui_core::event::{Event, ModifiersState};
 use warpui_core::integration::{AssertionCallback, AssertionOutcome, StepDataMap, TestStep};
 use warpui_core::keymap::DescriptionContext;
@@ -180,6 +181,10 @@ fn assert_selected_cycle_tab_color_binding() -> AssertionCallback {
 fn should_run_tab_context_menu_metadata_test() -> bool {
     let (starter, _) = current_shell_starter_and_version();
     starter.shell_type() != ShellType::PowerShell
+}
+
+fn should_run_horizontal_tab_context_menu_metadata_test() -> bool {
+    should_run_tab_context_menu_metadata_test() && horizontal_tab_bar_available()
 }
 
 fn set_active_tab_name(name: &'static str) -> TestStep {
@@ -644,7 +649,8 @@ pub fn test_active_session_follows_focus() -> Builder {
 }
 
 pub fn test_tab_context_menu_copies_metadata() -> Builder {
-    let builder = add_tab_context_metadata_setup_steps(new_builder());
+    let builder = add_tab_context_metadata_setup_steps(new_builder())
+        .set_should_run_test(should_run_horizontal_tab_context_menu_metadata_test);
     add_horizontal_tab_context_metadata_copy_steps(builder, open_horizontal_tab_context_menu)
 }
 
@@ -754,10 +760,7 @@ pub fn test_close_tab_with_long_running_process() -> Builder {
     new_builder()
         .set_should_run_test(|| cfg!(any(target_os = "linux", target_os = "freebsd")))
         .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
-        .with_step(
-            new_step_with_default_assertions("Open a new tab")
-                .with_click_on_saved_position(NEW_TAB_BUTTON_POSITION_ID),
-        )
+        .with_steps(add_terminal_tab_with_new_tab_button())
         .with_step(wait_until_bootstrapped_single_pane_for_tab(1))
         .with_step(
             TestStep::new("Execute long-running command")
@@ -767,10 +770,8 @@ pub fn test_close_tab_with_long_running_process() -> Builder {
                     assert_long_running_block_executing_for_single_terminal_in_tab(true, 1),
                 ),
         )
-        .with_step(
-            new_step_with_default_assertions("Close the tab with a long-running command")
-                .with_hover_over_saved_position("close_tab_button:1")
-                .with_click_on_saved_position("close_tab_button:1")
+        .with_steps(
+            close_tab_with_close_button(1)
                 .add_assertion(assert_tab_count(2))
                 .add_assertion(
                     assert_long_running_block_executing_for_single_terminal_in_tab(true, 1),

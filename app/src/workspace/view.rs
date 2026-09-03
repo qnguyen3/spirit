@@ -9,7 +9,7 @@ mod tab_grouping;
 #[cfg(test)]
 #[path = "view_tests.rs"]
 pub(crate) mod tests;
-mod vertical_tabs;
+pub(crate) mod vertical_tabs;
 mod worktrees;
 
 use std::cell::RefCell;
@@ -454,6 +454,7 @@ const MOBILE_OVERLAY_PANEL_WIDTH_RATIO: f32 = 0.9;
 const MOBILE_OVERLAY_SCRIM_ALPHA: u8 = 128;
 
 pub const NEW_TAB_BUTTON_POSITION_ID: &str = "new_tab_button";
+pub const NEW_SESSION_MENU_TERMINAL_LABEL: &str = "Terminal";
 pub const NEW_SESSION_MENU_BUTTON_POSITION_ID: &str = "new_session_menu_button";
 
 // The max length of the window title (matching conversation title truncation).
@@ -4643,7 +4644,7 @@ impl Workspace {
             #[cfg(target_os = "windows")]
             {
                 let is_terminal_default = effective_default == DefaultSessionMode::Terminal;
-                let mut terminal_item = MenuItemFields::new("Terminal")
+                let mut terminal_item = MenuItemFields::new(NEW_SESSION_MENU_TERMINAL_LABEL)
                     .with_on_select_action(WorkspaceAction::AddTerminalTab {
                         hide_homepage: false,
                     })
@@ -4679,7 +4680,7 @@ impl Workspace {
             // On other platforms, Terminal is a regular item.
             #[cfg(not(target_os = "windows"))]
             {
-                let mut terminal_item = MenuItemFields::new("Terminal")
+                let mut terminal_item = MenuItemFields::new(NEW_SESSION_MENU_TERMINAL_LABEL)
                     .with_on_select_action(WorkspaceAction::AddTerminalTab {
                         hide_homepage: false,
                     })

@@ -137,7 +137,9 @@ use warp::integration_testing::window::{
     add_and_save_window, add_window, add_window_and_check_bounds, close_window,
     save_active_window_id,
 };
-use warp::integration_testing::workspace::assert_tab_count;
+use warp::integration_testing::workspace::{
+    add_terminal_tab_with_new_tab_button, assert_tab_count, close_tab_with_close_button,
+};
 use warp::integration_testing::{self, view_of_type};
 use warp::settings::{
     CompletionsOpenWhileTyping, CtrlTabBehavior, INPUT_MODE, MonospaceFontSize, TabBehavior,
@@ -163,7 +165,7 @@ use warp::terminal::view::{
 use warp::terminal::{TerminalView, shell};
 use warp::util::bindings::CustomAction;
 use warp::workflows::categories::CategoriesView;
-use warp::workspace::{NEW_SESSION_MENU_BUTTON_POSITION_ID, NEW_TAB_BUTTON_POSITION_ID, Workspace};
+use warp::workspace::{NEW_SESSION_MENU_BUTTON_POSITION_ID, Workspace};
 use warpui_core::event::KeyState;
 use warpui_core::integration::{AssertionOutcome, StepData, TestStep};
 use warpui_core::keymap::{Keystroke, PerPlatformKeystroke, Trigger};
@@ -467,9 +469,8 @@ pub fn test_open_and_close_settings() -> Builder {
                 }),
         )
         .with_step(
-            new_step_with_default_assertions("Close the settings tab with close tab button")
-                .with_hover_over_saved_position("close_tab_button:1")
-                .with_click_on_saved_position("close_tab_button:1")
+            new_step_with_default_assertions("Close the settings tab")
+                .with_keystrokes(&[cmd_or_ctrl_shift("w")])
                 .add_assertion(assert_tab_count(1))
                 .add_assertion(assert_tab_title(0, "~")),
         )
@@ -1913,17 +1914,9 @@ pub fn test_change_font_size() -> Builder {
 pub fn test_removing_tabs_out_of_order() -> Builder {
     new_builder()
         .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
-        .with_step(
-            new_step_with_default_assertions("Add a second tab with new tab button")
-                .with_click_on_saved_position(NEW_TAB_BUTTON_POSITION_ID)
-                .add_assertion(assert_tab_count(2)),
-        )
+        .with_steps(add_terminal_tab_with_new_tab_button().add_assertion(assert_tab_count(2)))
         .with_step(wait_until_bootstrapped_single_pane_for_tab(1))
-        .with_step(
-            new_step_with_default_assertions("Add a third tab with the new tab button")
-                .with_click_on_saved_position(NEW_TAB_BUTTON_POSITION_ID)
-                .add_assertion(assert_tab_count(3)),
-        )
+        .with_steps(add_terminal_tab_with_new_tab_button().add_assertion(assert_tab_count(3)))
         .with_step(wait_until_bootstrapped_single_pane_for_tab(2))
         .with_step(
             new_step_with_default_assertions("Switch to the first tab")
@@ -2035,17 +2028,8 @@ pub fn test_add_and_close_session() -> Builder {
                     )
                 }),
         )
-        .with_step(
-            new_step_with_default_assertions("Add a tab with new session button")
-                .with_click_on_saved_position(NEW_TAB_BUTTON_POSITION_ID)
-                .add_assertion(assert_tab_count(2)),
-        )
-        .with_step(
-            new_step_with_default_assertions("Close the first tab with close tab button")
-                .with_hover_over_saved_position("close_tab_button:0")
-                .with_click_on_saved_position("close_tab_button:0")
-                .add_assertion(assert_tab_count(1)),
-        )
+        .with_steps(add_terminal_tab_with_new_tab_button().add_assertion(assert_tab_count(2)))
+        .with_steps(close_tab_with_close_button(0).add_assertion(assert_tab_count(1)))
 }
 
 pub fn test_open_and_close_resource_center() -> Builder {
@@ -6808,18 +6792,9 @@ pub fn test_undo_close_stack_timeout_cleanup() -> Builder {
                 .add_assertion(move |app, _| async_assert_eq!(app.window_ids().len(), 2)),
         )
         .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
-        .with_step(
-            new_step_with_default_assertions("Add a new tab in the new window")
-                .with_click_on_saved_position(NEW_TAB_BUTTON_POSITION_ID)
-                .add_assertion(assert_tab_count(2)),
-        )
+        .with_steps(add_terminal_tab_with_new_tab_button().add_assertion(assert_tab_count(2)))
         .with_step(wait_until_bootstrapped_single_pane_for_tab(1))
-        .with_step(
-            new_step_with_default_assertions("Close the tab to trigger undo close stack")
-                .with_hover_over_saved_position("close_tab_button:1")
-                .with_click_on_saved_position("close_tab_button:1")
-                .add_assertion(assert_tab_count(1)),
-        )
+        .with_steps(close_tab_with_close_button(1).add_assertion(assert_tab_count(1)))
         .with_step(
             TestStep::new("Close the new window")
                 .with_action(|app, _, data_map| {
