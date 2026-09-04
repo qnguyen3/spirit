@@ -148,6 +148,7 @@ pub enum EditorAndCodeReviewPageAction {
     ToggleAutoOpenCodeReviewPane,
     ToggleProjectExplorer,
     ToggleGlobalSearch,
+    ToggleAgentSessionHistory,
     ToggleShowHiddenFiles,
     ToggleFormatOnSave,
     ToggleAutoSave,
@@ -184,6 +185,16 @@ impl TypedActionView for EditorAndCodeReviewPageView {
             EditorAndCodeReviewPageAction::ToggleGlobalSearch => {
                 CodeSettings::handle(ctx).update(ctx, |settings, ctx| {
                     report_if_error!(settings.show_global_search.toggle_and_save_value(ctx));
+                });
+                ctx.notify();
+            }
+            EditorAndCodeReviewPageAction::ToggleAgentSessionHistory => {
+                CodeSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    report_if_error!(
+                        settings
+                            .show_agent_session_history
+                            .toggle_and_save_value(ctx)
+                    );
                 });
                 ctx.notify();
             }
@@ -303,6 +314,14 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
                 )),
                 context,
                 flags::SHOW_GLOBAL_SEARCH,
+            ),
+            ToggleSettingActionPair::new(
+                "agent session history",
+                builder(SettingsAction::EditorAndCodeReview(
+                    EditorAndCodeReviewPageAction::ToggleAgentSessionHistory,
+                )),
+                context,
+                flags::SHOW_AGENT_SESSION_HISTORY,
             ),
             ToggleSettingActionPair::new(
                 "show hidden files in project explorer",

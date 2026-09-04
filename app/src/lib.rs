@@ -187,6 +187,7 @@ use crate::settings_view::keybindings::KeybindingChangedNotifier;
 use crate::suggestions::ignored_suggestions_model::IgnoredSuggestionsModel;
 use crate::system::SystemStats;
 use crate::tab::TabShortcutModifierState;
+use crate::terminal::cli_agent_session_history::AgentSessionHistoryModel;
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::resizable_data::ResizableData;
 use crate::terminal::{AudibleBell, CustomSecretRegexUpdater, History};
@@ -1196,6 +1197,7 @@ pub(crate) fn initialize_app(
     ctx.add_singleton_model(|_| LanguageServerShutdownManager::new());
 
     ctx.add_singleton_model(|_| CLIAgentSessionsModel::new());
+    ctx.add_singleton_model(|_| AgentSessionHistoryModel::new());
     ctx.add_singleton_model(|_| workspace::AgentInboxModel::default());
 
     ctx.add_singleton_model(|_| AudibleBell::new());

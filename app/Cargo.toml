@@ -291,6 +291,7 @@ http_server.workspace = true
 hyper.workspace = true
 libsqlite3-sys = { version = "0.33.0", features = ["bundled"] }
 mio = { version = "1.1.1", features = ["os-poll", "os-ext"] }
+trash.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 warp_errors = { workspace = true, features = ["tokio-errors", "websocket-errors"] }
@@ -483,6 +484,7 @@ default = [
     "global_search",
     "agent_view",
     "agent_view_conversation_list_view",
+    "agent_session_history",
     "inline_slash_commands",
     "inline_history_menu",
     "inline_model_selector",
@@ -693,6 +695,7 @@ agent_view = []
 classic_completions = []
 force_classic_completions = []
 agent_view_conversation_list_view = ["agent_view"]
+agent_session_history = []
 inline_history_menu = ["agent_view"]
 lsp_as_a_tool = []
 inline_model_selector = ["agent_view"]

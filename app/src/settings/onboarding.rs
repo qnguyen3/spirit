@@ -57,6 +57,11 @@ fn apply_ui_customization_settings(ui: &UICustomizationSettings, app: &mut AppCo
                 .show_global_search
                 .set_value(ui.show_global_search, ctx)
         );
+        report_if_error!(
+            settings
+                .show_agent_session_history
+                .set_value(ui.show_conversation_history, ctx)
+        );
     });
 }
 

@@ -290,6 +290,9 @@ pub enum FeatureFlag {
     // Enables a side panel conversation list view for AgentView mode.
     AgentViewConversationListView,
 
+    /// Shows third-party CLI agent sessions in the right sidebar.
+    AgentSessionHistory,
+
     /// Enables pluggable notifications via OSC 9 and OSC 777 escape sequences.
     /// External programs can trigger system and in-app notifications.
     PluggableNotifications,

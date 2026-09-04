@@ -470,6 +470,7 @@ pub mod flags {
     pub const AUTO_DISMISS_RICH_INPUT_AFTER_SUBMIT_FLAG: &str = "AutoDismissRichInputAfterSubmit";
     // Right sidebar settings
     pub const SHOW_CONVERSATION_HISTORY: &str = "ShowConversationHistory";
+    pub const SHOW_AGENT_SESSION_HISTORY: &str = "ShowAgentSessionHistory";
     pub const SHOW_PROJECT_EXPLORER: &str = "ShowProjectExplorer";
     pub const SHOW_GLOBAL_SEARCH: &str = "ShowGlobalSearch";
     pub const SHOW_HIDDEN_FILES: &str = "ShowHiddenFiles";

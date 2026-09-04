@@ -73,6 +73,7 @@ pub struct CustomizeUISlide {
     // Mouse states for right sidebar chip buttons
     chip_file_explorer_mouse: MouseStateHandle,
     chip_global_search_mouse: MouseStateHandle,
+    chip_sessions_mouse: MouseStateHandle,
     // Buttons
     back_button: button::Button,
     next_button: button::Button,
@@ -99,6 +100,7 @@ impl CustomizeUISlide {
             agent_approval_seg_right_mouse: MouseStateHandle::default(),
             chip_file_explorer_mouse: MouseStateHandle::default(),
             chip_global_search_mouse: MouseStateHandle::default(),
+            chip_sessions_mouse: MouseStateHandle::default(),
             back_button: button::Button::default(),
             next_button: button::Button::default(),
             scroll_state: ClippedScrollStateHandle::new(),
@@ -242,6 +244,24 @@ impl CustomizeUISlide {
         let mut chips = vec![];
 
         if ui.tools_panel_enabled() {
+            chips.push(ChipSpec {
+                label: "Sessions",
+                is_enabled: ui.show_conversation_history,
+                mouse_state: self.chip_sessions_mouse.clone(),
+                on_click: Box::new(|ctx, _, _| {
+                    ctx.dispatch_typed_action(CustomizeSlideAction::ToggleToolsSubSetting {
+                        setting: ToolsPanelSubSetting::ConversationHistory,
+                    });
+                }),
+                on_hover: Some(Box::new(|is_hovered, ctx, _, _| {
+                    if is_hovered {
+                        ctx.dispatch_typed_action(CustomizeSlideAction::HoverToolsChip {
+                            setting: ToolsPanelSubSetting::ConversationHistory,
+                        });
+                    }
+                })),
+            });
+
             chips.push(ChipSpec {
                 label: "File explorer",
                 is_enabled: ui.show_project_explorer,
@@ -491,7 +511,6 @@ impl CustomizeUISlide {
                     }
                 } else {
                     let chip = hovered_chip.unwrap_or(ToolsPanelSubSetting::ProjectExplorer);
-                    // ConversationHistory has no chip here, so it falls through to file explorer.
                     match (chip, vertical) {
                         (
                             ToolsPanelSubSetting::ConversationHistory

@@ -29,6 +29,7 @@ use crate::pane_group::working_directories::WorkingDirectory;
 use crate::pane_group::{
     PaneGroup, WorkingDirectoriesEvent, WorkingDirectoriesModel, {self},
 };
+use crate::projects::ProjectId;
 #[cfg(feature = "local_fs")]
 use crate::settings_view::keybindings::{KeybindingChangedEvent, KeybindingChangedNotifier};
 use crate::terminal::resizable_data::{ModalType, ResizableData};
@@ -47,6 +48,7 @@ use crate::workspace::view::global_search::view::{
     Event as GlobalSearchViewEvent, GlobalSearchEntryFocus, GlobalSearchView,
 };
 use crate::workspace::view::right_panel::RightPanelView;
+use crate::workspace::view::sessions::SessionsView;
 use crate::workspace::view::{
     LEFT_PANEL_GLOBAL_SEARCH_BINDING_NAME, LEFT_PANEL_PROJECT_EXPLORER_BINDING_NAME,
     OPEN_GLOBAL_SEARCH_BINDING_NAME, TOGGLE_PROJECT_EXPLORER_BINDING_NAME,
@@ -60,6 +62,7 @@ pub const MAX_SIDEBAR_WIDTH_RATIO: f32 = 0.75;
 #[derive(Default)]
 struct MouseStateHandles {
     project_explorer_button: MouseStateHandle,
+    sessions_button: MouseStateHandle,
     global_search_button: MouseStateHandle,
     source_control_button: MouseStateHandle,
 }
@@ -67,6 +70,7 @@ struct MouseStateHandles {
 #[derive(Clone, Debug)]
 pub enum LeftPanelAction {
     ProjectExplorer,
+    Sessions,
     GlobalSearch { entry_focus: GlobalSearchEntryFocus },
     SourceControl,
 }
@@ -82,11 +86,15 @@ pub enum LeftPanelEvent {
         line_col: Option<LineAndColumnArg>,
     },
     SourceControlSelected,
+    ResumeAgentSession(crate::terminal::cli_agent_session_history::AgentSession),
+    FocusAgentSession(warpui::EntityId),
+    DeleteAgentSession(crate::terminal::cli_agent_session_history::AgentSession),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ToolPanelView {
     ProjectExplorer,
+    Sessions,
     GlobalSearch { entry_focus: GlobalSearchEntryFocus },
     SourceControl,
 }
@@ -146,6 +154,7 @@ pub struct LeftPanelView {
     mouse_state_handles: MouseStateHandles,
     close_button_mouse_state: MouseStateHandle,
     source_control_view: ViewHandle<RightPanelView>,
+    sessions_view: ViewHandle<SessionsView>,
     active_view: active_view_state::ActiveViewState,
     toolbelt_buttons: Vec<ToolbeltButtonConfig>,
     active_pane_group: Option<WeakViewHandle<PaneGroup>>,
@@ -175,6 +184,7 @@ impl LeftPanelView {
         working_directories_model: ModelHandle<WorkingDirectoriesModel>,
         views: Vec<ToolPanelView>,
         source_control_view: ViewHandle<RightPanelView>,
+        project_id: Option<ProjectId>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         let resizable_data_handle = ResizableData::handle(ctx);
@@ -192,6 +202,21 @@ impl LeftPanelView {
             .first()
             .copied()
             .unwrap_or(ToolPanelView::ProjectExplorer);
+        let sessions_view = ctx.add_typed_action_view(|ctx| SessionsView::new(project_id, ctx));
+        ctx.subscribe_to_view(&sessions_view, |_, _, event, ctx| match event {
+            LeftPanelEvent::ResumeAgentSession(session) => {
+                ctx.emit(LeftPanelEvent::ResumeAgentSession(session.clone()));
+            }
+            LeftPanelEvent::FocusAgentSession(terminal_view_id) => {
+                ctx.emit(LeftPanelEvent::FocusAgentSession(*terminal_view_id));
+            }
+            LeftPanelEvent::DeleteAgentSession(session) => {
+                ctx.emit(LeftPanelEvent::DeleteAgentSession(session.clone()));
+            }
+            LeftPanelEvent::FileTree(_)
+            | LeftPanelEvent::OpenFileWithTarget { .. }
+            | LeftPanelEvent::SourceControlSelected => {}
+        });
         let toolbelt_buttons = views
             .iter()
             .map(|view| Self::create_toolbelt_button_config(view, ctx))
@@ -233,6 +258,9 @@ impl LeftPanelView {
                     .iter()
                     .filter_map(|d| d.path.to_local_path().map(|p| p.to_path_buf()))
                     .collect();
+                me.sessions_view.update(ctx, |view, ctx| {
+                    view.set_workspace_paths(local_paths.clone(), ctx);
+                });
                 #[allow(unused_variables)]
                 let remote_repos: Vec<repo_metadata::RemoteRepositoryIdentifier> = directories
                     .iter()
@@ -283,6 +311,7 @@ impl LeftPanelView {
             mouse_state_handles: Default::default(),
             close_button_mouse_state: Default::default(),
             source_control_view,
+            sessions_view,
             active_view: active_view_state::new(active_view),
             toolbelt_buttons,
             active_pane_group: None,
@@ -355,6 +384,18 @@ impl LeftPanelView {
                     active_icon: None,
                     tooltip_text: "Project explorer".to_string(),
                     action: LeftPanelAction::ProjectExplorer,
+                    render_with_active_state: false,
+                    tooltip_keybinding: toolbelt_tooltip_keybinding(&tooltip_keybinding_names, ctx),
+                    tooltip_keybinding_names,
+                }
+            }
+            ToolPanelView::Sessions => {
+                let tooltip_keybinding_names = vec!["workspace:toggle_sessions"];
+                ToolbeltButtonConfig {
+                    icon: Icon::History,
+                    active_icon: None,
+                    tooltip_text: "Sessions".to_string(),
+                    action: LeftPanelAction::Sessions,
                     render_with_active_state: false,
                     tooltip_keybinding: toolbelt_tooltip_keybinding(&tooltip_keybinding_names, ctx),
                     tooltip_keybinding_names,
@@ -543,6 +584,9 @@ impl LeftPanelView {
             .iter()
             .filter_map(|d| d.path.to_local_path().map(|p| p.to_path_buf()))
             .collect();
+        self.sessions_view.update(ctx, |view, ctx| {
+            view.set_workspace_paths(local_paths.clone(), ctx);
+        });
         #[allow(unused_variables)]
         let remote_repos: Vec<repo_metadata::RemoteRepositoryIdentifier> = active_directories
             .iter()
@@ -620,6 +664,11 @@ impl LeftPanelView {
                     });
                     ctx.focus(&file_tree_view);
                 }
+            }
+            ToolPanelView::Sessions => {
+                self.sessions_view
+                    .update(ctx, |view, ctx| view.focus_search(ctx));
+                ctx.focus(&self.sessions_view);
             }
             ToolPanelView::GlobalSearch { entry_focus } => {
                 if let Some(global_search_view) = self.active_global_search_view(ctx) {
@@ -798,6 +847,7 @@ impl LeftPanelView {
                 LeftPanelAction::ProjectExplorer => {
                     self.active_view.get() == ToolPanelView::ProjectExplorer
                 }
+                LeftPanelAction::Sessions => self.active_view.get() == ToolPanelView::Sessions,
                 LeftPanelAction::GlobalSearch { .. } => {
                     matches!(self.active_view.get(), ToolPanelView::GlobalSearch { .. })
                 }
@@ -885,6 +935,9 @@ impl LeftPanelView {
             LeftPanelAction::ProjectExplorer => {
                 active_view_state::set(self, ToolPanelView::ProjectExplorer, ctx);
             }
+            LeftPanelAction::Sessions => {
+                active_view_state::set(self, ToolPanelView::Sessions, ctx);
+            }
             LeftPanelAction::GlobalSearch { entry_focus } => {
                 active_view_state::set(
                     self,
@@ -967,6 +1020,7 @@ impl View for LeftPanelView {
                         ctx.focus(&view);
                     }
                 }
+                ToolPanelView::Sessions => ctx.focus(&self.sessions_view),
                 ToolPanelView::GlobalSearch { .. } => {
                     if let Some(view) = self.active_global_search_view(ctx) {
                         ctx.focus(&view);
@@ -982,6 +1036,7 @@ impl View for LeftPanelView {
 
         let mouse_state_handles = vec![
             self.mouse_state_handles.project_explorer_button.clone(),
+            self.mouse_state_handles.sessions_button.clone(),
             self.mouse_state_handles.global_search_button.clone(),
             self.mouse_state_handles.source_control_button.clone(),
         ];
@@ -1020,6 +1075,9 @@ impl View for LeftPanelView {
                     _ => Shrinkable::new(1.0, Container::new(Empty::new().finish()).finish())
                         .finish(),
                 },
+                ToolPanelView::Sessions => {
+                    Shrinkable::new(1.0, ChildView::new(&self.sessions_view).finish()).finish()
+                }
                 ToolPanelView::GlobalSearch { .. } => match self.active_global_search_view(app) {
                     Some(global_search_view) => Shrinkable::new(
                         1.0,

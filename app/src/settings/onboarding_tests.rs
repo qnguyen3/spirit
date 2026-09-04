@@ -37,6 +37,7 @@ fn onboarding_settings_apply_ui_choices() {
             assert!(*TabSettings::as_ref(ctx).show_code_review_button);
             assert!(*CodeSettings::as_ref(ctx).show_project_explorer);
             assert!(!*CodeSettings::as_ref(ctx).show_global_search);
+            assert!(!*CodeSettings::as_ref(ctx).show_agent_session_history);
             assert_eq!(
                 *CLIAgentSettings::as_ref(ctx).agent_approval_mode.value(),
                 AgentApprovalMode::Yolo

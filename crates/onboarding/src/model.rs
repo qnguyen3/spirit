@@ -22,10 +22,9 @@ impl UICustomizationSettings {
         }
     }
 
-    /// Returns true if any visible tools-panel sub-setting is enabled. The
-    /// conversation-history chip is hidden, so it does not count.
+    /// Returns true if any right-sidebar sub-setting is enabled.
     pub fn tools_panel_enabled(&self) -> bool {
-        self.show_project_explorer || self.show_global_search
+        self.show_conversation_history || self.show_project_explorer || self.show_global_search
     }
 }
 

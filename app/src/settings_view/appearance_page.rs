@@ -479,6 +479,7 @@ pub enum AppearancePageAction {
     ToggleLeftPanelVisibility,
     ToggleToolsPanelProjectExplorer,
     ToggleToolsPanelGlobalSearch,
+    ToggleToolsPanelSessions,
     SetEnforceMinimumContrast(EnforceMinimumContrast),
     OpenUrl(String),
     ToggleFocusPaneOnHover,
@@ -602,6 +603,16 @@ impl TypedActionView for AppearanceSettingsPageView {
             ToggleToolsPanelGlobalSearch => {
                 CodeSettings::handle(ctx).update(ctx, |settings, ctx| {
                     report_if_error!(settings.show_global_search.toggle_and_save_value(ctx));
+                });
+                ctx.notify();
+            }
+            ToggleToolsPanelSessions => {
+                CodeSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    report_if_error!(
+                        settings
+                            .show_agent_session_history
+                            .toggle_and_save_value(ctx)
+                    );
                 });
                 ctx.notify();
             }
@@ -1334,6 +1345,9 @@ impl AppearanceSettingsPageView {
         }
         if cfg!(feature = "local_fs") && FeatureFlag::GlobalSearch.is_enabled() {
             tools_panel_widgets.push(Box::new(ToolsPanelGlobalSearchWidget::default()));
+        }
+        if cfg!(feature = "local_fs") && FeatureFlag::AgentSessionHistory.is_enabled() {
+            tools_panel_widgets.push(Box::new(ToolsPanelSessionsWidget::default()));
         }
         if !tools_panel_widgets.is_empty() {
             categories.push(Category::new("Right Sidebar", tools_panel_widgets));
@@ -3264,6 +3278,43 @@ impl SettingsWidget for ToolsPanelGlobalSearchWidget {
                 })
                 .finish(),
             Some("Show the global file search tab in the right sidebar.".to_string()),
+        )
+    }
+}
+
+#[derive(Default)]
+struct ToolsPanelSessionsWidget {
+    switch_state: SwitchStateHandle,
+}
+
+impl SettingsWidget for ToolsPanelSessionsWidget {
+    type View = AppearanceSettingsPageView;
+
+    fn search_terms(&self) -> &str {
+        "right sidebar sessions agent session history cli agents conversation transcripts"
+    }
+
+    fn render(
+        &self,
+        _view: &Self::View,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        render_body_item::<AppearancePageAction>(
+            "Sessions".to_string(),
+            None,
+            ToggleState::Enabled,
+            appearance,
+            appearance
+                .ui_builder()
+                .switch(self.switch_state.clone())
+                .check(*CodeSettings::as_ref(app).show_agent_session_history)
+                .build()
+                .on_click(|ctx, _, _| {
+                    ctx.dispatch_typed_action(AppearancePageAction::ToggleToolsPanelSessions);
+                })
+                .finish(),
+            Some("Show third-party CLI agent session history in the right sidebar.".to_string()),
         )
     }
 }

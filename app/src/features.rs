@@ -191,6 +191,8 @@ fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::ForceClassicCompletions,
         #[cfg(feature = "agent_view_conversation_list_view")]
         FeatureFlag::AgentViewConversationListView,
+        #[cfg(feature = "agent_session_history")]
+        FeatureFlag::AgentSessionHistory,
         #[cfg(feature = "inline_history_menu")]
         FeatureFlag::InlineHistoryMenu,
         #[cfg(feature = "pluggable_notifications")]

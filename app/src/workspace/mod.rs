@@ -557,6 +557,15 @@ pub fn init(app: &mut AppContext) {
         .with_context_predicate(id!("Workspace") & id!(flags::SHOW_PROJECT_EXPLORER))
         .with_custom_action(CustomAction::ToggleProjectExplorer),
         EditableBinding::new(
+            "workspace:toggle_sessions",
+            BindingDescription::new("Right Sidebar: Sessions"),
+            WorkspaceAction::ToggleSessions,
+        )
+        .with_group(bindings::BindingGroup::Navigation.as_str())
+        .with_context_predicate(id!("Workspace") & id!(flags::SHOW_AGENT_SESSION_HISTORY))
+        .with_enabled(|| FeatureFlag::AgentSessionHistory.is_enabled())
+        .with_custom_action(CustomAction::ToggleSessions),
+        EditableBinding::new(
             LEFT_PANEL_GLOBAL_SEARCH_BINDING_NAME,
             BindingDescription::new("Right Sidebar: Global search"),
             WorkspaceAction::ToggleGlobalSearch,

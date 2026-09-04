@@ -487,6 +487,7 @@ pub enum WorkspaceAction {
     NavigateNextPaneOrPanel,
     ToggleProjectExplorer,
     OpenProjectExplorer,
+    ToggleSessions,
     ToggleGlobalSearch,
     ToggleHiddenFiles,
     OpenGlobalSearch,
@@ -770,6 +771,7 @@ impl WorkspaceAction {
             | NavigateNextPaneOrPanel
             | ToggleProjectExplorer
             | OpenProjectExplorer
+            | ToggleSessions
             | ToggleGlobalSearch
             | ToggleHiddenFiles
             | OpenGlobalSearch

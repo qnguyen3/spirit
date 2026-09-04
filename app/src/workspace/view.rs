@@ -4,6 +4,7 @@ pub mod global_search;
 pub(crate) mod left_panel;
 pub(crate) mod onboarding;
 pub(crate) mod right_panel;
+pub mod sessions;
 mod startup_directory;
 mod tab_grouping;
 #[cfg(test)]
@@ -2080,6 +2081,7 @@ impl Workspace {
                 working_directories_model.clone(),
                 left_panel_views.clone(),
                 right_panel_view.clone(),
+                project_id,
                 ctx,
             )
         });
@@ -2118,6 +2120,7 @@ impl Workspace {
                 event,
                 CodeSettingsChangedEvent::ShowProjectExplorer { .. }
                     | CodeSettingsChangedEvent::ShowGlobalSearch { .. }
+                    | CodeSettingsChangedEvent::ShowAgentSessionHistory { .. }
             ) {
                 me.update_left_panel_available_views(ctx);
                 ctx.notify();
@@ -2746,6 +2749,7 @@ impl Workspace {
             // Restore which panel tab was active
             let active_view = match left_panel_snapshot.left_panel_displayed_tab {
                 LeftPanelDisplayedTab::FileTree => ToolPanelView::ProjectExplorer,
+                LeftPanelDisplayedTab::Sessions => ToolPanelView::Sessions,
                 LeftPanelDisplayedTab::GlobalSearch => ToolPanelView::GlobalSearch {
                     entry_focus: GlobalSearchEntryFocus::Results,
                 },
@@ -4482,6 +4486,105 @@ impl Workspace {
                     self.toggle_right_panel(&pane_group, ctx);
                 }
             }
+            LeftPanelEvent::ResumeAgentSession(session) => {
+                self.resume_agent_session(session, ctx);
+            }
+            LeftPanelEvent::FocusAgentSession(terminal_view_id) => {
+                if !self.focus_terminal_view_locally(*terminal_view_id, ctx) {
+                    self.focus_terminal_view_in_other_window(*terminal_view_id, ctx);
+                }
+            }
+            LeftPanelEvent::DeleteAgentSession(session) => {
+                self.confirm_delete_agent_session(session.clone(), ctx);
+            }
+        }
+    }
+
+    fn confirm_delete_agent_session(
+        &mut self,
+        session: crate::terminal::cli_agent_session_history::AgentSession,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        use warpui::modals::{AlertDialogWithCallbacks, ModalButton};
+
+        let title = session.title.clone();
+        let window_id = ctx.window_id();
+        let dialog = AlertDialogWithCallbacks::for_app(
+            "Move agent session to Trash?",
+            format!(
+                "\"{title}\" will be removed from the agent's local history. This does not permanently erase it."
+            ),
+            vec![
+                ModalButton::for_app("Move to Trash", move |ctx| {
+                    let result = dirs::home_dir()
+                        .ok_or_else(|| "The home directory is unavailable.".to_owned())
+                        .and_then(|home| {
+                            crate::terminal::cli_agent_session_history::move_session_to_trash(
+                                &session, &home,
+                            )
+                        });
+                    match result {
+                        Ok(()) => {
+                            crate::terminal::cli_agent_session_history::AgentSessionHistoryModel::handle(ctx)
+                                .update(ctx, |history, ctx| history.refresh(true, ctx));
+                            ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                                toast_stack.add_ephemeral_toast(
+                                    DismissibleToast::success("Moved session to Trash".to_owned()),
+                                    window_id,
+                                    ctx,
+                                );
+                            });
+                        }
+                        Err(error) => {
+                            warp_core::safe_error!(
+                                safe: ("Failed to move an agent session to Trash"),
+                                full: ("Failed to move an agent session to Trash: {error}")
+                            );
+                            ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                                toast_stack.add_ephemeral_toast(
+                                    DismissibleToast::error(format!(
+                                        "Could not move the session to Trash: {error}"
+                                    )),
+                                    window_id,
+                                    ctx,
+                                );
+                            });
+                        }
+                    }
+                }),
+                ModalButton::for_app("Cancel", |_| {}),
+            ],
+            |_| {},
+        );
+        self.show_native_modal(dialog, ctx);
+    }
+
+    fn resume_agent_session(
+        &mut self,
+        session: &crate::terminal::cli_agent_session_history::AgentSession,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if !session.has_resumable_content() || session.resume_command.is_empty() {
+            return;
+        }
+        let options = NewTerminalOptions::default()
+            .with_initial_directory_opt(session.cwd.clone())
+            .with_homepage_hidden();
+        self.add_tab_with_pane_layout(
+            PanesLayout::SingleTerminal(Box::new(options)),
+            Arc::new(HashMap::new()),
+            Some(session.title.clone()),
+            ctx,
+        );
+        if let Some(terminal_view) = self
+            .active_tab_pane_group()
+            .as_ref(ctx)
+            .active_session_view(ctx)
+        {
+            let command = session.resume_command.clone();
+            terminal_view.update(ctx, |terminal_view, ctx| {
+                terminal_view.execute_command_or_set_pending(&command, ctx);
+            });
         }
     }
 
@@ -13082,6 +13185,7 @@ impl Workspace {
                         .unwrap_or(ToolPanelView::ProjectExplorer)
                     {
                         ToolPanelView::ProjectExplorer => "Project explorer",
+                        ToolPanelView::Sessions => "Sessions",
                         ToolPanelView::GlobalSearch { .. } => "Global search",
                         ToolPanelView::SourceControl => "Source control",
                     }
@@ -13135,6 +13239,7 @@ impl Workspace {
                 .unwrap_or(ToolPanelView::ProjectExplorer)
             {
                 ToolPanelView::ProjectExplorer => "Project explorer",
+                ToolPanelView::Sessions => "Sessions",
                 ToolPanelView::GlobalSearch { .. } => "Global search",
                 ToolPanelView::SourceControl => "Source control",
             }
@@ -15658,6 +15763,12 @@ impl Workspace {
             views.push(ToolPanelView::ProjectExplorer);
         }
         if cfg!(feature = "local_fs")
+            && FeatureFlag::AgentSessionHistory.is_enabled()
+            && *CodeSettings::as_ref(ctx).show_agent_session_history.value()
+        {
+            views.push(ToolPanelView::Sessions);
+        }
+        if cfg!(feature = "local_fs")
             && FeatureFlag::GlobalSearch.is_enabled()
             && *CodeSettings::as_ref(ctx).show_global_search.value()
         {
@@ -16702,6 +16813,15 @@ impl TypedActionView for Workspace {
                     self.toggle_left_panel_view(&LeftPanelAction::ProjectExplorer, is_showing, ctx);
                 }
             }
+            ToggleSessions => {
+                if FeatureFlag::AgentSessionHistory.is_enabled()
+                    && *CodeSettings::as_ref(ctx).show_agent_session_history
+                {
+                    let is_showing =
+                        self.left_panel_view.as_ref(ctx).active_view() == ToolPanelView::Sessions;
+                    self.toggle_left_panel_view(&LeftPanelAction::Sessions, is_showing, ctx);
+                }
+            }
             OpenProjectExplorer => {
                 if *CodeSettings::as_ref(ctx).show_project_explorer {
                     self.open_left_panel_view(&LeftPanelAction::ProjectExplorer, ctx);
@@ -16946,6 +17066,9 @@ impl View for Workspace {
         }
         if *CodeSettings::as_ref(app).show_global_search {
             context.set.insert(flags::SHOW_GLOBAL_SEARCH);
+        }
+        if *CodeSettings::as_ref(app).show_agent_session_history {
+            context.set.insert(flags::SHOW_AGENT_SESSION_HISTORY);
         }
         if *CodeSettings::as_ref(app).show_hidden_files {
             context.set.insert(flags::SHOW_HIDDEN_FILES);
