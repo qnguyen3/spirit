@@ -10,6 +10,7 @@ use super::{
     CLIAgent, build_diff_hunk_prompt, build_review_prompt, build_selection_line_range_prompt,
     build_selection_substring_prompt,
 };
+use crate::agent_launcher::catalog::agent_catalog;
 use crate::code::buffer_location::LocalOrRemotePath;
 use crate::code::editor::line::EditorLineLocation;
 use crate::code_review::agent_handoff::{AgentReviewCommentBatch, DiffSetHunk};
@@ -242,29 +243,38 @@ fn test_build_selection_substring_prompt_format() {
     assert_eq!(result, "src/foo.rs L5: let x = 42;");
 }
 
+fn detectable_names(agent: CLIAgent) -> Vec<&'static str> {
+    let mut names = agent.command_prefixes().to_vec();
+    if let Some(definition) = agent_catalog()
+        .iter()
+        .find(|definition| definition.cli_agent == agent)
+        && !names.contains(&definition.binary)
+    {
+        names.push(definition.binary);
+    }
+    names
+}
+
 #[test]
 fn test_detect_known_agents() {
     App::test((), |mut app| async move {
         app.update(|ctx| {
-            for (command, expected) in [
-                ("claude", CLIAgent::Claude),
-                ("gemini", CLIAgent::Gemini),
-                ("codex", CLIAgent::Codex),
-                ("amp", CLIAgent::Amp),
-                ("droid", CLIAgent::Droid),
-                ("opencode", CLIAgent::OpenCode),
-                ("copilot", CLIAgent::Copilot),
-                ("agent", CLIAgent::CursorCli),
-                ("goose", CLIAgent::Goose),
-                ("vibe", CLIAgent::Vibe),
-                ("agy", CLIAgent::Antigravity),
-                ("omp", CLIAgent::OhMyPi),
-            ] {
-                assert_eq!(
-                    CLIAgent::detect(command, None, None, ctx),
-                    Some(expected),
-                    "failed to detect {command}",
+            for agent in enum_iterator::all::<CLIAgent>() {
+                if matches!(agent, CLIAgent::Unknown) {
+                    continue;
+                }
+                let names = detectable_names(agent);
+                assert!(
+                    !names.is_empty(),
+                    "{agent:?} has no executable name, so it can never be detected",
                 );
+                for name in names {
+                    assert_eq!(
+                        CLIAgent::detect(name, None, None, ctx),
+                        Some(agent),
+                        "failed to detect {agent:?} from {name}",
+                    );
+                }
             }
         });
     });

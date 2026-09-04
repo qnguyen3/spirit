@@ -38,6 +38,7 @@ use crate::terminal::input::MenuPositioningProvider;
 use crate::terminal::input::voice_input::VoiceInputButton;
 use crate::terminal::model::TerminalModel;
 use crate::terminal::model_events::ModelEventDispatcher;
+use crate::ui_components::icon_with_status::agent_artwork_element;
 use crate::ui_components::icons::Icon;
 use crate::view_components::action_button::{
     ActionButton, ActionButtonTheme, ButtonSize, KeystrokeSource, TooltipAlignment,
@@ -54,7 +55,7 @@ const CLI_AGENT_PTY_WRITE_DELAY: Duration = Duration::from_millis(50);
 
 /// Longer delay for agents (like Copilot) that need extra time after a bracketed paste
 /// before they will accept a submit keystroke.
-const CLI_AGENT_BRACKETED_PASTE_ENTER_DELAY: Duration = Duration::from_millis(300);
+const CLI_AGENT_COPILOT_ENTER_DELAY: Duration = Duration::from_millis(300);
 
 /// ASCII prefixes that CLI agents use to switch input modes (e.g. `!` for bash mode in
 /// Claude Code).
@@ -429,27 +430,32 @@ impl CliAgentFooter {
     fn render_brand_icon(&self, app: &AppContext) -> Option<Box<dyn Element>> {
         let appearance = Appearance::as_ref(app);
         let agent = self.cli_agent(app)?;
-        let icon = agent.icon()?;
-        let icon_color = agent
-            .brand_color()
-            .map(|color| {
-                color.on_background(
-                    self.background_color(appearance),
-                    MinimumAllowedContrast::NonText,
-                )
-            })
-            .unwrap_or_else(|| appearance.theme().foreground().into_solid());
         let icon_size = ButtonSize::AgentInputButton.icon_size(appearance, app);
 
-        Some(
-            Container::new(
+        let brand_icon = match agent.image_icon() {
+            Some(path) => agent_artwork_element(path, icon_size),
+            None => {
+                let icon = agent.icon()?;
+                let icon_color = agent
+                    .brand_color()
+                    .map(|color| {
+                        color.on_background(
+                            self.background_color(appearance),
+                            MinimumAllowedContrast::NonText,
+                        )
+                    })
+                    .unwrap_or_else(|| appearance.theme().foreground().into_solid());
                 ConstrainedBox::new(icon.to_warpui_icon(Fill::Solid(icon_color)).finish())
                     .with_width(icon_size)
                     .with_height(icon_size)
-                    .finish(),
-            )
-            .with_padding_right(BRAND_ICON_PADDING_RIGHT)
-            .finish(),
+                    .finish()
+            }
+        };
+
+        Some(
+            Container::new(brand_icon)
+                .with_padding_right(BRAND_ICON_PADDING_RIGHT)
+                .finish(),
         )
     }
 
@@ -638,33 +644,34 @@ enum RichInputSubmitStrategy {
     /// Send text first, then `\r` after a short delay. For agents that don't respond
     /// to `\r` when it arrives in the same buffer as the text.
     DelayedEnter,
-    /// Wrap text in bracketed paste, then send `\r` after a delay.
-    BracketedPasteDelayedEnter,
+    /// Wrap text in bracketed paste, then send `\r` after the given delay.
+    BracketedPasteDelayedEnter(Duration),
 }
 
-fn rich_input_submit_strategy(agent: CLIAgent) -> RichInputSubmitStrategy {
+fn rich_input_submit_strategy(agent: CLIAgent) -> Option<RichInputSubmitStrategy> {
     match agent {
         CLIAgent::Codex | CLIAgent::OhMyPi | CLIAgent::Hermes => {
-            RichInputSubmitStrategy::BracketedPaste
+            Some(RichInputSubmitStrategy::BracketedPaste)
         }
-        CLIAgent::Copilot => RichInputSubmitStrategy::BracketedPasteDelayedEnter,
+        CLIAgent::Copilot => Some(RichInputSubmitStrategy::BracketedPasteDelayedEnter(
+            CLI_AGENT_COPILOT_ENTER_DELAY,
+        )),
         CLIAgent::Claude
         | CLIAgent::OpenCode
         | CLIAgent::Gemini
         | CLIAgent::Auggie
-        | CLIAgent::CursorCli => RichInputSubmitStrategy::DelayedEnter,
-        CLIAgent::Amp
-        | CLIAgent::Droid
-        | CLIAgent::Pi
-        | CLIAgent::Goose
-        | CLIAgent::Vibe
+        | CLIAgent::CursorCli => Some(RichInputSubmitStrategy::DelayedEnter),
+        CLIAgent::Amp | CLIAgent::Droid | CLIAgent::Pi | CLIAgent::Goose => {
+            Some(RichInputSubmitStrategy::Inline)
+        }
+        CLIAgent::Vibe
         | CLIAgent::Antigravity
         | CLIAgent::Grok
         | CLIAgent::Trae
         | CLIAgent::Cline
         | CLIAgent::QwenCode
         | CLIAgent::Devin
-        | CLIAgent::Unknown => RichInputSubmitStrategy::Inline,
+        | CLIAgent::Unknown => None,
     }
 }
 
@@ -779,7 +786,19 @@ impl TerminalView {
         let Some(agent) = self.cli_agent_footer.as_ref(ctx).cli_agent(ctx) else {
             return;
         };
-        self.write_cli_agent_text(text.as_bytes(), rich_input_submit_strategy(agent), ctx);
+        let strategy = self.resolve_rich_input_submit_strategy(agent);
+        self.write_cli_agent_text(text.as_bytes(), strategy, ctx);
+    }
+
+    fn resolve_rich_input_submit_strategy(&self, agent: CLIAgent) -> RichInputSubmitStrategy {
+        if let Some(strategy) = rich_input_submit_strategy(agent) {
+            return strategy;
+        }
+        if self.model.lock().needs_bracketed_paste() {
+            RichInputSubmitStrategy::BracketedPasteDelayedEnter(CLI_AGENT_PTY_WRITE_DELAY)
+        } else {
+            RichInputSubmitStrategy::DelayedEnter
+        }
     }
 
     pub(super) fn submit_cli_agent_rich_input(
@@ -796,10 +815,11 @@ impl TerminalView {
             sessions_model.clear_draft(view_id);
         });
 
-        let strategy = CLIAgentSessionsModel::as_ref(ctx)
+        let agent = CLIAgentSessionsModel::as_ref(ctx)
             .session(view_id)
-            .map(|session| rich_input_submit_strategy(session.agent))
-            .unwrap_or(RichInputSubmitStrategy::Inline);
+            .map(|session| session.agent)
+            .unwrap_or(CLIAgent::Unknown);
+        let strategy = self.resolve_rich_input_submit_strategy(agent);
 
         let text_bytes = text.into_bytes();
 
@@ -832,7 +852,7 @@ impl TerminalView {
     ) {
         let bytes = match strategy {
             RichInputSubmitStrategy::BracketedPaste
-            | RichInputSubmitStrategy::BracketedPasteDelayedEnter => {
+            | RichInputSubmitStrategy::BracketedPasteDelayedEnter(_) => {
                 let mut bytes = Vec::with_capacity(
                     BRACKETED_PASTE_START.len() + text_bytes.len() + BRACKETED_PASTE_END.len(),
                 );
@@ -873,14 +893,11 @@ impl TerminalView {
                     },
                 );
             }
-            RichInputSubmitStrategy::BracketedPasteDelayedEnter => {
+            RichInputSubmitStrategy::BracketedPasteDelayedEnter(delay) => {
                 self.write_cli_agent_text(&text_bytes, strategy, ctx);
-                ctx.spawn(
-                    Timer::after(CLI_AGENT_BRACKETED_PASTE_ENTER_DELAY),
-                    move |me, _, ctx| {
-                        me.write_user_bytes_to_pty(b"\r".to_vec(), ctx);
-                    },
-                );
+                ctx.spawn(Timer::after(delay), move |me, _, ctx| {
+                    me.write_user_bytes_to_pty(b"\r".to_vec(), ctx);
+                });
             }
         }
     }

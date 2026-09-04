@@ -290,7 +290,10 @@ fn render_circle(
 }
 
 fn render_agent_artwork(path: &'static str, total_size: f32) -> Box<dyn Element> {
-    let size = circle_size(total_size);
+    agent_artwork_element(path, circle_size(total_size))
+}
+
+pub(crate) fn agent_artwork_element(path: &'static str, size: f32) -> Box<dyn Element> {
     ConstrainedBox::new(
         Image::new(AssetSource::Bundled { path }, CacheOption::BySize)
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(

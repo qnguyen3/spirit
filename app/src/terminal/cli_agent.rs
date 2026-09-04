@@ -5,6 +5,7 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
 use enum_iterator::Sequence;
 use markdown_parser::parse_markdown;
@@ -17,6 +18,7 @@ use warp_editor::content::markdown::MarkdownStyle;
 use warp_util::path::EscapeChar;
 use warpui::AppContext;
 
+use crate::agent_launcher::catalog::agent_catalog;
 use crate::code::editor::line::EditorLineLocation;
 use crate::code_review::agent_handoff::{AgentReviewCommentBatch, DiffSetHunk};
 use crate::code_review::comments::AttachedReviewCommentTarget;
@@ -197,8 +199,16 @@ pub enum CLIAgent {
     Unknown,
 }
 
+static CATALOG_BINARIES: LazyLock<HashMap<CLIAgent, &'static str>> = LazyLock::new(|| {
+    agent_catalog()
+        .iter()
+        .map(|definition| (definition.cli_agent, definition.binary))
+        .collect()
+});
+
 impl CLIAgent {
-    /// Command prefixes that identify this CLI agent.
+    /// Executable names that identify this CLI agent on top of the binary its
+    /// [`agent_catalog`] entry launches. Covers aliases and agents with no catalog entry.
     pub(crate) fn command_prefixes(&self) -> &'static [&'static str] {
         match self {
             CLIAgent::Claude => &["claude"],
@@ -229,6 +239,13 @@ impl CLIAgent {
     /// that require one stable value.
     pub fn command_prefix(&self) -> &'static str {
         self.command_prefixes().first().copied().unwrap_or_default()
+    }
+
+    pub(crate) fn matches_binary_name(&self, name: &str) -> bool {
+        self.command_prefixes().contains(&name)
+            || CATALOG_BINARIES
+                .get(self)
+                .is_some_and(|binary| *binary == name)
     }
 
     /// Serialized version of the CLIAgent name (e.g. "Claude", "Gemini").
@@ -441,7 +458,7 @@ impl CLIAgent {
             return false;
         };
         let basename = first_word.rsplit(['/', '\\']).next().unwrap_or(&first_word);
-        self.command_prefixes().contains(&basename)
+        self.matches_binary_name(basename)
     }
 
     /// Detects the CLI agent from a command string.

@@ -1,9 +1,10 @@
 use std::collections::HashSet;
 
-use warpui::AssetProvider as _;
+use warpui::{App, AssetProvider as _};
 
 use super::{AgentIcon, agent_catalog};
 use crate::settings::AgentApprovalMode;
+use crate::terminal::CLIAgent;
 
 #[test]
 fn catalog_is_non_empty() {
@@ -175,4 +176,25 @@ fn is_installed_resolves_against_the_supplied_path() {
 
     let empty_dir = tempfile::TempDir::new().unwrap();
     assert!(!is_installed(def, Some(empty_dir.path().to_str().unwrap())));
+}
+
+#[test]
+fn launch_commands_detect_as_their_own_agent() {
+    App::test((), |mut app| async move {
+        app.update(|ctx| {
+            for def in agent_catalog() {
+                for mode in [AgentApprovalMode::Normal, AgentApprovalMode::Yolo] {
+                    let command = def.launch_command(mode);
+                    assert_eq!(
+                        CLIAgent::detect(&command, None, None, ctx),
+                        Some(def.cli_agent),
+                        "{} is launched as {command:?} but does not detect as {:?}, so it gets \
+                         no agent footer and no rich input",
+                        def.display_name,
+                        def.cli_agent,
+                    );
+                }
+            }
+        });
+    });
 }

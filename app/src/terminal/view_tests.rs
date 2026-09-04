@@ -4076,6 +4076,15 @@ fn ctrl_c_without_a_long_running_block_writes_nothing_to_the_pty() {
 }
 
 fn start_cli_agent_session(app: &mut App, terminal: &ViewHandle<TerminalView>, agent: CLIAgent) {
+    start_cli_agent_session_with_output(app, terminal, agent, "");
+}
+
+fn start_cli_agent_session_with_output(
+    app: &mut App,
+    terminal: &ViewHandle<TerminalView>,
+    agent: CLIAgent,
+    output_so_far: &str,
+) {
     terminal.update(app, |view, ctx| {
         CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions, ctx| {
             sessions.set_session(
@@ -4093,8 +4102,24 @@ fn start_cli_agent_session(app: &mut App, terminal: &ViewHandle<TerminalView>, a
         });
         view.model
             .lock()
-            .simulate_long_running_block(agent.command_prefix(), "");
+            .simulate_long_running_block(agent.command_prefix(), output_so_far);
     });
+}
+
+fn record_pty_writes(
+    app: &mut App,
+    terminal: &ViewHandle<TerminalView>,
+) -> Rc<RefCell<Vec<Vec<u8>>>> {
+    let pty_writes: Rc<RefCell<Vec<Vec<u8>>>> = Rc::new(RefCell::new(Vec::new()));
+    let writes = pty_writes.clone();
+    app.update(|ctx| {
+        ctx.subscribe_to_view(terminal, move |_, event, _| {
+            if let Event::WriteBytesToPty { bytes } = event {
+                writes.borrow_mut().push(bytes.to_vec());
+            }
+        });
+    });
+    pty_writes
 }
 
 #[test]
@@ -4141,6 +4166,71 @@ fn opening_cli_agent_rich_input_shows_the_input_box_and_hides_the_standalone_foo
                 "the input renders the footer itself while the rich input is open"
             );
         });
+    })
+}
+
+#[test]
+fn rich_input_opens_for_an_agent_added_to_the_launcher_catalog() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _rich_input = FeatureFlag::CLIAgentRichInput.override_enabled(true);
+        let terminal = add_window_with_terminal(&mut app, None);
+        start_cli_agent_session(&mut app, &terminal, CLIAgent::Cline);
+
+        terminal.update(&mut app, |view, ctx| {
+            view.handle_action(&TerminalAction::ToggleCLIAgentRichInput, ctx);
+        });
+
+        terminal.read(&app, |view, ctx| {
+            assert!(view.has_active_cli_agent_input_session(ctx));
+        });
+    })
+}
+
+#[test]
+fn rich_input_submits_as_a_bracketed_paste_when_the_agents_tui_asks_for_one() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _rich_input = FeatureFlag::CLIAgentRichInput.override_enabled(true);
+        let terminal = add_window_with_terminal(&mut app, None);
+        start_cli_agent_session_with_output(&mut app, &terminal, CLIAgent::Cline, "\x1b[?2004h");
+        let pty_writes = record_pty_writes(&mut app, &terminal);
+
+        terminal.update(&mut app, |view, ctx| {
+            view.handle_action(&TerminalAction::ToggleCLIAgentRichInput, ctx);
+            view.submit_cli_agent_rich_input("write a test".to_owned(), ctx);
+        });
+
+        let mut pasted = BRACKETED_PASTE_START.to_vec();
+        pasted.extend_from_slice(b"write a test");
+        pasted.extend_from_slice(BRACKETED_PASTE_END);
+        assert_eventually!(
+            *pty_writes.borrow() == vec![pasted.clone(), b"\r".to_vec()],
+            "expected a bracketed paste then a separate carriage return; got {:?}",
+            pty_writes.borrow()
+        );
+    })
+}
+
+#[test]
+fn rich_input_submits_the_carriage_return_separately_without_bracketed_paste() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _rich_input = FeatureFlag::CLIAgentRichInput.override_enabled(true);
+        let terminal = add_window_with_terminal(&mut app, None);
+        start_cli_agent_session(&mut app, &terminal, CLIAgent::Cline);
+        let pty_writes = record_pty_writes(&mut app, &terminal);
+
+        terminal.update(&mut app, |view, ctx| {
+            view.handle_action(&TerminalAction::ToggleCLIAgentRichInput, ctx);
+            view.submit_cli_agent_rich_input("write a test".to_owned(), ctx);
+        });
+
+        assert_eventually!(
+            *pty_writes.borrow() == vec![b"write a test".to_vec(), b"\r".to_vec()],
+            "expected the prompt then a separate carriage return; got {:?}",
+            pty_writes.borrow()
+        );
     })
 }
 
