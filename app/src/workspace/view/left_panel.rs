@@ -128,6 +128,7 @@ mod active_view_state {
         ctx.notify();
 
         left_panel.update_active_file_tree_subscription_state(ctx);
+        left_panel.update_sessions_view_visibility(ctx);
     }
 }
 
@@ -956,6 +957,18 @@ impl LeftPanelView {
 
     pub fn on_left_panel_visibility_changed(&self, ctx: &mut ViewContext<Self>) {
         self.update_active_file_tree_subscription_state(ctx);
+        self.update_sessions_view_visibility(ctx);
+    }
+
+    fn update_sessions_view_visibility(&self, ctx: &mut ViewContext<Self>) {
+        let left_panel_open = self
+            .active_pane_group
+            .as_ref()
+            .and_then(|pane_group| pane_group.upgrade(ctx))
+            .is_some_and(|pane_group| pane_group.as_ref(ctx).left_panel_open);
+        let is_visible = left_panel_open && self.active_view.get() == ToolPanelView::Sessions;
+        self.sessions_view
+            .update(ctx, |view, ctx| view.set_visible(is_visible, ctx));
     }
 
     fn deactivate_file_tree_view_for_pane_group(

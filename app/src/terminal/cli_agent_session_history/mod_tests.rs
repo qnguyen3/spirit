@@ -1,8 +1,9 @@
 use std::collections::HashSet;
-use std::fs;
+use std::fs::{self, File};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
-use chrono::{TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 
 use super::*;
 
@@ -147,9 +148,7 @@ fn cline_parser_reads_companion_messages_once() {
     )
     .unwrap();
 
-    let parsed = parse_session_file(CLIAgent::Cline, &metadata)
-        .unwrap()
-        .unwrap();
+    let parsed = parse_cached(CLIAgent::Cline, &metadata, &SharedParseCache::in_memory());
 
     assert_eq!(parsed.session_id, "cline-1");
     assert_eq!(parsed.message_count, 1);
@@ -244,39 +243,147 @@ fn opencode_sqlite_sessions_are_discovered() {
     assert_eq!(sessions[0].first_user_prompt.as_deref(), Some("Build it"));
 }
 
-#[cfg(not(target_family = "wasm"))]
+fn parse_cached(agent: CLIAgent, path: &Path, cache: &SharedParseCache) -> AgentSession {
+    parse_session_file_cached(agent, path, &path.metadata().unwrap(), cache)
+        .unwrap()
+        .unwrap()
+}
+
+fn user_record(content: &str) -> String {
+    format!(
+        "{{\"session_id\":\"abc\",\"cwd\":\"/tmp/project\",\"role\":\"user\",\"content\":\"{content}\"}}\n"
+    )
+}
+
 #[test]
 fn parse_cache_invalidates_when_a_companion_changes() {
     let directory = tempfile::tempdir().unwrap();
-    let metadata = directory.path().join("task_metadata.json");
+    let task_metadata = directory.path().join("task_metadata.json");
     let messages = directory.path().join("messages.json");
     fs::write(
-        &metadata,
+        &task_metadata,
         r#"{"session_id":"cline-1","cwd":"/tmp/project"}"#,
     )
     .unwrap();
     fs::write(&messages, r#"[{"role":"user","content":"First"}]"#).unwrap();
-    let mut cache = PersistentParseCache {
-        version: PARSE_CACHE_VERSION,
-        ..Default::default()
-    };
-    let mut seen = HashSet::new();
-    let first = parse_session_file_cached(CLIAgent::Cline, &metadata, &mut cache, &mut seen)
-        .unwrap()
-        .unwrap();
+    let cache = SharedParseCache::in_memory();
+    let first = parse_cached(CLIAgent::Cline, &task_metadata, &cache);
     fs::write(
         &messages,
         r#"[{"role":"user","content":"Second, longer prompt"}]"#,
     )
     .unwrap();
 
-    let second = parse_session_file_cached(CLIAgent::Cline, &metadata, &mut cache, &mut seen)
-        .unwrap()
-        .unwrap();
+    let second = parse_cached(CLIAgent::Cline, &task_metadata, &cache);
 
     assert_eq!(first.first_user_prompt.as_deref(), Some("First"));
     assert_eq!(
         second.first_user_prompt.as_deref(),
         Some("Second, longer prompt")
     );
+}
+
+#[test]
+fn jsonl_parse_resumes_from_the_cached_offset() {
+    let directory = tempfile::tempdir().unwrap();
+    let transcript = directory.path().join("session.jsonl");
+    let first_line = user_record(&"x".repeat(200));
+    fs::write(&transcript, &first_line).unwrap();
+    let cache = SharedParseCache::in_memory();
+    let first = parse_cached(CLIAgent::Claude, &transcript, &cache);
+    let resume = cache.lookup(&transcript).unwrap().resume.unwrap();
+    let appended = b"{\"role\":\"assistant\",\"content\":\"done\"}\n";
+    let mut contents = first_line.clone().into_bytes();
+    contents[..8].copy_from_slice(b"garbage!");
+    contents.extend_from_slice(appended);
+    fs::write(&transcript, contents).unwrap();
+
+    let second = parse_cached(CLIAgent::Claude, &transcript, &cache);
+
+    assert_eq!(first.message_count, 1);
+    assert_eq!(resume.offset, first_line.len() as u64);
+    assert_eq!(second.session_id, "abc");
+    assert_eq!(second.message_count, 2);
+    assert_eq!(second.preview_messages.len(), 2);
+    assert_eq!(
+        cache.lookup(&transcript).unwrap().resume.unwrap().offset,
+        (first_line.len() + appended.len()) as u64
+    );
+}
+
+#[test]
+fn jsonl_parse_restarts_when_the_transcript_is_rewritten() {
+    let directory = tempfile::tempdir().unwrap();
+    let transcript = directory.path().join("session.jsonl");
+    fs::write(&transcript, user_record(&"x".repeat(200))).unwrap();
+    let cache = SharedParseCache::in_memory();
+    let first = parse_cached(CLIAgent::Claude, &transcript, &cache);
+    fs::write(
+        &transcript,
+        format!(
+            "{{\"session_id\":\"new\",\"role\":\"user\",\"content\":\"{}\"}}\n{{\"role\":\"assistant\",\"content\":\"ok\"}}\n",
+            "y".repeat(300)
+        ),
+    )
+    .unwrap();
+
+    let second = parse_cached(CLIAgent::Claude, &transcript, &cache);
+
+    assert_eq!(first.session_id, "abc");
+    assert_eq!(second.session_id, "new");
+    assert_eq!(second.message_count, 2);
+}
+
+#[test]
+fn transcript_without_trailing_newline_is_parsed_but_not_resumable() {
+    let directory = tempfile::tempdir().unwrap();
+    let transcript = directory.path().join("session.jsonl");
+    fs::write(
+        &transcript,
+        "{\"role\":\"user\",\"content\":\"hi\"}\n{\"role\":\"assistant\",\"content\":\"partial\"}",
+    )
+    .unwrap();
+    let cache = SharedParseCache::in_memory();
+
+    let parsed = parse_cached(CLIAgent::Claude, &transcript, &cache);
+
+    assert_eq!(parsed.message_count, 2);
+    assert!(cache.lookup(&transcript).unwrap().resume.is_none());
+}
+
+#[test]
+fn scan_parses_only_the_newest_sessions_up_to_the_limit() {
+    let home = tempfile::tempdir().unwrap();
+    let root = home.path().join(".claude/projects/project");
+    fs::create_dir_all(&root).unwrap();
+    let base = SystemTime::now() + Duration::from_secs(86_400);
+    for index in 0..260_u64 {
+        let path = root.join(format!("session-{index:03}.jsonl"));
+        let modified = base + Duration::from_secs(index * 60);
+        let timestamp = DateTime::<Utc>::from(modified).to_rfc3339();
+        fs::write(
+            &path,
+            format!(
+                "{{\"sessionId\":\"s{index}\",\"role\":\"user\",\"content\":\"prompt {index}\",\"timestamp\":\"{timestamp}\"}}\n"
+            ),
+        )
+        .unwrap();
+        File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(modified)
+            .unwrap();
+    }
+    let cache = SharedParseCache::in_memory();
+
+    let (sessions, issues) = scan_home(home.path(), SessionLimit::TwoHundredFifty, &cache);
+
+    assert!(issues.is_empty());
+    assert_eq!(sessions.len(), 250);
+    assert_eq!(sessions[0].session_id, "s259");
+    assert_eq!(sessions[249].session_id, "s10");
+    assert!(cache.lookup(&root.join("session-010.jsonl")).is_some());
+    assert!(cache.lookup(&root.join("session-009.jsonl")).is_none());
+    assert!(cache.lookup(&root.join("session-000.jsonl")).is_none());
 }

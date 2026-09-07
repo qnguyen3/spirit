@@ -1,11 +1,13 @@
-use std::collections::{HashMap, HashSet};
-use std::fs::File;
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap, HashSet};
 #[cfg(not(target_family = "wasm"))]
 use std::fs::OpenOptions;
-use std::io::{BufRead, BufReader, Read};
+use std::fs::{File, Metadata};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 #[cfg(unix)]
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use chrono::{DateTime, Utc};
@@ -19,6 +21,7 @@ use instant::Instant;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use walkdir::{DirEntry, WalkDir};
+use warpui::r#async::Timer;
 use warpui::{Entity, ModelContext, SingletonEntity};
 
 use super::CLIAgent;
@@ -29,10 +32,10 @@ const FIRST_PROMPT_LIMIT: usize = 64 * 1_024;
 const TITLE_LIMIT: usize = 120;
 const QUERY_LIMIT: usize = 2 * 1_024;
 const CACHE_TTL: Duration = Duration::from_secs(60);
-#[cfg(not(target_family = "wasm"))]
-const PARSE_CACHE_VERSION: u32 = 1;
-#[cfg(not(target_family = "wasm"))]
+const TRANSCRIPT_REFRESH_DELAY: Duration = Duration::from_secs(3);
+const PARSE_CACHE_VERSION: u32 = 2;
 const PARSE_CACHE_MAX_ENTRIES: usize = 5_000;
+const RESUME_TAIL_BYTES: usize = 64;
 
 pub const SUPPORTED_AGENTS: [CLIAgent; 14] = [
     CLIAgent::Claude,
@@ -577,13 +580,17 @@ fn is_session_file(source: &AgentSource, path: &Path) -> bool {
     }
 }
 
-pub fn scan_home(home: &Path, limit: SessionLimit) -> (Vec<AgentSession>, Vec<SessionScanIssue>) {
-    let mut sessions = Vec::new();
-    let mut issues = Vec::new();
-    #[cfg(not(target_family = "wasm"))]
-    let mut parse_cache = load_parse_cache();
-    #[cfg(not(target_family = "wasm"))]
-    let mut seen_cache_paths = HashSet::new();
+struct SessionCandidate {
+    agent: CLIAgent,
+    path: PathBuf,
+    metadata: Metadata,
+}
+
+fn collect_session_candidates(
+    home: &Path,
+    issues: &mut Vec<SessionScanIssue>,
+) -> Vec<SessionCandidate> {
+    let mut candidates = Vec::new();
     for source in agent_sources(home) {
         if !source.root.is_dir() {
             continue;
@@ -608,34 +615,109 @@ pub fn scan_home(home: &Path, limit: SessionLimit) -> (Vec<AgentSession>, Vec<Se
             if !entry.file_type().is_file() || !is_session_file(&source, entry.path()) {
                 continue;
             }
-            #[cfg(not(target_family = "wasm"))]
-            let parsed = parse_session_file_cached(
-                source.agent,
-                entry.path(),
-                &mut parse_cache,
-                &mut seen_cache_paths,
-            );
-            #[cfg(target_family = "wasm")]
-            let parsed = parse_session_file(source.agent, entry.path());
-            match parsed {
-                Ok(Some(session)) => sessions.push(session),
-                Ok(None) => {}
+            match entry.metadata() {
+                Ok(metadata) => candidates.push(SessionCandidate {
+                    agent: source.agent,
+                    path: entry.into_path(),
+                    metadata,
+                }),
                 Err(error) => issues.push(SessionScanIssue {
                     agent: source.agent,
-                    path: entry.path().to_path_buf(),
-                    message: error,
+                    path: entry.into_path(),
+                    message: error.to_string(),
                 }),
             }
         }
     }
-    #[cfg(not(target_family = "wasm"))]
-    persist_parse_cache(&mut parse_cache, &seen_cache_paths);
+    candidates.sort_by_key(|candidate| Reverse(modified_millis(&candidate.metadata)));
+    candidates
+}
+
+struct NewestSessions {
+    capacity: Option<usize>,
+    updated_at: BinaryHeap<Reverse<DateTime<Utc>>>,
+}
+
+impl NewestSessions {
+    fn new(limit: SessionLimit) -> Self {
+        Self {
+            capacity: limit.count(),
+            updated_at: BinaryHeap::new(),
+        }
+    }
+
+    fn record(&mut self, updated_at: DateTime<Utc>) {
+        let Some(capacity) = self.capacity else {
+            return;
+        };
+        self.updated_at.push(Reverse(updated_at));
+        if self.updated_at.len() > capacity {
+            self.updated_at.pop();
+        }
+    }
+
+    fn outranks_file_modified_at(&self, modified_millis: u64) -> bool {
+        let Some(capacity) = self.capacity else {
+            return false;
+        };
+        let modified_millis = i64::try_from(modified_millis).unwrap_or(i64::MAX);
+        self.updated_at.len() >= capacity
+            && self
+                .updated_at
+                .peek()
+                .is_some_and(|Reverse(oldest)| oldest.timestamp_millis() > modified_millis)
+    }
+}
+
+fn is_indexed_agent(agent: CLIAgent) -> bool {
+    matches!(agent, CLIAgent::Codex | CLIAgent::OpenCode)
+}
+
+pub fn scan_home(
+    home: &Path,
+    limit: SessionLimit,
+    cache: &SharedParseCache,
+) -> (Vec<AgentSession>, Vec<SessionScanIssue>) {
+    let mut sessions = Vec::new();
+    let mut issues = Vec::new();
+    let candidates = collect_session_candidates(home, &mut issues);
+    let seen_cache_paths = candidates
+        .iter()
+        .map(|candidate| candidate.path.clone())
+        .collect::<HashSet<_>>();
+    let mut newest = NewestSessions::new(limit);
+    let mut indexed_sessions = HashSet::new();
+    for candidate in candidates {
+        if newest.outranks_file_modified_at(modified_millis(&candidate.metadata)) {
+            break;
+        }
+        let parsed =
+            parse_session_file_cached(candidate.agent, &candidate.path, &candidate.metadata, cache);
+        match parsed {
+            Ok(Some(session)) => {
+                if is_indexed_agent(session.agent)
+                    && !indexed_sessions.insert((session.agent, session.session_id.clone()))
+                {
+                    continue;
+                }
+                newest.record(session.effective_updated_at());
+                sessions.push(session);
+            }
+            Ok(None) => {}
+            Err(error) => issues.push(SessionScanIssue {
+                agent: candidate.agent,
+                path: candidate.path,
+                message: error,
+            }),
+        }
+    }
+    cache.persist(&seen_cache_paths);
     #[cfg(not(target_family = "wasm"))]
     scan_opencode_databases(home, limit, &mut sessions, &mut issues);
-    sessions.sort_by_key(|session| std::cmp::Reverse(session.effective_updated_at()));
+    sessions.sort_by_key(|session| Reverse(session.effective_updated_at()));
     let mut indexed_sessions = HashSet::new();
     sessions.retain(|session| {
-        !matches!(session.agent, CLIAgent::Codex | CLIAgent::OpenCode)
+        !is_indexed_agent(session.agent)
             || indexed_sessions.insert((session.agent, session.session_id.clone()))
     });
     if let Some(limit) = limit.count() {
@@ -644,7 +726,6 @@ pub fn scan_home(home: &Path, limit: SessionLimit) -> (Vec<AgentSession>, Vec<Se
     (sessions, issues)
 }
 
-#[cfg(not(target_family = "wasm"))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 struct SessionFileFingerprint {
     length: u64,
@@ -652,72 +733,141 @@ struct SessionFileFingerprint {
     dependency_fingerprint: u64,
 }
 
-#[cfg(not(target_family = "wasm"))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+struct TranscriptResumeState {
+    offset: u64,
+    tail_hash: u64,
+    explicit_session_id: bool,
+    explicit_title: bool,
+    parsed_records: usize,
+    malformed_records: usize,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct CachedSessionFile {
     fingerprint: SessionFileFingerprint,
     session: Option<AgentSession>,
+    #[serde(default)]
+    resume: Option<TranscriptResumeState>,
 }
 
-#[cfg(not(target_family = "wasm"))]
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 struct PersistentParseCache {
     version: u32,
     entries: HashMap<PathBuf, CachedSessionFile>,
 }
 
-#[cfg(not(target_family = "wasm"))]
-fn parse_cache_path() -> PathBuf {
-    warp_core::paths::cache_dir()
-        .join("agent-session-history")
-        .join("session-parse-cache.json")
+impl PersistentParseCache {
+    fn new() -> Self {
+        Self {
+            version: PARSE_CACHE_VERSION,
+            entries: HashMap::new(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct SharedParseCache {
+    entries: Arc<Mutex<Option<PersistentParseCache>>>,
+    storage: Option<PathBuf>,
+}
+
+impl Default for SharedParseCache {
+    fn default() -> Self {
+        Self {
+            entries: Arc::default(),
+            storage: parse_cache_path(),
+        }
+    }
+}
+
+impl SharedParseCache {
+    #[cfg(test)]
+    fn in_memory() -> Self {
+        Self {
+            entries: Arc::default(),
+            storage: None,
+        }
+    }
+
+    fn with<R>(&self, operation: impl FnOnce(&mut PersistentParseCache) -> R) -> R {
+        let mut entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let cache = entries.get_or_insert_with(|| {
+            self.storage
+                .as_deref()
+                .map(load_parse_cache)
+                .unwrap_or_else(PersistentParseCache::new)
+        });
+        operation(cache)
+    }
+
+    fn lookup(&self, path: &Path) -> Option<CachedSessionFile> {
+        self.with(|cache| cache.entries.get(path).cloned())
+    }
+
+    fn store(&self, path: &Path, entry: CachedSessionFile) {
+        self.with(|cache| cache.entries.insert(path.to_path_buf(), entry));
+    }
+
+    fn persist(&self, seen_paths: &HashSet<PathBuf>) {
+        self.with(|cache| {
+            cache.entries.retain(|path, _| seen_paths.contains(path));
+            if cache.entries.len() > PARSE_CACHE_MAX_ENTRIES {
+                let mut paths = cache
+                    .entries
+                    .iter()
+                    .map(|(path, entry)| (path.clone(), entry.fingerprint.modified_millis))
+                    .collect::<Vec<_>>();
+                paths.sort_by_key(|(_, modified_millis)| Reverse(*modified_millis));
+                let retained = paths
+                    .into_iter()
+                    .take(PARSE_CACHE_MAX_ENTRIES)
+                    .map(|(path, _)| path)
+                    .collect::<HashSet<_>>();
+                cache.entries.retain(|path, _| retained.contains(path));
+            }
+            if let Some(path) = &self.storage {
+                write_parse_cache(path, cache);
+            }
+        });
+    }
 }
 
 #[cfg(not(target_family = "wasm"))]
-fn load_parse_cache() -> PersistentParseCache {
-    let path = parse_cache_path();
+fn parse_cache_path() -> Option<PathBuf> {
+    Some(
+        warp_core::paths::cache_dir()
+            .join("agent-session-history")
+            .join("session-parse-cache.json"),
+    )
+}
+
+#[cfg(target_family = "wasm")]
+fn parse_cache_path() -> Option<PathBuf> {
+    None
+}
+
+fn load_parse_cache(path: &Path) -> PersistentParseCache {
     let Ok(metadata) = path.metadata() else {
-        return PersistentParseCache {
-            version: PARSE_CACHE_VERSION,
-            ..Default::default()
-        };
+        return PersistentParseCache::new();
     };
     if metadata.len() > 64 * 1_024 * 1_024 {
-        return PersistentParseCache {
-            version: PARSE_CACHE_VERSION,
-            ..Default::default()
-        };
+        return PersistentParseCache::new();
     }
     let cache = File::open(path)
         .ok()
         .and_then(|file| serde_json::from_reader::<_, PersistentParseCache>(file).ok());
     match cache {
         Some(cache) if cache.version == PARSE_CACHE_VERSION => cache,
-        Some(_) | None => PersistentParseCache {
-            version: PARSE_CACHE_VERSION,
-            ..Default::default()
-        },
+        Some(_) | None => PersistentParseCache::new(),
     }
 }
 
 #[cfg(not(target_family = "wasm"))]
-fn persist_parse_cache(cache: &mut PersistentParseCache, seen_paths: &HashSet<PathBuf>) {
-    cache.entries.retain(|path, _| seen_paths.contains(path));
-    if cache.entries.len() > PARSE_CACHE_MAX_ENTRIES {
-        let mut paths = cache
-            .entries
-            .iter()
-            .map(|(path, entry)| (path.clone(), entry.fingerprint.modified_millis))
-            .collect::<Vec<_>>();
-        paths.sort_by_key(|(_, modified_millis)| std::cmp::Reverse(*modified_millis));
-        let retained = paths
-            .into_iter()
-            .take(PARSE_CACHE_MAX_ENTRIES)
-            .map(|(path, _)| path)
-            .collect::<HashSet<_>>();
-        cache.entries.retain(|path, _| retained.contains(path));
-    }
-    let path = parse_cache_path();
+fn write_parse_cache(path: &Path, cache: &PersistentParseCache) {
     let Some(parent) = path.parent() else {
         return;
     };
@@ -742,45 +892,48 @@ fn persist_parse_cache(cache: &mut PersistentParseCache, seen_paths: &HashSet<Pa
         let _ = std::fs::remove_file(temporary);
         return;
     }
-    if std::fs::rename(&temporary, &path).is_err() {
-        let _ = std::fs::copy(&temporary, &path);
+    if std::fs::rename(&temporary, path).is_err() {
+        let _ = std::fs::copy(&temporary, path);
         let _ = std::fs::remove_file(temporary);
     }
     #[cfg(unix)]
     let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
 }
 
-#[cfg(not(target_family = "wasm"))]
+#[cfg(target_family = "wasm")]
+fn write_parse_cache(_: &Path, _: &PersistentParseCache) {}
+
 fn parse_session_file_cached(
     agent: CLIAgent,
     path: &Path,
-    cache: &mut PersistentParseCache,
-    seen_paths: &mut HashSet<PathBuf>,
+    metadata: &Metadata,
+    cache: &SharedParseCache,
 ) -> Result<Option<AgentSession>, String> {
-    let fingerprint = session_file_fingerprint(agent, path)?;
-    seen_paths.insert(path.to_path_buf());
-    if let Some(entry) = cache.entries.get(path)
+    let fingerprint = session_file_fingerprint(agent, path, metadata);
+    let cached = cache.lookup(path);
+    if let Some(entry) = &cached
         && entry.fingerprint == fingerprint
     {
         return Ok(entry.session.clone());
     }
-    let session = parse_session_file(agent, path)?;
-    cache.entries.insert(
-        path.to_path_buf(),
+    let resume = cached.and_then(|entry| Some((entry.session?, entry.resume?)));
+    let parsed = parse_session_file_resumable(agent, path, metadata, resume)?;
+    cache.store(
+        path,
         CachedSessionFile {
             fingerprint,
-            session: session.clone(),
+            session: parsed.session.clone(),
+            resume: parsed.resume,
         },
     );
-    Ok(session)
+    Ok(parsed.session)
 }
 
-#[cfg(not(target_family = "wasm"))]
 fn session_file_fingerprint(
     agent: CLIAgent,
     path: &Path,
-) -> Result<SessionFileFingerprint, String> {
-    let metadata = path.metadata().map_err(|error| error.to_string())?;
+    metadata: &Metadata,
+) -> SessionFileFingerprint {
     let mut dependency_fingerprint = 0;
     let dependencies: &[&str] = match agent {
         CLIAgent::Grok => &["chat_history.jsonl"],
@@ -845,15 +998,14 @@ fn session_file_fingerprint(
             }
         }
     }
-    Ok(SessionFileFingerprint {
+    SessionFileFingerprint {
         length: metadata.len(),
-        modified_millis: modified_millis(&metadata),
+        modified_millis: modified_millis(metadata),
         dependency_fingerprint,
-    })
+    }
 }
 
-#[cfg(not(target_family = "wasm"))]
-fn modified_millis(metadata: &std::fs::Metadata) -> u64 {
+fn modified_millis(metadata: &Metadata) -> u64 {
     metadata
         .modified()
         .ok()
@@ -1206,11 +1358,43 @@ fn epoch_timestamp(value: i64) -> Option<DateTime<Utc>> {
         .flatten()
 }
 
-fn parse_session_file(agent: CLIAgent, path: &Path) -> Result<Option<AgentSession>, String> {
-    let metadata = path.metadata().map_err(|error| error.to_string())?;
+struct ParsedSessionFile {
+    session: Option<AgentSession>,
+    resume: Option<TranscriptResumeState>,
+}
+
+fn supports_incremental_parsing(agent: CLIAgent, path: &Path) -> bool {
+    is_jsonl(path) && !matches!(agent, CLIAgent::Grok | CLIAgent::Cline)
+}
+
+fn parse_session_file_resumable(
+    agent: CLIAgent,
+    path: &Path,
+    metadata: &Metadata,
+    resume: Option<(AgentSession, TranscriptResumeState)>,
+) -> Result<ParsedSessionFile, String> {
     let modified_at = DateTime::<Utc>::from(metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH));
     let mut accumulator = SessionAccumulator::new(agent, path, modified_at);
-    parse_session_contents(&mut accumulator, path)?;
+    let resume = if supports_incremental_parsing(agent, path) {
+        let snapshot = resume.map(|(session, state)| {
+            (
+                SessionAccumulator::resumed(agent, path, modified_at, &session, state),
+                state,
+            )
+        });
+        let progress = parse_jsonl_transcript(&mut accumulator, path, snapshot)?;
+        progress.map(|progress| TranscriptResumeState {
+            offset: progress.offset,
+            tail_hash: progress.tail_hash,
+            explicit_session_id: accumulator.session_id.is_some(),
+            explicit_title: accumulator.title.is_some(),
+            parsed_records: accumulator.parsed_records,
+            malformed_records: accumulator.malformed_records,
+        })
+    } else {
+        parse_session_contents(&mut accumulator, path)?;
+        None
+    };
     if agent == CLIAgent::Grok {
         let history = path.with_file_name("chat_history.jsonl");
         if history.is_file() {
@@ -1230,33 +1414,20 @@ fn parse_session_file(agent: CLIAgent, path: &Path) -> Result<Option<AgentSessio
             }
         }
     }
-    Ok(accumulator.finish())
+    Ok(ParsedSessionFile {
+        session: accumulator.finish(),
+        resume,
+    })
+}
+
+fn is_jsonl(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|extension| extension == "jsonl")
 }
 
 fn parse_session_contents(accumulator: &mut SessionAccumulator, path: &Path) -> Result<(), String> {
-    if path
-        .extension()
-        .is_some_and(|extension| extension == "jsonl")
-    {
-        let reader = BufReader::new(File::open(path).map_err(|error| error.to_string())?);
-        let mut parsed_records = 0;
-        let mut malformed_records = 0;
-        for line in reader.lines() {
-            let line = line.map_err(|error| error.to_string())?;
-            if line.trim().is_empty() {
-                continue;
-            }
-            match serde_json::from_str::<Value>(&line) {
-                Ok(value) => {
-                    parsed_records += 1;
-                    accumulator.visit(&value);
-                }
-                Err(_) => malformed_records += 1,
-            }
-        }
-        if parsed_records == 0 && malformed_records > 0 {
-            return Err("The transcript contains no valid JSON records.".to_owned());
-        }
+    if is_jsonl(path) {
+        parse_jsonl_transcript(accumulator, path, None)?;
     } else {
         let mut file = File::open(path)
             .map_err(|error| error.to_string())?
@@ -1270,6 +1441,92 @@ fn parse_session_contents(accumulator: &mut SessionAccumulator, path: &Path) -> 
     Ok(())
 }
 
+struct TranscriptProgress {
+    offset: u64,
+    tail_hash: u64,
+}
+
+fn parse_jsonl_transcript(
+    accumulator: &mut SessionAccumulator,
+    path: &Path,
+    snapshot: Option<(SessionAccumulator, TranscriptResumeState)>,
+) -> Result<Option<TranscriptProgress>, String> {
+    let mut file = File::open(path).map_err(|error| error.to_string())?;
+    let mut tail = Vec::new();
+    let mut offset = 0;
+    if let Some((snapshot, state)) = snapshot
+        && let Some(verified_tail) = read_verified_tail(&mut file, state)
+    {
+        *accumulator = snapshot;
+        tail = verified_tail;
+        offset = state.offset;
+    }
+    file.seek(SeekFrom::Start(offset))
+        .map_err(|error| error.to_string())?;
+    let mut reader = BufReader::new(file);
+    let mut line = String::new();
+    let mut ends_with_partial_line = false;
+    loop {
+        line.clear();
+        let read = reader
+            .read_line(&mut line)
+            .map_err(|error| error.to_string())?;
+        if read == 0 {
+            break;
+        }
+        let record = line.trim();
+        if !record.is_empty() {
+            match serde_json::from_str::<Value>(record) {
+                Ok(value) => {
+                    accumulator.parsed_records += 1;
+                    accumulator.visit(&value);
+                }
+                Err(_) => accumulator.malformed_records += 1,
+            }
+        }
+        if !line.ends_with('\n') {
+            ends_with_partial_line = true;
+            break;
+        }
+        offset += read as u64;
+        push_tail(&mut tail, line.as_bytes());
+    }
+    if accumulator.parsed_records == 0 && accumulator.malformed_records > 0 {
+        return Err("The transcript contains no valid JSON records.".to_owned());
+    }
+    Ok((!ends_with_partial_line).then(|| TranscriptProgress {
+        offset,
+        tail_hash: fnv1a(&tail),
+    }))
+}
+
+fn read_verified_tail(file: &mut File, state: TranscriptResumeState) -> Option<Vec<u8>> {
+    let length = file.metadata().ok()?.len();
+    if state.offset > length {
+        return None;
+    }
+    let tail_length = state.offset.min(RESUME_TAIL_BYTES as u64);
+    file.seek(SeekFrom::Start(state.offset - tail_length))
+        .ok()?;
+    let mut tail = vec![0; tail_length as usize];
+    file.read_exact(&mut tail).ok()?;
+    (fnv1a(&tail) == state.tail_hash).then_some(tail)
+}
+
+fn push_tail(tail: &mut Vec<u8>, bytes: &[u8]) {
+    tail.extend_from_slice(bytes);
+    if tail.len() > RESUME_TAIL_BYTES {
+        tail.drain(..tail.len() - RESUME_TAIL_BYTES);
+    }
+}
+
+fn fnv1a(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x0100_0000_01b3)
+    })
+}
+
+#[derive(Clone)]
 struct SessionAccumulator {
     agent: CLIAgent,
     path: PathBuf,
@@ -1288,6 +1545,8 @@ struct SessionAccumulator {
     last_user_prompt: Option<String>,
     message_count: usize,
     queued_message_count: usize,
+    parsed_records: usize,
+    malformed_records: usize,
 }
 
 impl SessionAccumulator {
@@ -1310,6 +1569,40 @@ impl SessionAccumulator {
             last_user_prompt: None,
             message_count: 0,
             queued_message_count: 0,
+            parsed_records: 0,
+            malformed_records: 0,
+        }
+    }
+
+    fn resumed(
+        agent: CLIAgent,
+        path: &Path,
+        modified_at: DateTime<Utc>,
+        session: &AgentSession,
+        state: TranscriptResumeState,
+    ) -> Self {
+        Self {
+            agent,
+            path: path.to_path_buf(),
+            modified_at,
+            session_id: state
+                .explicit_session_id
+                .then(|| session.session_id.clone()),
+            title: state.explicit_title.then(|| session.title.clone()),
+            cwd: session.cwd.clone(),
+            branch: session.branch.clone(),
+            model: session.model.clone(),
+            created_at: session.created_at,
+            updated_at: session.updated_at,
+            total_tokens: session.total_tokens,
+            previews: session.preview_messages.clone(),
+            preview_messages_truncated: session.preview_messages_truncated,
+            first_user_prompt: session.first_user_prompt.clone(),
+            last_user_prompt: session.last_user_prompt.clone(),
+            message_count: session.message_count,
+            queued_message_count: session.queued_message_count,
+            parsed_records: state.parsed_records,
+            malformed_records: state.malformed_records,
         }
     }
 
@@ -1808,9 +2101,11 @@ pub struct AgentSessionHistoryModel {
     sessions: Vec<AgentSession>,
     issues: Vec<SessionScanIssue>,
     state: ScanState,
-    generation: u64,
     last_scan: Option<Instant>,
     limit: SessionLimit,
+    rescan_after_current: bool,
+    parse_cache: SharedParseCache,
+    pending_transcript_refreshes: HashSet<PathBuf>,
 }
 
 impl AgentSessionHistoryModel {
@@ -1819,9 +2114,11 @@ impl AgentSessionHistoryModel {
             sessions: Vec::new(),
             issues: Vec::new(),
             state: ScanState::Idle,
-            generation: 0,
             last_scan: None,
             limit: SessionLimit::default(),
+            rescan_after_current: false,
+            parse_cache: SharedParseCache::default(),
+            pending_transcript_refreshes: HashSet::new(),
         }
     }
 
@@ -1836,6 +2133,10 @@ impl AgentSessionHistoryModel {
     }
 
     pub fn refresh(&mut self, force: bool, ctx: &mut ModelContext<Self>) {
+        if self.state == ScanState::Loading {
+            self.rescan_after_current |= force;
+            return;
+        }
         if !force
             && self
                 .last_scan
@@ -1843,35 +2144,120 @@ impl AgentSessionHistoryModel {
         {
             return;
         }
-        self.generation = self.generation.wrapping_add(1);
-        let generation = self.generation;
-        let limit = self.limit;
+        self.start_scan(ctx);
+    }
+
+    fn start_scan(&mut self, ctx: &mut ModelContext<Self>) {
         self.state = ScanState::Loading;
+        self.rescan_after_current = false;
         ctx.emit(AgentSessionHistoryEvent::Updated);
-        let home = dirs::home_dir();
+        let limit = self.limit;
+        let cache = self.parse_cache.clone();
         ctx.spawn(
-            async move { home.map(|home| scan_home(&home, limit)).unwrap_or_default() },
-            move |model, (sessions, issues), ctx| {
-                if model.generation != generation {
-                    return;
-                }
+            async move {
+                run_blocking(move || {
+                    dirs::home_dir()
+                        .map(|home| scan_home(&home, limit, &cache))
+                        .unwrap_or_default()
+                })
+                .await
+                .unwrap_or_default()
+            },
+            |model, (sessions, issues), ctx| {
                 model.sessions = sessions;
                 model.issues = issues;
                 model.state = ScanState::Idle;
                 model.last_scan = Some(Instant::now());
                 ctx.emit(AgentSessionHistoryEvent::Updated);
+                if std::mem::take(&mut model.rescan_after_current) {
+                    model.start_scan(ctx);
+                }
             },
         );
     }
 
-    pub fn set_limit(&mut self, limit: SessionLimit, ctx: &mut ModelContext<Self>) {
+    pub fn refresh_transcript(
+        &mut self,
+        agent: CLIAgent,
+        transcript_path: PathBuf,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if !self
+            .pending_transcript_refreshes
+            .insert(transcript_path.clone())
+        {
+            return;
+        }
+        let cache = self.parse_cache.clone();
+        let path = transcript_path.clone();
+        ctx.spawn(
+            async move {
+                Timer::after(TRANSCRIPT_REFRESH_DELAY).await;
+                run_blocking(move || parse_live_transcript(agent, &path, &cache))
+                    .await
+                    .flatten()
+            },
+            move |model, session, ctx| {
+                model.pending_transcript_refreshes.remove(&transcript_path);
+                if let Some(session) = session {
+                    model.upsert_session(session);
+                    ctx.emit(AgentSessionHistoryEvent::Updated);
+                }
+            },
+        );
+    }
+
+    fn upsert_session(&mut self, session: AgentSession) {
+        match self
+            .sessions
+            .iter_mut()
+            .find(|existing| existing.id == session.id)
+        {
+            Some(existing) => *existing = session,
+            None => self.sessions.push(session),
+        }
+        self.sessions
+            .sort_by_key(|session| Reverse(session.effective_updated_at()));
+        if let Some(limit) = self.limit.count() {
+            self.sessions.truncate(limit);
+        }
+    }
+
+    pub fn set_limit(&mut self, limit: SessionLimit) {
         if self.limit == limit {
             return;
         }
         self.limit = limit;
         self.last_scan = None;
-        self.refresh(true, ctx);
     }
+}
+
+fn parse_live_transcript(
+    agent: CLIAgent,
+    path: &Path,
+    cache: &SharedParseCache,
+) -> Option<AgentSession> {
+    let home = dirs::home_dir()?;
+    let source = agent_sources(&home)
+        .into_iter()
+        .find(|source| source.agent == agent && path.starts_with(&source.root))?;
+    if !is_session_file(&source, path) {
+        return None;
+    }
+    let metadata = path.metadata().ok()?;
+    parse_session_file_cached(agent, path, &metadata, cache)
+        .ok()
+        .flatten()
+}
+
+#[cfg(not(target_family = "wasm"))]
+async fn run_blocking<T: Send + 'static>(task: impl FnOnce() -> T + Send + 'static) -> Option<T> {
+    tokio::task::spawn_blocking(task).await.ok()
+}
+
+#[cfg(target_family = "wasm")]
+async fn run_blocking<T>(task: impl FnOnce() -> T) -> Option<T> {
+    Some(task())
 }
 
 impl Entity for AgentSessionHistoryModel {
