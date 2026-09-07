@@ -1358,11 +1358,6 @@ fn epoch_timestamp(value: i64) -> Option<DateTime<Utc>> {
         .flatten()
 }
 
-fn parse_session_file(agent: CLIAgent, path: &Path) -> Result<Option<AgentSession>, String> {
-    let metadata = path.metadata().map_err(|error| error.to_string())?;
-    parse_session_file_resumable(agent, path, &metadata, None).map(|parsed| parsed.session)
-}
-
 struct ParsedSessionFile {
     session: Option<AgentSession>,
     resume: Option<TranscriptResumeState>,

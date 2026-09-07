@@ -148,9 +148,7 @@ fn cline_parser_reads_companion_messages_once() {
     )
     .unwrap();
 
-    let parsed = parse_session_file(CLIAgent::Cline, &metadata)
-        .unwrap()
-        .unwrap();
+    let parsed = parse_cached(CLIAgent::Cline, &metadata, &SharedParseCache::in_memory());
 
     assert_eq!(parsed.session_id, "cline-1");
     assert_eq!(parsed.message_count, 1);
