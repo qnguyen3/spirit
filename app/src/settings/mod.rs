@@ -26,6 +26,8 @@ mod new_session;
 mod onboarding;
 mod pane;
 mod privacy;
+mod remote_control;
+mod remote_control_secrets;
 mod same_line_prompt_block;
 #[cfg(not(target_family = "wasm"))]
 pub(crate) mod schema_generation;
@@ -61,6 +63,8 @@ pub use new_session::*;
 pub(crate) use onboarding::*;
 pub use pane::*;
 pub use privacy::*;
+pub use remote_control::*;
+pub use remote_control_secrets::*;
 pub use same_line_prompt_block::*;
 #[cfg(not(target_family = "wasm"))]
 pub use schema_generation::dump_settings_schema;

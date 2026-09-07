@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0e1116" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f7f8fa" media="(prefers-color-scheme: light)">
+<meta name="referrer" content="no-referrer">
+<title>Pair with Spirit</title>
+<link rel="stylesheet" href="/assets/{{BUILD_ID}}/styles.css">
+</head>
+<body class="pair-body">
+<main class="pair-panel">
+<h1 class="pair-title">Spirit Remote Control</h1>
+<p class="pair-lede">Enter the pairing token from the desktop app to connect this browser.</p>
+<p class="pair-error" role="alert">{{PAIR_ERROR}}</p>
+<form class="pair-form" method="post" action="/pair" autocomplete="off">
+<label class="pair-label" for="pair-token">Pairing token</label>
+<input class="input pair-input" id="pair-token" type="password" name="t" inputmode="text" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="one-time-code" required aria-describedby="pair-help" placeholder="Paste the token">
+<button class="button button-primary pair-submit" type="submit">Pair this device</button>
+</form>
+<section class="pair-help" id="pair-help">
+<h2 class="pair-help-title">Where do I find the token?</h2>
+<ol class="pair-help-steps">
+<li>Open Spirit on your computer.</li>
+<li>Go to <strong>Settings &rarr; Remote Control</strong>.</li>
+<li>Copy the pairing token, or scan the QR code shown there to open this page with the token filled in.</li>
+</ol>
+<p class="pair-note">The token stays valid until you rotate it in Settings. Pairing stores a cookie on this device for 30 days; you can revoke it from Settings &rarr; Remote Control at any time.</p>
+</section>
+</main>
+</body>
+</html>

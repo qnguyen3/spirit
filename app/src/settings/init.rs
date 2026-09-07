@@ -12,6 +12,8 @@ use super::app_icon::AppIconSettings;
 use super::app_installation_detection::UserAppInstallDetectionSettings;
 use super::initializer::SettingsInitializer;
 use super::native_preference::NativePreferenceSettings;
+use super::remote_control::RemoteControlSettings;
+use super::remote_control_secrets::RemoteControlSecrets;
 use super::{
     AccessibilitySettings, AliasExpansionSettings, AppEditorSettings, BlockVisibilitySettings,
     CLIAgentSettings, ChangelogSettings, CodeSettings, DebugSettings, EmacsBindingsSettings,
@@ -90,6 +92,10 @@ pub fn register_all_settings(ctx: &mut AppContext) {
     SemanticSelection::register(ctx);
     if FeatureFlag::WarpControlCli.is_enabled() {
         LocalControlSettings::register(ctx);
+    }
+    if FeatureFlag::RemoteControl.is_enabled() {
+        RemoteControlSettings::register(ctx);
+        RemoteControlSecrets::register(ctx);
     }
 
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]

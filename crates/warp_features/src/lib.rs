@@ -395,6 +395,8 @@ pub enum FeatureFlag {
     CtrlCCancelsThirdPartyHarness,
 
     AdeWorkspaces,
+
+    RemoteControl,
 }
 
 static FLAG_STATES: [AtomicBool; cardinality::<FeatureFlag>()] =
@@ -444,6 +446,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::JupyterNotebookRendering,
     FeatureFlag::BoxDrawingGlyphs,
     FeatureFlag::VoiceInput,
+    FeatureFlag::RemoteControl,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).

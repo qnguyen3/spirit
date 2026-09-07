@@ -49,6 +49,8 @@ mod profiling;
 mod projects;
 mod prompt;
 mod quit_warning;
+#[cfg(not(target_family = "wasm"))]
+mod remote_control;
 #[allow(dead_code)]
 mod remote_server;
 mod resource_limits;
@@ -1259,6 +1261,12 @@ pub(crate) fn initialize_app(
     {
         ctx.add_singleton_model(local_control::LocalControlBridge::new);
         ctx.add_singleton_model(local_control::LocalControlServer::new);
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    if matches!(launch_mode, LaunchMode::App { .. }) && FeatureFlag::RemoteControl.is_enabled() {
+        ctx.add_singleton_model(remote_control::bridge::RemoteControlBridge::new);
+        ctx.add_singleton_model(remote_control::RemoteControlServer::new);
     }
 
     app_state
