@@ -187,7 +187,7 @@ for itself.
    - `CHANGELOG-NEW-FEATURE:` for new, relatively sizable features (use sparingly - these may get marketing/docs)
    - `CHANGELOG-IMPROVEMENT:` for new functionality of existing features
    - `CHANGELOG-BUG-FIX:` for fixes related to known bugs or regressions
-   - `CHANGELOG-IMAGE:` for GCP-hosted image URLs
+   - `CHANGELOG-IMAGE:` for image URLs
    - Leave changelog lines blank or remove them if no changelog entry is needed
 
 **Database**:
