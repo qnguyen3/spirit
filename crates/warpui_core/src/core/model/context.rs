@@ -667,6 +667,12 @@ impl<M> Clone for ModelSpawner<M> {
 }
 
 impl<M> ModelSpawner<M> {
+    pub fn disconnected() -> Self {
+        let (task_sender, task_receiver) = async_channel::bounded(1);
+        task_receiver.close();
+        Self { task_sender }
+    }
+
     /// Spawn a task that will execute on the main thread, in the context of a model.
     pub async fn spawn<R: Send + 'static>(
         &self,
