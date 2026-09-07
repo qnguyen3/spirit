@@ -44,21 +44,40 @@ real listener and issues real HTTP requests.
 
 ## Decisions honoured
 
-D1 (separate module and crate; `local_control` untouched), D2 (private two-worker
-tokio runtime dropped on stop), D3 (loopback by default, `0.0.0.0` under
-`allow_lan_access`, no port hunting), D4 (one long-lived token, cookie sessions,
-303 redirect so the token leaves the address bar), D5 (host allow-list, origin
-checks, strict CSP, no CORS), D6 (plain HTTP with a LAN warning), D7 (JSON control
-frames, binary PTY frames, full snapshots with a monotonic version), D8 (raw PTY
-relay into xterm.js seeded by a server-built ANSI snapshot; mode-driven input
-routing), D9 (desktop-authoritative size; the client scales its font), D10 (opaque
-decimal ids formatted exactly as `local_control`'s metadata does), D11 (cargo
-feature + `FeatureFlag::RemoteControl` in `DOGFOOD_FLAGS`), D12 (hand-written ES
-modules, vendored pinned xterm.js, no Node in the build), D13 (coalesced,
-structurally-compared rebuilds with a 1 Hz reconcile), D14 (commands call the same
-methods and typed actions the desktop UI calls), D15 (8 clients), D16 (destructive
-commands require `confirm`), D17 (in-page alerts only), D18 (no schema changes),
-D19 (`safe_info!` for anything that could carry a secret), D20 (no pane splitting).
+D1 (separate module and crate; `local_control` untouched), D2 (private two-worker tokio
+runtime dropped on stop), D3 (loopback by default, `0.0.0.0` under `allow_lan_access`,
+no port hunting), D4 (one long-lived token, cookie sessions, 303 redirect so the token
+leaves the address bar), D5 (host allow-list, origin checks, strict CSP, no CORS), D6
+(plain HTTP with a LAN warning), D7 (JSON control frames, binary PTY frames, full
+snapshots with a monotonic version), D8 (raw PTY relay into xterm.js seeded by a
+server-built ANSI snapshot; mode-driven input routing), D9 (desktop-authoritative size;
+the client scales its font), D10 (opaque decimal ids formatted exactly as
+`local_control`'s metadata does), D11 (see Rollout below), D12 (hand-written ES modules,
+vendored pinned xterm.js, no Node in the build), D13 (coalesced, structurally-compared
+rebuilds with a 1 Hz reconcile), D14 (commands call the same methods and typed actions
+the desktop UI calls), D15 (8 clients), D16 (destructive commands require `confirm`),
+D17 (in-page alerts only), D18 (no schema changes), D19 (`safe_info!` for anything that
+could carry a secret), D20 (no pane splitting).
+
+## Rollout
+
+D11 asks for `FeatureFlag::RemoteControl` to mirror `AdeWorkspaces`, and it does: the
+`remote_control` cargo feature is listed in `default` in `app/Cargo.toml`, and
+`app/src/features.rs:250-251` adds the flag to `enabled_features()` whenever that cargo
+feature is compiled, with no channel check.
+
+**The flag is therefore on in every channel — release, preview, dev and OSS — not just
+dogfood.** The `DOGFOOD_FLAGS` entry D11 also calls for is redundant on top of that; it
+gates nothing. This is deliberate on the spec's part: the Oss channel is not a dogfood
+channel, so `DOGFOOD_FLAGS` alone would not have enabled it there.
+
+What that means for a user: the Settings page, nav item, palette entries, tray entry and
+status pill are visible to everyone. No listener starts for anyone —
+`remote_control_enabled` defaults to `false`, as does `remote_control_allow_lan_access`,
+so no port is bound until it is deliberately turned on.
+
+To make it genuinely dogfood-only, drop `"remote_control"` from `default` in
+`app/Cargo.toml`; the existing `DOGFOOD_FLAGS` entry then becomes the real gate.
 
 ## One code path, not two
 
