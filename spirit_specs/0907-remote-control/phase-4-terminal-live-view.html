@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phase 4 — Terminal live view</title>
+<style>
+:root{--bg:#ffffff;--fg:#1a1d23;--muted:#5c6470;--accent:#0d66d0;--card:#f6f8fa;--border:#d7dde3;--code:#eef1f5;--warn-bg:#fff8e6;--warn-border:#e6c56b;--danger-bg:#fdf0f0;--danger-border:#e3a5a5;--ok-bg:#effaf1;--ok-border:#9fd3ab}
+@media (prefers-color-scheme: dark){:root{--bg:#14161a;--fg:#e8eaed;--muted:#9aa3ad;--accent:#5ca8ff;--card:#1c1f24;--border:#30353c;--code:#20242a;--warn-bg:#2a2413;--warn-border:#7a6524;--danger-bg:#2a1717;--danger-border:#7a3b3b;--ok-bg:#15241a;--ok-border:#2f6b40}}
+body{background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:980px;margin:0 auto;padding:2rem 1.5rem 4rem}
+h1{font-size:1.9rem;line-height:1.25;margin:0 0 .3rem}
+h2{font-size:1.35rem;margin:2.2rem 0 .6rem;padding-top:.6rem;border-top:1px solid var(--border)}
+h3{font-size:1.08rem;margin:1.4rem 0 .4rem}
+h4{font-size:1rem;margin:1rem 0 .3rem}
+p{margin:.5rem 0}
+.subtitle{color:var(--muted);font-size:1.02rem;margin-bottom:1.2rem}
+code{background:var(--code);border-radius:4px;padding:.08em .35em;font:.88em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--border);border-radius:8px;padding:.9rem 1rem;overflow-x:auto;font-size:.86rem;line-height:1.45}
+pre code{background:none;padding:0;font-size:inherit}
+table{border-collapse:collapse;width:100%;margin:.8rem 0;font-size:.93rem}
+th,td{border:1px solid var(--border);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:var(--card)}
+.callout{border:1px solid var(--border);border-left:4px solid var(--accent);background:var(--card);border-radius:6px;padding:.7rem 1rem;margin:1rem 0}
+.callout.warn{border-left-color:var(--warn-border);background:var(--warn-bg)}
+.callout.danger{border-left-color:var(--danger-border);background:var(--danger-bg)}
+.callout.ok{border-left-color:var(--ok-border);background:var(--ok-bg)}
+.callout-title{font-weight:600;margin-bottom:.25rem}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+ul,ol{padding-left:1.4rem}
+li{margin:.25rem 0}
+.tag{display:inline-block;font-size:.75rem;font-weight:600;border-radius:10px;padding:.05rem .55rem;border:1px solid var(--border);background:var(--card);color:var(--muted);vertical-align:middle}
+.path{font:.88em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--accent)}
+.muted{color:var(--muted)}
+</style>
+</head>
+<body>
+
+<h1>Phase 4 — Terminal live view</h1>
+<p class="subtitle">Read-only mirroring of any terminal: a grid→ANSI serializer, an attach snapshot (recent history + live screen + DECSET modes), the PTY byte relay over binary WebSocket frames with overflow/resync handling, and the xterm.js viewer sized to the desktop. The hardest phase; read every gotcha.</p>
+
+<h2>Goal</h2>
+<p>Opening a terminal in the web UI shows what the desktop pane shows — recent output as scrollback, the live screen (a running <code>top</code>, a Claude Code TUI, vim in the alt screen) pixel-for-character faithful — and keeps updating as bytes arrive, with the same cols×rows as the desktop, scaled to fit a phone. Desktop resizes and mode swaps re-sync the view. Nothing is typed yet.</p>
+
+<h2>Prerequisites</h2>
+<p>Phases 1–3. Read the terminal-model part of <a href="index.html#architecture">index.html</a> and D8/D9. Re-read the locking rules.</p>
+
+<h2>Context</h2>
+<ul>
+<li><strong>Model shape:</strong> <code>TerminalModel</code> <span class="path">app/src/terminal/model/terminal_model.rs:349-382</span> (<code>alt_screen</code>, <code>block_list</code>, <code>alt_screen_active</code>); <code>alt_screen()</code> <span class="path">:1514</span>, <code>is_alt_screen_active()</code> <span class="path">:1522</span>; <code>AltScreen::grid_handler()</code> <span class="path">app/src/terminal/model/alt_screen.rs:115</span>, <code>is_mode_set</code> <span class="path">:340</span>; <code>BlockList::active_block()</code> <span class="path">app/src/terminal/model/blocks.rs:717</span>, <code>size()</code> <span class="path">:1584</span>; <code>Block::output_grid()</code> <span class="path">app/src/terminal/model/block.rs:1513</span>, <code>is_executing</code> <span class="path">:1323</span>, <code>is_active_and_long_running</code> <span class="path">:1335</span>, <code>state()</code>/<code>BlockState</code> <span class="path">:429, 1564</span>, <code>command_to_string</code> <span class="path">:1814</span>, <code>output_to_string_force_full_grid_contents</code> <span class="path">:1847</span>, <code>contents_to_string_with_line_limit</code> <span class="path">:1878</span>; <code>BlockGrid::grid_handler()</code> <span class="path">crates/warp_terminal/src/model/blockgrid.rs:392</span>, <code>contents_to_string(include_esc, max_rows)</code> <span class="path">:441</span>, cursor helpers <span class="path">:189, 213</span>; per-block modes <code>Block::is_mode_set</code> <span class="path">block.rs:2400</span>.</li>
+<li><strong>Grid access:</strong> <code>GridHandler::row(index) -&gt; Option&lt;Cow&lt;Row&gt;&gt;</code> <span class="path">crates/warp_terminal/src/model/grid/grid_handler.rs:2416</span>, <code>row_wraps</code> <span class="path">:2430</span>, <code>cell_type</code> <span class="path">:2442</span>, dimensions <span class="path">:2849-2870</span> (<code>total_rows</code>, <code>visible_rows</code>, <code>history_size</code>, <code>columns</code>), <code>cursor_render_point</code> <span class="path">:1650</span>, <code>cursor_style</code> <span class="path">:1636</span>, <code>is_mode_set</code> <span class="path">:686</span>, <code>displayed_output_rows</code> and <code>RespectDisplayedOutput</code> (see the renderer <span class="path">app/src/terminal/grid_renderer.rs:323-330</span>), <code>bounds_to_string</code> <span class="path">:1183</span> and its private <code>visible_rows_to_string</code> <span class="path">:1226</span> (the closest existing "rows with escape sequences" writer — read it before writing the serializer). <code>Cell</code> <span class="path">crates/warp_terminal/src/model/grid/cell.rs:145</span>, <code>Flags</code> <span class="path">:39-63</span>, <code>content_for_display</code> <span class="path">:180</span>; <code>Color { Named, Spec(ColorU), Indexed }</code> <span class="path">crates/warp_terminal/src/model/ansi/control_sequence_parameters.rs:396</span>, <code>NamedColor</code> <span class="path">:213</span>, <code>CursorShape</code> <span class="path">:29</span>; <code>TermMode</code> bits <span class="path">crates/warp_terminal/src/model/mode.rs:8-27</span>; <code>ModeProvider</code> <span class="path">crates/warp_terminal/src/model/escape_sequences.rs:222</span> (implemented by <code>TerminalModel</code>).</li>
+<li><strong>Byte stream:</strong> <code>ChannelEventListener::send_pty_read_event</code> <span class="path">crates/warp_terminal/src/event_listener.rs:86-96</span> (<code>try_broadcast</code>, currently drops on full); channel creation <span class="path">app/src/terminal/local_tty/terminal_manager.rs:122, 293-296</span> (<code>PTY_READS_BROADCAST_CHANNEL_SIZE = 1024</code>, <span class="path">app/src/terminal/mod.rs:99</span>); <code>PtyRecorder</code> consumer <span class="path">app/src/terminal/recorder.rs:143, 200-228</span>; receiver handed to the view at <span class="path">app/src/terminal/view.rs:2564</span>.</li>
+<li><strong>Change signals:</strong> <code>ModelEvent::{AfterBlockStarted, BlockCompleted, TerminalModeSwapped, Exit, Title}</code> <span class="path">app/src/terminal/model_events.rs:364-410</span> via <code>ModelEventDispatcher</code> <span class="path">:40</span>; view <code>Event::Resize { size_update }</code> emitted in <code>resize_internal</code> <span class="path">app/src/terminal/view.rs:7291</span>; <code>SizeUpdate</code> <span class="path">app/src/terminal/mod.rs:178-259</span>.</li>
+<li><strong>Prompt-mode predicate:</strong> <code>TerminalView::is_input_box_visible</code> <span class="path">app/src/terminal/view.rs:3399-3441</span>.</li>
+<li><strong>Precedent for a serializer test harness:</strong> ref tests using <code>TerminalModel::raw_grid_for_ref_tests</code> <span class="path">terminal_model.rs:1506</span>; <code>crates/warp_terminal</code> has grid/ANSI unit tests next to <code>grid_handler.rs</code> and <code>ansi/handler.rs</code> — follow their setup to feed bytes into a fresh <code>GridHandler</code> through the VTE processor.</li>
+</ul>
+
+<h2>Tasks</h2>
+
+<h3>Task 1 — Grid → ANSI serializer (<span class="path">crates/warp_terminal/src/model/ansi_export.rs</span>)</h3>
+<ul>
+<li><code>pub struct ScreenExport { pub rows: usize, pub cols: usize }</code> and <code>pub fn grid_screen_to_ansi(grid: &amp;GridHandler, rows: usize, cols: usize, cursor: Point, cursor_visible: bool, out: &amp;mut Vec&lt;u8&gt;)</code>: emits, for each of the last <code>rows</code> rows of the grid (padding with blank rows when the grid is shorter), <code>CSI {r};1 H</code>, then the cells with minimal SGR transitions (track current fg/bg/flags; emit <code>SGR 0</code> then the full attribute set whenever anything changes — correctness over minimality), <code>Color::Named</code> → 30–37/90–97 (and 40–47/100–107), <code>Color::Indexed</code> → <code>38;5;n</code>/<code>48;5;n</code>, <code>Color::Spec</code> → <code>38;2;r;g;b</code>/<code>48;2</code>; flags BOLD, DIM, ITALIC, UNDERLINE (and DOUBLE_UNDERLINE → <code>4:2</code>), INVERSE, HIDDEN, STRIKEOUT; <code>WIDE_CHAR_SPACER</code>/<code>LEADING_WIDE_CHAR_SPACER</code> cells are skipped (the wide char already advanced two columns); <code>content_for_display()</code> for text (this maps the null default char to a space); trailing blank cells are trimmed with <code>CSI K</code>. After the rows: <code>CSI {cursor.row+1};{cursor.col+1} H</code> then <code>CSI ?25h</code> or <code>?25l</code>. Never emit line feeds inside the screen dump — absolute positioning avoids wrap/scroll ambiguity.</li>
+<li><code>pub fn rows_to_ansi_text(grid: &amp;GridHandler, range: Range&lt;usize&gt;, out: &amp;mut Vec&lt;u8&gt;)</code>: history-style export — rows joined with <code>\r\n</code> except where <code>row_wraps(i)</code> is true (wrapped rows are joined without a newline so xterm re-wraps them at its width, which equals ours), same SGR logic, <code>SGR 0</code> at the end. Used for completed blocks' output and for the part of the active grid above the visible window.</li>
+<li><code>pub fn modes_to_ansi(modes: &amp;dyn ModeProvider, out: &amp;mut Vec&lt;u8&gt;)</code>: for each of APP_CURSOR (?1), APP_KEYPAD (=/&gt; keypad), BRACKETED_PASTE (?2004), MOUSE_REPORT_CLICK (?1000), MOUSE_DRAG (?1002), MOUSE_MOTION (?1003), SGR_MOUSE (?1006), UTF8_MOUSE (?1005), FOCUS_IN_OUT (?1004), ALTERNATE_SCROLL (?1007), LINE_WRAP (?7), ORIGIN (?6), INSERT (4), LINE_FEED_NEW_LINE (20): emit set or reset explicitly so xterm's state matches regardless of its defaults. Kitty keyboard flags are not emitted (xterm.js does not implement the protocol; Phase 5 encodes keys accordingly).</li>
+<li>Tests <span class="path">ansi_export_tests.rs</span>: feed a byte script into a fresh grid via the existing processor helpers, export, feed the export into a second fresh grid of the same size, and assert cell-by-cell equality of chars, fg, bg and the attribute flags on the visible screen, plus cursor equality — scripts: plain text, 16/256/truecolor colors, bold+underline+inverse mixes, wide CJK characters, a screen exactly <code>rows</code> tall, a screen shorter than <code>rows</code>, a cursor at the last column, a hidden cursor. A separate test asserts <code>modes_to_ansi</code> round-trips every listed mode.</li>
+</ul>
+
+<h3>Task 2 — Attach snapshot (<span class="path">app/src/remote_control/terminal_snapshot.rs</span>)</h3>
+<ul>
+<li><code>pub(crate) struct AttachSnapshot { bytes: Vec&lt;u8&gt;, cols: usize, rows: usize, mode: TerminalMode }</code> and <code>pub(crate) fn build_attach_snapshot(view: &amp;TerminalView, app: &amp;AppContext) -&gt; AttachSnapshot</code>.</li>
+<li>Under one <code>view.model.lock()</code> scope: read <code>size()</code>, the mode (<code>is_alt_screen_active</code> → <code>AltScreen</code>; else <code>!is_input_box_visible(&amp;model, app)</code> → <code>Running</code>; else <code>Prompt</code>), and copy the pieces needed for export: (a) history: iterate the last blocks of the block list newest-first until <code>HISTORY_SNAPSHOT_MAX_BYTES</code> is reached, for each completed command block collect a synthesized prompt line <code>\r\n\x1b[2m❯ {command}\x1b[0m\r\n</code> plus <code>rows_to_ansi_text</code> over its output grid (respecting <code>displayed_output_rows</code> the way the renderer does, so trimmed agent output is trimmed here too); (b) live region: <code>AltScreen</code> → export the alt grid's screen; <code>Running</code> → export the active block's output grid: rows above the visible window through <code>rows_to_ansi_text</code> (counted against the history budget), then the visible window through <code>grid_screen_to_ansi</code>; <code>Prompt</code> → nothing (the cursor ends up on a fresh line at the bottom). Build the byte vector <em>after</em> dropping the lock: <code>SGR 0</code>, <code>CSI ?1049l</code> (main screen), history bytes, then <code>\r\n</code> × <code>rows</code> (pushes history into scrollback so the screen dump can use absolute positions), <code>CSI H</code>, then for <code>AltScreen</code> <code>CSI ?1049h</code> + screen dump, else the screen dump, then <code>modes_to_ansi</code>.</li>
+<li>Cursor for <code>Running</code>: <code>cursor_render_point</code> of the active output grid translated into the visible window; for <code>Prompt</code>: row <code>rows-1</code>, col 0.</li>
+<li>Cost: cap the total under 512 KiB; the history walk stops at the budget. Measure: a 10 MB-output block must snapshot in under 20 ms (only the last rows are visited — never stringify the whole block).</li>
+</ul>
+
+<h3>Task 3 — Byte fan-out changes in the terminal layer</h3>
+<ul>
+<li>Expose the inactive receiver: in <span class="path">app/src/terminal/view.rs</span> keep a clone of <code>inactive_pty_reads_rx</code> on <code>TerminalView</code> (it is already handed to <code>PtyRecorder</code> at <span class="path">:2564</span>) with <code>pub(crate) fn pty_reads_receiver(&amp;self) -&gt; Option&lt;async_broadcast::InactiveReceiver&lt;Arc&lt;Vec&lt;u8&gt;&gt;&gt;&gt;</code> (<code>None</code> for terminals without a byte stream, e.g. read-only restored panes or mock managers).</li>
+<li>Turn on overflow on the broadcast sender at both creation sites (<span class="path">terminal_manager.rs:122, 294</span>): <code>pty_reads_tx.set_overflow(true)</code>, so a slow consumer never causes <code>send_pty_read_event</code> to drop <em>new</em> bytes for everyone; slow receivers instead observe <code>RecvError::Overflowed(n)</code>. Update <code>record_pty_bytes</code> (<span class="path">recorder.rs:210</span>) to treat <code>Overflowed</code> as "continue" (log once) and <code>Closed</code> as exit. Add a test in <span class="path">recorder_tests.rs</span> (or the manager's tests) that a lagging receiver sees <code>Overflowed</code> and the fast one sees every chunk.</li>
+</ul>
+
+<h3>Task 4 — Attachments and relay (<span class="path">app/src/remote_control/terminal_streams.rs</span>)</h3>
+<ul>
+<li>Bridge side (main thread): <code>attach(client_id, terminal_id, ctx) -&gt; Result&lt;AttachInfo { attach_id, snapshot, receiver: InactiveReceiver }, CommandError&gt;</code>: resolve the view, enforce <code>MAX_ATTACHMENTS_PER_CLIENT</code>, build the snapshot, grab the receiver, record <code>Attachment { client_id, terminal_id, attach_id }</code> in the bridge (so mode/size changes and terminal closure can be routed), and <code>observe</code>/<code>subscribe</code> the terminal if not yet watched. <code>detach(attach_id)</code> removes the record. When a watched terminal's <code>Event::Resize</code> or <code>ModelEvent::TerminalModeSwapped</code>/<code>AfterBlockStarted</code>/<code>BlockCompleted</code> fires, or the view is dropped, the bridge sends to the owning client's channel an <code>event terminal.resync {attach_id, snapshot, cols, rows, mode}</code> (rebuilt) or <code>terminal.closed</code>.</li>
+<li>Socket side (tokio): on a successful attach result, spawn a relay task per attachment: <code>receiver.activate()</code> → loop <code>recv().await</code>: <code>Ok(chunk)</code> → append to a coalescing buffer flushed when it exceeds <code>OUTPUT_COALESCE_BYTES</code> or after <code>OUTPUT_COALESCE_MS</code> of quiet (use <code>tokio::time::timeout</code>), each flush becomes one binary frame <code>[attach_id LE u32][bytes]</code> pushed into the connection's outbound <code>mpsc</code> (capacity <code>OUTPUT_QUEUE_FRAMES</code>); if the push would block (<code>try_send</code> full), drop the buffered bytes, set a "needs resync" flag and, once the queue drains below half, ask the bridge for a fresh snapshot (<code>resync</code> command path) — never await on a full queue inside the relay. <code>Err(Overflowed(_))</code> → same resync path. <code>Err(Closed)</code> → send <code>terminal.closed</code> and stop. Detach or socket close aborts the task (keep the <code>JoinHandle</code>s in the connection struct and abort them on exit).</li>
+<li>Binary frame writer: a single writer task per socket serializes JSON and binary frames from the outbound channel in order, so a resync event always follows the last stale bytes.</li>
+</ul>
+
+<h3>Task 5 — Protocol wiring</h3>
+<ul>
+<li>Commands <code>terminal.attach</code>/<code>terminal.detach</code> and events <code>terminal.resync</code>/<code>terminal.closed</code> per <a href="protocol.html">protocol.html</a>. <code>hello.capabilities</code> now includes them. <code>TerminalSummary.mode/cols/rows</code> in the state snapshot already exist (Phase 2); make sure the bridge's watchers mark dirty on terminal resize and mode events so the header badge updates even without an attachment.</li>
+</ul>
+
+<h3>Task 6 — Web viewer (<span class="path">terminal.js</span>, <span class="path">ui/terminal_view.js</span>)</h3>
+<ul>
+<li>On entering <code>#/t/&lt;id&gt;</code>: create the xterm instance in the pre-built container (see the Phase 3 gotcha), <code>terminal.attach</code>, on result <code>term.resize(cols, rows)</code> (once), <code>term.reset()</code>, <code>term.write(snapshotBytes)</code>, register the binary handler, refit. On leaving: <code>terminal.detach</code>, dispose. On <code>terminal.resync</code>: same as the initial apply. On <code>terminal.closed</code>: overlay with a back button.</li>
+<li>Fit rule from <a href="web-ui.html">web-ui.html</a> (font size search in [8, 20] px; horizontal scroll fallback); <code>ResizeObserver</code> + <code>visualViewport</code>; recompute on <code>state</code> when <code>cols/rows</code> change (the server also resyncs). Vertical: the xterm viewport gets the full available height; when <code>rows × cellHeight</code> exceeds it, the container scrolls.</li>
+<li>Header: title, agent name and status dot, mode badge, "Show on desktop". Mode chrome placeholders for Phase 5 (composer/toolbar hidden, layout reserved).</li>
+<li>Batch binary frames per animation frame (<code>requestAnimationFrame</code> flush) and drop to the latest resync if more than 2 MB is queued client-side.</li>
+<li>Client prefs: font scale override (−/0/+) persisted in localStorage, applied as a multiplier on the fitted size but never violating the "cols fit or scroll" rule.</li>
+</ul>
+
+<h2>Out of scope</h2>
+<ul>
+<li>Input of any kind (Phase 5). Remote-driven resize (D9). Block-level rendering, selection/copy affordances beyond xterm's native selection, search, image protocols (kitty/sixel/iTerm images are not relayed — xterm ignores them), OSC 8 hyperlinks (the web-links addon handles plain URLs only).</li>
+<li>Mirroring code panes, notebooks, settings panes (the web UI shows their titles only).</li>
+</ul>
+
+<h2>Verification</h2>
+<ul>
+<li><code>./script/presubmit</code> green; serializer round-trip tests pass; overflow test passes; snapshot cost test passes.</li>
+<li>Desktop: run <code>ls --color</code>, <code>top</code>, <code>vim</code> (alt screen), <code>htop</code>, a Claude Code session, <code>yes | head -c 50M</code>, <code>cat</code> of a 5 MB log; on the phone each attaches with the right content and keeps up; after <code>yes</code> a resync restores an exact screen; vim's status line, colors and cursor position match; Claude Code's redraws (inline TUI, no alt screen) render without smearing; quitting vim returns the viewer to the main screen (the <code>?1049l</code> in the stream does it).</li>
+<li>Resize the desktop pane: the phone refits within a second, content re-synced. Split the pane: both terminals attachable; close the pane: <code>terminal.closed</code> overlay.</li>
+<li>Attach from two browsers simultaneously; detach one; the other is unaffected. Attach 5 terminals from one client → the 5th is refused with <code>too_many_attachments</code>.</li>
+<li>Desktop impact: with a client attached to a terminal printing at full speed, the desktop stays responsive and the PTY event loop's throughput is unchanged (compare <code>time yes | head -c 200M &gt; /dev/null</code> in a Spirit terminal with and without an attachment; the difference must be within noise). <code>PtyRecorder</code> behavior unchanged when enabled.</li>
+<li>Idle: an attached but quiet terminal produces no frames; CPU at baseline.</li>
+</ul>
+
+<h2>Gotchas</h2>
+<ul>
+<li><strong>The relay task must never block the broadcast.</strong> <code>async_broadcast</code> receivers that fall behind now overflow (Task 3); but a receiver that is <em>awaited</em> slowly still holds ring-buffer slots. Keep the relay loop trivial: receive, append, <code>try_send</code>, never await the socket.</li>
+<li><strong>Enabling overflow changes semantics for every receiver</strong>, including the throughput recorder behind <code>FeatureFlag::RecordPtyThroughput</code> (<span class="path">crates/warp_terminal/src/local_tty/recorder.rs:17</span>); make both existing consumers tolerate <code>Overflowed</code> before flipping the flag.</li>
+<li><strong>The snapshot and the live stream must join seamlessly.</strong> Bytes emitted by the PTY after the snapshot was taken but before the receiver was activated are lost. Activate the receiver <em>before</em> building the snapshot (both inside the same main-thread <code>attach</code> call), buffer anything received during the build, and let the relay start with that buffer. Since the model processes the same bytes before the snapshot reads the grid, a byte that arrived before the snapshot is reflected in the grid and will also be replayed — this is harmless for printable output but can duplicate a cursor movement. Accept the tiny window; the 1 Hz reconcile plus the next mode/resize resync bound the damage. Document this in a test-visible constant, not a comment.</li>
+<li><strong>Warp's shell bootstrap traffic is in the raw stream.</strong> OSC/DCS sequences the model consumes (prompt markers, block boundaries) reach xterm.js too; xterm ignores unknown OSC/DCS. The visible artefact is that the shell prompt in <code>prompt</code> mode is whatever the bootstrap PS1 renders — possibly nothing. Phase 5's composer is the user's prompt on the phone; do not try to synthesize prompt lines from the stream.</li>
+<li><strong><code>displayed_output_rows</code> filters</strong> (trimmed agent output, block filters) change which rows the desktop shows; export the same rows for history so the phone and desktop agree, but export the <em>full</em> visible window for the live screen — the running program's cursor math assumes the full grid.</li>
+<li><strong>Wide characters and combining marks:</strong> skip spacer cells; emit the full grapheme from <code>content_for_display</code>; xterm's width tables can disagree with Warp's on rare code points — the roundtrip test corpus must include CJK and emoji, and a mismatch is a bug in the exporter's spacer handling until proven otherwise.</li>
+<li><strong>Do not send <code>CSI 2J</code>/<code>3J</code></strong> in the snapshot; <code>term.reset()</code> on the client already clears everything, and a clear inside the stream would wipe the history we just pushed into scrollback.</li>
+<li><strong>Locks:</strong> the snapshot builder holds the model lock while reading rows — potentially thousands. Bound the rows visited by the byte budget, copy into a local <code>Vec</code>, drop the lock, then serialize. Never call <code>is_input_box_visible</code> after the lock is dropped with a stale reference; compute the mode inside.</li>
+<li><strong>Mobile Safari memory:</strong> 5000 lines of scrollback × 120 cols is fine; do not raise it. Dispose the terminal on navigation.</li>
+</ul>
+
+<p class="muted" style="margin-top:2.5rem"><a href="phase-3-web-app-shell.html">← Phase 3</a> · <a href="index.html">Overview</a> · Next: <a href="phase-5-terminal-input.html">Phase 5 — Terminal input</a></p>
+
+</body>
+</html>

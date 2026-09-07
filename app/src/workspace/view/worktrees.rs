@@ -41,6 +41,20 @@ pub(crate) struct WorktreeCreation {
     pub agent_launch: Option<AgentLaunchRequest>,
 }
 
+pub(crate) struct WorktreeCreatedInfo {
+    pub worktree_id: WorktreeId,
+    pub tab_id: EntityId,
+    pub branch: String,
+    pub path: PathBuf,
+}
+
+pub(crate) type WorktreeCreationCallback = Box<
+    dyn FnOnce(&mut Workspace, Result<WorktreeCreatedInfo, String>, &mut ViewContext<Workspace>),
+>;
+
+pub(crate) type WorktreeDeletionCallback =
+    Box<dyn FnOnce(&mut Workspace, Result<bool, String>, &mut ViewContext<Workspace>)>;
+
 impl Workspace {
     pub(crate) fn build_create_worktree_modal(
         ctx: &mut ViewContext<Self>,
@@ -77,7 +91,7 @@ impl Workspace {
             DeleteWorktreeEvent::Confirm { worktree_id, force } => {
                 let (worktree_id, force) = (*worktree_id, *force);
                 me.delete_worktree_dialog.close();
-                me.execute_worktree_deletion(worktree_id, force, ctx);
+                me.delete_worktree_headless(worktree_id, force, Box::new(|_, _, _| {}), ctx);
             }
             DeleteWorktreeEvent::Cancel => {
                 me.delete_worktree_dialog.close();
@@ -488,7 +502,38 @@ impl Workspace {
         agent_launch: Option<AgentLaunchRequest>,
         ctx: &mut ViewContext<Self>,
     ) {
+        self.create_worktree_headless(
+            name,
+            agent_launch,
+            Box::new(|workspace, result, ctx| {
+                let Err(detail) = result else {
+                    return;
+                };
+                let body = workspace
+                    .create_worktree_modal
+                    .view
+                    .as_ref(ctx)
+                    .body()
+                    .clone();
+                body.update(ctx, |body, ctx| body.set_error(detail, ctx));
+            }),
+            ctx,
+        );
+    }
+
+    pub(crate) fn create_worktree_headless(
+        &mut self,
+        name: String,
+        agent_launch: Option<AgentLaunchRequest>,
+        on_done: WorktreeCreationCallback,
+        ctx: &mut ViewContext<Self>,
+    ) {
         let Some(context) = self.worktree_context(ctx) else {
+            on_done(
+                self,
+                Err("that Workspace is not a git repository".to_owned()),
+                ctx,
+            );
             return;
         };
         let taken_names =
@@ -534,12 +579,19 @@ impl Workspace {
                 ))
             },
             move |me: &mut Self, result, ctx| match result {
-                Ok((creation, report)) => me.finish_worktree_creation(creation, report, ctx),
+                Ok((creation, report)) => {
+                    match me.finish_worktree_creation(creation, report, ctx) {
+                        Some(info) => on_done(me, Ok(info), ctx),
+                        None => on_done(
+                            me,
+                            Err("the worktree could not be opened in a tab".to_owned()),
+                            ctx,
+                        ),
+                    }
+                }
                 Err(err) => {
                     log::warn!("Worktree creation failed: {err:#}");
-                    let detail = crate::projects::error_summary(&err);
-                    let body = me.create_worktree_modal.view.as_ref(ctx).body().clone();
-                    body.update(ctx, |body, ctx| body.set_error(detail, ctx));
+                    on_done(me, Err(crate::projects::error_summary(&err)), ctx);
                 }
             },
         );
@@ -550,10 +602,8 @@ impl Workspace {
         creation: WorktreeCreation,
         include_report: git_ops::IncludeCopyReport,
         ctx: &mut ViewContext<Self>,
-    ) {
-        let Some(context) = self.worktree_context(ctx) else {
-            return;
-        };
+    ) -> Option<WorktreeCreatedInfo> {
+        let context = self.worktree_context(ctx)?;
         self.create_worktree_modal.close();
 
         let worktree_id = ProjectRegistryModel::handle(ctx).update(ctx, |registry, ctx| {
@@ -568,12 +618,22 @@ impl Workspace {
         });
 
         self.add_tab_in_worktree(worktree_id, creation.agent_launch, ctx);
+        let tab_id = self
+            .tabs
+            .get(self.active_tab_index)
+            .map(|tab| tab.pane_group.id());
 
         if let Some(message) = include_report.summary() {
             self.toast_worktree_message(message, ctx);
         }
 
         ctx.notify();
+        Some(WorktreeCreatedInfo {
+            worktree_id,
+            tab_id: tab_id?,
+            branch: creation.branch,
+            path: creation.path,
+        })
     }
 
     pub(crate) fn show_delete_worktree_dialog(
@@ -619,22 +679,35 @@ impl Workspace {
 
     // Tabs are closed before any git call: git refuses to remove a worktree a
     // live shell sits in, and removing it underneath one races its writes.
-    fn execute_worktree_deletion(
+    pub(crate) fn delete_worktree_headless(
         &mut self,
         worktree_id: WorktreeId,
         force: bool,
+        on_done: WorktreeDeletionCallback,
         ctx: &mut ViewContext<Self>,
     ) {
         let Some(context) = self.worktree_context(ctx) else {
+            on_done(
+                self,
+                Err("that Workspace is not a git repository".to_owned()),
+                ctx,
+            );
             return;
         };
-        let registry = ProjectRegistryModel::as_ref(ctx);
-        let Some(worktree) = registry.worktree(worktree_id) else {
-            return;
+        let target = {
+            let registry = ProjectRegistryModel::as_ref(ctx);
+            registry
+                .worktree(worktree_id)
+                .map(|worktree| {
+                    (
+                        worktree.name.clone(),
+                        worktree.branch().unwrap_or_default().to_owned(),
+                    )
+                })
+                .zip(registry.worktree_directory(worktree_id))
         };
-        let name = worktree.name.clone();
-        let branch = worktree.branch().unwrap_or_default().to_owned();
-        let Some(directory) = registry.worktree_directory(worktree_id) else {
+        let Some(((name, branch), directory)) = target else {
+            on_done(self, Err("that worktree no longer exists".to_owned()), ctx);
             return;
         };
 
@@ -674,18 +747,21 @@ impl Workspace {
                             "Failed to drop worktree {worktree_id} from the registry: {err}"
                         );
                     }
-                    if outcome == BranchDeleteOutcome::KeptUnmerged {
+                    let branch_kept = outcome == BranchDeleteOutcome::KeptUnmerged;
+                    if branch_kept {
                         me.toast_worktree_message(
                             format!("Branch {branch} kept (unmerged work)"),
                             ctx,
                         );
                     }
                     ctx.notify();
+                    on_done(me, Ok(branch_kept), ctx);
                 }
                 Err(err) => {
                     log::warn!("Worktree deletion failed: {err:#}");
                     let detail = crate::projects::error_summary(&err);
                     me.toast_worktree_message(format!("Could not delete '{name}': {detail}"), ctx);
+                    on_done(me, Err(detail), ctx);
                 }
             },
         );
@@ -878,6 +954,24 @@ pub(crate) fn worktree_repo_root(
     }
     let directory = registry.worktree_directory(worktree_id)?;
     Some(dunce::canonicalize(&directory).unwrap_or(directory))
+}
+
+pub(crate) fn worktree_sections_for_bindings<'a>(
+    bindings: &[Option<WorktreeId>],
+    registry_worktrees: &[&'a Worktree],
+) -> Vec<(&'a Worktree, Vec<usize>)> {
+    registry_worktrees
+        .iter()
+        .map(|worktree| {
+            let members = bindings
+                .iter()
+                .enumerate()
+                .filter(|(_, binding)| **binding == Some(worktree.id))
+                .map(|(index, _)| index)
+                .collect();
+            (*worktree, members)
+        })
+        .collect()
 }
 
 pub(crate) fn worktree_run_partition(

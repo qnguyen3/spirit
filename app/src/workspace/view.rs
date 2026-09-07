@@ -11,7 +11,7 @@ mod tab_grouping;
 #[path = "view_tests.rs"]
 pub(crate) mod tests;
 pub(crate) mod vertical_tabs;
-mod worktrees;
+pub(crate) mod worktrees;
 
 use std::cell::RefCell;
 use std::cmp::Ordering;
@@ -371,6 +371,8 @@ const THEME_CHOOSER_RATIO: f32 = 3.5;
 /// Save position for the tab bar.
 pub(crate) const TAB_BAR_POSITION_ID: &str = "workspace_view:tab_bar";
 const WORKSPACE_SWITCHER_PILL_POSITION_ID: &str = "workspace_view:workspace_switcher_pill";
+const REMOTE_CONTROL_PILL_POSITION_ID: &str = "workspace_view:remote_control_pill";
+const REMOTE_CONTROL_OFF_MESSAGE: &str = "Remote Control is off — enable it in Settings";
 const AGENT_INBOX_POSITION_ID: &str = "workspace_view:agent_inbox_button";
 
 /// Save position for the vertical tabs panel.
@@ -2031,6 +2033,14 @@ impl Workspace {
             ctx.notify();
         });
 
+        #[cfg(not(target_family = "wasm"))]
+        if FeatureFlag::RemoteControl.is_enabled() {
+            ctx.observe(
+                &crate::remote_control::RemoteControlServer::handle(ctx),
+                |_, _, ctx| ctx.notify(),
+            );
+        }
+
         let changelog_model = ChangelogModel::handle(ctx);
         ctx.subscribe_to_model(&changelog_model, |me, _, event, ctx| {
             me.handle_changelog_event(event, ctx);
@@ -2267,8 +2277,9 @@ impl Workspace {
         // Registered before the tabs are built so panes restored below can
         // resolve which screen owns them (see `owning_screen_id`).
         let weak_handle = ctx.handle();
-        WorkspaceRegistry::handle(ctx).update(ctx, |registry, _| {
+        WorkspaceRegistry::handle(ctx).update(ctx, |registry, ctx| {
             registry.register(window_id, weak_handle);
+            ctx.notify();
         });
 
         ws.configure_new_workspace(workspace_setting, ctx);
@@ -4256,6 +4267,106 @@ impl Workspace {
         )
     }
 
+    fn remote_control_connected_clients(&self, ctx: &AppContext) -> Option<usize> {
+        if !FeatureFlag::RemoteControl.is_enabled() {
+            return None;
+        }
+        #[cfg(not(target_family = "wasm"))]
+        let connected_clients = {
+            let state = crate::remote_control::RemoteControlServer::as_ref(ctx).state();
+            state.is_running().then(|| state.connected_clients())
+        };
+        #[cfg(target_family = "wasm")]
+        let connected_clients = {
+            let _ = ctx;
+            None
+        };
+        connected_clients
+    }
+
+    fn render_remote_control_pill(
+        &self,
+        appearance: &Appearance,
+        ctx: &AppContext,
+    ) -> Option<Box<dyn Element>> {
+        let connected_clients = self.remote_control_connected_clients(ctx)?;
+
+        let theme = appearance.theme();
+        let text_color = theme.foreground();
+        let pill_bg_normal = internal_colors::fg_overlay_1(theme);
+        let pill_bg_hover = internal_colors::fg_overlay_2(theme);
+
+        let pill = Hoverable::new(
+            self.mouse_states.remote_control_pill.clone(),
+            move |state| {
+                let icon =
+                    ConstrainedBox::new(icons::Icon::Phone01.to_warpui_icon(text_color).finish())
+                        .with_width(12.)
+                        .with_height(12.)
+                        .finish();
+
+                let label = Text::new_inline(
+                    "Remote".to_string(),
+                    appearance.ui_font_family(),
+                    appearance.ui_font_size(),
+                )
+                .with_color(text_color.into())
+                .with_clip(ClipConfig::ellipsis())
+                .finish();
+
+                let mut row = Flex::row()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_spacing(4.)
+                    .with_child(icon)
+                    .with_child(label);
+
+                if connected_clients > 0 {
+                    row.add_child(
+                        Container::new(
+                            Text::new_inline(
+                                connected_clients.to_string(),
+                                appearance.ui_font_family(),
+                                appearance.ui_font_size() * 0.8,
+                            )
+                            .with_color(text_color.into())
+                            .finish(),
+                        )
+                        .with_background(pill_bg_hover)
+                        .with_corner_radius(CornerRadius::with_all(Radius::Percentage(50.)))
+                        .with_horizontal_padding(5.)
+                        .finish(),
+                    );
+                }
+
+                Container::new(row.finish())
+                    .with_background(if state.is_hovered() {
+                        pill_bg_hover
+                    } else {
+                        pill_bg_normal
+                    })
+                    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
+                    .with_padding_left(8.)
+                    .with_padding_right(8.)
+                    .with_padding_top(4.)
+                    .with_padding_bottom(4.)
+                    .finish()
+            },
+        )
+        .with_cursor(Cursor::PointingHand)
+        .on_click(|ctx, _, _| {
+            ctx.dispatch_typed_action(WorkspaceAction::ShowSettingsPage(
+                SettingsSection::RemoteControl,
+            ));
+        })
+        .finish();
+
+        Some(
+            Container::new(SavePosition::new(pill, REMOTE_CONTROL_PILL_POSITION_ID).finish())
+                .with_margin_left(TAB_BAR_PADDING_LEFT)
+                .finish(),
+        )
+    }
+
     fn show_header_toolbar_context_menu(
         &mut self,
         position: Vector2F,
@@ -4559,7 +4670,7 @@ impl Workspace {
         self.show_native_modal(dialog, ctx);
     }
 
-    fn resume_agent_session(
+    pub(crate) fn resume_agent_session(
         &mut self,
         session: &crate::terminal::cli_agent_session_history::AgentSession,
         ctx: &mut ViewContext<Self>,
@@ -4709,6 +4820,44 @@ impl Workspace {
     fn copy_version(&mut self, version: &str, ctx: &mut ViewContext<Self>) {
         ctx.clipboard()
             .write(ClipboardContent::plain_text(version.to_string()));
+    }
+
+    fn remote_control_pairing_url(&self, ctx: &AppContext) -> Option<String> {
+        if !FeatureFlag::RemoteControl.is_enabled() {
+            return None;
+        }
+        #[cfg(not(target_family = "wasm"))]
+        let pairing_url = crate::remote_control::RemoteControlServer::as_ref(ctx).pairing_url(ctx);
+        #[cfg(target_family = "wasm")]
+        let pairing_url = {
+            let _ = ctx;
+            None
+        };
+        pairing_url
+    }
+
+    fn show_remote_control_toast(&mut self, message: &str, ctx: &mut ViewContext<Self>) {
+        let toast = DismissibleToast::success(message.to_owned());
+        self.toast_stack.update(ctx, |toast_stack, ctx| {
+            toast_stack.add_ephemeral_toast(toast, ctx)
+        });
+    }
+
+    fn copy_remote_control_url(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(url) = self.remote_control_pairing_url(ctx) else {
+            self.show_remote_control_toast(REMOTE_CONTROL_OFF_MESSAGE, ctx);
+            return;
+        };
+        ctx.clipboard().write(ClipboardContent::plain_text(url));
+        self.show_remote_control_toast("Copied the Remote Control link", ctx);
+    }
+
+    fn open_remote_control_in_browser(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(url) = self.remote_control_pairing_url(ctx) else {
+            self.show_remote_control_toast(REMOTE_CONTROL_OFF_MESSAGE, ctx);
+            return;
+        };
+        ctx.open_url(&url);
     }
 
     /// Builds the unified new-session menu items
@@ -9108,8 +9257,9 @@ impl Workspace {
         // `Workspace::new`, so register it again.
         let window_id = ctx.window_id();
         let weak_handle = ctx.handle();
-        WorkspaceRegistry::handle(ctx).update(ctx, |registry, _| {
+        WorkspaceRegistry::handle(ctx).update(ctx, |registry, ctx| {
             registry.register(window_id, weak_handle);
+            ctx.notify();
         });
     }
 
@@ -13859,6 +14009,10 @@ impl Workspace {
             target.add_child(pill);
         }
 
+        if let Some(pill) = self.render_remote_control_pill(appearance, ctx) {
+            target.add_child(pill);
+        }
+
         if let Some(update_pill) = self.render_tab_overflow_menu(ctx, appearance) {
             target.add_child(
                 Container::new(update_pill)
@@ -15291,6 +15445,12 @@ impl Workspace {
         let command_search_settings = CommandSearchSettings::as_ref(app);
         let ssh_settings = SshSettings::as_ref(app);
 
+        if FeatureFlag::RemoteControl.is_enabled()
+            && crate::settings::RemoteControlSettings::as_ref(app).is_enabled()
+        {
+            context.set.insert(flags::REMOTE_CONTROL_CONTEXT_FLAG);
+        }
+
         let is_compact_mode =
             matches!(terminal_settings.spacing_mode.value(), SpacingMode::Compact);
         if is_compact_mode {
@@ -16255,6 +16415,8 @@ impl TypedActionView for Workspace {
                 ctx.dispatch_typed_action_for_view(window_id, self.settings_pane.id(), action)
             }
             OpenLink(link) => ctx.open_url(link),
+            CopyRemoteControlUrl => self.copy_remote_control_url(ctx),
+            OpenRemoteControlInBrowser => self.open_remote_control_in_browser(ctx),
             DumpDebugInfo => self.dump_debug_info(ctx),
             LogReviewCommentSendStatusForActiveTab => {
                 self.right_panel_view.update(ctx, |right_panel_view, ctx| {
@@ -18033,8 +18195,9 @@ impl View for Workspace {
 
         let window_id = ctx.window_id();
 
-        WorkspaceRegistry::handle(ctx).update(ctx, |registry, _| {
+        WorkspaceRegistry::handle(ctx).update(ctx, |registry, ctx| {
             registry.unregister(window_id);
+            ctx.notify();
         });
 
         // If this workspace's close was registered as part of a tab-drag

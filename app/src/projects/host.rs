@@ -34,6 +34,29 @@ use crate::workspace::{
 
 pub const MULTIPLE_SCREENS_FLAG: &str = "ProjectHost_MultipleScreens";
 
+pub(crate) type ProjectRegisteredCallback =
+    Box<dyn FnOnce(&mut ProjectHost, ProjectId, &mut ViewContext<ProjectHost>)>;
+
+pub(crate) type CloneProgressSink = Box<dyn FnMut(CloneProgress) + Send>;
+
+pub(crate) struct CloneRequest {
+    pub url: String,
+    pub parent: PathBuf,
+    pub directory_name: String,
+    pub cancelled: Arc<AtomicBool>,
+}
+
+pub(crate) type CloneCompletion =
+    Box<dyn FnOnce(&mut ProjectHost, Result<PathBuf, String>, &mut ViewContext<ProjectHost>)>;
+
+pub(crate) type ProjectCreationCompletion = Box<
+    dyn FnOnce(
+        &mut ProjectHost,
+        Result<(PathBuf, Option<String>), String>,
+        &mut ViewContext<ProjectHost>,
+    ),
+>;
+
 pub fn init(app: &mut AppContext) {
     use warpui::keymap::EditableBinding;
     use warpui::keymap::macros::*;
@@ -558,8 +581,9 @@ impl ProjectHost {
             .map(|screen| (screen.project_id, screen.workspace.id()))
             .collect();
         let active_id = self.active_workspace().id();
-        WorkspaceRegistry::handle(ctx).update(ctx, |registry, _| {
+        WorkspaceRegistry::handle(ctx).update(ctx, |registry, ctx| {
             registry.set_screens(window_id, screens, active_id);
+            ctx.notify();
         });
     }
 
@@ -780,6 +804,15 @@ impl ProjectHost {
     }
 
     pub fn register_and_open_folder(&mut self, path: PathBuf, ctx: &mut ViewContext<Self>) {
+        self.register_folder(path, None, ctx);
+    }
+
+    pub(crate) fn register_folder(
+        &mut self,
+        path: PathBuf,
+        on_done: Option<ProjectRegisteredCallback>,
+        ctx: &mut ViewContext<Self>,
+    ) {
         let _ = ctx.spawn(
             async move {
                 match super::git_ops::discover_repo_root(&path).await {
@@ -790,15 +823,20 @@ impl ProjectHost {
                     _ => (path, ProjectKind::Folder, None),
                 }
             },
-            Self::finish_registering_folder,
+            move |host: &mut Self, registration, ctx| {
+                let project_id = host.finish_registering_folder(registration, ctx);
+                if let Some(on_done) = on_done {
+                    on_done(host, project_id, ctx);
+                }
+            },
         );
     }
 
-    fn finish_registering_folder(
+    pub(crate) fn finish_registering_folder(
         &mut self,
         registration: (PathBuf, ProjectKind, Option<String>),
         ctx: &mut ViewContext<Self>,
-    ) {
+    ) -> ProjectId {
         let (root_path, kind, primary_branch) = registration;
         let display_name = Project::display_name_for_root(&root_path);
         let project_id = ProjectRegistryModel::handle(ctx).update(ctx, |registry, ctx| {
@@ -808,6 +846,7 @@ impl ProjectHost {
             persisted.user_added_workspace(root_path, ctx);
         });
         self.open_project(project_id, ctx);
+        project_id
     }
 }
 
@@ -923,6 +962,53 @@ impl ProjectHost {
         directory_name: String,
         ctx: &mut ViewContext<Self>,
     ) {
+        self.clone_cancelled = Arc::new(AtomicBool::new(false));
+        let cancelled = self.clone_cancelled.clone();
+        let body = self.modal_body(ctx);
+        let (progress_sender, progress_receiver) = std::sync::mpsc::channel::<CloneProgress>();
+        self.clone_project(
+            CloneRequest {
+                url,
+                parent,
+                directory_name,
+                cancelled,
+            },
+            Box::new(move |update| {
+                let _ = progress_sender.send(update);
+            }),
+            Box::new(move |host, result, ctx| {
+                for update in progress_receiver.try_iter() {
+                    let body = body.clone();
+                    body.update(ctx, |body, ctx| body.set_clone_progress(update, ctx));
+                }
+                match result {
+                    Ok(root) => {
+                        host.close_new_workspace_modal(ctx);
+                        host.register_and_open_folder(root, ctx);
+                    }
+                    Err(detail) => {
+                        let body = host.modal_body(ctx);
+                        body.update(ctx, |body, ctx| body.set_error(detail, ctx));
+                    }
+                }
+            }),
+            ctx,
+        );
+    }
+
+    pub(crate) fn clone_project(
+        &mut self,
+        request: CloneRequest,
+        on_progress: CloneProgressSink,
+        on_done: CloneCompletion,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let CloneRequest {
+            url,
+            parent,
+            directory_name,
+            cancelled,
+        } = request;
         WorkspaceCreationSettings::handle(ctx).update(ctx, |settings, ctx| {
             let _ = Setting::set_value(
                 &mut settings.last_clone_parent,
@@ -930,12 +1016,6 @@ impl ProjectHost {
                 ctx,
             );
         });
-
-        self.clone_cancelled = Arc::new(AtomicBool::new(false));
-        let cancelled = self.clone_cancelled.clone();
-        let progress_cancelled = cancelled.clone();
-        let body = self.modal_body(ctx);
-        let (progress_sender, progress_receiver) = std::sync::mpsc::channel::<CloneProgress>();
 
         let path_future = super::interactive_path_env(ctx);
         let _ = ctx.spawn(
@@ -946,35 +1026,46 @@ impl ProjectHost {
                     &parent,
                     Some(&directory_name),
                     path_env.as_deref(),
-                    |update| {
-                        let _ = progress_sender.send(update);
-                    },
-                    move || progress_cancelled.load(Ordering::Relaxed),
+                    on_progress,
+                    move || cancelled.load(Ordering::Relaxed),
                 )
                 .await
             },
-            move |host: &mut Self, result, ctx| {
-                for update in progress_receiver.try_iter() {
-                    let body = body.clone();
-                    body.update(ctx, |body, ctx| body.set_clone_progress(update, ctx));
-                }
-                match result {
-                    Ok(root) => {
-                        host.close_new_workspace_modal(ctx);
-                        host.register_and_open_folder(root, ctx);
-                    }
-                    Err(err) => {
-                        log::warn!("Workspace clone failed: {err:#}");
-                        let detail = super::error_summary(&err);
-                        let body = host.modal_body(ctx);
-                        body.update(ctx, |body, ctx| body.set_error(detail, ctx));
-                    }
+            move |host: &mut Self, result, ctx| match result {
+                Ok(root) => on_done(host, Ok(root), ctx),
+                Err(err) => {
+                    log::warn!("Workspace clone failed: {err:#}");
+                    on_done(host, Err(super::error_summary(&err)), ctx);
                 }
             },
         );
     }
 
     fn start_create(&mut self, name: String, parent: PathBuf, ctx: &mut ViewContext<Self>) {
+        self.create_project(
+            name,
+            parent,
+            Box::new(|host, result, ctx| match result {
+                Ok((root, branch)) => {
+                    host.close_new_workspace_modal(ctx);
+                    host.finish_registering_folder((root, ProjectKind::Git, branch), ctx);
+                }
+                Err(detail) => {
+                    let body = host.modal_body(ctx);
+                    body.update(ctx, |body, ctx| body.set_error(detail, ctx));
+                }
+            }),
+            ctx,
+        );
+    }
+
+    pub(crate) fn create_project(
+        &mut self,
+        name: String,
+        parent: PathBuf,
+        on_done: ProjectCreationCompletion,
+        ctx: &mut ViewContext<Self>,
+    ) {
         WorkspaceCreationSettings::handle(ctx).update(ctx, |settings, ctx| {
             let _ = Setting::set_value(
                 &mut settings.last_create_parent,
@@ -993,15 +1084,10 @@ impl ProjectHost {
                 Ok::<_, anyhow::Error>((root, branch))
             },
             move |host: &mut Self, result, ctx| match result {
-                Ok((root, branch)) => {
-                    host.close_new_workspace_modal(ctx);
-                    host.finish_registering_folder((root, ProjectKind::Git, branch), ctx);
-                }
+                Ok(prepared) => on_done(host, Ok(prepared), ctx),
                 Err(err) => {
                     log::warn!("Workspace creation failed: {err:#}");
-                    let detail = super::error_summary(&err);
-                    let body = host.modal_body(ctx);
-                    body.update(ctx, |body, ctx| body.set_error(detail, ctx));
+                    on_done(host, Err(super::error_summary(&err)), ctx);
                 }
             },
         );
@@ -1067,7 +1153,7 @@ impl ProjectHost {
         ctx.notify();
     }
 
-    fn remove_project(&mut self, project_id: ProjectId, ctx: &mut ViewContext<Self>) {
+    pub(crate) fn remove_project(&mut self, project_id: ProjectId, ctx: &mut ViewContext<Self>) {
         self.close_project_screen(project_id, ctx);
         ProjectRegistryModel::handle(ctx).update(ctx, |registry, ctx| {
             registry.remove_project(project_id, ctx);

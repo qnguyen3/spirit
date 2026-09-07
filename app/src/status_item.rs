@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use warp_core::features::FeatureFlag;
+use warpui::clipboard::ClipboardContent;
 use warpui::platform::{StatusItem, StatusItemEntry, TerminationMode};
 use warpui::{AppContext, AssetProvider, Entity, EntityId, SingletonEntity, WindowId};
 
@@ -14,6 +16,7 @@ use crate::workspace::{NotificationOrigin, PaneViewLocator, WorkspaceRegistry};
 const SHOW_ACTION: &str = "status_item:show";
 const QUIT_ACTION: &str = "status_item:quit";
 const FOCUS_SESSION_ACTION: &str = "status_item:focus_session";
+const COPY_REMOTE_CONTROL_URL_ACTION: &str = "status_item:copy_remote_control_url";
 const ICON_ASSET: &str = "bundled/png/blue.png";
 const APP_NAME: &str = "Spirit";
 const SESSION_TITLE_MAX_CHARS: usize = 40;
@@ -48,12 +51,20 @@ pub fn init(app: &mut AppContext) {
     app.add_global_action(SHOW_ACTION, show);
     app.add_global_action(QUIT_ACTION, quit);
     app.add_global_action(FOCUS_SESSION_ACTION, focus_session);
+    app.add_global_action(COPY_REMOTE_CONTROL_URL_ACTION, copy_remote_control_url);
 }
 
 pub fn install(ctx: &mut AppContext) {
     ctx.subscribe_to_model(&CLIAgentSessionsModel::handle(ctx), |_, _, ctx| {
         refresh(ctx);
     });
+    #[cfg(not(target_family = "wasm"))]
+    if FeatureFlag::RemoteControl.is_enabled() {
+        ctx.subscribe_to_model(
+            &crate::remote_control::RemoteControlServer::handle(ctx),
+            |_, _, ctx| refresh(ctx),
+        );
+    }
     refresh(ctx);
 }
 
@@ -81,6 +92,14 @@ fn refresh(ctx: &mut AppContext) {
 
 fn menu_entries(app: &AppContext) -> Vec<StatusItemEntry> {
     let mut entries = vec![action("Open Spirit", SHOW_ACTION, String::new())];
+    if let Some(label) = remote_control_entry_label(app) {
+        entries.push(StatusItemEntry::Separator);
+        entries.push(action(
+            &label,
+            COPY_REMOTE_CONTROL_URL_ACTION,
+            String::new(),
+        ));
+    }
     let sessions = agent_session_entries(app);
     if !sessions.is_empty() {
         entries.push(StatusItemEntry::Separator);
@@ -89,6 +108,47 @@ fn menu_entries(app: &AppContext) -> Vec<StatusItemEntry> {
     entries.push(StatusItemEntry::Separator);
     entries.push(action("Quit Spirit", QUIT_ACTION, String::new()));
     entries
+}
+
+fn remote_control_url(app: &AppContext) -> Option<String> {
+    if !FeatureFlag::RemoteControl.is_enabled() {
+        return None;
+    }
+    #[cfg(not(target_family = "wasm"))]
+    let pairing_url = crate::remote_control::RemoteControlServer::as_ref(app).pairing_url(app);
+    #[cfg(target_family = "wasm")]
+    let pairing_url = {
+        let _ = app;
+        None
+    };
+    pairing_url
+}
+
+fn remote_control_entry_label(app: &AppContext) -> Option<String> {
+    if !FeatureFlag::RemoteControl.is_enabled() {
+        return None;
+    }
+    #[cfg(not(target_family = "wasm"))]
+    let label = crate::remote_control::RemoteControlServer::as_ref(app)
+        .state()
+        .endpoint()
+        .map(|endpoint| {
+            let url = endpoint.url();
+            format!("Remote Control · {url}")
+        });
+    #[cfg(target_family = "wasm")]
+    let label = {
+        let _ = app;
+        None
+    };
+    label
+}
+
+fn copy_remote_control_url(_: &String, ctx: &mut AppContext) {
+    let Some(url) = remote_control_url(ctx) else {
+        return;
+    };
+    ctx.clipboard().write(ClipboardContent::plain_text(url));
 }
 
 fn action(label: &str, action: &'static str, argument: String) -> StatusItemEntry {

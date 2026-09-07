@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phase 1 — Foundation</title>
+<style>
+:root{--bg:#ffffff;--fg:#1a1d23;--muted:#5c6470;--accent:#0d66d0;--card:#f6f8fa;--border:#d7dde3;--code:#eef1f5;--warn-bg:#fff8e6;--warn-border:#e6c56b;--danger-bg:#fdf0f0;--danger-border:#e3a5a5;--ok-bg:#effaf1;--ok-border:#9fd3ab}
+@media (prefers-color-scheme: dark){:root{--bg:#14161a;--fg:#e8eaed;--muted:#9aa3ad;--accent:#5ca8ff;--card:#1c1f24;--border:#30353c;--code:#20242a;--warn-bg:#2a2413;--warn-border:#7a6524;--danger-bg:#2a1717;--danger-border:#7a3b3b;--ok-bg:#15241a;--ok-border:#2f6b40}}
+body{background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:980px;margin:0 auto;padding:2rem 1.5rem 4rem}
+h1{font-size:1.9rem;line-height:1.25;margin:0 0 .3rem}
+h2{font-size:1.35rem;margin:2.2rem 0 .6rem;padding-top:.6rem;border-top:1px solid var(--border)}
+h3{font-size:1.08rem;margin:1.4rem 0 .4rem}
+h4{font-size:1rem;margin:1rem 0 .3rem}
+p{margin:.5rem 0}
+.subtitle{color:var(--muted);font-size:1.02rem;margin-bottom:1.2rem}
+code{background:var(--code);border-radius:4px;padding:.08em .35em;font:.88em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--border);border-radius:8px;padding:.9rem 1rem;overflow-x:auto;font-size:.86rem;line-height:1.45}
+pre code{background:none;padding:0;font-size:inherit}
+table{border-collapse:collapse;width:100%;margin:.8rem 0;font-size:.93rem}
+th,td{border:1px solid var(--border);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:var(--card)}
+.callout{border:1px solid var(--border);border-left:4px solid var(--accent);background:var(--card);border-radius:6px;padding:.7rem 1rem;margin:1rem 0}
+.callout.warn{border-left-color:var(--warn-border);background:var(--warn-bg)}
+.callout.danger{border-left-color:var(--danger-border);background:var(--danger-bg)}
+.callout.ok{border-left-color:var(--ok-border);background:var(--ok-bg)}
+.callout-title{font-weight:600;margin-bottom:.25rem}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+ul,ol{padding-left:1.4rem}
+li{margin:.25rem 0}
+.tag{display:inline-block;font-size:.75rem;font-weight:600;border-radius:10px;padding:.05rem .55rem;border:1px solid var(--border);background:var(--card);color:var(--muted);vertical-align:middle}
+.path{font:.88em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--accent)}
+.muted{color:var(--muted)}
+</style>
+</head>
+<body>
+
+<h1>Phase 1 — Foundation</h1>
+<p class="subtitle">Feature flag, settings and secure token, the <code>RemoteControlServer</code> lifecycle on a private tokio runtime, pairing with cookie sessions, Host/Origin hardening, embedded static assets, and every desktop surface: Settings page, Command Palette entries, tray entry, top-bar pill. At the end a browser can pair and load a placeholder page.</p>
+
+<h2>Goal</h2>
+<p>Settings → Remote Control → Enable starts a loopback HTTP server; the page shows the URL, a copy button, an Open-in-browser button and a masked access token; opening the pairing URL sets a session cookie and shows a placeholder page reading "Spirit Remote Control — paired"; disabling the setting stops the server and invalidates nothing on disk except the in-memory connections; the flag off makes all of this vanish.</p>
+
+<h2>Prerequisites</h2>
+<p>None. Read <a href="index.html">index.html</a> fully (especially D1–D6, D11, D18, D19 and the global rules), and skim <span class="path">app/src/local_control/mod.rs</span> and <span class="path">app/src/settings/local_control.rs</span> end to end.</p>
+
+<h2>Context</h2>
+<ul>
+<li><strong>Flag plumbing:</strong> <code>FeatureFlag</code> enum ends with <code>AdeWorkspaces</code> at <span class="path">crates/warp_features/src/lib.rs:397</span>; <code>DOGFOOD_FLAGS</code> at <span class="path">:421-447</span>. Cargo feature declarations in <span class="path">app/Cargo.toml</span> (<code>ade_workspaces = []</code> at <span class="path">:417</span>, <code>default</code> list from <span class="path">:429</span>), mapping in <code>enabled_features()</code> at <span class="path">app/src/features.rs:248-249</span>.</li>
+<li><strong>Settings framework:</strong> <code>define_settings_group!</code> grammar <span class="path">crates/settings/src/macros.rs:728-780</span>; bool example <span class="path">app/src/settings/alias_expansion.rs:4-15</span>; secure setting example <span class="path">app/src/settings/local_control.rs</span> (whole file — copy its <code>SecureSetting</code> impl shape); registration <span class="path">app/src/settings/init.rs:40-99</span> (flag-gated example at <span class="path">:90-92</span>); exports <span class="path">app/src/settings/mod.rs:2, 43</span>.</li>
+<li><strong>Server precedent:</strong> <code>LocalControlServer</code> <span class="path">app/src/local_control/mod.rs:115-260</span> — singleton that subscribes to its settings group (<span class="path">:126-146</span>), builds a runtime (<span class="path">:201-208</span>), binds (<span class="path">:210-224</span>), captures a <code>ModelSpawner</code> (<span class="path">:229-233</span>), builds a <code>Router</code> (<span class="path">:248-255</span>), and stops by dropping the runtime (<span class="path">:173-177</span>). Instantiation at <span class="path">app/src/lib.rs:1253-1261</span>.</li>
+<li><strong>Header hardening precedent (do not reuse verbatim):</strong> <code>validate_loopback_headers</code> <span class="path">app/src/local_control/mod.rs:652-684</span> rejects all <code>Origin</code> headers. Remote Control needs the D5 policy instead.</li>
+<li><strong>Token generation:</strong> <code>AuthToken::generate</code> <span class="path">crates/local_control/src/auth.rs:11-64</span> (32 random bytes, base64url no-pad) — replicate in <code>crates/remote_control::auth</code> rather than depending on <code>local_control</code>.</li>
+<li><strong>Secure storage API:</strong> <code>SecureStorage</code> trait <span class="path">crates/warpui_extras/src/secure_storage/mod.rs:101-118</span>; <code>SecureSetting</code> bridge <span class="path">crates/settings/src/lib.rs:598-670</span>.</li>
+<li><strong>Assets:</strong> <span class="path">crates/warp_assets/src/lib.rs:7-18</span> (add an include), <span class="path">crates/warp_assets/build.rs:1-4</span> (add a rerun path), <code>AssetProvider::get</code> <span class="path">crates/warpui_core/src/assets/mod.rs:15-17</span>. <code>mime_guess</code> usage precedent <span class="path">crates/warp_util/src/file_type.rs:168</span>.</li>
+<li><strong>Settings UI:</strong> page contract <span class="path">app/src/settings_view/scripting_page.rs</span> (whole file: page struct, <code>SettingsPageMeta</code> at <span class="path">:179-205</span>, subscription <span class="path">:52-58</span>, dropdown/buttons <span class="path">:44-101, 236-255</span>, toasts <span class="path">:122-139</span>); section enum and slug <span class="path">app/src/settings_view/mod.rs:185-271</span>; page handle arms <span class="path">:933-943, 1543-1551</span>; construction and nav <span class="path">:1020-1107</span>; switch widget <span class="path">app/src/settings_view/features_page.rs:4966-5000</span>; submittable text input <span class="path">app/src/settings_view/warpify_page.rs:108-125</span>; read-only text + copy button <span class="path">app/src/settings_view/about_page.rs:227-251</span>; toggle rows <span class="path">app/src/settings_view/settings_page.rs:449-462</span>.</li>
+<li><strong>Palette:</strong> <code>ToggleSettingActionPair</code> <span class="path">app/src/settings_view/mod.rs:601-762</span>, usage <span class="path">features_page.rs:388-401</span>, flag constants <span class="path">mod.rs:311-490</span>, context flag registration <span class="path">app/src/workspace/view.rs:15538-15540</span> inside <code>add_toggle_setting_context_flags</code> (<span class="path">:15270</span>); <code>EditableBinding</code> example <span class="path">app/src/workspace/mod.rs:961-982</span>; clipboard write <span class="path">app/src/workspace/view.rs:4709-4712</span>; browser open <code>safe_browser_open_url</code> in <span class="path">crates/warpui/src/browser.rs</span>.</li>
+<li><strong>Tray:</strong> <span class="path">app/src/status_item.rs:43-100</span> (<code>init</code>, <code>install</code>, <code>refresh</code>, <code>menu_entries</code>, <code>action</code>).</li>
+<li><strong>Top bar pill:</strong> <code>render_workspace_switcher_pill</code> <span class="path">app/src/workspace/view.rs:4176-4256</span> (pattern) placed by <code>add_configurable_right_side_tab_bar_controls</code> <span class="path">:13851-13913</span>; icon enum <span class="path">crates/warp_core/src/ui/icons.rs</span> (<code>QrCode</code> exists at <span class="path">:79</span>).</li>
+<li><strong>Toasts:</strong> <code>ToastStack</code> <span class="path">app/src/workspace/toast_stack.rs:10-64</span>, <code>DismissibleToast::success/error</code> <span class="path">app/src/view_components/dismissible_toast.rs:444-448</span>.</li>
+<li><strong>Logging:</strong> <code>safe_info!</code>/<code>safe_warn!</code> <span class="path">crates/warp_core/src/safe_log.rs:7-39</span>.</li>
+</ul>
+
+<h2>Tasks</h2>
+
+<h3>Task 1 — Feature flag and cargo feature</h3>
+<ul>
+<li>Add <code>FeatureFlag::RemoteControl</code> after <code>AdeWorkspaces</code> (<span class="path">crates/warp_features/src/lib.rs:397</span>) with a one-line doc; add it to <code>DOGFOOD_FLAGS</code>.</li>
+<li><span class="path">app/Cargo.toml</span>: declare <code>remote_control = []</code> next to <code>ade_workspaces</code> and add it to <code>default</code>. Map it in <code>enabled_features()</code> (<span class="path">app/src/features.rs:248</span>) exactly like <code>ade_workspaces</code>.</li>
+<li>Every user-visible addition below checks <code>FeatureFlag::RemoteControl.is_enabled()</code> at runtime.</li>
+</ul>
+
+<h3>Task 2 — New crate <span class="path">crates/remote_control</span></h3>
+<ul>
+<li>Workspace member (<span class="path">Cargo.toml</span> members + <code>[workspace.dependencies]</code> entry, <code>remote_control.workspace = true</code> under the non-wasm dependency block of <span class="path">app/Cargo.toml</span>). Deps: <code>serde</code>, <code>serde_json</code>, <code>rand</code>, <code>base64</code>, <code>sha2</code>, <code>thiserror</code>. No <code>warpui</code>, no app types (this crate is the protocol/security kernel and must stay testable in isolation).</li>
+<li><code>lib.rs</code>: <code>pub const PROTOCOL_VERSION: u32 = 1;</code>, <code>pub mod auth; pub mod hosts; pub mod limits; pub mod protocol;</code> (protocol gets its real content in Phase 2; create it now with <code>ErrorCode</code> and <code>ApiError { code, message, details }</code> so HTTP error bodies already have their final shape).</li>
+<li><code>auth.rs</code>: <code>AccessToken</code> (generate 32 random bytes → base64url no-pad; <code>parse(&amp;str)</code> validating length/alphabet; <code>constant_time_eq(&amp;self, other)</code> comparing SHA-256 digests byte-by-byte with a fixed-time loop; <code>Display</code> is deliberately not implemented — expose <code>reveal(&amp;self) -&gt; &amp;str</code> so call sites are greppable), <code>SessionId</code> (same generator), <code>fn hash_session_id(&amp;SessionId) -&gt; SessionHash</code> (hex SHA-256), <code>PairedDevice { id: DeviceId, session_hash: SessionHash, label: String, created_ts: i64, last_seen_ts: i64 }</code> with serde. Tests in <code>auth_tests.rs</code>: length, alphabet, inequality, constant-time helper equality/inequality, hash stability.</li>
+<li><code>hosts.rs</code>: <code>AllowedHosts { port: u16, extra: Vec&lt;String&gt; }</code> with <code>fn allows(&amp;self, host_header: &amp;str) -&gt; bool</code> (case-insensitive, strips a trailing dot, handles <code>[::1]:port</code>, requires the port to match exactly and default-port omission only for port 80) and <code>fn origin_matches(&amp;self, origin: &amp;str, host_header: &amp;str) -&gt; bool</code> (<code>origin == format!("http://{host_header}")</code> after lowercasing; <code>https</code> is also accepted for forward compatibility). Tests in <code>hosts_tests.rs</code> covering loopback names, LAN extras, wrong port, uppercase, IPv6, missing header.</li>
+<li><code>limits.rs</code>: the constants from <a href="protocol.html">protocol.html</a> (add them all now even if unused; <code>#[allow(dead_code)]</code> is not acceptable — reference the unused ones from a <code>pub fn all() -&gt; &amp;'static [(&amp;'static str, u64)]</code> exposed by <code>/api/v1/status</code> so nothing is dead).</li>
+</ul>
+
+<h3>Task 3 — Settings</h3>
+<ul>
+<li><span class="path">app/src/settings/remote_control.rs</span>: <code>define_settings_group!(RemoteControlSettings, settings: [ remote_control_enabled: … bool, default false, toml_path "remote_control.enabled", SyncToCloud::Never, surface GUI ; remote_control_port: … u16 (or i64 validated into 1024..=65535), default 7777, toml_path "remote_control.port" ; remote_control_allow_lan_access: … bool, default false, toml_path "remote_control.allow_lan_access" ])</code>. Port validation clamps into range in <code>validate</code>. Descriptions are user-facing (they appear in the settings schema dump).</li>
+<li>Same file: <code>RemoteControlSecrets</code> group with <code>remote_control_access_token: RemoteControlAccessTokenSetting</code> — a <code>SecureSetting</code> exactly like <code>LocalControlModeSetting</code> (<span class="path">app/src/settings/local_control.rs:71-197</span>) but with <code>Value = Option&lt;String&gt;</code> stored via <code>write_value_with_owner_only_fallback</code>, <code>is_private() = true</code>, <code>SyncToCloud::Never</code>, <code>SupportedPlatforms::DESKTOP</code>; and <code>remote_control_paired_devices: RemoteControlPairedDevicesSetting</code>, a private (non-secure) setting holding a JSON string of <code>Vec&lt;PairedDevice&gt;</code> (only hashes inside, so the private preferences store is adequate).</li>
+<li>Helpers on the group: <code>fn access_token(&amp;self) -&gt; Option&lt;AccessToken&gt;</code>, <code>fn ensure_access_token(ctx) -&gt; AccessToken</code> (generate + persist when missing), <code>fn rotate_access_token(ctx) -&gt; AccessToken</code>, <code>fn paired_devices(&amp;self) -&gt; Vec&lt;PairedDevice&gt;</code>, <code>fn set_paired_devices(devices, ctx)</code>.</li>
+<li>Register both groups in <code>register_all_settings</code> (<span class="path">app/src/settings/init.rs</span>) inside <code>if FeatureFlag::RemoteControl.is_enabled()</code>; export from <span class="path">app/src/settings/mod.rs</span>. Unit tests in <code>remote_control_tests.rs</code> using the in-memory preferences precedent from <span class="path">app/src/settings/local_control_tests.rs</span>: defaults, port clamping, token persistence round-trip, rotation replaces.</li>
+</ul>
+
+<h3>Task 4 — <code>RemoteControlServer</code> and <code>RemoteControlBridge</code></h3>
+<ul>
+<li><span class="path">app/src/remote_control/mod.rs</span> (module declared <code>#[cfg(not(target_family = "wasm"))]</code> in <span class="path">app/src/lib.rs</span>): 
+<pre><code>pub enum ServerState {
+    Stopped,
+    Running { endpoint: RemoteEndpoint, lan_endpoints: Vec&lt;RemoteEndpoint&gt;, started_ts: i64, connected_clients: usize },
+    Failed { message: String },
+}
+pub struct RemoteControlServer { state: ServerState, runtime: Option&lt;tokio::runtime::Runtime&gt;, shutdown: Option&lt;CancellationToken or oneshot::Sender&lt;()&gt;&gt;, instance_id: String }
+impl Entity for RemoteControlServer { type Event = RemoteControlServerEvent; }   // StateChanged
+impl SingletonEntity for RemoteControlServer {}
+</code></pre>
+<code>RemoteEndpoint { host: String, port: u16 }</code> with <code>fn url(&amp;self) -&gt; String</code> and <code>fn pairing_url(&amp;self, token: &amp;AccessToken) -&gt; String</code> (<code>http://host:port/pair?t=…</code>) lives in <code>crates/remote_control::hosts</code>.</li>
+<li><code>new(ctx)</code>: subscribe to <code>RemoteControlSettings</code> (any change → <code>refresh_for_settings</code>) and run it once. <code>refresh_for_settings</code>: flag off or disabled → <code>stop</code>; enabled and stopped/failed → <code>start</code>; enabled and running with a changed port or LAN flag → <code>stop</code> then <code>start</code>.</li>
+<li><code>start(ctx)</code>: <code>ensure_access_token</code>; build the runtime (<code>new_multi_thread().worker_threads(2).enable_all().thread_name("remote-control")</code>); bind with <code>std::net::TcpListener::bind</code> (synchronous, so failures are immediate and the port is known before any task runs), set non-blocking, convert with <code>tokio::net::TcpListener::from_std</code> inside <code>runtime.enter()</code>; capture <code>RemoteControlBridge::handle(ctx).update(ctx, |b, ctx| ctx.spawner())</code>; build <code>AppState</code> (Arc: spawner, sessions store, allowed hosts, instance id, build id, server spawner for state updates); spawn <code>axum::serve(listener, router).with_graceful_shutdown(shutdown_rx)</code>; set <code>Running</code>; <code>ctx.emit(StateChanged)</code> + <code>ctx.notify()</code>; toast "Remote Control running at http://127.0.0.1:7777" on the active window; <code>safe_info!</code> without the token. Failure → <code>Failed { message }</code>, error toast, <code>log::warn!</code>.</li>
+<li><code>stop(ctx)</code>: send <code>server.shutting_down</code> to connected clients (Phase 2 adds the broadcast; for now just drop), trigger graceful shutdown, drop the runtime (this aborts everything), set <code>Stopped</code>, emit/notify.</li>
+<li><code>on_client_count_changed(count)</code>: invoked from tokio via the server's own <code>ModelSpawner&lt;RemoteControlServer&gt;</code> to keep <code>connected_clients</code> current (used by the pill and Settings).</li>
+<li><span class="path">app/src/remote_control/bridge.rs</span>: <code>RemoteControlBridge</code> singleton with, for now, <code>fn ping(&amp;self) -&gt; String</code> (instance id) and <code>fn revoke_all_sessions(ctx)</code> hook. Phase 2 fills it in.</li>
+<li>Instantiate both singletons in <span class="path">app/src/lib.rs</span> next to the local-control ones (<span class="path">:1253-1261</span>), only when <code>launch_mode == LaunchMode::App</code> and the flag is on.</li>
+</ul>
+
+<h3>Task 5 — HTTP router, auth, sessions, security headers</h3>
+<ul>
+<li><span class="path">app/src/remote_control/http.rs</span>: <code>fn router(state: Arc&lt;AppState&gt;) -&gt; Router</code> with the routes of Phase 1 from <a href="protocol.html">protocol.html</a>: <code>/health</code>, <code>/pair</code> (GET+POST), <code>/</code>, <code>/assets/{build_id}/{*path}</code>, <code>/api/v1/status</code>, <code>/api/v1/logout</code>. Middleware order (outermost first): host check (<code>421</code>), security headers (added to every response), request body limit (64 KiB), tracing at debug level.</li>
+<li>Auth extractor <code>Authed</code> (axum <code>FromRequestParts</code>): cookie <code>spirit_rc</code> → <code>SessionStore::touch(hash)</code>; else <code>Authorization: Bearer</code> compared with <code>AccessToken::constant_time_eq</code> against the token cached in <code>AppState</code> (refreshed on rotation via server restart). Rejection is a JSON <code>ApiError</code> with the right status. A second extractor <code>Mutating</code> additionally checks <code>Origin</code> (<code>AllowedHosts::origin_matches</code>) and <code>X-Spirit-Remote: 1</code>.</li>
+<li><span class="path">app/src/remote_control/sessions.rs</span>: <code>SessionStore</code> (<code>Mutex&lt;HashMap&lt;SessionHash, SessionEntry&gt;&gt;</code>, entries carry device id, label, created/last-seen) loaded from <code>paired_devices</code> at start and persisted back (via the server spawner → settings) on create/revoke and at most once a minute for <code>last_seen</code>. <code>pair(token_attempt, remote_addr, user_agent) -&gt; Result&lt;(SessionId, DeviceId)&gt;</code>, <code>revoke(device_id)</code>, <code>revoke_all()</code>. Device label = a short parse of <code>User-Agent</code> ("iPhone · Safari", "Mac · Chrome", else "Browser"). Rate limiting arrives in Phase 9 but leave the counter struct in place.</li>
+<li>Cookie attributes: <code>HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000</code>. No <code>Secure</code> (plain HTTP). <code>/pair</code> success answers <code>303</code> to <code>/</code>. <code>/pair</code> failure answers <code>403</code> with <code>pair.html</code> and a generic message (never say whether the token was close).</li>
+<li>Security headers layer: <code>Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' ws: wss:; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'</code>, <code>X-Content-Type-Options: nosniff</code>, <code>X-Frame-Options: DENY</code>, <code>Referrer-Policy: no-referrer</code>, <code>Permissions-Policy: camera=(), microphone=(), geolocation=()</code>; <code>Cache-Control: no-store</code> on HTML and <code>/api/*</code>.</li>
+<li><span class="path">app/src/remote_control/assets.rs</span>: <code>fn serve(build_id, path) -&gt; Response</code> reading <code>warp_assets::Assets.get(&amp;format!("web/remote_control/{path}"))</code>, rejecting any path containing <code>..</code> or a leading <code>/</code>, content type via <code>mime_guess::from_path</code> (default <code>application/octet-stream</code>), caching per <a href="protocol.html">protocol.html</a>. <code>index.html</code> is served with <code>{{BUILD_ID}}</code> substituted. <code>build_id</code> = <code>ChannelState::app_version()</code> or <code>"dev"</code>.</li>
+<li>Tests <span class="path">app/src/remote_control/mod_tests.rs</span> modeled on <span class="path">app/src/local_control/mod_tests.rs</span>: spin the router on an ephemeral port with a test runtime and assert: <code>/health</code> 200; bad <code>Host</code> 421; <code>/api/v1/status</code> 401 without cookie, 200 with bearer; <code>/pair</code> wrong token 403 + no cookie; right token 303 + cookie; cookie then <code>/api/v1/status</code> 200; <code>POST /api/v1/logout</code> without <code>Origin</code> 403, with matching <code>Origin</code> + header 204 and the cookie no longer works; every response carries the CSP header; <code>/assets/dev/../secret</code> 404.</li>
+</ul>
+
+<h3>Task 6 — Embedded web assets (placeholder)</h3>
+<ul>
+<li>Create <span class="path">app/assets/web/remote_control/index.html</span> (title, a status line filled by <code>app.js</code> from <code>/api/v1/status</code>, a Logout button posting to <code>/api/v1/logout</code> with the required header), <code>pair.html</code> (form with a password-type input named <code>t</code>, instructions, error slot), <code>styles.css</code> (tokens + minimal layout; will grow in Phase 3), <code>app.js</code> (fetch status, render). No vendor files yet.</li>
+<li><span class="path">crates/warp_assets/src/lib.rs</span>: add <code>#[include = "web/**"]</code>; <span class="path">crates/warp_assets/build.rs</span>: add <code>cargo:rerun-if-changed=../../app/assets/web</code>. Confirm <code>cargo bundle</code> needs nothing else (assets are inside the binary).</li>
+</ul>
+
+<h3>Task 7 — Settings page</h3>
+<ul>
+<li><code>SettingsSection::RemoteControl</code> (display "Remote Control", slug <code>remote-control</code>) added to the enum, <code>Display</code>, <code>slug</code>, <code>from_slug</code>; page view <span class="path">app/src/settings_view/remote_control_page.rs</span> (<code>RemoteControlSettingsPageView</code>, <code>RemoteControlPageAction</code>, <code>SettingsPageMeta</code>, handle enum arm, construction and nav insertion after Scripting, flag-gated like the scripting page).</li>
+<li>Widgets (each a <code>SettingsWidget</code> with search terms): <strong>Enable</strong> (switch → <code>ToggleEnabled</code> → <code>toggle_and_save_value</code>); <strong>Status</strong> (read-only: "Stopped" / "Running at http://127.0.0.1:7777 · 0 devices connected" / "Failed: address in use", observing <code>RemoteControlServer</code>); <strong>URL</strong> row with <code>Copy URL</code> (copies the pairing URL including the token) and <code>Open in browser</code> (<code>safe_browser_open_url</code>) buttons, disabled when not running; <strong>Port</strong> (<code>SubmittableTextInput</code>, validates 1024–65535, saves → server restarts via the settings subscription); <strong>Access token</strong> (masked <code>••••</code>, buttons Reveal/Hide, Copy, Rotate with a confirm dialog "Rotating disconnects every paired device"); <strong>Allow access from other devices on this network</strong> (switch; description warns about plain HTTP and recommends Tailscale; the QR code and device list come in Phase 9 — leave a named slot).</li>
+<li>Subscribe to <code>RemoteControlSettings</code>, <code>RemoteControlSecrets</code> and <code>RemoteControlServer</code> so the page re-renders on any change.</li>
+</ul>
+
+<h3>Task 8 — Command Palette, tray, pill, actions</h3>
+<ul>
+<li><code>WorkspaceAction::{CopyRemoteControlUrl, OpenRemoteControlInBrowser}</code> (typed, exhaustively matched in <code>handle_action</code>): resolve the pairing URL from the server state + token; toast on success / when stopped ("Remote Control is off — enable it in Settings").</li>
+<li>Palette: <code>ToggleSettingActionPair::new("Remote Control", …)</code> with flag constant <code>REMOTE_CONTROL_FLAG = "Remote_Control_Enabled"</code> registered in <code>add_toggle_setting_context_flags</code>; two <code>FixedBinding::empty</code> entries "Copy Remote Control URL" and "Open Remote Control in Browser" with context <code>id!("Workspace")</code>, <code>.with_enabled(|| FeatureFlag::RemoteControl.is_enabled())</code>; "Open Remote Control Settings" via the existing <code>ShowSettingsPage(SettingsSection::RemoteControl)</code>.</li>
+<li>Tray (<span class="path">app/src/status_item.rs</span>): when running, an entry "Remote Control · http://127.0.0.1:7777" whose action copies the pairing URL (new constant <code>status_item:copy_remote_control_url</code>, registered in <code>init</code>); <code>install</code> also subscribes to <code>RemoteControlServer</code> so <code>refresh</code> runs on state changes.</li>
+<li>Pill (<span class="path">app/src/workspace/view.rs</span>): <code>render_remote_control_pill</code> placed right after the workspace switcher pill in <code>add_configurable_right_side_tab_bar_controls</code>; visible only when the server is running; content: an icon (pick a fitting glyph from <span class="path">crates/warp_core/src/ui/icons.rs</span>, <code>QrCode</code> is acceptable), the label "Remote", and a small count badge when <code>connected_clients &gt; 0</code>; hover tooltip with the URL; click → <code>ShowSettingsPage(SettingsSection::RemoteControl)</code>. Observe the server singleton in <code>Workspace::new</code> so the pill updates.</li>
+</ul>
+
+<h2>Out of scope</h2>
+<ul>
+<li>WebSocket, state projection, any command (Phase 2). The real web app (Phase 3). QR code, device list, rate limits, LAN address discovery beyond binding <code>0.0.0.0</code> (Phase 9 — but the <code>allow_lan_access</code> setting and bind behavior land now; <code>lan_endpoints</code> stays empty until Phase 9).</li>
+<li>TLS. Windows-specific firewall prompts (document only).</li>
+</ul>
+
+<h2>Verification</h2>
+<ul>
+<li><code>./script/presubmit</code> green; new unit tests in <code>crates/remote_control</code>, <code>app/src/settings/remote_control_tests.rs</code>, <code>app/src/remote_control/mod_tests.rs</code>.</li>
+<li>Flag off (<code>cargo run --no-default-features --features "&lt;default minus remote_control&gt;"</code> or temporarily removing it from <code>default</code>): no Settings page, no pill, no tray entry, no palette entries, no listener (<code>lsof -i :7777</code> empty).</li>
+<li>Flag on: enable in Settings → status shows Running; <code>curl -s 127.0.0.1:7777/health</code> returns JSON; <code>curl -H 'Host: evil.example' 127.0.0.1:7777/health</code> → 421; open the pairing URL in Safari and Chrome → redirected to <code>/</code> with the placeholder page; reload keeps the session; Logout returns to the pairing page; wrong token → 403 page.</li>
+<li>Change the port → server restarts on the new port, old one closed. Rotate token → the previous pairing URL fails, the page's session is revoked (next reload shows the pairing page).</li>
+<li>Disable → listener gone within a second; re-enable → paired sessions still work (persisted hashes).</li>
+<li>Quit and relaunch Spirit with the setting on → server comes back on launch, the browser session still works.</li>
+<li>Palette shows "Enable/Disable Remote Control", "Copy Remote Control URL", "Open Remote Control in Browser"; the tray entry appears when running; the pill appears and its tooltip shows the URL.</li>
+</ul>
+
+<h2>Gotchas</h2>
+<ul>
+<li><strong>Do not put the token in <code>settings.toml</code>.</strong> The public settings file is user-editable and often committed to dotfiles; only the <code>SecureSetting</code> path is acceptable (D4).</li>
+<li><strong>Bind synchronously.</strong> <code>local_control</code> uses <code>runtime.block_on(TcpListener::bind)</code>; binding with <code>std::net</code> first gives the same immediacy without entering the runtime on the main thread for longer than <code>from_std</code> needs. Never <code>block_on</code> anything that could wait.</li>
+<li><strong>Dropping the runtime from the main thread</strong> blocks until worker threads finish their current poll; keep handlers short and never do blocking file IO inside them (the sessions persistence hop goes through the spawner, not direct settings writes from tokio).</li>
+<li><strong>The settings subscription fires for every field.</strong> Compare the previous <code>(enabled, port, lan)</code> tuple and only restart when something relevant changed, or the page's Reveal button would restart the server.</li>
+<li><strong><code>Origin</code> is absent on same-origin GET navigations and present on WebSocket upgrades and cross-site POSTs.</strong> That is why GET routes only check <code>Host</code> while mutating routes and the upgrade check <code>Origin</code>. Do not require <code>Origin</code> on GET.</li>
+<li><strong><code>SameSite=Strict</code> means the pairing redirect must be same-site:</strong> when the user opens the pairing link from an external app, the first navigation carries no cookie yet — that is fine because <code>/pair</code> sets it and 303s to <code>/</code>, a same-site navigation.</li>
+<li><strong>The tray on macOS rebuilds the whole menu</strong> via <code>ctx.set_status_item</code>; keep the entry diff-friendly (stable label) so <code>refresh</code>'s early-return keeps working.</li>
+<li><strong>Feature-gated settings groups</strong> must not be read when the flag is off (they are unregistered, and <code>as_ref</code> would panic). Every reader checks the flag first — including the pill and the tray.</li>
+<li><strong>Windows:</strong> binding <code>0.0.0.0</code> may trigger a firewall prompt; loopback does not. Nothing else is platform-specific in this phase; keep <code>#[cfg(unix)]</code> out of this module entirely.</li>
+</ul>
+
+<p class="muted" style="margin-top:2.5rem"><a href="index.html">Overview</a> · Next: <a href="phase-2-state-and-websocket.html">Phase 2 — State model &amp; WebSocket</a></p>
+
+</body>
+</html>

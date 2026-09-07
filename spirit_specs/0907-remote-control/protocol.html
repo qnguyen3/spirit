@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Remote Control — Wire Protocol</title>
+<style>
+:root{--bg:#ffffff;--fg:#1a1d23;--muted:#5c6470;--accent:#0d66d0;--card:#f6f8fa;--border:#d7dde3;--code:#eef1f5;--warn-bg:#fff8e6;--warn-border:#e6c56b;--danger-bg:#fdf0f0;--danger-border:#e3a5a5;--ok-bg:#effaf1;--ok-border:#9fd3ab}
+@media (prefers-color-scheme: dark){:root{--bg:#14161a;--fg:#e8eaed;--muted:#9aa3ad;--accent:#5ca8ff;--card:#1c1f24;--border:#30353c;--code:#20242a;--warn-bg:#2a2413;--warn-border:#7a6524;--danger-bg:#2a1717;--danger-border:#7a3b3b;--ok-bg:#15241a;--ok-border:#2f6b40}}
+body{background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:980px;margin:0 auto;padding:2rem 1.5rem 4rem}
+h1{font-size:1.9rem;line-height:1.25;margin:0 0 .3rem}
+h2{font-size:1.35rem;margin:2.2rem 0 .6rem;padding-top:.6rem;border-top:1px solid var(--border)}
+h3{font-size:1.08rem;margin:1.4rem 0 .4rem}
+h4{font-size:1rem;margin:1rem 0 .3rem}
+p{margin:.5rem 0}
+.subtitle{color:var(--muted);font-size:1.02rem;margin-bottom:1.2rem}
+code{background:var(--code);border-radius:4px;padding:.08em .35em;font:.88em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--border);border-radius:8px;padding:.9rem 1rem;overflow-x:auto;font-size:.86rem;line-height:1.45}
+pre code{background:none;padding:0;font-size:inherit}
+table{border-collapse:collapse;width:100%;margin:.8rem 0;font-size:.93rem}
+th,td{border:1px solid var(--border);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:var(--card)}
+.callout{border:1px solid var(--border);border-left:4px solid var(--accent);background:var(--card);border-radius:6px;padding:.7rem 1rem;margin:1rem 0}
+.callout.warn{border-left-color:var(--warn-border);background:var(--warn-bg)}
+.callout.danger{border-left-color:var(--danger-border);background:var(--danger-bg)}
+.callout.ok{border-left-color:var(--ok-border);background:var(--ok-bg)}
+.callout-title{font-weight:600;margin-bottom:.25rem}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+ul,ol{padding-left:1.4rem}
+li{margin:.25rem 0}
+.tag{display:inline-block;font-size:.75rem;font-weight:600;border-radius:10px;padding:.05rem .55rem;border:1px solid var(--border);background:var(--card);color:var(--muted);vertical-align:middle}
+.path{font:.88em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--accent)}
+.muted{color:var(--muted)}
+</style>
+</head>
+<body>
+
+<h1>Remote Control — Wire Protocol Reference</h1>
+<p class="subtitle">The HTTP surface, authentication, WebSocket message catalog, binary terminal frames, error codes and limits. Types live in <span class="path">crates/remote_control/src/protocol.rs</span>; this page is the human-readable contract that the Rust types and the JavaScript client both follow. Phases 2–9 add messages incrementally; the tables mark the phase that introduces each item.</p>
+
+<h2>Conventions</h2>
+<ul>
+<li><code>PROTOCOL_VERSION = 1</code> (<code>crates/remote_control/src/lib.rs</code>). Additive changes (new optional fields, new commands, new events) keep the version; renames/removals bump it. The client refuses a <code>hello</code> whose <code>protocol</code> differs and shows "Update Spirit / reload".</li>
+<li>All JSON uses <code>snake_case</code> keys. Enums serialize as <code>snake_case</code> strings. Message envelopes use <code>#[serde(tag = "type", rename_all = "snake_case")]</code>; commands use <code>{"type":"command","id":…,"name":…,"params":{…}}</code> with <code>name</code> from the <code>CommandName</code> enum (<code>#[serde(rename_all = "snake_case")]</code>, values like <code>"tab.activate"</code> via explicit <code>#[serde(rename)]</code>).</li>
+<li>Ids are strings (D10). Timestamps are Unix milliseconds (<code>i64</code>). Byte payloads inside JSON are base64 (standard alphabet, padded). Unknown fields are ignored by both sides (<code>serde</code> default); unknown message types are logged and ignored by the client, rejected with <code>invalid_request</code> by the server.</li>
+<li>Every server → client JSON message is one of <code>ServerMessage</code>; every client → server JSON message is one of <code>ClientMessage</code>. Both enums are exhaustively matched.</li>
+</ul>
+
+<h2>HTTP routes</h2>
+<table>
+<tr><th>Route</th><th>Auth</th><th>Phase</th><th>Behavior</th></tr>
+<tr><td><code>GET /health</code></td><td>none</td><td>1</td><td><code>200 {"app":"spirit","protocol":1,"version":"&lt;app version&gt;"}</code>. Subject to the Host check like everything else.</td></tr>
+<tr><td><code>GET /pair?t=&lt;token&gt;</code><br><code>POST /pair</code> (form <code>t=</code>)</td><td>token</td><td>1</td><td>Constant-time compare against the stored access token. Success: create a session, <code>Set-Cookie: spirit_rc=&lt;session id&gt;; HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000</code>, <code>303 See Other</code> → <code>/</code>. Failure: <code>403</code> with <code>pair.html</code> re-rendered with an error line; counts toward the per-IP pairing rate limit (Phase 9).</td></tr>
+<tr><td><code>GET /</code></td><td>cookie (soft)</td><td>1</td><td>Authenticated → <code>index.html</code>. Unauthenticated → <code>pair.html</code> (a form asking for the token, with instructions pointing at Settings → Remote Control). Both served with the security headers of D5 and <code>Cache-Control: no-store</code>.</td></tr>
+<tr><td><code>GET /assets/{build_id}/{*path}</code></td><td>none</td><td>1</td><td>Embedded static files. <code>build_id</code> is the app version (or <code>dev</code> for local builds). Content type via <code>mime_guess</code>. <code>Cache-Control: public, max-age=31536000, immutable</code> for a versioned <code>build_id</code>, <code>no-cache</code> for <code>dev</code>. Unknown path → <code>404</code>. Path traversal is impossible because lookups go through <code>warp_assets::Assets::get</code> over an allow-listed prefix.</td></tr>
+<tr><td><code>GET /api/v1/status</code></td><td>cookie or bearer</td><td>1</td><td><code>{"instance_id","version","protocol","connected_clients","lan_access":bool,"endpoints":[…]}</code>.</td></tr>
+<tr><td><code>POST /api/v1/logout</code></td><td>cookie + Origin + <code>X-Spirit-Remote</code></td><td>1</td><td>Revokes the calling session, clears the cookie, <code>204</code>.</td></tr>
+<tr><td><code>GET /api/v1/state</code></td><td>cookie or bearer</td><td>2</td><td>The current <code>AppSnapshot</code> (same JSON as the WebSocket <code>state</code> message). Useful for curl and tests.</td></tr>
+<tr><td><code>GET /api/v1/ws</code></td><td>cookie + Origin</td><td>2</td><td>WebSocket upgrade. Rejected with <code>403</code> when <code>Origin</code> is absent or ≠ <code>http://&lt;Host&gt;</code>, <code>401</code> without a valid session, <code>503</code> when the client cap (8) is reached.</td></tr>
+<tr><td><code>GET /api/v1/devices</code>, <code>DELETE /api/v1/devices/{id}</code></td><td>cookie + (mutations: Origin + <code>X-Spirit-Remote</code>)</td><td>9</td><td>Paired device list and revoke (also exposed as commands so the web UI needs only the WebSocket).</td></tr>
+</table>
+<p><strong>Auth extractor semantics (Phase 1):</strong> cookie <code>spirit_rc</code> → session lookup (in-memory map keyed by the SHA-256 of the session id) → touch <code>last_seen</code>. Or <code>Authorization: Bearer &lt;access token&gt;</code> (constant-time). Otherwise <code>401 {"error":{"code":"unauthorized"}}</code> for <code>/api/*</code>, or the pairing page for <code>/</code>. Mutating REST routes (<code>POST</code>/<code>DELETE</code>) also require <code>Origin</code> to match and <code>X-Spirit-Remote: 1</code>; failures are <code>403 {"error":{"code":"forbidden_origin"}}</code>.</p>
+<p><strong>Host check (Phase 1, before routing):</strong> the <code>Host</code> header (with or without port) must be one of: <code>127.0.0.1:&lt;port&gt;</code>, <code>localhost:&lt;port&gt;</code>, <code>[::1]:&lt;port&gt;</code>, and, when LAN access is on, every address in <code>lan_endpoints</code> plus <code>&lt;hostname&gt;.local:&lt;port&gt;</code>. Otherwise <code>421 Misdirected Request</code> with an empty body. Implemented in <code>crates/remote_control::hosts::AllowedHosts</code> with unit tests for IPv6 brackets, missing port, uppercase, trailing dot.</p>
+
+<h2>WebSocket lifecycle</h2>
+<ol>
+<li>Client connects to <code>ws://&lt;host&gt;/api/v1/ws</code>. Server sends <code>hello</code>, then immediately a full <code>state</code>.</li>
+<li>Client sends <code>ping</code> every 15 s; server answers <code>pong</code>. Server closes idle sockets after 60 s without any frame. Server sends WebSocket-level pings too (axum/tungstenite handles pongs).</li>
+<li>State changes arrive as <code>state</code> messages (full snapshot, increasing <code>version</code>). The client replaces its store wholesale and re-renders (cheap at this size).</li>
+<li>Commands are request/response: the client picks a unique <code>id</code>; the server always answers with exactly one <code>result</code> for that id, possibly seconds later for deferred operations (worktree creation, clone). The client times out at 30 s (120 s for <code>project.clone</code>) and shows an error, but a late <code>result</code> is still honored if the id is known.</li>
+<li>Terminal streams: <code>terminal.attach</code> returns an <code>attach_id</code>; from then on binary frames tagged with that id carry PTY bytes until <code>terminal.detach</code> or the socket closes. A server-initiated <code>terminal.resync</code> event means "reset xterm and apply this snapshot" (after overflow, resize or mode swap).</li>
+<li>Disconnect: the client reconnects with exponential backoff (0.5 s → 8 s, jitter). On a new <code>hello</code> with a different <code>instance_id</code>, the client drops all cached state and re-attaches nothing (ids are dead). With the same <code>instance_id</code> it re-attaches the terminal it was viewing.</li>
+</ol>
+
+<h2>Server → client messages (<code>ServerMessage</code>)</h2>
+<table>
+<tr><th>type</th><th>Phase</th><th>Fields</th><th>Notes</th></tr>
+<tr><td><code>hello</code></td><td>2</td><td><code>instance_id</code>, <code>protocol</code>, <code>app_version</code>, <code>capabilities: [string]</code>, <code>client_id</code>, <code>limits: {max_input_bytes, max_paste_bytes, …}</code></td><td><code>capabilities</code> lists implemented command names so the UI can hide unsupported affordances. First message on every connection.</td></tr>
+<tr><td><code>state</code></td><td>2</td><td><code>version: u64</code>, <code>snapshot: AppSnapshot</code></td><td>Full snapshot. Sent on connect and whenever the bridge detects a change.</td></tr>
+<tr><td><code>result</code></td><td>2</td><td><code>id</code>, <code>ok: bool</code>, <code>data?: object</code>, <code>error?: {code, message, details?}</code></td><td>Exactly one per command id.</td></tr>
+<tr><td><code>event</code></td><td>4+</td><td><code>name</code>, plus name-specific fields</td><td>Fire-and-forget notifications: <code>terminal.resync {attach_id, snapshot}</code> (4), <code>terminal.closed {attach_id}</code> (4), <code>session.status {terminal_id, agent, status, title}</code> (7), <code>project.clone_progress {job_id, phase, percent?, message?}</code> (8), <code>server.shutting_down</code> (1: sent before the runtime is dropped when the user disables the feature).</td></tr>
+<tr><td><code>pong</code></td><td>2</td><td><code>ts</code></td><td>Echoes the client's <code>ts</code>.</td></tr>
+</table>
+
+<h2>Client → server messages (<code>ClientMessage</code>)</h2>
+<table>
+<tr><th>type</th><th>Phase</th><th>Fields</th><th>Notes</th></tr>
+<tr><td><code>ping</code></td><td>2</td><td><code>ts</code></td><td></td></tr>
+<tr><td><code>command</code></td><td>2</td><td><code>id: string</code>, <code>name: CommandName</code>, <code>params: object</code></td><td>Max 64 KiB of JSON; larger frames close the socket with code 1009.</td></tr>
+</table>
+
+<h2>Binary frames (terminal bytes) — Phase 4/5</h2>
+<pre><code>server → client:  [attach_id: u32 little-endian][pty bytes…]        raw output as read from the PTY, coalesced (≤16 KiB or 8 ms)
+client → server:  [attach_id: u32 little-endian][input bytes…]      raw bytes to write to the PTY (Phase 5), max 4 KiB per frame
+</code></pre>
+<p>Binary input frames are the hot path for keystrokes; the JSON <code>terminal.input</code> command exists for tests and for clients without binary support, and both feed <code>TerminalView::write_viewer_bytes_to_pty</code>. Text frames never carry terminal bytes.</p>
+
+<h2>Commands (<code>CommandName</code>)</h2>
+<p>Params and result <code>data</code> shapes. Every command may fail with the generic errors (<code>unauthorized</code>, <code>invalid_request</code>, <code>unknown_command</code>, <code>not_found</code>, <code>bridge_unavailable</code>, <code>rate_limited</code>); specific errors are listed.</p>
+<table>
+<tr><th>name</th><th>Phase</th><th>params</th><th>data</th><th>Server behavior / specific errors</th></tr>
+<tr><td><code>app.ping</code></td><td>2</td><td>—</td><td><code>{instance_id}</code></td><td>Round-trips through the bridge (proves the main-thread hop works).</td></tr>
+<tr><td><code>project.open</code></td><td>3</td><td><code>{project_id}</code></td><td><code>{screen_id, window_id}</code></td><td><code>ProjectHost::open_project</code> on the window owning it (<code>WorkspaceRegistry::window_owning_project</code>) else the active/single window; focuses that window's screen. Errors: <code>not_found</code>, <code>feature_disabled</code> (ADE flag off).</td></tr>
+<tr><td><code>home.activate</code></td><td>3</td><td><code>{window_id?}</code></td><td><code>{screen_id}</code></td><td><code>ProjectHost::activate_home</code>.</td></tr>
+<tr><td><code>screen.activate</code></td><td>3</td><td><code>{screen_id}</code></td><td><code>{}</code></td><td><code>ProjectHost::activate_screen(index)</code> resolved via <code>WorkspaceRegistry::screen_ids_for_window</code>.</td></tr>
+<tr><td><code>tab.activate</code></td><td>3</td><td><code>{tab_id}</code></td><td><code>{}</code></td><td>Activates the owning screen if needed, then <code>WorkspaceAction::ActivateTab(index)</code>.</td></tr>
+<tr><td><code>pane.focus</code></td><td>3</td><td><code>{pane_id}</code></td><td><code>{}</code></td><td><code>Workspace::focus_pane(PaneViewLocator)</code>.</td></tr>
+<tr><td><code>desktop.reveal</code></td><td>3</td><td><code>{terminal_id}</code></td><td><code>{}</code></td><td>Brings the desktop window forward and focuses the pane (same path as <code>status_item::focus_session</code>: <code>show_window_and_focus_app</code> + <code>root_view:handle_notification_click</code>).</td></tr>
+<tr><td><code>terminal.attach</code></td><td>4</td><td><code>{terminal_id}</code></td><td><code>{attach_id, cols, rows, mode, snapshot: base64}</code></td><td>Registers an attachment, starts the relay task. Errors: <code>not_found</code>, <code>too_many_attachments</code> (max 4 per client).</td></tr>
+<tr><td><code>terminal.detach</code></td><td>4</td><td><code>{attach_id}</code></td><td><code>{}</code></td><td>Stops the relay task.</td></tr>
+<tr><td><code>terminal.input</code></td><td>5</td><td><code>{terminal_id, bytes: base64}</code></td><td><code>{}</code></td><td><code>write_viewer_bytes_to_pty</code>. Errors: <code>terminal_read_only</code>, <code>payload_too_large</code>.</td></tr>
+<tr><td><code>terminal.paste</code></td><td>5</td><td><code>{terminal_id, text}</code></td><td><code>{}</code></td><td>Newlines → <code>\r</code>; wrapped in bracketed paste when <code>needs_bracketed_paste()</code>; at the prompt with the input box visible, inserted into the input editor instead (mirrors <code>TerminalView::paste</code>).</td></tr>
+<tr><td><code>terminal.run_command</code></td><td>5</td><td><code>{terminal_id, text}</code></td><td><code>{}</code></td><td>Only in <code>prompt</code> mode: <code>execute_command_or_set_pending</code>. Otherwise <code>not_at_prompt</code>.</td></tr>
+<tr><td><code>terminal.agent_submit</code></td><td>5</td><td><code>{terminal_id, text}</code></td><td><code>{}</code></td><td>Requires a live CLI agent session on that terminal: <code>submit_cli_agent_rich_input</code>. Else <code>no_agent_session</code>.</td></tr>
+<tr><td><code>terminal.agent_insert</code></td><td>5</td><td><code>{terminal_id, text}</code></td><td><code>{}</code></td><td><code>insert_text_into_cli_agent_input</code> (no submit).</td></tr>
+<tr><td><code>terminal.signal</code></td><td>5</td><td><code>{terminal_id, signal: "interrupt"|"eof"}</code></td><td><code>{}</code></td><td>Writes <code>0x03</code> / <code>0x04</code> through <code>write_viewer_bytes_to_pty</code> so Ctrl-C cancellation tracking still works.</td></tr>
+<tr><td><code>terminal.create</code></td><td>6</td><td><code>{screen_id, worktree_id?}</code></td><td><code>{tab_id, terminal_id}</code></td><td><code>NewTerminalInWorktree { worktree_id }</code> when bound, else <code>AddTerminalTab { hide_homepage: true }</code>. Returns the created tab by diffing tab ids before/after (Local Control's pattern).</td></tr>
+<tr><td><code>agent.launch</code></td><td>6</td><td><code>{screen_id, worktree_id?, catalog_index, approval_mode: "yolo"|"normal"}</code></td><td><code>{tab_id, terminal_id}</code></td><td><code>add_tab_in_worktree(worktree_id, Some(AgentLaunchRequest))</code> or plain tab + <code>launch_agent_in_active_tab</code>. Errors: <code>invalid_request</code> (bad index).</td></tr>
+<tr><td><code>worktree.create</code></td><td>6</td><td><code>{project_id, name?, agent?: {catalog_index, approval_mode}}</code></td><td><code>{worktree_id, tab_id, branch, path}</code></td><td>Deferred. Opens the project screen if needed, then the headless creation pipeline (Phase 6 refactor). Errors: <code>git_failed {stderr}</code>, <code>feature_disabled</code>, <code>not_git_project</code>.</td></tr>
+<tr><td><code>worktree.dirty_check</code></td><td>6</td><td><code>{worktree_id}</code></td><td><code>{dirty: bool}</code></td><td>Deferred: <code>git_ops::status_is_dirty</code>.</td></tr>
+<tr><td><code>worktree.delete</code></td><td>6</td><td><code>{worktree_id, confirm: true, force: bool}</code></td><td><code>{branch_kept: bool}</code></td><td>Deferred. Requires <code>confirm</code>; refuses Primary (<code>invalid_request</code>); dirty without <code>force</code> → <code>conflict</code>. Runs the headless deletion pipeline (tabs closed first).</td></tr>
+<tr><td><code>worktree.rename</code></td><td>6</td><td><code>{worktree_id, name}</code></td><td><code>{}</code></td><td><code>ProjectRegistryModel::rename_worktree</code> after sanitizing/dedup as the inline editor does.</td></tr>
+<tr><td><code>tab.close</code></td><td>6</td><td><code>{tab_id, confirm: true}</code></td><td><code>{}</code></td><td><code>close_tabs([index], skip_confirmation: true, add_to_undo_stack: true)</code>. Returns <code>conflict</code> if the close was refused (unsaved changes).</td></tr>
+<tr><td><code>history.list</code></td><td>7</td><td><code>{project_id?, worktree_id?, agents?: [string], limit?}</code></td><td><code>{sessions: [HistorySession], state, issues}</code></td><td>From <code>AgentSessionHistoryModel::sessions()</code> filtered by <code>scope_paths</code> like the desktop Sessions panel. Requires <code>FeatureFlag::AgentSessionHistory</code>.</td></tr>
+<tr><td><code>history.refresh</code></td><td>7</td><td><code>{}</code></td><td><code>{}</code></td><td><code>AgentSessionHistoryModel::refresh(true)</code>.</td></tr>
+<tr><td><code>history.resume</code></td><td>7</td><td><code>{history_id, screen_id?}</code></td><td><code>{tab_id, terminal_id}</code></td><td><code>Workspace::resume_agent_session</code> (new tab in the session's cwd + resume command).</td></tr>
+<tr><td><code>project.register</code></td><td>8</td><td><code>{path}</code></td><td><code>{project_id}</code></td><td>Deferred: <code>ProjectHost::register_and_open_folder</code>. Errors: <code>not_found</code> (missing dir), <code>git_failed</code>.</td></tr>
+<tr><td><code>project.clone</code></td><td>8</td><td><code>{url, parent, directory_name?}</code></td><td><code>{project_id}</code></td><td>Deferred with <code>project.clone_progress</code> events; <code>project.clone_cancel {job_id}</code> flips the cancel flag.</td></tr>
+<tr><td><code>project.create</code></td><td>8</td><td><code>{name, parent}</code></td><td><code>{project_id}</code></td><td>Deferred: <code>git_ops::init_new_project</code> then register.</td></tr>
+<tr><td><code>project.rename</code></td><td>8</td><td><code>{project_id, name}</code></td><td><code>{}</code></td><td></td></tr>
+<tr><td><code>project.remove</code></td><td>8</td><td><code>{project_id, confirm: true}</code></td><td><code>{}</code></td><td>Closes its screen(s) then <code>ProjectRegistryModel::remove_project</code> (same as <code>ProjectHostAction::RemoveProject</code> without the dialog).</td></tr>
+<tr><td><code>project.reveal</code></td><td>8</td><td><code>{project_id}</code></td><td><code>{}</code></td><td>Reveal in Finder/Explorer on the desktop.</td></tr>
+<tr><td><code>fs.list_dirs</code></td><td>8</td><td><code>{path?}</code> (default home)</td><td><code>{path, parent?, entries: [{name, path, is_git_repo}]}</code></td><td>Directories only, sorted, hidden dirs excluded unless <code>include_hidden</code>. Deferred (blocking fs on the background executor). Max 2000 entries.</td></tr>
+<tr><td><code>devices.list</code>, <code>devices.revoke</code>, <code>devices.rename</code></td><td>9</td><td><code>{device_id}</code> / <code>{device_id, label}</code></td><td><code>{devices:[PairedDevice]}</code></td><td>Revoking the caller's own device closes its sockets.</td></tr>
+</table>
+
+<h2>Snapshot types (<code>AppSnapshot</code>) — Phase 2</h2>
+<pre><code>AppSnapshot {
+  version: u64,
+  instance_id: String,
+  active_window_id: Option&lt;String&gt;,
+  windows: Vec&lt;WindowSnapshot&gt;,
+  projects: Vec&lt;ProjectSnapshot&gt;,          // registry MRU order (projects_mru)
+  sessions: Vec&lt;AgentSessionSnapshot&gt;,      // live CLI agent sessions, ranked needs-input first
+  agents: Vec&lt;AgentCatalogEntry&gt;,           // agent_catalog() with installed flags
+  server: ServerInfo { connected_clients: usize, lan_access: bool },
+  features: Features { ade_workspaces: bool, session_history: bool },
+}
+WindowSnapshot { id, active_screen_id, screens: Vec&lt;ScreenSnapshot&gt; }
+ScreenSnapshot {
+  id, window_id, project_id: Option&lt;String&gt;, name: String,        // "Home" or project display name
+  active_tab_id: Option&lt;String&gt;,
+  sections: Vec&lt;SectionSnapshot&gt;,                                  // registry-ordered worktree sections + trailing unbound run
+}
+SectionSnapshot { worktree_id: Option&lt;String&gt;, title: String, tabs: Vec&lt;TabSnapshot&gt; }
+TabSnapshot { id, title, kind: TabKind, worktree_id: Option&lt;String&gt;, pinned: bool, group_title: Option&lt;String&gt;,
+              agent_summary: AgentSummary /* none|working|needs_attention */, focused_pane_id: Option&lt;String&gt;, panes: Vec&lt;PaneSnapshot&gt; }
+PaneSnapshot { id, kind: PaneKind /* terminal|code|file|agent_picker|settings|other */, title: String, terminal: Option&lt;TerminalSummary&gt; }
+TerminalSummary { terminal_id, title: Option&lt;String&gt;, cwd: Option&lt;String&gt;, mode: TerminalMode /* prompt|running|alt_screen */,
+                  cols: usize, rows: usize, read_only: bool, agent: Option&lt;AgentSessionSummary&gt; }
+AgentSessionSummary { agent: String /* CLIAgent::to_serialized_name */, display_name, status: AgentStatus /* idle|in_progress|success|failed|blocked|cancelled */,
+                      status_message: Option&lt;String&gt;, title: Option&lt;String&gt;, tool_name: Option&lt;String&gt;, tool_input_preview: Option&lt;String&gt;,
+                      summary: Option&lt;String&gt;, input_open: bool, brand_color: String }
+ProjectSnapshot { id, name, root_path, kind: "git"|"folder", primary_branch: Option&lt;String&gt;, last_opened_ts: i64,
+                  open_in_window_id: Option&lt;String&gt;, screen_id: Option&lt;String&gt;,
+                  counts: { working: usize, needs_attention: usize }, worktrees: Vec&lt;WorktreeSnapshot&gt; }
+WorktreeSnapshot { id, project_id, name, kind: "primary"|"linked", path, branch: Option&lt;String&gt;, base_branch: Option&lt;String&gt;,
+                   created_ts, agent_summary: AgentSummary, open_tab_count: usize }
+AgentSessionSnapshot { terminal_id, tab_id, screen_id, window_id, project_id: Option&lt;String&gt;, worktree_id: Option&lt;String&gt;,
+                       workspace_name: String, session: AgentSessionSummary, rank: u8 }
+AgentCatalogEntry { index: usize, id: String, display_name: String, installed: bool, supports_yolo: bool, brand_color: String }
+</code></pre>
+<p>Size budget: a snapshot with 3 windows × 5 screens × 10 tabs × 2 panes is ~40 KB pretty-printed; fine for full pushes. Derive <code>Clone, Debug, PartialEq, Serialize, Deserialize</code> on all of them; <code>PartialEq</code> is what the bridge diffs on.</p>
+
+<h2>Error codes (<code>ErrorCode</code>)</h2>
+<table>
+<tr><th>code</th><th>HTTP</th><th>Meaning</th></tr>
+<tr><td><code>unauthorized</code></td><td>401</td><td>No or invalid session/token.</td></tr>
+<tr><td><code>forbidden_origin</code></td><td>403</td><td>Missing/mismatched <code>Origin</code> or <code>X-Spirit-Remote</code> on a mutating request or WebSocket upgrade.</td></tr>
+<tr><td><code>bad_host</code></td><td>421</td><td><code>Host</code> not in the allow-list.</td></tr>
+<tr><td><code>feature_disabled</code></td><td>403</td><td>Remote Control (or a required feature such as ADE workspaces) is off.</td></tr>
+<tr><td><code>invalid_request</code></td><td>400</td><td>Malformed JSON, bad params, unknown enum value.</td></tr>
+<tr><td><code>unknown_command</code></td><td>400</td><td><code>name</code> not in <code>CommandName</code>.</td></tr>
+<tr><td><code>not_found</code></td><td>404</td><td>Id no longer resolves (tab closed, terminal gone, project removed).</td></tr>
+<tr><td><code>not_at_prompt</code></td><td>409</td><td><code>terminal.run_command</code> while a program is running.</td></tr>
+<tr><td><code>no_agent_session</code></td><td>409</td><td>Agent composer used on a terminal without a live agent session.</td></tr>
+<tr><td><code>terminal_read_only</code></td><td>409</td><td><code>TerminalModel::is_read_only()</code>.</td></tr>
+<tr><td><code>conflict</code></td><td>409</td><td>Operation refused by a confirmation/dirty check.</td></tr>
+<tr><td><code>not_git_project</code></td><td>409</td><td>Worktree operation on a <code>ProjectKind::Folder</code> project or one without a primary branch.</td></tr>
+<tr><td><code>git_failed</code></td><td>500</td><td>Git error; <code>details</code> carries <code>error_summary(&amp;err)</code>.</td></tr>
+<tr><td><code>payload_too_large</code></td><td>413</td><td>Over a limit in <code>crates/remote_control::limits</code>.</td></tr>
+<tr><td><code>too_many_attachments</code></td><td>429</td><td>More than 4 attached terminals on one connection.</td></tr>
+<tr><td><code>rate_limited</code></td><td>429</td><td>Pairing or input rate limit hit.</td></tr>
+<tr><td><code>bridge_unavailable</code></td><td>503</td><td><code>ModelSpawner</code> returned <code>ModelDropped</code> (app shutting down).</td></tr>
+<tr><td><code>unsupported</code></td><td>501</td><td>Command known but not available in this build/platform.</td></tr>
+</table>
+
+<h2>Limits (<code>crates/remote_control::limits</code>)</h2>
+<table>
+<tr><th>Constant</th><th>Value</th><th>Enforced where</th></tr>
+<tr><td><code>MAX_CLIENTS</code></td><td>8</td><td>WebSocket upgrade</td></tr>
+<tr><td><code>MAX_ATTACHMENTS_PER_CLIENT</code></td><td>4</td><td><code>terminal.attach</code></td></tr>
+<tr><td><code>MAX_JSON_FRAME_BYTES</code></td><td>64 KiB</td><td>WebSocket read</td></tr>
+<tr><td><code>MAX_INPUT_FRAME_BYTES</code></td><td>4 KiB</td><td>binary input frames / <code>terminal.input</code></td></tr>
+<tr><td><code>MAX_PASTE_BYTES</code></td><td>256 KiB</td><td><code>terminal.paste</code>, composers</td></tr>
+<tr><td><code>MAX_INPUT_BYTES_PER_SECOND</code></td><td>64 KiB</td><td>per connection token bucket</td></tr>
+<tr><td><code>OUTPUT_COALESCE_BYTES</code> / <code>OUTPUT_COALESCE_MS</code></td><td>16 KiB / 8 ms</td><td>relay task</td></tr>
+<tr><td><code>OUTPUT_QUEUE_FRAMES</code></td><td>256 per attachment</td><td>relay → socket queue; full ⇒ drop attachment output and <code>terminal.resync</code></td></tr>
+<tr><td><code>HISTORY_SNAPSHOT_MAX_BYTES</code></td><td>256 KiB</td><td>attach snapshot history part</td></tr>
+<tr><td><code>PAIR_FAILURES_PER_MINUTE</code></td><td>5 per IP</td><td><code>/pair</code></td></tr>
+<tr><td><code>SESSION_IDLE_DAYS</code></td><td>30</td><td>session sweep</td></tr>
+<tr><td><code>STATE_COALESCE_MS</code></td><td>50</td><td>bridge rebuild</td></tr>
+</table>
+
+<h2>Example exchange</h2>
+<pre><code>→ (upgrade) GET /api/v1/ws  Cookie: spirit_rc=…  Origin: http://127.0.0.1:7777
+← {"type":"hello","instance_id":"inst_6f3a…","protocol":1,"app_version":"0.2026.09.07","client_id":"c1","capabilities":["app.ping","project.open",…],"limits":{…}}
+← {"type":"state","version":41,"snapshot":{…}}
+→ {"type":"command","id":"1","name":"tab.activate","params":{"tab_id":"812"}}
+← {"type":"result","id":"1","ok":true,"data":{}}
+← {"type":"state","version":42,"snapshot":{…}}
+→ {"type":"command","id":"2","name":"terminal.attach","params":{"terminal_id":"815"}}
+← {"type":"result","id":"2","ok":true,"data":{"attach_id":1,"cols":120,"rows":38,"mode":"running","snapshot":"G1syShtbSB…"}}
+← binary 01 00 00 00 1b 5b 33 32 6d …        (attach 1: PTY bytes)
+→ binary 01 00 00 00 0d                        (attach 1: Enter)
+→ {"type":"command","id":"3","name":"terminal.detach","params":{"attach_id":1}}
+← {"type":"result","id":"3","ok":true,"data":{}}
+</code></pre>
+
+<p class="muted" style="margin-top:2.5rem"><a href="index.html">Overview</a> · <a href="web-ui.html">Web UI guide</a> · spirit_specs/0907-remote-control/protocol.html</p>
+
+</body>
+</html>

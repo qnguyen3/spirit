@@ -247,6 +247,8 @@ fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::CtrlCCancelsThirdPartyHarness,
         #[cfg(feature = "ade_workspaces")]
         FeatureFlag::AdeWorkspaces,
+        #[cfg(feature = "remote_control")]
+        FeatureFlag::RemoteControl,
     ]);
 
     flags

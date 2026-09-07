@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phase 8 — Workspace creation</title>
+<style>
+:root{--bg:#ffffff;--fg:#1a1d23;--muted:#5c6470;--accent:#0d66d0;--card:#f6f8fa;--border:#d7dde3;--code:#eef1f5;--warn-bg:#fff8e6;--warn-border:#e6c56b;--danger-bg:#fdf0f0;--danger-border:#e3a5a5;--ok-bg:#effaf1;--ok-border:#9fd3ab}
+@media (prefers-color-scheme: dark){:root{--bg:#14161a;--fg:#e8eaed;--muted:#9aa3ad;--accent:#5ca8ff;--card:#1c1f24;--border:#30353c;--code:#20242a;--warn-bg:#2a2413;--warn-border:#7a6524;--danger-bg:#2a1717;--danger-border:#7a3b3b;--ok-bg:#15241a;--ok-border:#2f6b40}}
+body{background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:980px;margin:0 auto;padding:2rem 1.5rem 4rem}
+h1{font-size:1.9rem;line-height:1.25;margin:0 0 .3rem}
+h2{font-size:1.35rem;margin:2.2rem 0 .6rem;padding-top:.6rem;border-top:1px solid var(--border)}
+h3{font-size:1.08rem;margin:1.4rem 0 .4rem}
+h4{font-size:1rem;margin:1rem 0 .3rem}
+p{margin:.5rem 0}
+.subtitle{color:var(--muted);font-size:1.02rem;margin-bottom:1.2rem}
+code{background:var(--code);border-radius:4px;padding:.08em .35em;font:.88em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--border);border-radius:8px;padding:.9rem 1rem;overflow-x:auto;font-size:.86rem;line-height:1.45}
+pre code{background:none;padding:0;font-size:inherit}
+table{border-collapse:collapse;width:100%;margin:.8rem 0;font-size:.93rem}
+th,td{border:1px solid var(--border);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:var(--card)}
+.callout{border:1px solid var(--border);border-left:4px solid var(--accent);background:var(--card);border-radius:6px;padding:.7rem 1rem;margin:1rem 0}
+.callout.warn{border-left-color:var(--warn-border);background:var(--warn-bg)}
+.callout.danger{border-left-color:var(--danger-border);background:var(--danger-bg)}
+.callout.ok{border-left-color:var(--ok-border);background:var(--ok-bg)}
+.callout-title{font-weight:600;margin-bottom:.25rem}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+ul,ol{padding-left:1.4rem}
+li{margin:.25rem 0}
+.tag{display:inline-block;font-size:.75rem;font-weight:600;border-radius:10px;padding:.05rem .55rem;border:1px solid var(--border);background:var(--card);color:var(--muted);vertical-align:middle}
+.path{font:.88em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--accent)}
+.muted{color:var(--muted)}
+</style>
+</head>
+<body>
+
+<h1>Phase 8 — Workspace creation</h1>
+<p class="subtitle">Adding Workspaces from the web: register an existing folder (with a directory browser), clone a repository with live progress, create a new project, plus rename / remove / reveal — parity with the desktop's New Workspace modal and Overview.</p>
+
+<h2>Goal</h2>
+<p>From a tablet: tap "New Workspace" → choose Open folder (browse <code>~/code</code>, pick <code>api</code>), Clone (paste a URL, pick the parent dir, watch the progress bar), or Create (name + parent) → the Workspace is registered and opened on the desktop and appears as a card; long-press a card → Rename / Reveal in Finder / Remove from Spirit (confirm).</p>
+
+<h2>Prerequisites</h2>
+<p>Phases 1–7. Requires <code>FeatureFlag::AdeWorkspaces</code> (the commands answer <code>feature_disabled</code> otherwise).</p>
+
+<h2>Context</h2>
+<ul>
+<li><strong>Desktop flows:</strong> <code>NewWorkspaceModal</code> <span class="path">app/src/projects/new_workspace_modal.rs</span> (modes <code>Open/Clone/Create</code> <span class="path">:38</span>, events <span class="path">:63</span>); host handlers <span class="path">app/src/projects/host.rs:876-891</span>; <code>register_and_open_folder(path, ctx)</code> <span class="path">:782</span> → <code>discover_repo_root</code> + <code>detect_primary_branch</code> → <code>finish_registering_folder</code> <span class="path">:797-812</span> (registry + <code>PersistedWorkspace::user_added_workspace</code> + <code>open_project</code>); <code>start_clone</code> <span class="path">:919</span> (progress via <code>git_ops::clone(url, parent, dir_name, path_env, progress, cancel)</code> <span class="path">app/src/projects/git_ops.rs:597</span>, <code>clone_cancelled: Arc&lt;AtomicBool&gt;</code> <span class="path">host.rs:131</span>); <code>start_create</code> <span class="path">:977</span> (<code>init_new_project</code> <span class="path">git_ops.rs:531</span>); <code>derive_clone_directory_name</code> <span class="path">git_ops.rs:296</span>; remembered parents <code>WorkspaceCreationSettings</code> <span class="path">app/src/projects/settings.rs</span>; <code>ProjectHostAction::RemoveProject</code> → <code>RemoveWorkspaceDialog</code> <span class="path">app/src/projects/remove_workspace_dialog.rs</span>; overview events <code>OverviewEvent::{RevealProject, StartRename…}</code> <span class="path">app/src/projects/overview.rs:102, 361-376</span>; registry <code>rename_project</code>/<code>remove_project</code> <span class="path">app/src/projects/registry.rs:214, 201</span>.</li>
+<li><strong>Known issue to keep in mind:</strong> the 0828 closeout notes the desktop clone modal drains progress only at completion; the remote flow streams progress properly, and fixing the desktop path is a welcome side effect but not required.</li>
+<li><strong>Reveal:</strong> the desktop's reveal action (search <code>RevealProject</code> handling in <span class="path">host.rs:1010-1042</span>) uses a platform "reveal in file manager" helper — reuse it.</li>
+</ul>
+
+<h2>Tasks</h2>
+
+<h3>Task 1 — Headless registration/clone/create (refactor)</h3>
+<ul>
+<li>In <span class="path">host.rs</span> extract from <code>start_clone</code> / <code>start_create</code> two <code>pub(crate)</code> functions with completion callbacks and a progress sink:
+<pre><code>pub(crate) struct CloneJob { pub id: CloneJobId, pub cancelled: Arc&lt;AtomicBool&gt; }
+pub(crate) fn clone_project(&amp;mut self, url: String, parent: PathBuf, directory_name: Option&lt;String&gt;,
+    on_progress: impl Fn(CloneProgress) + Send + 'static,
+    on_done: impl FnOnce(&amp;mut ProjectHost, Result&lt;ProjectId, String&gt;, &amp;mut ViewContext&lt;ProjectHost&gt;) + 'static,
+    ctx) -&gt; CloneJob
+pub(crate) fn create_project(&amp;mut self, name: String, parent: PathBuf, on_done: …, ctx)
+pub(crate) fn register_folder(&amp;mut self, path: PathBuf, on_done: …, ctx)
+</code></pre>
+The modal's handlers become callers whose callbacks drive the modal UI (progress bar, close, error). Multiple concurrent clone jobs are allowed (the modal only ever runs one; the bridge may run several — keep a <code>HashMap&lt;CloneJobId, CloneJob&gt;</code> on the bridge).</li>
+</ul>
+
+<h3>Task 2 — Commands (Rust)</h3>
+<ul>
+<li><code>project.register {path}</code>: canonicalize, must be an existing directory (else <code>not_found</code>); deferred through <code>register_folder</code> on the active window's host; reply <code>{project_id}</code>.</li>
+<li><code>project.clone {url, parent, directory_name?}</code>: deferred; the single <code>result</code> arrives when the clone finishes (or fails / is cancelled). Progress is streamed as <code>event project.clone_progress {job_id, phase, percent, message}</code> where <code>job_id</code> equals the command <code>id</code>, so the client correlates without a second round trip. <code>project.clone_cancel {job_id}</code> flips the job's cancel flag; the deferred result then reports error <code>conflict</code> with message "Clone cancelled". Persist <code>last_clone_parent</code> like the modal does.</li>
+<li><code>project.create {name, parent}</code>: deferred; persist <code>last_create_parent</code>.</li>
+<li><code>project.rename {project_id, name}</code>, <code>project.remove {project_id, confirm}</code> (close its screens via <code>close_project_screen</code> in every window that has one, then <code>remove_project</code> — mirror <code>RemoveWorkspaceDialog</code>'s confirm path, without the dialog), <code>project.reveal {project_id}</code>.</li>
+<li><code>fs.list_dirs {path?, include_hidden?}</code>: deferred to the background executor; <code>path</code> defaults to the home dir; returns sorted directory entries (name, absolute path, <code>is_git_repo</code> = has a <code>.git</code> entry), the parent path, and <code>suggested: [last_clone_parent, last_create_parent, ~/code-like dirs that exist]</code>. Reject non-directories with <code>not_found</code>; cap 2000 entries; never follow the request into files. Also <code>fs.suggest_parents</code> is folded into the same response.</li>
+<li>Tests: <code>fs.list_dirs</code> on a temp tree; <code>project.register</code> on a non-directory → <code>not_found</code>; <code>project.remove</code> without <code>confirm</code> → <code>invalid_request</code>.</li>
+</ul>
+
+<h3>Task 3 — Web UI</h3>
+<ul>
+<li>"New Workspace" card/button → sheet with three tabs: <strong>Open folder</strong> (directory picker → Register), <strong>Clone</strong> (URL, parent via picker with the suggested list, derived directory name shown and editable, Clone → progress bar with phase label and Cancel), <strong>Create</strong> (name, parent via picker, Create). On success: navigate to the new Workspace's detail.</li>
+<li><code>ui/dirpicker.js</code>: breadcrumb (tap to go up), list with folder glyphs and a git badge, "Use this folder", hidden toggle, path text field for typing/pasting an absolute path (validated by <code>fs.list_dirs</code>).</li>
+<li>Card context menu: Rename (sheet), Reveal on desktop, Remove from Spirit (confirm sheet with the desktop's copy: it never deletes files).</li>
+<li>Overview parity: card shows the branch, worktree count, open indicator, agent counters (already), plus last-opened; MRU order is the server's.</li>
+</ul>
+
+<h2>Out of scope</h2>
+<ul>
+<li>File browsing beyond directories, file contents, uploads. Native folder pickers (impossible from a remote browser). Multi-host projects. Deleting worktree folders when removing a project (the desktop does not either).</li>
+</ul>
+
+<h2>Verification</h2>
+<ul>
+<li><code>./script/presubmit</code> green; desktop New Workspace modal unchanged in behavior (open/clone-with-cancel/create all re-tested by hand).</li>
+<li>Tablet: register <code>~/code/spirit</code> → card appears, desktop opens it; register the same folder again → focuses the existing (D13 of the 0828 spec); clone a small public repo with progress ticking (phases: counting/compressing/receiving/resolving) and a working Cancel; create "scratch" in <code>~/tmp</code> → a git repo with an initial commit; rename, reveal, remove.</li>
+<li>Directory picker handles a 1500-entry directory smoothly and refuses <code>/etc/passwd</code>.</li>
+</ul>
+
+<h2>Gotchas</h2>
+<ul>
+<li><strong>Clone progress callbacks run on a background thread</strong>; forward them to the bridge with a bounded channel + <code>spawn_stream_local</code> (precedent <span class="path">crates/watcher/src/lib.rs:155-185</span>), then to the client channel. Throttle to 10 events/s.</li>
+<li><strong>Interactive PATH for git:</strong> every git call passes <code>interactive_path_env</code> (the modal does); the headless functions must too, or LFS/credential helpers fail in the GUI's environment.</li>
+<li><strong><code>PersistedWorkspace::user_added_workspace</code></strong> must stay in the pipeline (it feeds LSP/repo-metadata indexing); the refactor keeps <code>finish_registering_folder</code> as the single sink.</li>
+<li><strong>Which window?</strong> Registration opens the project in the active window (or the only one); a project already open elsewhere focuses that window (D11).</li>
+</ul>
+
+<p class="muted" style="margin-top:2.5rem"><a href="phase-7-agent-sessions.html">← Phase 7</a> · <a href="index.html">Overview</a> · Next: <a href="phase-9-pairing-and-hardening.html">Phase 9 — Pairing &amp; hardening</a></p>
+
+</body>
+</html>

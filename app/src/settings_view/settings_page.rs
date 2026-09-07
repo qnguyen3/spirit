@@ -31,6 +31,7 @@ use super::code_editor_review_page::EditorAndCodeReviewPageView;
 use super::features_page::FeaturesPageView;
 use super::keybindings::KeybindingsView;
 use super::privacy_page::PrivacyPageView;
+use super::remote_control_page::RemoteControlSettingsPageView;
 use super::scripting_page::ScriptingSettingsPageView;
 use super::warpify_page::WarpifyPageView;
 use crate::appearance::Appearance;
@@ -95,6 +96,7 @@ pub enum SettingsPageViewHandle {
     Privacy(ViewHandle<PrivacyPageView>),
     Warpify(ViewHandle<WarpifyPageView>),
     Scripting(ViewHandle<ScriptingSettingsPageView>),
+    RemoteControl(ViewHandle<RemoteControlSettingsPageView>),
     CLIAgents(ViewHandle<CLIAgentsPageView>),
 }
 
@@ -110,6 +112,7 @@ impl SettingsPageViewHandle {
             Privacy(view_handle) => ChildView::new(view_handle).finish(),
             Warpify(view_handle) => ChildView::new(view_handle).finish(),
             Scripting(view_handle) => ChildView::new(view_handle).finish(),
+            RemoteControl(view_handle) => ChildView::new(view_handle).finish(),
             CLIAgents(view_handle) => ChildView::new(view_handle).finish(),
         }
     }

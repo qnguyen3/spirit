@@ -27,7 +27,6 @@ pub struct PtyRecorder {
     /// Whether the per-session recording toggle is enabled.
     is_per_session_recording_enabled: bool,
     /// Inactive receiver for PTY reads. Only `Some` for local TTY sessions.
-    #[cfg_attr(not(feature = "local_fs"), expect(dead_code))]
     pty_reads_rx: Option<InactiveReceiver<Arc<Vec<u8>>>>,
     /// Window ID used for showing toasts.
     window_id: WindowId,
@@ -38,6 +37,12 @@ impl Entity for PtyRecorder {
 }
 
 impl PtyRecorder {
+    pub(crate) fn subscribe_to_pty_reads(&self) -> Option<async_broadcast::Receiver<Arc<Vec<u8>>>> {
+        self.pty_reads_rx
+            .as_ref()
+            .map(|receiver| receiver.activate_cloned())
+    }
+
     /// Creates a new recorder. Recording is enabled for a session if it
     /// is toggled on or if the global recording mode in [`DebugSettings`]
     /// is set.

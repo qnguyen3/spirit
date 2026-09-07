@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phase 5 — Terminal input</title>
+<style>
+:root{--bg:#ffffff;--fg:#1a1d23;--muted:#5c6470;--accent:#0d66d0;--card:#f6f8fa;--border:#d7dde3;--code:#eef1f5;--warn-bg:#fff8e6;--warn-border:#e6c56b;--danger-bg:#fdf0f0;--danger-border:#e3a5a5;--ok-bg:#effaf1;--ok-border:#9fd3ab}
+@media (prefers-color-scheme: dark){:root{--bg:#14161a;--fg:#e8eaed;--muted:#9aa3ad;--accent:#5ca8ff;--card:#1c1f24;--border:#30353c;--code:#20242a;--warn-bg:#2a2413;--warn-border:#7a6524;--danger-bg:#2a1717;--danger-border:#7a3b3b;--ok-bg:#15241a;--ok-border:#2f6b40}}
+body{background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:980px;margin:0 auto;padding:2rem 1.5rem 4rem}
+h1{font-size:1.9rem;line-height:1.25;margin:0 0 .3rem}
+h2{font-size:1.35rem;margin:2.2rem 0 .6rem;padding-top:.6rem;border-top:1px solid var(--border)}
+h3{font-size:1.08rem;margin:1.4rem 0 .4rem}
+h4{font-size:1rem;margin:1rem 0 .3rem}
+p{margin:.5rem 0}
+.subtitle{color:var(--muted);font-size:1.02rem;margin-bottom:1.2rem}
+code{background:var(--code);border-radius:4px;padding:.08em .35em;font:.88em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--border);border-radius:8px;padding:.9rem 1rem;overflow-x:auto;font-size:.86rem;line-height:1.45}
+pre code{background:none;padding:0;font-size:inherit}
+table{border-collapse:collapse;width:100%;margin:.8rem 0;font-size:.93rem}
+th,td{border:1px solid var(--border);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:var(--card)}
+.callout{border:1px solid var(--border);border-left:4px solid var(--accent);background:var(--card);border-radius:6px;padding:.7rem 1rem;margin:1rem 0}
+.callout.warn{border-left-color:var(--warn-border);background:var(--warn-bg)}
+.callout.danger{border-left-color:var(--danger-border);background:var(--danger-bg)}
+.callout.ok{border-left-color:var(--ok-border);background:var(--ok-bg)}
+.callout-title{font-weight:600;margin-bottom:.25rem}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+ul,ol{padding-left:1.4rem}
+li{margin:.25rem 0}
+.tag{display:inline-block;font-size:.75rem;font-weight:600;border-radius:10px;padding:.05rem .55rem;border:1px solid var(--border);background:var(--card);color:var(--muted);vertical-align:middle}
+.path{font:.88em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--accent)}
+.muted{color:var(--muted)}
+</style>
+</head>
+<body>
+
+<h1>Phase 5 — Terminal input</h1>
+<p class="subtitle">Typing from the browser: raw keystrokes and paste into the PTY, a command composer at the shell prompt that keeps the desktop's blocks clean, an agent composer that reuses the rich-input submit strategies, signals (Ctrl-C / Ctrl-D), and the phone key toolbar with soft-keyboard handling.</p>
+
+<h2>Goal</h2>
+<p>From a phone: answer a Claude Code permission prompt ("1", Enter), type into vim, send a multi-line prompt to an agent through its rich input, run <code>git status</code> at the shell prompt and see it appear as a proper block on the desktop, paste a snippet, and interrupt a runaway command — all with a toolbar that makes Esc, Tab, Ctrl, arrows and Enter reachable above the soft keyboard.</p>
+
+<h2>Prerequisites</h2>
+<p>Phases 1–4. D8 defines which path each kind of input takes.</p>
+
+<h2>Context</h2>
+<ul>
+<li><strong>PTY writes:</strong> <code>TerminalView::write_viewer_bytes_to_pty(bytes, ctx)</code> <span class="path">app/src/terminal/view.rs:3796</span> (adds Ctrl-C observation) → <code>write_user_bytes_to_pty</code> <span class="path">:3828</span> (prompt-submit observation for agents, scroll reset) → <code>Event::WriteBytesToPty</code> <span class="path">:1138</span> → controller. The read-only check is <code>TerminalModel::is_read_only()</code>.</li>
+<li><strong>Paste semantics:</strong> <code>TerminalView::paste</code> <span class="path">view.rs:7618-7694</span> (input editor when the input box is visible and focused; otherwise newline normalization + bracketed paste when <code>needs_bracketed_paste()</code> <span class="path">terminal_model.rs:1929</span>); constants <span class="path">view.rs:400-401</span>; <code>Input::system_insert</code>.</li>
+<li><strong>Commands at the prompt:</strong> <code>execute_command_or_set_pending</code> <span class="path">view.rs:7142</span> → <code>PtyController::write_command</code> <span class="path">app/src/terminal/writeable_pty/pty_controller.rs:516</span> → <code>bytes_to_execute_command</code> <span class="path">:748</span> (kill-buffer + bracketed paste + execute bytes per shell). Precedent callers <span class="path">app/src/workspace/view.rs:4586, 9297, 9341</span>.</li>
+<li><strong>Agent rich input:</strong> <code>submit_cli_agent_rich_input(text, ctx)</code> <span class="path">app/src/terminal/view/cli_agent_footer.rs:804</span>, <code>insert_text_into_cli_agent_input</code> <span class="path">:769</span>, strategies <span class="path">:637-660</span>, <code>write_cli_agent_text_then_submit</code> <span class="path">:871-895</span>, mode-switch prefixes <span class="path">:63</span>; session lookup <code>CLIAgentSessionsModel::session(terminal_view_id)</code>, <code>input_state</code> <span class="path">app/src/terminal/cli_agent_sessions/mod.rs:76, 107</span>, <code>has_active_cli_agent_input_session</code> (used in <code>is_input_box_visible</code>).</li>
+<li><strong>Key encoding:</strong> xterm.js encodes keys itself from the modes it has seen (which match the PTY's modes thanks to the relayed DECSETs and <code>modes_to_ansi</code>); <code>KeystrokeWithDetails::to_pty_bytes</code> <span class="path">crates/warp_terminal/src/model/escape_sequences.rs:269-297</span> exists for a server-side encoder but is not needed — the toolbar sends fixed byte sequences.</li>
+<li><strong>Signals:</strong> <code>C0::ETX</code>/<code>EOT</code> constants in <span class="path">crates/warp_terminal/src/model/escape_sequences.rs</span>; the desktop's Ctrl-D path <span class="path">view.rs:3565-3568</span> shows the drop-the-lock-before-writing rule.</li>
+<li><strong>Local Control's staged-input validation</strong> (<span class="path">app/src/local_control/handlers/app_state.rs:596-611</span>) rejects control characters because it targets the input editor; Remote Control's PTY paths accept any bytes, so do not copy that validator for <code>terminal.input</code>.</li>
+</ul>
+
+<h2>Tasks</h2>
+
+<h3>Task 1 — Input commands and binary input frames (Rust)</h3>
+<ul>
+<li><code>terminal.input {terminal_id, bytes}</code> and the binary input frame (<code>[attach_id][bytes]</code>, resolved to the attachment's terminal) both call <code>bridge.write_input(terminal_id, bytes, ctx)</code>: resolve the view; if <code>model.is_read_only()</code> → <code>terminal_read_only</code>; else <code>terminal_view.update(ctx, |v, ctx| v.write_viewer_bytes_to_pty(bytes, ctx))</code>. Cap <code>MAX_INPUT_FRAME_BYTES</code>; per-connection token bucket <code>MAX_INPUT_BYTES_PER_SECOND</code> (excess → <code>rate_limited</code> result for commands, dropped with a single <code>log::warn!</code> for binary frames). Binary input frames coalesce on the socket side (drain everything available, then one <code>spawn</code>) to avoid one main-thread hop per keystroke during fast typing.</li>
+<li><code>terminal.paste {terminal_id, text}</code>: mirror <code>TerminalView::paste</code> — add <code>pub(crate) fn paste_text(&amp;mut self, text: &amp;str, ctx)</code> on <code>TerminalView</code> that factors the existing body (<span class="path">view.rs:7618-7694</span>) so the desktop and remote share one implementation (the desktop passes clipboard text, the remote passes the message text). Cap <code>MAX_PASTE_BYTES</code>.</li>
+<li><code>terminal.run_command {terminal_id, text}</code>: only when the terminal's mode is <code>Prompt</code> (recompute under the lock; do not trust the client's view) → <code>execute_command_or_set_pending(text)</code>; else <code>not_at_prompt</code>. Reject embedded newlines unless the shell supports multi-line commands through the same path (it does — <code>bytes_to_execute_command</code> wraps in bracketed paste — so allow them but cap at <code>MAX_PASTE_BYTES</code>).</li>
+<li><code>terminal.agent_submit</code> / <code>terminal.agent_insert</code>: require <code>CLIAgentSessionsModel::session(terminal_id)</code> to exist → <code>submit_cli_agent_rich_input</code> / <code>insert_text_into_cli_agent_input</code>; else <code>no_agent_session</code>. When the session exists but <code>input_state == Closed</code>, <code>agent_submit</code> still works (the strategies write to the PTY) — that is the desktop's behavior too.</li>
+<li><code>terminal.signal {terminal_id, signal}</code>: <code>interrupt</code> → <code>[0x03]</code>, <code>eof</code> → <code>[0x04]</code>, through <code>write_viewer_bytes_to_pty</code> so Ctrl-C cancellation tracking (<span class="path">cli_agent_sessions/mod.rs:485</span>) keeps working.</li>
+<li>Tests <span class="path">commands_tests.rs</span>: read-only refusal; <code>run_command</code> in running mode → <code>not_at_prompt</code>; <code>agent_submit</code> without a session → <code>no_agent_session</code>; token bucket refuses the 65th KiB in a second.</li>
+</ul>
+
+<h3>Task 2 — xterm input wiring (<span class="path">terminal.js</span>)</h3>
+<ul>
+<li>Enable stdin: <code>term.onData(str)</code> → UTF-8 → binary input frame; <code>term.onBinary(str)</code> → bytes (latin1) → frame. Intercept paste (<code>term.attachCustomKeyEventHandler</code> for Ctrl/Cmd+V is not enough on mobile; listen to the <code>paste</code> event on <code>term.textarea</code>, <code>preventDefault</code>, send <code>terminal.paste</code>).</li>
+<li>Focus management: tapping the terminal focuses <code>term.textarea</code> (opens the keyboard on mobile); a "Keyboard" toggle in the header focuses/blurs explicitly; Esc from the toolbar does not blur.</li>
+<li>Local echo is never used; latency is the round trip (fine on LAN).</li>
+</ul>
+
+<h3>Task 3 — Composers (<span class="path">ui/terminal_view.js</span>)</h3>
+<ul>
+<li><strong>Command composer</strong> (mode <code>prompt</code>): single-line input with history (last 50 commands per terminal in memory), Enter or Run → <code>terminal.run_command</code>; on <code>not_at_prompt</code> (race with a program starting) fall back to a toast and keep the text. Shows the cwd basename as a prefix chip.</li>
+<li><strong>Agent composer</strong> (a live agent session on this terminal, regardless of <code>input_open</code>): multi-line textarea (auto-grow to 5 lines), Send → <code>terminal.agent_submit</code>; a hint row explains the <code>!</code>/<code>&amp;</code> mode prefixes the desktop supports; "Insert without sending" secondary action → <code>terminal.agent_insert</code>. The desktop's draft text (<code>draft_text</code>) is <em>not</em> synchronized (out of scope).</li>
+<li><strong>Raw line</strong> (mode <code>running</code> without an agent session, or <code>alt_screen</code>): a single-line input whose Send writes the text plus <code>\r</code> as raw bytes — for programs that read lines (<code>read</code>, REPLs). Hidden by default under a "Type a line…" disclosure so the xterm textarea remains the primary input.</li>
+<li>Composer choice is driven by the state snapshot (<code>TerminalSummary.mode</code>, <code>agent</code>) and updates live; the xterm keyboard input remains available in every mode.</li>
+</ul>
+
+<h3>Task 4 — Key toolbar (<span class="path">keys.js</span>, <span class="path">ui/terminal_view.js</span>)</h3>
+<ul>
+<li>Keys and bytes: Esc <code>1b</code>, Tab <code>09</code>, Enter <code>0d</code>, Backspace <code>7f</code>, ↑↓←→ (<code>CSI A/B/D/C</code>, or <code>SS3</code> variants when the terminal reported <code>APP_CURSOR</code> — track DECSET ?1 from the stream on the client, or simply ask xterm: it exposes <code>term.modes.applicationCursorKeysMode</code>), Home/End, PgUp/PgDn, Ctrl (sticky: next key is sent as <code>key &amp; 0x1f</code> — implement by injecting the control byte for the next <code>onData</code> character), Alt (sticky: prefix <code>1b</code>), <code>Ctrl+C</code> and <code>Ctrl+D</code> shortcuts → <code>terminal.signal</code>, F1–F12 in an overflow group, and a "symbols" group (<code>/ - | ~ \ : ' " ` ^ $</code>). Long-press on arrows repeats at 60 ms.</li>
+<li>Layout: horizontally scrollable, two rows on phones (the second row collapsible), single row on tablet/desktop; docked above the keyboard (<code>visualViewport</code> tracking on iOS: set the toolbar's bottom offset to <code>window.innerHeight - visualViewport.height - visualViewport.offsetTop</code>).</li>
+<li>Haptic tick on key press where <code>navigator.vibrate</code> exists; visual pressed state; sticky modifiers render highlighted until consumed.</li>
+</ul>
+
+<h3>Task 5 — Desktop awareness</h3>
+<ul>
+<li>When remote input arrives on a terminal, the desktop shows a one-shot toast per terminal per session: "Remote device is typing in &lt;tab title&gt;" (throttled: at most once per 10 minutes per terminal) so a user at the desk is not surprised. Implement in <code>bridge.write_input</code> via <code>ToastStack::add_ephemeral_toast</code> on the owning window.</li>
+</ul>
+
+<h2>Out of scope</h2>
+<ul>
+<li>Mouse reporting from the phone (touch → SGR mouse events) — xterm.js can do it, but it is confusing on touch; add later behind a toggle. IME composition edge cases beyond what xterm handles. Syncing agent draft text. Kitty keyboard protocol encoding.</li>
+</ul>
+
+<h2>Verification</h2>
+<ul>
+<li><code>./script/presubmit</code> green; new command tests pass.</li>
+<li>Phone: at the prompt, run <code>echo hi</code> from the composer → the desktop shows a new block with the command and output, the phone's xterm shows the echoed output; press Ctrl+C on a running <code>sleep 100</code> → block cancelled on the desktop; in vim, navigate with arrows, insert text, <code>Esc :wq</code> from the toolbar; in a Claude Code permission prompt, press "1"/Enter and the agent proceeds; type a two-line prompt in the agent composer and Send → the agent receives it exactly once (compare with the desktop's rich input behavior for the same agent: Codex bracketed-paste, Claude delayed Enter).</li>
+<li>Paste 5 KB of text into a running <code>cat</code> → arrives intact; paste into the composer at the prompt → becomes the command text.</li>
+<li>iOS Safari: the toolbar stays visible above the keyboard in portrait and landscape; rotating keeps the fit; the page never scrolls the xterm out of view.</li>
+<li>Two clients typing simultaneously interleave without losing bytes; the desktop toast appears once.</li>
+<li>Rate limit: a script blasting 1 MB of input in a second is throttled and the desktop stays responsive.</li>
+</ul>
+
+<h2>Gotchas</h2>
+<ul>
+<li><strong>Mode races:</strong> the phone may still show the command composer while the desktop already started a program. The server re-derives the mode under the lock and answers <code>not_at_prompt</code>; the client must keep the text and re-render when the next state arrives.</li>
+<li><strong>Never call <code>write_viewer_bytes_to_pty</code> while holding the model lock.</strong> The read-only check locks; drop the guard first (the desktop's own <span class="path">view.rs:3565-3568</span> exists precisely because of this deadlock).</li>
+<li><strong>Bracketed paste is decided server-side</strong> from <code>needs_bracketed_paste()</code>; the client must not wrap text itself, or programs receive doubled markers.</li>
+<li><strong>Enter is <code>\r</code>, not <code>\n</code>,</strong> everywhere on the PTY path (xterm already sends <code>\r</code>; the raw line and toolbar must too).</li>
+<li><strong>Ctrl as a sticky modifier must be applied before xterm's own encoding:</strong> capture the next <code>onData</code> character, replace it with the control byte, and cancel the original. Easiest: on sticky Ctrl, set a flag; in the <code>onData</code> handler, if the flag is set and the data is a single ASCII letter, send <code>code &amp; 0x1f</code> instead.</li>
+<li><strong>Soft keyboards and xterm:</strong> Android's GBoard sends composition events; xterm handles them, but the raw line input must have <code>autocapitalize="off" autocorrect="off" spellcheck="false"</code> and <code>inputmode="text"</code>; the command composer likewise.</li>
+<li><strong>Do not add a "submit to input editor" path.</strong> The desktop's input editor is the desktop user's; remote commands execute directly so the two never fight over one buffer.</li>
+</ul>
+
+<p class="muted" style="margin-top:2.5rem"><a href="phase-4-terminal-live-view.html">← Phase 4</a> · <a href="index.html">Overview</a> · Next: <a href="phase-6-create-and-manage.html">Phase 6 — Create &amp; manage</a></p>
+
+</body>
+</html>

@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Remote Control — Web UI Guide</title>
+<style>
+:root{--bg:#ffffff;--fg:#1a1d23;--muted:#5c6470;--accent:#0d66d0;--card:#f6f8fa;--border:#d7dde3;--code:#eef1f5;--warn-bg:#fff8e6;--warn-border:#e6c56b;--danger-bg:#fdf0f0;--danger-border:#e3a5a5;--ok-bg:#effaf1;--ok-border:#9fd3ab}
+@media (prefers-color-scheme: dark){:root{--bg:#14161a;--fg:#e8eaed;--muted:#9aa3ad;--accent:#5ca8ff;--card:#1c1f24;--border:#30353c;--code:#20242a;--warn-bg:#2a2413;--warn-border:#7a6524;--danger-bg:#2a1717;--danger-border:#7a3b3b;--ok-bg:#15241a;--ok-border:#2f6b40}}
+body{background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:980px;margin:0 auto;padding:2rem 1.5rem 4rem}
+h1{font-size:1.9rem;line-height:1.25;margin:0 0 .3rem}
+h2{font-size:1.35rem;margin:2.2rem 0 .6rem;padding-top:.6rem;border-top:1px solid var(--border)}
+h3{font-size:1.08rem;margin:1.4rem 0 .4rem}
+h4{font-size:1rem;margin:1rem 0 .3rem}
+p{margin:.5rem 0}
+.subtitle{color:var(--muted);font-size:1.02rem;margin-bottom:1.2rem}
+code{background:var(--code);border-radius:4px;padding:.08em .35em;font:.88em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--border);border-radius:8px;padding:.9rem 1rem;overflow-x:auto;font-size:.86rem;line-height:1.45}
+pre code{background:none;padding:0;font-size:inherit}
+table{border-collapse:collapse;width:100%;margin:.8rem 0;font-size:.93rem}
+th,td{border:1px solid var(--border);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:var(--card)}
+.callout{border:1px solid var(--border);border-left:4px solid var(--accent);background:var(--card);border-radius:6px;padding:.7rem 1rem;margin:1rem 0}
+.callout.warn{border-left-color:var(--warn-border);background:var(--warn-bg)}
+.callout.danger{border-left-color:var(--danger-border);background:var(--danger-bg)}
+.callout.ok{border-left-color:var(--ok-border);background:var(--ok-bg)}
+.callout-title{font-weight:600;margin-bottom:.25rem}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+ul,ol{padding-left:1.4rem}
+li{margin:.25rem 0}
+.tag{display:inline-block;font-size:.75rem;font-weight:600;border-radius:10px;padding:.05rem .55rem;border:1px solid var(--border);background:var(--card);color:var(--muted);vertical-align:middle}
+.path{font:.88em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--accent)}
+.muted{color:var(--muted)}
+</style>
+</head>
+<body>
+
+<h1>Remote Control — Web UI Guide</h1>
+<p class="subtitle">How the browser client is built: files, state, networking, layouts per device, components, theming, the xterm.js viewer, mobile rules, and the design language. Phases 3–9 build it incrementally; this page is the shared contract so each phase adds to one coherent app instead of five.</p>
+
+<h2>Principles</h2>
+<ol>
+<li><strong>Mirror, don't reinvent.</strong> The web UI shows the same structure the desktop shows (Workspaces → Worktree sections → tabs → panes; Sessions ranked needs-input first) with the same names and status colors. Users should recognize the desktop in it.</li>
+<li><strong>One screen at a time on phones.</strong> Every feature must work at 360×640 CSS px with the soft keyboard open. Tablet and laptop layouts add columns; they never add features.</li>
+<li><strong>Server truth, thin client.</strong> The store is a verbatim copy of the last <code>state</code> snapshot plus connection/UI state (route, attached terminal, sheets). No optimistic mutation: commands are sent, the UI shows a pending indicator, the next <code>state</code> renders the result.</li>
+<li><strong>No build step, no framework, no network.</strong> ES2020 modules loaded directly by the browser, a hand-written <code>h()</code> DOM helper, vendored xterm.js, everything served by Spirit (D12). No external fonts (system font stack; monospace stack for the terminal).</li>
+<li><strong>Safe by construction.</strong> App strings go through <code>textContent</code>/<code>h()</code> only; the CSP forbids inline scripts, so there is no inline <code>onclick</code> anywhere; links to the desktop are commands, not URLs.</li>
+</ol>
+
+<h2>File layout — <span class="path">app/assets/web/remote_control/</span></h2>
+<pre><code>index.html          shell: &lt;meta viewport&gt;, &lt;link styles.css&gt;, &lt;div id="app"&gt;, &lt;script type="module" src="app.js"&gt;
+pair.html           token form (served when unauthenticated); no JS required
+styles.css          tokens, resets, layout, components (single file, ~1.2k lines by Phase 9)
+app.js              boot: create store, connect ws, mount router, register screens
+store.js            createStore(): state, subscribe, patch; selectors (activeScreen, sessionsRanked, terminalById)
+ws.js               connect(url): reconnect/backoff, hello handling, command(name, params) → Promise, binary demux, event bus
+router.js           hash routes: #/workspaces, #/w/&lt;project_id|home&gt;, #/sessions, #/t/&lt;terminal_id&gt;, #/settings; back-button friendly
+dom.js              h(tag, props, ...children), text(), clear(), on(); tiny and typed by convention
+ui/layout.js        app frame: top bar, side rail / bottom nav, content, sheets, toasts, connection banner
+ui/workspaces.js    Workspaces screen (cards)
+ui/workspace.js     Workspace detail (sections/tabs/panes)
+ui/sessions.js      Sessions screen (live + history)
+ui/terminal_view.js Terminal screen chrome (header, mode badge, composer, key toolbar)
+ui/sheets.js        bottom sheet / dialog primitives (new worktree, launch agent, confirm, new workspace)
+ui/dirpicker.js     directory browser (Phase 8)
+ui/settings.js      client settings: device name, sound, font size, logout (Phase 9)
+terminal.js         xterm.js integration: attach/detach, snapshot apply, binary I/O, fit, resync
+keys.js             key toolbar definitions → byte sequences
+vendor/xterm.js, vendor/xterm.css, vendor/addon-fit.js, vendor/addon-web-links.js, vendor/VERSIONS (pins + sha256)
+icons.svg           inline symbol sprite (copied from app/assets/bundled/svg where a match exists)
+</code></pre>
+<p>The Rust server maps <code>/</code> → <code>index.html</code>, <code>/assets/{build_id}/{path}</code> → files. <code>index.html</code> references assets with the build id injected server-side (a single <code>{{BUILD_ID}}</code> substitution done in <code>assets.rs</code>; no templating engine).</p>
+
+<h2>State &amp; networking</h2>
+<pre><code>store = {
+  connection: { status: 'connecting'|'open'|'closed', instanceId, clientId, lastError, reconnectAt },
+  hello: { protocol, appVersion, capabilities:Set, limits },
+  snapshot: AppSnapshot | null,          // verbatim from the last state message
+  version: number,
+  route: { name, params },
+  terminal: { attachId, terminalId, mode, cols, rows, pendingResync },
+  ui: { sheet: null|{kind, props}, toasts: [], pendingCommands: Map, unread: { needsInput: number }, deviceLabel },
+  prefs: { fontScale, sound, vibrate }   // localStorage, per device
+}
+</code></pre>
+<ul>
+<li><code>ws.js</code> owns the socket. <code>command(name, params, {timeoutMs})</code> returns a Promise resolved by the matching <code>result</code>. Binary frames are demuxed by <code>attach_id</code> to a registered handler (the xterm instance). <code>event</code> messages fan out through a tiny emitter.</li>
+<li>Reconnect: 0.5 s → 1 → 2 → 4 → 8 s with ±20 % jitter; a banner shows "Reconnecting…"; on reconnect with the same <code>instance_id</code>, re-attach the current terminal; with a different one, navigate to <code>#/workspaces</code> and toast "Spirit restarted".</li>
+<li>Rendering is a full re-render of the active screen on every store change, using keyed DOM reuse only where it matters (the tab list and the xterm container, which must never be recreated while attached). This is fast at this data size; do not introduce a virtual DOM.</li>
+</ul>
+
+<h2>Layouts and breakpoints</h2>
+<table>
+<tr><th>Class</th><th>Width</th><th>Frame</th></tr>
+<tr><td>phone</td><td>&lt; 640 px</td><td>Single column. Top bar (title, connection dot, overflow menu). Content. <strong>Bottom navigation</strong> with three tabs: Workspaces · Sessions (badge = needs-input count) · Terminal (the last viewed terminal). Sheets slide up from the bottom. When a terminal is shown, the bottom nav hides and the key toolbar docks above the keyboard.</td></tr>
+<tr><td>tablet</td><td>640–1023 px</td><td>Two columns: a 300 px <strong>sidebar</strong> (Workspace list collapsed to a picker at top, then the active Workspace's sections/tabs, then Sessions) and the content area (terminal or details). Sheets become centered dialogs.</td></tr>
+<tr><td>desktop</td><td>≥ 1024 px</td><td>Three columns: 72 px Workspace rail (icons with badges, like the desktop switcher), 300 px sections/tabs list, content. Keyboard shortcuts: <code>⌘/Ctrl+K</code> quick switcher (Phase 7 polish), <code>Esc</code> closes sheets.</td></tr>
+</table>
+<pre><code>phone (terminal open)                  tablet                                   desktop
+┌──────────────────────────┐          ┌──────────┬───────────────────────┐     ┌────┬──────────┬───────────────────────┐
+│ ‹ api-auth · claude  ●   │          │ Workspace│ ‹ api-auth · claude ● │     │ ▣  │ Sections │ api-auth · claude   ● │
+├──────────────────────────┤          │ picker ▾ │                       │     │ ▣  │ ┌──────┐ │                       │
+│                          │          ├──────────┤   xterm (cols×rows,   │     │ ▣  │ │Primary│ │   xterm               │
+│   xterm (scaled to fit)  │          │ Primary  │   scaled to fit)      │     │ +  │ │ tab   │ │                       │
+│                          │          │  · tab   │                       │     │    │ │ tab   │ │                       │
+│                          │          │ auth-wt  │                       │     │    │ └──────┘ │                       │
+├──────────────────────────┤          │  · claude│                       │     │    │ auth-wt  │                       │
+│ [Esc][Tab][Ctrl][↑][↓][⏎]│          ├──────────┼───────────────────────┤     │    │  · claude├───────────────────────┤
+│ ┌──────────────────────┐ │          │ Sessions │ composer ……… [Send]   │     │    │ Sessions │ composer ……… [Send]   │
+│ │ composer      [Send] │ │          │  ● needs │                       │     │    │  ● needs │                       │
+│ └──────────────────────┘ │          └──────────┴───────────────────────┘     └────┴──────────┴───────────────────────┘
+└──────────────────────────┘
+</code></pre>
+<p>Use CSS grid with <code>@media (min-width: 640px)</code> and <code>(min-width: 1024px)</code>; never JS-driven layout except for the terminal font fit. Honor <code>env(safe-area-inset-*)</code> on the bottom nav and key toolbar. Use <code>height: 100dvh</code> for the frame and <code>overflow: hidden</code> on the frame so only content areas scroll.</p>
+
+<h2>Screens</h2>
+<h3>Workspaces (<code>#/workspaces</code>)</h3>
+<p>Cards from <code>snapshot.projects</code> (MRU order) preceded by a <strong>Home</strong> card. Card: name, kind icon, primary branch, "N worktrees", agent counters (working / needs attention) as colored pills, "open on desktop" indicator when <code>open_in_window_id</code> is set, last opened relative time. Tap → <code>project.open</code> then route to <code>#/w/&lt;id&gt;</code>. Long-press / kebab → Rename, Reveal, Remove (Phase 8). A "New Workspace" card opens the creation sheet (Phase 8). When <code>features.ade_workspaces</code> is false, only Home is shown and the copy explains why.</p>
+<h3>Workspace detail (<code>#/w/&lt;project_id&gt;</code> or <code>#/w/home</code>)</h3>
+<p>Header: name, branch, switch-to-desktop button. Body: <code>sections[]</code> rendered like the vertical tabs panel — section header (worktree name, branch chip, agent dot, "+" menu: New Terminal / Launch agent ▸ / Rename / Delete), then tab rows (kind icon with status dot, title, pane count, active highlight). Tapping a tab: <code>tab.activate</code> and route to its focused terminal (<code>#/t/&lt;terminal_id&gt;</code>) if it has one, else show the pane list. Tab row kebab: Close (confirm). Footer button: New Worktree (Phase 6). If the project is not open on the desktop, a banner offers "Open on desktop" (it will also open automatically when creating anything inside it).</p>
+<h3>Sessions (<code>#/sessions</code>)</h3>
+<p>Two groups: <strong>Live</strong> (from <code>snapshot.sessions</code>, ranked needs-input → failed → working → idle/done) and <strong>History</strong> (Phase 7, from <code>history.list</code>). Live row: agent icon (brand color), status pill, title (latest prompt), workspace · worktree, tool preview; tap → terminal; secondary: Show on desktop. History row: agent, title, cwd basename, relative time, message count; actions: Resume, Copy command.</p>
+<h3>Terminal (<code>#/t/&lt;terminal_id&gt;</code>)</h3>
+<p>Header: back, tab title · agent name, mode badge (<code>prompt</code> = "shell", <code>running</code> = "running", <code>alt_screen</code> = "full screen"), connection dot, kebab (Show on desktop, Font size, Detach). Body: the xterm container. Bottom: contextual input area (Phase 5): at the prompt a <strong>command composer</strong> (single line, Run); while running, the <strong>key toolbar</strong> plus a raw-input line; when an agent session has input open, the <strong>agent composer</strong> (multi-line, Send, mode prefixes hint) with the agent context strip above it (tool name / summary / status, Phase 7).</p>
+
+<h2>Components (all in <code>styles.css</code> + <code>ui/*.js</code>)</h2>
+<ul>
+<li><strong>Card</strong>, <strong>Row</strong> (icon · texts · trailing), <strong>StatusDot</strong> (idle grey, working blue pulse, needs-attention amber, failed red, done green — same semantics as <code>ConversationStatus</code>), <strong>Pill</strong>, <strong>Badge</strong>.</li>
+<li><strong>Sheet</strong> (bottom sheet on phone, dialog elsewhere) with title, body, primary/secondary actions; traps focus; closes on Esc/backdrop; used for New Worktree, Launch Agent, Confirm, New Workspace, Directory picker.</li>
+<li><strong>Menu</strong> (kebab/long-press) rendered as a sheet on phone and a popover elsewhere.</li>
+<li><strong>Toast</strong> stack (bottom, above nav), auto-dismiss 4 s, errors persist until tapped.</li>
+<li><strong>Banner</strong> (top of content): connection state, LAN-without-TLS warning, needs-input alert (with Open button).</li>
+<li><strong>Composer</strong>: textarea that grows to 5 lines, Enter sends (Shift+Enter newline) on desktop; on phones a Send button (Enter inserts newline for the agent composer, sends for the command composer).</li>
+<li><strong>KeyToolbar</strong>: horizontally scrollable row of key buttons; <code>Ctrl</code>/<code>Alt</code> are sticky modifiers applied to the next key; long-press repeats arrows.</li>
+<li><strong>DirPicker</strong> (Phase 8): breadcrumb + list + "Use this folder".</li>
+</ul>
+
+<h2>Theming</h2>
+<p>CSS custom properties on <code>:root</code>, dark by default (Spirit's default look) with a light theme under <code>@media (prefers-color-scheme: light)</code> and a manual override stored in prefs (<code>data-theme</code> on <code>&lt;html&gt;</code>). Tokens: <code>--bg</code>, <code>--bg-elev</code>, <code>--fg</code>, <code>--fg-muted</code>, <code>--border</code>, <code>--accent</code>, <code>--ok</code>, <code>--warn</code>, <code>--danger</code>, <code>--info</code>, radii (6/10/16), spacing scale (4-based), <code>--font-ui</code> (system stack), <code>--font-mono</code> (<code>ui-monospace, SF Mono, Menlo, Consolas, "DejaVu Sans Mono", monospace</code>). The xterm theme object is derived from the same tokens plus the standard 16 ANSI colors in Spirit's default dark/light palettes (copy the values from the bundled default themes under <span class="path">app/assets/bundled</span>; if none maps cleanly, use the Warp default theme values hard-coded in <code>terminal.js</code>). Agent brand colors come from the snapshot (<code>brand_color</code>).</p>
+
+<h2>Terminal viewer (<code>terminal.js</code>)</h2>
+<ul>
+<li>One <code>Terminal</code> instance for the currently viewed terminal; created lazily, disposed on navigation away (after <code>terminal.detach</code>). Options: <code>cols/rows</code> from the attach result, <code>scrollback: 5000</code>, <code>allowProposedApi: false</code>, <code>convertEol: false</code>, <code>cursorBlink: true</code>, <code>macOptionIsMeta: true</code>, <code>fontFamily: var(--font-mono)</code>, <code>theme</code> from tokens, <code>disableStdin</code> until Phase 5. Renderer: default DOM renderer (the WebGL addon is not vendored in v1).</li>
+<li><strong>Applying a snapshot:</strong> <code>term.reset()</code> then <code>term.write(bytes)</code> (Uint8Array from base64). The server composes history + <code>\r\n</code>×rows + live screen + cursor + modes; the client does nothing clever.</li>
+<li><strong>Fit rule (D9):</strong> cols/rows are fixed to the desktop's. After each layout change (<code>ResizeObserver</code> on the container, <code>visualViewport</code> resize on mobile), compute the largest font size in [8, 20] px such that <code>cols × cellWidth ≤ containerWidth</code>; if the result is under 8 px, keep 8 px and enable horizontal scrolling of the container. Row overflow scrolls vertically inside the container. Never call <code>term.resize</code> with different cols/rows than the server's.</li>
+<li><strong>Binary I/O:</strong> output frames → <code>term.write(uint8)</code>; batch consecutive frames within one animation frame. Input (Phase 5): <code>term.onData(str)</code> → UTF-8 encode → binary frame; <code>term.onBinary</code> likewise. Paste in the terminal: intercept and send <code>terminal.paste</code> so the server decides on bracketed paste.</li>
+<li><strong>Resync:</strong> on <code>terminal.resync</code> apply the snapshot; on <code>terminal.closed</code> show "This terminal was closed" with a back button. When the snapshot's <code>mode</code>/<code>cols</code>/<code>rows</code> for the attached terminal change in a <code>state</code> message, update the header badge and refit; the server also sends a <code>resync</code> on size change.</li>
+<li><strong>Mode-driven chrome:</strong> <code>prompt</code> → command composer, toolbar hidden; <code>running</code> → toolbar + raw line; <code>alt_screen</code> → toolbar only; agent <code>input_open</code> → agent composer replaces the raw line.</li>
+</ul>
+
+<h2>Mobile rules</h2>
+<ul>
+<li>Viewport meta: <code>width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content</code>. Do not disable pinch zoom globally; the terminal container sets <code>touch-action: pan-x pan-y</code>.</li>
+<li>Keyboard: focusing xterm's hidden textarea opens the soft keyboard; the key toolbar is <code>position: sticky; bottom: 0</code> inside the terminal screen so it rides above the keyboard; on iOS use <code>visualViewport</code> to keep it visible. Blur on "Done".</li>
+<li>Clipboard: <code>navigator.clipboard</code> is unavailable on plain-HTTP LAN origins; the Paste button opens a small sheet with a textarea the user pastes into, then sends <code>terminal.paste</code>. Copy uses <code>term.getSelection()</code> plus a "Copy" sheet showing the text for manual copy when the API is unavailable.</li>
+<li>Touch targets ≥ 44 px; long-press = 500 ms with haptic (<code>navigator.vibrate(10)</code> when available); avoid hover-only affordances — every kebab is visible.</li>
+<li>Back button: routes are hash-based so the OS back gesture navigates; sheets push a history entry so back closes them.</li>
+<li>Battery: when <code>document.hidden</code>, detach the terminal after 30 s and stop rendering; re-attach on visibility.</li>
+</ul>
+
+<h2>Accessibility &amp; quality bar</h2>
+<ul>
+<li>All controls are real <code>&lt;button&gt;</code>/<code>&lt;a&gt;</code> elements with labels; status dots carry <code>aria-label</code>; sheets use <code>role="dialog"</code> and <code>aria-modal</code>; live-region for toasts.</li>
+<li>Color contrast ≥ 4.5:1 for text; status conveyed by icon + text, never color alone.</li>
+<li>Performance budget: first paint &lt; 1 s over LAN; JS excluding vendor &lt; 150 KB unminified; a state message re-render &lt; 16 ms for 200 tabs; xterm stays responsive at 5 MB/s output (drop to resync rather than queue).</li>
+<li>Manual test devices for every phase that touches UI: iPhone (Safari), Android (Chrome), iPad, macOS Safari + Chrome. Record findings in the phase's verification notes.</li>
+</ul>
+
+<h2>Vendoring script — <span class="path">script/vendor_remote_control_assets</span></h2>
+<pre><code>#!/bin/bash
+set -euo pipefail
+cd "$(dirname "$0")/../app/assets/web/remote_control/vendor"
+fetch() { curl -fsSL "$1" -o "$2"; echo "$3  $2" | shasum -a 256 -c -; }
+fetch https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js            xterm.js            &lt;sha256&gt;
+fetch https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css           xterm.css           &lt;sha256&gt;
+fetch https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js   addon-fit.js        &lt;sha256&gt;
+fetch https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/lib/addon-web-links.js addon-web-links.js &lt;sha256&gt;
+</code></pre>
+<p>The implementer fills in the SHA-256 values on first download and commits both the script and the files. xterm.js ships UMD builds that define globals (<code>window.Terminal</code>, <code>window.FitAddon</code>); load them with classic <code>&lt;script&gt;</code> tags before the module script, since the CSP allows same-origin scripts. Record the exact versions in <code>vendor/VERSIONS</code>. License files (MIT) are committed alongside.</p>
+
+<p class="muted" style="margin-top:2.5rem"><a href="index.html">Overview</a> · <a href="protocol.html">Protocol</a> · spirit_specs/0907-remote-control/web-ui.html</p>
+
+</body>
+</html>

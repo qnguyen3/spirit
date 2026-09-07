@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phase 9 — Pairing &amp; hardening</title>
+<style>
+:root{--bg:#ffffff;--fg:#1a1d23;--muted:#5c6470;--accent:#0d66d0;--card:#f6f8fa;--border:#d7dde3;--code:#eef1f5;--warn-bg:#fff8e6;--warn-border:#e6c56b;--danger-bg:#fdf0f0;--danger-border:#e3a5a5;--ok-bg:#effaf1;--ok-border:#9fd3ab}
+@media (prefers-color-scheme: dark){:root{--bg:#14161a;--fg:#e8eaed;--muted:#9aa3ad;--accent:#5ca8ff;--card:#1c1f24;--border:#30353c;--code:#20242a;--warn-bg:#2a2413;--warn-border:#7a6524;--danger-bg:#2a1717;--danger-border:#7a3b3b;--ok-bg:#15241a;--ok-border:#2f6b40}}
+body{background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:980px;margin:0 auto;padding:2rem 1.5rem 4rem}
+h1{font-size:1.9rem;line-height:1.25;margin:0 0 .3rem}
+h2{font-size:1.35rem;margin:2.2rem 0 .6rem;padding-top:.6rem;border-top:1px solid var(--border)}
+h3{font-size:1.08rem;margin:1.4rem 0 .4rem}
+h4{font-size:1rem;margin:1rem 0 .3rem}
+p{margin:.5rem 0}
+.subtitle{color:var(--muted);font-size:1.02rem;margin-bottom:1.2rem}
+code{background:var(--code);border-radius:4px;padding:.08em .35em;font:.88em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--border);border-radius:8px;padding:.9rem 1rem;overflow-x:auto;font-size:.86rem;line-height:1.45}
+pre code{background:none;padding:0;font-size:inherit}
+table{border-collapse:collapse;width:100%;margin:.8rem 0;font-size:.93rem}
+th,td{border:1px solid var(--border);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:var(--card)}
+.callout{border:1px solid var(--border);border-left:4px solid var(--accent);background:var(--card);border-radius:6px;padding:.7rem 1rem;margin:1rem 0}
+.callout.warn{border-left-color:var(--warn-border);background:var(--warn-bg)}
+.callout.danger{border-left-color:var(--danger-border);background:var(--danger-bg)}
+.callout.ok{border-left-color:var(--ok-border);background:var(--ok-bg)}
+.callout-title{font-weight:600;margin-bottom:.25rem}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+ul,ol{padding-left:1.4rem}
+li{margin:.25rem 0}
+.tag{display:inline-block;font-size:.75rem;font-weight:600;border-radius:10px;padding:.05rem .55rem;border:1px solid var(--border);background:var(--card);color:var(--muted);vertical-align:middle}
+.path{font:.88em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--accent)}
+.muted{color:var(--muted)}
+</style>
+</head>
+<body>
+
+<h1>Phase 9 — Pairing &amp; hardening</h1>
+<p class="subtitle">Multi-device pairing done properly: a QR code and LAN URLs in Settings, a paired-device list with revoke and rename, token rotation UX, pairing rate limits, session idle expiry, connection caps, audit logging, and a threat-model checklist walked through against the code.</p>
+
+<h2>Goal</h2>
+<p>Settings → Remote Control shows, when LAN access is on, a QR code that a phone scans to pair in one tap, the LAN URLs (IP and <code>hostname.local</code>), and a list "Paired devices: iPhone · Safari (last seen 2 min ago) [Revoke]". Rotating the token or revoking a device disconnects it immediately. Brute-forcing <code>/pair</code> is throttled. Every security invariant from D4/D5 has a test.</p>
+
+<h2>Prerequisites</h2>
+<p>Phases 1–8. Read <span class="path">specs/warp-control-cli/SECURITY.md</span> again and the module doc of <span class="path">app/src/local_control/mod.rs:1-58</span>; this phase writes the equivalent for Remote Control.</p>
+
+<h2>Context</h2>
+<ul>
+<li><strong>QR encoding:</strong> the <code>qrcode</code> crate (0.14, <code>default-features = false</code>) is already a dependency of the app (<span class="path">app/Cargo.toml:155</span>) and unused; <code>QrCode::new(bytes)</code> → <code>to_colors()</code>/<code>width()</code> gives the module matrix. WarpUI rendering: compose a <code>Flex::column</code> of rows of fixed-size <code>Container</code>s (a 4 px module → ~150 px for a version-4 code); precedent for drawing fixed boxes is the status dot in <code>render_workspace_switcher_pill</code> <span class="path">app/src/workspace/view.rs:4222-4234</span>. An <code>Icon::QrCode</code> glyph exists (<span class="path">crates/warp_core/src/ui/icons.rs:79</span>) for the button.</li>
+<li><strong>LAN address discovery:</strong> no interface-enumeration crate is present. Use the UDP-connect trick (<code>std::net::UdpSocket::bind("0.0.0.0:0")</code> → <code>connect("10.255.255.255:1")</code> → <code>local_addr()</code>; sends no packets) for the primary IPv4, and the machine hostname (<code>hostname</code> via the <code>hostname</code> crate if present in <span class="path">Cargo.lock</span>, else <code>gethostname</code> through <code>libc</code> on unix / <code>GetComputerNameExW</code> on Windows — check what <span class="path">crates/warp_core</span> already exposes before adding a dependency) for <code>&lt;host&gt;.local</code>.</li>
+<li><strong>Sessions store</strong> from Phase 1 (<span class="path">app/src/remote_control/sessions.rs</span>) with the rate-limit counter struct placeholder; <code>PairedDevice</code> in <code>crates/remote_control::auth</code>.</li>
+<li><strong>Settings page</strong> slots left in Phase 1; <code>ToastStack</code>; <code>DismissibleToast</code>.</li>
+<li><strong>Logging:</strong> <code>safe_info!</code>/<code>safe_warn!</code> (<span class="path">crates/warp_core/src/safe_log.rs</span>).</li>
+</ul>
+
+<h2>Tasks</h2>
+
+<h3>Task 1 — LAN endpoints and pairing surfaces</h3>
+<ul>
+<li><span class="path">app/src/remote_control/lan.rs</span>: <code>fn lan_endpoints(port) -&gt; Vec&lt;RemoteEndpoint&gt;</code> (primary IPv4 + <code>hostname.local</code>), computed at server start when LAN access is on and re-computed when the Settings page asks (a "Refresh addresses" button) — no network-change watcher in v1. Feed them into <code>AllowedHosts.extra</code> and <code>ServerState::Running.lan_endpoints</code>.</li>
+<li>Settings page: when LAN access is on and the server runs — the QR code (encodes <code>http://&lt;ipv4&gt;:port/pair?t=&lt;token&gt;</code>), the two URLs with copy buttons, and a red warning row: "Anyone on this network who obtains this link can control your terminals. Traffic is not encrypted. Prefer Tailscale or an SSH tunnel on untrusted networks." The QR is hidden behind a "Show QR code" button (it contains the token) and hides again after 60 s or when the page loses focus.</li>
+<li>Palette entry "Show Remote Control QR code" → opens Settings and expands the QR. Tray: add "Copy LAN URL" when LAN is on.</li>
+</ul>
+
+<h3>Task 2 — Paired devices</h3>
+<ul>
+<li><code>SessionStore</code> gains device labels (from <code>User-Agent</code> at pairing; editable), <code>revoke(device_id)</code> (closes that device's WebSocket connections: the connection task subscribes to a per-session <code>Notify</code>/watch that the store triggers), <code>revoke_all()</code> on token rotation and on disable-with-"forget devices" (a second button in Settings: "Disconnect all devices").</li>
+<li>Persistence: <code>paired_devices</code> setting updated on pair/revoke/rename, and <code>last_seen</code> flushed at most once per minute and on stop.</li>
+<li>Settings widget "Paired devices": rows with label, first paired, last seen, connected dot, Revoke button (confirm), inline rename.</li>
+<li>Commands <code>devices.list</code>, <code>devices.revoke {device_id}</code>, <code>devices.rename {device_id, label}</code> and REST equivalents; the web client settings sheet shows "This device: &lt;label&gt;" with rename and "Log out" (self-revoke), and the other devices with revoke.</li>
+</ul>
+
+<h3>Task 3 — Rate limits, expiry, caps</h3>
+<ul>
+<li>Pairing: per-remote-IP sliding window of failures; more than <code>PAIR_FAILURES_PER_MINUTE</code> → <code>429</code> for the next 60 s (constant-time regardless); every failure logged with the IP; success logged with IP + device label.</li>
+<li>Sessions idle for <code>SESSION_IDLE_DAYS</code> are dropped at start and by an hourly sweep.</li>
+<li>Connection caps already enforced (Phase 2); add per-IP cap of 4 WebSockets. Input rate limits (Phase 5) get a test.</li>
+<li>Request body limit (64 KiB) and header size defaults from hyper are confirmed by tests.</li>
+</ul>
+
+<h3>Task 4 — Threat-model walkthrough (write it, test it)</h3>
+<p>Write <span class="path">specs/remote-control/SECURITY.md</span> next to the Local Control one (markdown docs are outside CLAUDE.md's code-comment ban) and reference it from the module doc-comment of <span class="path">app/src/remote_control/mod.rs</span>, which mirrors the narrative doc-comment convention of <span class="path">app/src/local_control/mod.rs:1-58</span>. Cover each threat below, with the named test that proves the mitigation:</p>
+<table>
+<tr><th>Threat</th><th>Mitigation</th><th>Test</th></tr>
+<tr><td>DNS rebinding (a web page resolving its host to 127.0.0.1)</td><td><code>Host</code> allow-list → 421</td><td><code>rejects_unknown_host</code></td></tr>
+<tr><td>CSRF on mutating routes / WebSocket from another origin</td><td><code>Origin</code> match + <code>X-Spirit-Remote</code>; SameSite=Strict cookie</td><td><code>ws_rejects_foreign_origin</code>, <code>logout_requires_origin</code></td></tr>
+<tr><td>XSS via terminal titles/cwd/commands</td><td>CSP without inline scripts; <code>textContent</code> only; no <code>innerHTML</code> with data (grep test in CI: <code>rg innerHTML app/assets/web</code> must be empty)</td><td><code>csp_header_present</code>, script check</td></tr>
+<tr><td>Token leakage in URL/history/referrer</td><td>303 after <code>/pair</code>; <code>Referrer-Policy: no-referrer</code>; QR hidden by default; never logged</td><td><code>pair_redirects_and_strips_token</code>, log grep in a test that pairs and asserts the token string is absent from captured log lines</td></tr>
+<tr><td>Token brute force</td><td>256-bit token, constant-time compare, rate limit</td><td><code>pair_rate_limited</code></td></tr>
+<tr><td>Other OS users on the same machine (loopback is shared)</td><td>Token is the boundary; token in secure storage (owner-only)</td><td>settings test: token absent from <code>settings.toml</code></td></tr>
+<tr><td>Stale sessions after rotation/disable</td><td>Rotation revokes all; disable closes sockets; sessions expire</td><td><code>rotation_revokes_sessions</code></td></tr>
+<tr><td>Resource exhaustion (frames, attachments, clients, input floods)</td><td>All limits in <code>limits.rs</code></td><td><code>caps_enforced</code></td></tr>
+<tr><td>Clickjacking</td><td><code>frame-ancestors 'none'</code>, <code>X-Frame-Options</code></td><td>header test</td></tr>
+<tr><td>Plain HTTP on LAN</td><td>Off by default; explicit warning; Tailscale/SSH guidance</td><td>UI review</td></tr>
+<tr><td>Path traversal in assets / directory browser</td><td>Asset lookup through the embedded provider only; <code>fs.list_dirs</code> canonicalizes and lists directories only</td><td><code>assets_reject_traversal</code>, <code>list_dirs_rejects_files</code></td></tr>
+<tr><td>Log hygiene</td><td><code>safe_*</code> macros; the audit test above</td><td></td></tr>
+</table>
+
+<h3>Task 5 — Audit logging and diagnostics</h3>
+<ul>
+<li>Info-level lines for: server start/stop (endpoint), pairing success/failure (IP, label), WebSocket connect/disconnect (client id, IP, duration), token rotation, device revoke. Debug-level for commands (name only, never params). A "Copy diagnostics" button in Settings copies the current state (endpoints, client count, device count, limits) for bug reports — no secrets.</li>
+</ul>
+
+<h2>Out of scope</h2>
+<ul>
+<li>TLS/self-signed certificates and certificate pinning (D6, future). mDNS advertisement. Push notifications. Per-device permissions (all paired devices are equal).</li>
+</ul>
+
+<h2>Verification</h2>
+<ul>
+<li><code>./script/presubmit</code> green; every test in the threat table exists and passes.</li>
+<li>Enable LAN → the QR renders; scan with an iPhone camera → Safari opens, pairs, lands on the app; the device row appears within a minute; rename it; revoke it from the desktop → the phone's socket closes and it shows the pairing page on reload; 6 wrong tokens from <code>curl</code> → 429.</li>
+<li>Rotate the token → all devices revoked; the page reflects zero devices.</li>
+<li>Disable LAN → LAN URLs and QR disappear; a phone on the LAN gets connection refused; loopback still works.</li>
+<li>Tailscale check (if available): enable LAN, connect from a phone on the tailnet via the Tailscale IP after adding it to the allow-list (add an "Additional allowed hosts" text setting <code>remote_control.extra_hosts</code> in this phase for exactly this case).</li>
+</ul>
+
+<h2>Gotchas</h2>
+<ul>
+<li><strong>Binding <code>0.0.0.0</code> does not tell you which IP a phone will use;</strong> the allow-list must include every address you display, and <code>extra_hosts</code> exists for VPN addresses. A Host mismatch shows up as 421 with no body — make the Settings warning mention "if a device sees a blank page, add its address here".</li>
+<li><strong>The UDP-connect trick returns the default-route interface</strong>; on a machine with Wi-Fi and Ethernet the "other" address is missing. The extra-hosts setting covers it; a full interface enumeration is future work.</li>
+<li><strong>Revocation must close live sockets</strong>, not just fail the next request; wire the per-session notifier into the WebSocket select loop.</li>
+<li><strong>Do not log <code>User-Agent</code> raw</strong> at info level (fingerprinting noise); log the parsed label.</li>
+<li><strong>QR content includes the token</strong>; never render it into a screenshot-able view by default, and never store the PNG.</li>
+</ul>
+
+<p class="muted" style="margin-top:2.5rem"><a href="phase-8-workspace-creation.html">← Phase 8</a> · <a href="index.html">Overview</a> · Next: <a href="phase-10-verification.html">Phase 10 — Verification</a></p>
+
+</body>
+</html>

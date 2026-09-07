@@ -1,0 +1,21 @@
+Spirit Remote Control vendored browser assets
+
+@xterm/xterm            5.5.0    xterm.js, xterm.css
+@xterm/addon-fit        0.10.0   addon-fit.js
+@xterm/addon-web-links  0.11.0   addon-web-links.js
+
+Source: https://cdn.jsdelivr.net/npm/<package>@<version>/...
+License: MIT for all three packages; the upstream LICENSE files are committed
+alongside the fetched assets.
+
+script/vendor_remote_control_assets downloads each file into this directory and
+verifies it against the sha256 recorded in that script; LICENSE-xterm comes down
+with them. Re-run it after changing a pin here. When the assets are absent the
+browser client detects the missing window.Terminal global and shows
+"Terminal viewer assets are not vendored in this build" instead of failing.
+
+index.html loads xterm.js and addon-web-links.js as classic scripts before the
+ES module entry point, because both ship UMD builds that define globals.
+addon-fit.js is pinned and vendored but not loaded: the client sizes the
+viewer with the D9 fit rule (fixed server cols/rows, font size chosen to fit)
+rather than resizing the terminal to the container.

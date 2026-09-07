@@ -392,6 +392,8 @@ pub enum WorkspaceAction {
         position: Vector2F,
     },
     OpenLink(String),
+    CopyRemoteControlUrl,
+    OpenRemoteControlInBrowser,
     ReopenClosedSession,
     AddWindow,
     AddWindowWithShell {
@@ -745,6 +747,8 @@ impl WorkspaceAction {
             | OpenHeaderToolbarEditor
             | ShowHeaderToolbarContextMenu { .. }
             | OpenLink(_)
+            | CopyRemoteControlUrl
+            | OpenRemoteControlInBrowser
             | ReopenClosedSession
             | FocusLeftPanel
             | FocusRightPanel
