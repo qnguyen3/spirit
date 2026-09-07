@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phase 3 — Web app shell</title>
+<style>
+:root{--bg:#ffffff;--fg:#1a1d23;--muted:#5c6470;--accent:#0d66d0;--card:#f6f8fa;--border:#d7dde3;--code:#eef1f5;--warn-bg:#fff8e6;--warn-border:#e6c56b;--danger-bg:#fdf0f0;--danger-border:#e3a5a5;--ok-bg:#effaf1;--ok-border:#9fd3ab}
+@media (prefers-color-scheme: dark){:root{--bg:#14161a;--fg:#e8eaed;--muted:#9aa3ad;--accent:#5ca8ff;--card:#1c1f24;--border:#30353c;--code:#20242a;--warn-bg:#2a2413;--warn-border:#7a6524;--danger-bg:#2a1717;--danger-border:#7a3b3b;--ok-bg:#15241a;--ok-border:#2f6b40}}
+body{background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:980px;margin:0 auto;padding:2rem 1.5rem 4rem}
+h1{font-size:1.9rem;line-height:1.25;margin:0 0 .3rem}
+h2{font-size:1.35rem;margin:2.2rem 0 .6rem;padding-top:.6rem;border-top:1px solid var(--border)}
+h3{font-size:1.08rem;margin:1.4rem 0 .4rem}
+h4{font-size:1rem;margin:1rem 0 .3rem}
+p{margin:.5rem 0}
+.subtitle{color:var(--muted);font-size:1.02rem;margin-bottom:1.2rem}
+code{background:var(--code);border-radius:4px;padding:.08em .35em;font:.88em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--border);border-radius:8px;padding:.9rem 1rem;overflow-x:auto;font-size:.86rem;line-height:1.45}
+pre code{background:none;padding:0;font-size:inherit}
+table{border-collapse:collapse;width:100%;margin:.8rem 0;font-size:.93rem}
+th,td{border:1px solid var(--border);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:var(--card)}
+.callout{border:1px solid var(--border);border-left:4px solid var(--accent);background:var(--card);border-radius:6px;padding:.7rem 1rem;margin:1rem 0}
+.callout.warn{border-left-color:var(--warn-border);background:var(--warn-bg)}
+.callout.danger{border-left-color:var(--danger-border);background:var(--danger-bg)}
+.callout.ok{border-left-color:var(--ok-border);background:var(--ok-bg)}
+.callout-title{font-weight:600;margin-bottom:.25rem}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+ul,ol{padding-left:1.4rem}
+li{margin:.25rem 0}
+.tag{display:inline-block;font-size:.75rem;font-weight:600;border-radius:10px;padding:.05rem .55rem;border:1px solid var(--border);background:var(--card);color:var(--muted);vertical-align:middle}
+.path{font:.88em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--accent)}
+.muted{color:var(--muted)}
+</style>
+</head>
+<body>
+
+<h1>Phase 3 — Web app shell</h1>
+<p class="subtitle">The responsive single-page app: store, WebSocket client, hash router, three device layouts, and the Workspaces / Workspace detail / Sessions / Terminal-placeholder screens rendering the live snapshot, plus the first navigation commands (open project, activate screen/tab/pane, reveal on desktop).</p>
+
+<h2>Goal</h2>
+<p>From a phone, tablet or laptop browser, a paired user sees the desktop's Workspaces, switches the desktop to one by tapping its card, browses its Worktree sections and tabs (with agent status dots), activates a tab (the desktop follows), sees live agent sessions ranked needs-input first, and watches all of it update in real time. The Terminal screen exists but shows "Live view arrives in the next phase".</p>
+
+<h2>Prerequisites</h2>
+<p>Phases 1–2. Read <a href="web-ui.html">web-ui.html</a> in full; it defines the file layout, store shape, layouts and components this phase creates.</p>
+
+<h2>Context</h2>
+<ul>
+<li><strong>Desktop actions to mirror:</strong> <code>ProjectHost::open_project</code> <span class="path">app/src/projects/host.rs:707</span>, <code>activate_home</code> <span class="path">:604</span>, <code>activate_screen</code> <span class="path">:566</span>; window resolution <code>WorkspaceRegistry::window_owning_project</code> <span class="path">app/src/workspace/registry.rs:152</span>; <code>root_view::dispatch_project_host_action</code> <span class="path">app/src/root_view.rs:706</span> (targets the active window only — do not use for a specific window; get the host via <code>ctx.root_view::&lt;RootView&gt;(window_id)</code> → <code>project_host_view()</code> <span class="path">:1363</span>).</li>
+<li><strong>Tab/pane focus:</strong> <code>WorkspaceAction::ActivateTab(usize)</code> handled by <code>Workspace::handle_action</code> <span class="path">app/src/workspace/view.rs:15819</span>; index from <code>tabs.iter().position(|t| t.pane_group.id() == id)</code>; <code>Workspace::focus_pane(PaneViewLocator)</code> <span class="path">:3674</span>; cross-window reveal <code>status_item::focus_session</code> <span class="path">app/src/status_item.rs:236-266</span> (<code>show_window_and_focus_app</code> + dispatch <code>root_view:handle_notification_click</code> with <code>NotificationOrigin</code>).</li>
+<li><strong>Local Control precedent for "activate then act":</strong> <span class="path">app/src/local_control/handlers/app_state.rs:361-370</span>.</li>
+<li><strong>Asset serving</strong> from Phase 1 (<span class="path">app/src/remote_control/assets.rs</span>); CSP from D5 — module scripts and classic vendor scripts are same-origin, nothing inline.</li>
+<li><strong>Icons:</strong> <span class="path">app/assets/bundled/svg/</span> and <span class="path">app/assets/bundled/png/agent_icons/</span> (agent artwork; serve the PNGs through the same <code>/assets</code> route by mapping <code>agent_icons/&lt;name&gt;.png</code> to the bundled path in <code>assets.rs</code>).</li>
+</ul>
+
+<h2>Tasks</h2>
+
+<h3>Task 1 — Navigation commands (Rust)</h3>
+<ul>
+<li>In <span class="path">commands.rs</span> implement <code>project.open</code>, <code>home.activate</code>, <code>screen.activate</code>, <code>tab.activate</code>, <code>pane.focus</code>, <code>desktop.reveal</code> per <a href="protocol.html">protocol.html</a>. Shared resolver helpers in <span class="path">app/src/remote_control/resolve.rs</span>: <code>window_for_screen(screen_id)</code>, <code>workspace_for_screen(screen_id) -&gt; ViewHandle&lt;Workspace&gt;</code>, <code>tab_index(workspace, tab_id)</code>, <code>terminal_view(terminal_id) -&gt; (window, ViewHandle&lt;Workspace&gt;, ViewHandle&lt;PaneGroup&gt;, PaneId, ViewHandle&lt;TerminalView&gt;)</code>, all via <code>WorkspaceRegistry</code> (never <code>views_of_type</code>). Ids parse from the D10 string format; failures → <code>not_found</code>.</li>
+<li><code>project.open</code>: if a window owns the project → that window's host <code>open_project</code> (activates its screen) else the active window (or the only window) → <code>open_project</code>; return the resulting <code>screen_id</code>. Both go through <code>ViewHandle&lt;ProjectHost&gt;::update</code>. Do not focus the OS window (the user may be at their desk with another app in front); <code>desktop.reveal</code> is the explicit "bring it forward".</li>
+<li><code>tab.activate</code> first activates the owning screen (<code>ProjectHost::activate_screen</code> by index from <code>screen_ids_for_window</code>) so the desktop shows what the phone shows, then <code>ActivateTab</code>.</li>
+<li>Every mutation ends with <code>mark_dirty</code> (the observers will also fire; calling it explicitly guarantees a push even if a code path never notifies).</li>
+<li>Unit tests in <span class="path">commands_tests.rs</span>: a two-screen test host; <code>screen.activate</code> flips <code>active_screen_index</code>; <code>tab.activate</code> on a closed tab → <code>not_found</code>.</li>
+</ul>
+
+<h3>Task 2 — Vendoring and static structure</h3>
+<ul>
+<li>Add <span class="path">script/vendor_remote_control_assets</span> (from <a href="web-ui.html">web-ui.html</a>), run it once, commit <code>vendor/</code> with <code>VERSIONS</code> and licenses. The terminal is not used until Phase 4, but the shell already loads <code>xterm.css</code>/<code>xterm.js</code> so the asset pipeline is proven now.</li>
+<li>Create the files listed in the guide: <code>index.html</code> (replace the placeholder), <code>app.js</code>, <code>store.js</code>, <code>ws.js</code>, <code>router.js</code>, <code>dom.js</code>, <code>ui/layout.js</code>, <code>ui/workspaces.js</code>, <code>ui/workspace.js</code>, <code>ui/sessions.js</code>, <code>ui/terminal_view.js</code> (placeholder), <code>ui/sheets.js</code>, <code>styles.css</code>, <code>icons.svg</code>. <code>pair.html</code> gets the same stylesheet.</li>
+</ul>
+
+<h3>Task 3 — Store, socket client, router</h3>
+<ul>
+<li><code>store.js</code>: <code>createStore(initial)</code> → <code>{ get, patch(partial), subscribe(fn) }</code>; selectors <code>activeWindow</code>, <code>screenById</code>, <code>projectById</code>, <code>sessionsRanked</code>, <code>terminalById</code> (index maps rebuilt on each <code>state</code>).</li>
+<li><code>ws.js</code>: <code>connect({ onHello, onState, onEvent, onStatus })</code>; <code>command(name, params, opts)</code> → Promise with timeout; <code>sendBinary(attachId, bytes)</code> and <code>onBinary(attachId, handler)</code> (used in Phase 4); heartbeat <code>ping</code> every 15 s; reconnect with jittered backoff; <code>server.shutting_down</code> → banner "Remote Control was turned off on the desktop" and stop reconnecting until the user taps Retry.</li>
+<li><code>router.js</code>: hash routes from the guide; <code>navigate(name, params, {replace})</code>; sheets push a history entry; back closes them.</li>
+</ul>
+
+<h3>Task 4 — Layouts and frame</h3>
+<ul>
+<li><code>ui/layout.js</code> renders the frame for the current breakpoint (CSS decides; JS only marks <code>data-layout</code> for components that must know). Top bar (title, connection dot, overflow menu with "Settings" (client prefs, minimal now), "Log out"), content, bottom nav (phone) / side rail (desktop), toast stack, banner slot.</li>
+<li><code>styles.css</code>: tokens (dark default, light via media query and <code>data-theme</code>), reset, frame grid for the three breakpoints, safe-area padding, components (card, row, dot, pill, badge, sheet, menu, toast, banner, button, input). Touch targets ≥ 44 px.</li>
+</ul>
+
+<h3>Task 5 — Screens</h3>
+<ul>
+<li><strong>Workspaces:</strong> Home card + project cards (name, kind glyph, branch, "N worktrees", working/needs-attention pills, "open" indicator, relative last-opened). Tap → <code>project.open</code> then <code>#/w/&lt;id&gt;</code>; Home → <code>home.activate</code> then <code>#/w/home</code>. If <code>features.ade_workspaces</code> is false, show only Home with an explanatory line.</li>
+<li><strong>Workspace detail:</strong> header (name, branch, "Show on desktop" → <code>desktop.reveal</code> of the active terminal if any, else <code>screen.activate</code>); sections → tab rows (icon by kind with status dot, title, pane count, pinned glyph, active highlight); pane list expands under a multi-pane tab. Tap tab → <code>tab.activate</code>; if the tab's focused pane is a terminal, also navigate to <code>#/t/&lt;terminal_id&gt;</code>. Kebabs are present but only "Show on desktop" is wired (Phase 6 fills the rest; render the other items disabled so layout is final).</li>
+<li><strong>Sessions:</strong> live sessions list from <code>snapshot.sessions</code> (ranked), each row with agent artwork (PNG via <code>/assets/…/agent_icons/</code> when <code>AgentIcon::Image</code>, else a glyph), status pill, title, workspace · worktree, tool preview; tap → terminal route; secondary → <code>desktop.reveal</code>. History section placeholder ("Session history arrives later").</li>
+<li><strong>Terminal placeholder:</strong> header wired to state (title, mode badge), body text "Live view arrives in the next phase", back navigation.</li>
+</ul>
+
+<h3>Task 6 — Connection UX</h3>
+<ul>
+<li>Banner states: connecting, reconnecting (with countdown), server shut down, protocol mismatch ("Update Spirit or reload"), instance changed (toast "Spirit restarted", navigate to Workspaces).</li>
+<li>Pending indicator on the tapped card/row until the next <code>state</code> arrives or the command errors (toast with the error message).</li>
+</ul>
+
+<h2>Out of scope</h2>
+<ul>
+<li>Terminal rendering and input (Phases 4–5); creation/deletion (Phase 6); history and alerts (Phase 7); Workspace creation (Phase 8); device management (Phase 9).</li>
+<li>Drag-and-drop reordering, tab groups editing, multi-window juggling beyond showing all windows' screens.</li>
+</ul>
+
+<h2>Verification</h2>
+<ul>
+<li><code>./script/presubmit</code> green; <code>git diff</code> of JS/CSS contains no comments.</li>
+<li>Laptop browser at 1280 px, 800 px and 390 px widths: the three layouts render, nothing overflows horizontally, all controls reachable.</li>
+<li>iPhone Safari and Android Chrome over LAN (enable LAN access; use the machine's IP): pairing via the URL works; Workspaces → tap → desktop switches; tabs list matches the desktop's vertical tabs panel section by section; tap a tab → desktop activates it; Sessions shows a running Claude Code with its status; switching tabs on the desktop updates the phone within ~100 ms; airplane-mode toggle → reconnect banner then recovery; quit Spirit → "shut down" banner.</li>
+<li>iPad Safari: two-column layout; sheets render as dialogs.</li>
+<li>CSP: the browser console shows zero CSP violations; no request leaves the origin (Network tab).</li>
+</ul>
+
+<h2>Gotchas</h2>
+<ul>
+<li><strong>Do not recreate the xterm container element</strong> on re-render even though nothing uses it yet — build the terminal screen's DOM once per route entry now so Phase 4 does not have to restructure the renderer.</li>
+<li><strong><code>project.open</code> chooses a window.</strong> With two desktop windows and a project open in neither, use the active window; if none is active (app in background), the first window from <code>window_ids()</code>. Document this in the command's error-free path; never create a window from a command.</li>
+<li><strong>Agent icons</strong> are PNGs under <span class="path">app/assets/bundled/png/agent_icons/</span> only for some agents (<code>AgentIcon::Image</code>); others are glyphs. Map glyphs to the SVGs in <span class="path">app/assets/bundled/svg/</span> where the same icon exists; otherwise use a generic robot glyph. Do not ship a second copy of any asset — route the existing bundled files.</li>
+<li><strong>Hash routing and Safari:</strong> <code>hashchange</code> fires after <code>popstate</code>; use one handler. Sheets that push history must be closed on <code>popstate</code> without navigating twice.</li>
+<li><strong>Do not render with <code>innerHTML</code></strong> from template strings containing app data — titles can contain <code>&lt;</code> (commands like <code>cat &lt;file</code>). <code>dom.js</code>'s <code>h()</code> only ever sets <code>textContent</code>.</li>
+</ul>
+
+<p class="muted" style="margin-top:2.5rem"><a href="phase-2-state-and-websocket.html">← Phase 2</a> · <a href="index.html">Overview</a> · Next: <a href="phase-4-terminal-live-view.html">Phase 4 — Terminal live view</a></p>
+
+</body>
+</html>

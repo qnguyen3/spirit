@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phase 2 — State model &amp; WebSocket</title>
+<style>
+:root{--bg:#ffffff;--fg:#1a1d23;--muted:#5c6470;--accent:#0d66d0;--card:#f6f8fa;--border:#d7dde3;--code:#eef1f5;--warn-bg:#fff8e6;--warn-border:#e6c56b;--danger-bg:#fdf0f0;--danger-border:#e3a5a5;--ok-bg:#effaf1;--ok-border:#9fd3ab}
+@media (prefers-color-scheme: dark){:root{--bg:#14161a;--fg:#e8eaed;--muted:#9aa3ad;--accent:#5ca8ff;--card:#1c1f24;--border:#30353c;--code:#20242a;--warn-bg:#2a2413;--warn-border:#7a6524;--danger-bg:#2a1717;--danger-border:#7a3b3b;--ok-bg:#15241a;--ok-border:#2f6b40}}
+body{background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:980px;margin:0 auto;padding:2rem 1.5rem 4rem}
+h1{font-size:1.9rem;line-height:1.25;margin:0 0 .3rem}
+h2{font-size:1.35rem;margin:2.2rem 0 .6rem;padding-top:.6rem;border-top:1px solid var(--border)}
+h3{font-size:1.08rem;margin:1.4rem 0 .4rem}
+h4{font-size:1rem;margin:1rem 0 .3rem}
+p{margin:.5rem 0}
+.subtitle{color:var(--muted);font-size:1.02rem;margin-bottom:1.2rem}
+code{background:var(--code);border-radius:4px;padding:.08em .35em;font:.88em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--border);border-radius:8px;padding:.9rem 1rem;overflow-x:auto;font-size:.86rem;line-height:1.45}
+pre code{background:none;padding:0;font-size:inherit}
+table{border-collapse:collapse;width:100%;margin:.8rem 0;font-size:.93rem}
+th,td{border:1px solid var(--border);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:var(--card)}
+.callout{border:1px solid var(--border);border-left:4px solid var(--accent);background:var(--card);border-radius:6px;padding:.7rem 1rem;margin:1rem 0}
+.callout.warn{border-left-color:var(--warn-border);background:var(--warn-bg)}
+.callout.danger{border-left-color:var(--danger-border);background:var(--danger-bg)}
+.callout.ok{border-left-color:var(--ok-border);background:var(--ok-bg)}
+.callout-title{font-weight:600;margin-bottom:.25rem}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+ul,ol{padding-left:1.4rem}
+li{margin:.25rem 0}
+.tag{display:inline-block;font-size:.75rem;font-weight:600;border-radius:10px;padding:.05rem .55rem;border:1px solid var(--border);background:var(--card);color:var(--muted);vertical-align:middle}
+.path{font:.88em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--accent)}
+.muted{color:var(--muted)}
+</style>
+</head>
+<body>
+
+<h1>Phase 2 — State model &amp; WebSocket</h1>
+<p class="subtitle">The protocol types, a main-thread projection of the whole app into one JSON snapshot, coalesced change detection, the <code>/api/v1/ws</code> push channel with a command/result envelope, and <code>GET /api/v1/state</code>. Verified with <code>websocat</code>/curl — no web UI yet.</p>
+
+<h2>Goal</h2>
+<p>A paired client connecting to the WebSocket receives <code>hello</code> then a <code>state</code> snapshot describing every window, screen (Workspace view), Worktree section, tab, pane and terminal, every Project and Worktree in the registry, every live CLI agent session and the agent catalog; any change on the desktop (switch tab, open a project, an agent finishing) produces a new <code>state</code> within ~100 ms; <code>app.ping</code> round-trips through the main thread.</p>
+
+<h2>Prerequisites</h2>
+<p>Phase 1. Read <a href="protocol.html">protocol.html</a> in full — it is the contract this phase implements.</p>
+
+<h2>Context</h2>
+<ul>
+<li><strong>Enumeration:</strong> <code>WorkspaceRegistry</code> <span class="path">app/src/workspace/registry.rs:30-182</span> (<code>all_workspaces</code> <span class="path">:162</span>, <code>screen_ids_for_window</code> <span class="path">:115</span>, <code>active_workspace_view_id</code> <span class="path">:128</span>, <code>window_owning_project</code> <span class="path">:152</span>; it is a <code>SingletonEntity</code> with <code>Event = ()</code> and never notifies — <span class="path">:178-182</span>). <code>Workspace</code> fields <span class="path">app/src/workspace/view.rs:681-700</span> (<code>tabs</code>, <code>active_tab_index</code>, <code>project_id()</code> <span class="path">:3106</span>, <code>screen_id()</code> <span class="path">:3110</span>, <code>workspace_switcher_label(app)</code>); <code>TabData</code> <span class="path">app/src/tab.rs:348-370</span>; worktree section grouping <span class="path">app/src/workspace/view/vertical_tabs.rs:2046-2130</span> (use the <em>registry-ordered</em> <code>worktree_sections</code> path at <span class="path">:2093-2130</span>, not the older RLE path) and <code>resolved_worktree_id_of_tab</code> <span class="path">app/src/workspace/view/worktrees.rs:94</span>.</li>
+<li><strong>Panes:</strong> <code>PaneGroup::visible_pane_ids</code> <span class="path">app/src/pane_group/mod.rs:2148</span>, <code>focused_pane_id</code> <span class="path">:1554</span>, <code>terminal_view_from_pane_id</code> <span class="path">:3999</span>, <code>code_view_from_pane_id</code> <span class="path">:4014</span>, <code>custom_title</code> <span class="path">:721</span>, <code>focus_state_handle</code> <span class="path">:1564</span> (events <span class="path">app/src/pane_group/focus_state.rs:18</span>). Pane kind and title derivation precedent: <span class="path">app/src/local_control/handlers/metadata.rs</span> (<code>pane_list</code> <span class="path">:484</span>) and the vertical tabs <code>SummaryPaneKind</code> <span class="path">vertical_tabs.rs:906-918</span>.</li>
+<li><strong>Terminals:</strong> <code>TerminalView::model</code> <span class="path">app/src/terminal/view.rs:1531</span>, <code>is_input_box_visible(&amp;model, app)</code> <span class="path">:3399</span>, <code>pwd()</code> <span class="path">:11496</span>; <code>TerminalModel::is_alt_screen_active</code> <span class="path">app/src/terminal/model/terminal_model.rs:1522</span>, <code>is_read_only</code>, <code>terminal_title</code> <span class="path">:1736</span>, size <code>block_list().size()</code> <span class="path">app/src/terminal/model/blocks.rs:1584</span> (<code>SizeInfo</code> <span class="path">crates/warp_terminal/src/runtime.rs:21</span>).</li>
+<li><strong>Projects and agents:</strong> <code>ProjectRegistryModel</code> (<code>projects_mru</code> <span class="path">app/src/projects/registry.rs:340</span>, <code>worktrees_for_project</code> <span class="path">:366</span>, events <span class="path">:14</span>); <code>agent_status::{summarize_tab, summarize_project, project_counts}</code> <span class="path">app/src/projects/agent_status.rs:38-66</span>; <code>CLIAgentSessionsModel::sessions()</code> <span class="path">app/src/terminal/cli_agent_sessions/mod.rs:324</span>, status <span class="path">:27</span>, context <span class="path">:61</span>, events <span class="path">:218</span>; session → location resolution <code>status_item::resolve_session</code> <span class="path">app/src/status_item.rs:194-216</span> and ranking <span class="path">:174</span>; catalog <code>agent_catalog()</code> <span class="path">app/src/agent_launcher/catalog.rs:42</span>, <code>is_installed</code> <span class="path">:202</span>, <code>CLIAgent::to_serialized_name/display_name/brand_color</code> <span class="path">app/src/terminal/cli_agent.rs:252-403</span>, <code>interactive_path_env</code> <span class="path">app/src/projects/mod.rs:27</span>.</li>
+<li><strong>Subscriptions from a model:</strong> <code>ModelContext::observe</code> <span class="path">crates/warpui_core/src/core/model/context.rs:237</span>, <code>subscribe_to_model</code> <span class="path">:76</span>, <code>subscribe_to_view</code> <span class="path">:149</span>; timers: <code>ctx.spawn(future, callback)</code> <span class="path">:402</span> with <code>tokio::time::sleep</code> on the background executor, or <code>foreground_executor().timer</code> if present — check <span class="path">crates/warpui_core/src/async/native/executor.rs</span> for a timer helper before inventing one.</li>
+<li><strong>Handoff:</strong> <code>ModelSpawner::spawn</code> <span class="path">crates/warpui_core/src/core/model/context.rs:669</span>; precedent <span class="path">app/src/local_control/mod.rs:527-535</span>.</li>
+<li><strong>axum WebSocket:</strong> enable the <code>ws</code> feature on the workspace <code>axum</code> dependency (<span class="path">Cargo.toml:87</span>); this pulls <code>tokio-tungstenite</code> 0.26 next to the existing <code>tungstenite</code> 0.24 used by <code>crates/websocket</code> — acceptable (verify <code>cargo deny</code>/<span class="path">deny.toml</span> does not ban duplicate versions of these two).</li>
+</ul>
+
+<h2>Tasks</h2>
+
+<h3>Task 1 — Protocol types (<span class="path">crates/remote_control/src/protocol.rs</span>)</h3>
+<ul>
+<li>Define <code>ServerMessage</code>, <code>ClientMessage</code>, <code>CommandName</code>, <code>CommandError</code>, <code>ErrorCode</code>, <code>AppSnapshot</code> and every nested type from <a href="protocol.html">protocol.html</a>, with <code>Clone, Debug, PartialEq, Serialize, Deserialize</code>. Enums <code>TerminalMode { Prompt, Running, AltScreen }</code>, <code>AgentSummary { None, Working, NeedsAttention }</code>, <code>AgentStatus</code>, <code>TabKind { Terminal, Code, File, AgentPicker, Settings, Mixed, Other }</code>, <code>PaneKind</code>, <code>ProjectKindWire { Git, Folder }</code>, <code>WorktreeKindWire { Primary, Linked }</code>. Commands introduced by later phases are declared now (the enum is the capability list) but marked unimplemented in the bridge until their phase.</li>
+<li><code>CommandName::as_str()</code> and <code>all()</code> (via <code>enum_iterator::Sequence</code> if the crate is available in the workspace — it is used by <code>warp_features</code> — else a hand-written array with a test asserting it matches serde names).</li>
+<li>Tests <code>protocol_tests.rs</code>: JSON golden strings for <code>hello</code>, a small <code>state</code>, a <code>command</code>, a <code>result</code> error; round-trip every enum; unknown extra fields ignored; <code>ErrorCode</code>→HTTP status mapping table.</li>
+</ul>
+
+<h3>Task 2 — Projection (<span class="path">app/src/remote_control/projection.rs</span>)</h3>
+<ul>
+<li><code>pub(crate) fn build_snapshot(instance_id: &amp;str, connected_clients: usize, app: &amp;AppContext) -&gt; AppSnapshot</code>. Pure read; no locks held across calls into other entities; total cost must stay under ~2 ms for 100 tabs (measure with <code>instant::Instant</code> in a test).</li>
+<li>Windows: <code>app.window_ids()</code> filtered to windows present in <code>WorkspaceRegistry</code>; active window = <code>app.windows().active_window()</code>. Screens per window from <code>WorkspaceRegistry::screen_ids_for_window</code> in registry order; <code>name</code> = <code>workspace_switcher_label</code>; <code>project_id</code> = <code>Workspace::project_id()</code>.</li>
+<li>Sections: for a project screen, reuse the same decision as the vertical tabs panel — registered worktrees in registry order (<code>worktrees_for_project</code>), each with the tabs whose resolved worktree id matches, then a trailing unbound section (<code>worktree_id: None</code>, title "Tabs") for the rest; for Home a single unbound section. Extract the existing grouping into a shared helper if <span class="path">vertical_tabs.rs:2093-2130</span> is not already callable from outside the renderer — do not fork the logic.</li>
+<li>Tabs: <code>id</code> = <code>tab.pane_group.id()</code> formatted like Local Control; <code>title</code> = <code>PaneGroup::custom_title</code> else the focused pane's title; <code>kind</code> from pane kinds (single kind → that, several → <code>Mixed</code>); <code>pinned</code>, <code>group_title</code> from <code>tab_groups[group_id]</code>; <code>agent_summary</code> = <code>summarize_tab</code>; panes from <code>visible_pane_ids</code> with <code>PaneKind</code> via the downcast helpers used by <code>metadata::pane_list</code>.</li>
+<li>Terminal summary: lock the model once — copy <code>is_alt_screen_active</code>, <code>is_read_only</code>, <code>terminal_title</code>, <code>size().rows/columns</code> — drop the lock, then <code>is_input_box_visible(&amp;model_copy…)</code>. Since <code>is_input_box_visible</code> takes <code>&amp;TerminalModel</code>, call it inside the same short lock scope before copying out, and nothing else. <code>cwd</code> = <code>pwd()</code>. Agent summary from <code>CLIAgentSessionsModel::session(terminal_view_id)</code>.</li>
+<li>Projects: <code>projects_mru()</code> → <code>ProjectSnapshot</code> with <code>open_in_window_id</code>/<code>screen_id</code> from the registry, <code>counts</code> from <code>project_counts</code>, worktrees from <code>worktrees_for_project</code> with <code>open_tab_count</code> computed from the tabs pass.</li>
+<li>Sessions: every <code>CLIAgentSessionsModel::sessions()</code> entry located via a single pass over the tabs (build a <code>HashMap&lt;terminal EntityId, (window, screen, tab, worktree)&gt;</code> while walking; do not call <code>resolve_session</code> per session — it is O(tabs) each). Rank with <code>status_item::status_rank</code> semantics (make that function <code>pub(crate)</code> and reuse it).</li>
+<li>Agents: <code>agent_catalog()</code> entries with <code>installed = is_installed(def, path_env)</code> where <code>path_env</code> is cached in the bridge (resolved once via <code>interactive_path_env</code> at bridge creation and refreshed every 5 minutes) — the GUI's own <code>PATH</code> gives false negatives.</li>
+<li>Tests <span class="path">projection_tests.rs</span> using the test app harness that <span class="path">app/src/workspace/view_tests.rs</span> and <span class="path">app/src/projects/host_tests.rs</span> use: a Home screen with two terminal tabs → two tabs in one unbound section; a project screen with a linked worktree → two sections in registry order; an agent session marks its tab <code>needs_attention</code> and appears first in <code>sessions</code>.</li>
+</ul>
+
+<h3>Task 3 — Bridge and change detection (<span class="path">bridge.rs</span>, <span class="path">watch.rs</span>)</h3>
+<ul>
+<li><code>RemoteControlBridge</code> gains: <code>clients: HashMap&lt;ClientId, ClientHandle { tx: mpsc::Sender&lt;ServerMessage&gt; }&gt;</code>, <code>latest: Option&lt;(u64, AppSnapshot)&gt;</code>, <code>dirty: bool</code>, <code>rebuild_scheduled: bool</code>, <code>state_tx: tokio::sync::broadcast::Sender&lt;Arc&lt;ServerMessage&gt;&gt;</code> (created by the server at start and handed over in <code>attach_server</code>; capacity 64), <code>watched_workspaces: HashSet&lt;EntityId&gt;</code>, <code>watched_terminals: HashSet&lt;EntityId&gt;</code>.</li>
+<li><code>mark_dirty(ctx)</code>: sets <code>dirty</code>; if no rebuild is scheduled, schedule one after <code>STATE_COALESCE_MS</code> via <code>ctx.spawn(sleep, |bridge, (), ctx| bridge.rebuild(ctx))</code>. <code>rebuild</code>: build snapshot, compare to <code>latest</code> (ignoring <code>version</code>), on change bump version, store, <code>state_tx.send(Arc::new(ServerMessage::State{…}))</code>. When zero clients are connected, skip rebuilding entirely (stay dirty) — the first <code>connect</code> forces a rebuild.</li>
+<li><code>watch.rs</code> — <code>fn install_watchers(bridge: &amp;mut RemoteControlBridge, ctx)</code>: <code>subscribe_to_model</code> on <code>ProjectRegistryModel</code> and <code>CLIAgentSessionsModel</code>; <code>observe</code> on <code>WorkspaceRegistry</code> — and make <code>WorkspaceRegistry</code>'s mutators call <code>ctx.notify()</code> (they run inside <code>update</code> closures; audit the call sites in <span class="path">app/src/projects/host.rs</span> and <span class="path">app/src/workspace/view.rs</span>); on each notification, <code>ensure_workspace_watchers</code> walks <code>all_workspaces</code> and for each unseen <code>Workspace</code>: <code>observe</code> the view (fires on every <code>notify</code>), <code>subscribe_to_view</code> for <code>WorkspaceEvent</code>, and for every tab's pane group <code>subscribe_to_model(focus_state_handle)</code>; for each unseen <code>TerminalView</code>: <code>observe</code> the view and <code>subscribe_to_model(model_events_handle)</code> if exposed (title/exit/block events — <span class="path">app/src/terminal/model_events.rs:364</span>). Weak handles only; prune dropped ids on rebuild.</li>
+<li>Reconcile timer: while <code>clients</code> is non-empty, a 1 s <code>ctx.spawn</code> loop calls <code>mark_dirty</code> (safety net for anything unobserved, e.g. a terminal's cwd change). Stop it when the last client leaves.</li>
+<li><code>connect(client_id, tx, ctx) -&gt; (hello fields, Option&lt;latest state&gt;)</code>, <code>disconnect(client_id, ctx)</code>, both also notify the server's <code>connected_clients</code>.</li>
+<li><code>execute(client_id, command: Command, ctx) -&gt; CommandOutcome</code> where <code>CommandOutcome::Immediate(Result&lt;Value, CommandError&gt;) | Deferred</code>; Phase 2 implements <code>AppPing</code> and returns <code>unsupported</code>-style <code>CommandError</code> for every other variant through an exhaustive match (later phases replace arms).</li>
+</ul>
+
+<h3>Task 4 — WebSocket endpoint (<span class="path">ws.rs</span>)</h3>
+<ul>
+<li>Route <code>GET /api/v1/ws</code>: <code>Authed</code> + <code>Origin</code> check (<code>AllowedHosts::origin_matches</code>; missing → 403) + client cap (<code>MAX_CLIENTS</code>, tracked with an <code>Arc&lt;AtomicUsize&gt;</code> in <code>AppState</code>) → <code>WebSocketUpgrade::on_upgrade(handle_socket)</code>.</li>
+<li><code>handle_socket</code>: allocate <code>client_id</code>; create <code>mpsc::channel::&lt;ServerMessage&gt;(64)</code> for per-client replies; <code>bridge_spawner.spawn(connect)</code> → send <code>hello</code> then <code>state</code>; subscribe to <code>state_tx</code>; <code>select!</code> loop over (a) incoming frames — text → <code>ClientMessage</code> (size-capped; parse failure → <code>result</code> with <code>invalid_request</code> if an id can be extracted else close 1003), <code>ping</code> → <code>pong</code>, <code>command</code> → spawn a task that awaits <code>bridge_spawner.spawn(execute)</code> and, if <code>Immediate</code>, sends <code>result</code> (deferred results arrive on the per-client channel from the bridge); (b) per-client channel → send; (c) broadcast state → send, with <code>RecvError::Lagged</code> handled by re-fetching the latest snapshot from the bridge; (d) idle timeout 60 s → close. On exit, <code>bridge_spawner.spawn(disconnect)</code> and decrement the counter.</li>
+<li>Serialization on the tokio side (<code>serde_json::to_string</code> of <code>Arc&lt;ServerMessage&gt;</code>); the bridge never serializes.</li>
+<li><code>server.shutting_down</code>: the server's <code>stop</code> sends it through <code>state_tx</code> before dropping the runtime.</li>
+</ul>
+
+<h3>Task 5 — REST state and status</h3>
+<ul>
+<li><code>GET /api/v1/state</code>: <code>bridge_spawner.spawn(|b, ctx| b.snapshot_now(ctx))</code> → JSON. <code>GET /api/v1/status</code> gains <code>connected_clients</code> from the atomic counter and the limits table.</li>
+</ul>
+
+<h3>Task 6 — Tests</h3>
+<ul>
+<li><span class="path">mod_tests.rs</span>: upgrade without <code>Origin</code> → 403; with wrong <code>Origin</code> → 403; with correct → 101; <code>hello</code> then <code>state</code> arrive in order; <code>app.ping</code> returns the instance id; a 9th client gets 503; oversized text frame closes the socket. Use <code>tokio-tungstenite</code> (already a transitive dependency once <code>axum/ws</code> is on) as the test client, in a test-only runtime like <span class="path">app/src/local_control/mod_tests.rs:233</span>.</li>
+<li>Bridge tests: two <code>mark_dirty</code> calls within 50 ms yield one broadcast; an unchanged rebuild yields none; version increases monotonically.</li>
+</ul>
+
+<h2>Out of scope</h2>
+<ul>
+<li>Any command other than <code>app.ping</code> (Phase 3+). Terminal streams (Phase 4). The web app (Phase 3) — the placeholder page may optionally open the socket and print raw messages for debugging, but nothing more.</li>
+<li>State diffs, compression, per-client filtering.</li>
+</ul>
+
+<h2>Verification</h2>
+<ul>
+<li><code>./script/presubmit</code> green.</li>
+<li><code>curl -H 'Authorization: Bearer &lt;token&gt;' 127.0.0.1:7777/api/v1/state | jq</code> shows windows/screens/sections/tabs/panes/terminals matching the desktop; open a second Workspace, switch tabs, split a pane, launch an agent — each reflected on re-fetch.</li>
+<li><code>websocat -H 'Origin: http://127.0.0.1:7777' -H 'Cookie: spirit_rc=…' ws://127.0.0.1:7777/api/v1/ws</code>: <code>hello</code>, <code>state</code>, then a new <code>state</code> within ~100 ms of every desktop change; <code>{"type":"command","id":"1","name":"app.ping","params":{}}</code> → a <code>result</code>; idle silence past 60 s closes the socket; disabling Remote Control sends <code>server.shutting_down</code> then closes.</li>
+<li>Idle CPU with one connected client and an idle desktop is indistinguishable from baseline (the 1 Hz reconcile must be cheap: profile <code>build_snapshot</code>).</li>
+<li>Restart Spirit: the reconnecting <code>websocat</code> gets a new <code>instance_id</code>.</li>
+</ul>
+
+<h2>Gotchas</h2>
+<ul>
+<li><strong><code>observe</code> on a <code>Workspace</code> fires on every render-relevant <code>notify</code> — many per second while typing.</strong> The coalescer plus the structural comparison keep the network quiet; do not "optimize" by dropping either.</li>
+<li><strong><code>WorkspaceRegistry</code> is mutated through <code>update</code> from <code>ProjectHost</code>; adding <code>ctx.notify()</code> inside its mutators is safe, but confirm no caller holds a borrow that <code>observe</code> callbacks would re-enter (they are deferred by the framework's effect queue, so this is fine — verify by test).</strong></li>
+<li><strong>Do not resolve sessions with <code>views_of_type::&lt;Workspace&gt;</code>.</strong> A window holds one <code>Workspace</code> per open Project; always go through <code>WorkspaceRegistry</code> (index Recommendation; Local Control's resolver has this latent bug — do not copy it).</li>
+<li><strong>Locks:</strong> the projection touches many <code>TerminalModel</code>s; each lock scope must be a handful of field reads. If <code>is_input_box_visible</code> needs <code>app</code> while the lock is held, that is the existing precedent (<span class="path">view.rs:7618</span> holds it the same way); never call anything that could lock another model or emit while inside.</li>
+<li><strong>Deferred results need the per-client channel</strong>, which is why replies are not sent through the broadcast. Keep <code>ClientHandle</code> in the bridge only (main thread) and hand the receiving half to the socket task.</li>
+<li><strong>Broadcast lag:</strong> <code>tokio::sync::broadcast</code> drops the oldest messages for slow receivers and reports <code>Lagged</code>; since every <code>state</code> is a full snapshot, the recovery is simply "fetch latest", never "replay".</li>
+<li><strong>Feature check inside the bridge too:</strong> like <code>LocalControlBridge::handle_request</code>, <code>execute</code> re-checks the flag and the enabled setting so a command in flight during disable is refused.</li>
+</ul>
+
+<p class="muted" style="margin-top:2.5rem"><a href="phase-1-foundation.html">← Phase 1</a> · <a href="index.html">Overview</a> · Next: <a href="phase-3-web-app-shell.html">Phase 3 — Web app shell</a></p>
+
+</body>
+</html>

@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phase 6 — Create &amp; manage</title>
+<style>
+:root{--bg:#ffffff;--fg:#1a1d23;--muted:#5c6470;--accent:#0d66d0;--card:#f6f8fa;--border:#d7dde3;--code:#eef1f5;--warn-bg:#fff8e6;--warn-border:#e6c56b;--danger-bg:#fdf0f0;--danger-border:#e3a5a5;--ok-bg:#effaf1;--ok-border:#9fd3ab}
+@media (prefers-color-scheme: dark){:root{--bg:#14161a;--fg:#e8eaed;--muted:#9aa3ad;--accent:#5ca8ff;--card:#1c1f24;--border:#30353c;--code:#20242a;--warn-bg:#2a2413;--warn-border:#7a6524;--danger-bg:#2a1717;--danger-border:#7a3b3b;--ok-bg:#15241a;--ok-border:#2f6b40}}
+body{background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:980px;margin:0 auto;padding:2rem 1.5rem 4rem}
+h1{font-size:1.9rem;line-height:1.25;margin:0 0 .3rem}
+h2{font-size:1.35rem;margin:2.2rem 0 .6rem;padding-top:.6rem;border-top:1px solid var(--border)}
+h3{font-size:1.08rem;margin:1.4rem 0 .4rem}
+h4{font-size:1rem;margin:1rem 0 .3rem}
+p{margin:.5rem 0}
+.subtitle{color:var(--muted);font-size:1.02rem;margin-bottom:1.2rem}
+code{background:var(--code);border-radius:4px;padding:.08em .35em;font:.88em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--border);border-radius:8px;padding:.9rem 1rem;overflow-x:auto;font-size:.86rem;line-height:1.45}
+pre code{background:none;padding:0;font-size:inherit}
+table{border-collapse:collapse;width:100%;margin:.8rem 0;font-size:.93rem}
+th,td{border:1px solid var(--border);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:var(--card)}
+.callout{border:1px solid var(--border);border-left:4px solid var(--accent);background:var(--card);border-radius:6px;padding:.7rem 1rem;margin:1rem 0}
+.callout.warn{border-left-color:var(--warn-border);background:var(--warn-bg)}
+.callout.danger{border-left-color:var(--danger-border);background:var(--danger-bg)}
+.callout.ok{border-left-color:var(--ok-border);background:var(--ok-bg)}
+.callout-title{font-weight:600;margin-bottom:.25rem}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+ul,ol{padding-left:1.4rem}
+li{margin:.25rem 0}
+.tag{display:inline-block;font-size:.75rem;font-weight:600;border-radius:10px;padding:.05rem .55rem;border:1px solid var(--border);background:var(--card);color:var(--muted);vertical-align:middle}
+.path{font:.88em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--accent)}
+.muted{color:var(--muted)}
+</style>
+</head>
+<body>
+
+<h1>Phase 6 — Create &amp; manage</h1>
+<p class="subtitle">Creating and managing work from the web: new terminal in a Worktree, launch an agent (with approval mode) in a Worktree, create a Worktree (optionally with an agent), rename and delete Worktrees with the desktop's dirty-check pipeline, close tabs. This phase also refactors the modal-bound creation and deletion pipelines into headless functions and adds deferred command results.</p>
+
+<h2>Goal</h2>
+<p>From a phone: tap "+" on a Worktree section → New Terminal (opens on the desktop and in the web UI), or Launch agent → pick Claude Code, YOLO → a new tab starts the agent in that Worktree; "New Worktree" → name (or auto-generated) + optional agent → the worktree is created, its tab opens, the agent starts; delete a Worktree → dirty check → confirm (force if dirty) → tabs closed, folder and branch removed; close a tab with confirmation. Everything reflects on the desktop as if done there.</p>
+
+<h2>Prerequisites</h2>
+<p>Phases 1–5. Read <span class="path">app/src/workspace/view/worktrees.rs</span> end to end and <span class="path">spirit_specs/0828-ade-workspaces/phase-4-worktrees.html</span> (creation/deletion ordering rules).</p>
+
+<h2>Context</h2>
+<ul>
+<li><strong>Terminal/agent creation:</strong> <code>WorkspaceAction::NewTerminalInWorktree { worktree_id }</code> <span class="path">app/src/workspace/action.rs:557</span>, <code>AddTerminalTab { hide_homepage }</code>, <code>NewAgentPickerInWorktree</code> <span class="path">:560</span>; <code>Workspace::add_tab_in_worktree(worktree_id, agent_launch, ctx)</code> <span class="path">app/src/workspace/view/worktrees.rs:183</span>; <code>launch_agent_from_picker</code> <span class="path">app/src/workspace/view.rs:9246</span>, <code>launch_agent_in_active_tab</code> <span class="path">:9323</span>; <code>AgentLaunchRequest { catalog_index, approval_mode }</code> <span class="path">app/src/agent_launcher/catalog.rs:16</span>, <code>AgentApprovalMode { Yolo, Normal }</code> <span class="path">app/src/settings/cli_agent.rs:21</span>; tab-creation result pattern <span class="path">app/src/local_control/handlers/layout.rs</span> (diff tab ids before/after).</li>
+<li><strong>Worktree creation pipeline:</strong> <code>worktree_context</code> <span class="path">worktrees.rs:426</span>, <code>show_create_worktree_modal</code> <span class="path">:438</span>, <code>start_worktree_creation(name, agent_launch, ctx)</code> <span class="path">:480</span> (private; errors go to the modal via <code>set_error</code>), <code>finish_worktree_creation</code> <span class="path">:545</span>, <code>WorktreeCreation</code> <span class="path">:296</span>; modal <span class="path">app/src/projects/create_worktree_modal.rs</span> (<code>Submit</code> event <span class="path">:48-50</span>, subscription <span class="path">worktrees.rs:47-61</span>); name generation <code>generate_worktree_branch_name</code> <span class="path">crates/warp_util/src/worktree_names.rs:256</span>; git ops <span class="path">app/src/projects/git_ops.rs</span> (<code>worktree_add_or_rollback</code> <span class="path">:417</span>, <code>status_is_dirty</code> <span class="path">:503</span>, <code>copy_worktree_includes</code> <span class="path">:720</span>, <code>sanitize_worktree_name</code> <span class="path">:147</span>, <code>next_available</code> <span class="path">:174</span>, <code>error_summary</code> <span class="path">app/src/projects/mod.rs:46</span>).</li>
+<li><strong>Deletion pipeline:</strong> <code>show_delete_worktree_dialog</code> <span class="path">worktrees.rs:576</span>, dialog <span class="path">app/src/projects/delete_worktree_dialog.rs</span> (<code>Confirm { worktree_id, force }</code>), <code>execute_worktree_deletion(worktree_id, force, ctx)</code> <span class="path">worktrees.rs:622</span> (private: close tabs → <code>worktree_remove</code> → <code>delete_branch_safe</code> → <code>prune</code> → registry remove, toasts).</li>
+<li><strong>Rename:</strong> <code>rename_worktree_inline</code>/<code>finish_worktree_rename</code> <span class="path">worktrees.rs:262, 325</span>; <code>ProjectRegistryModel::rename_worktree</code> <span class="path">app/src/projects/registry.rs:304</span>.</li>
+<li><strong>Tab close:</strong> <code>Workspace::close_tabs(indices, skip_confirmation, add_to_undo_stack, ctx) -&gt; bool</code> <span class="path">app/src/workspace/view.rs:8906</span>; Local Control maps <code>false</code> to a conflict <span class="path">app/src/local_control/handlers/close.rs:88-92</span>.</li>
+<li><strong>Opening a project screen headlessly:</strong> Phase 3's <code>project.open</code> path (<code>ProjectHost::open_project</code>).</li>
+<li><strong>Catalog exposure:</strong> already in the snapshot (<code>agents[]</code>, Phase 2) with <code>installed</code>.</li>
+</ul>
+
+<h2>Tasks</h2>
+
+<h3>Task 1 — Deferred results in the bridge</h3>
+<ul>
+<li><code>execute</code> may return <code>CommandOutcome::Deferred</code>; the bridge stores <code>(client_id, command id)</code> in a <code>PendingCommand</code> and completion callbacks call <code>bridge.reply(pending, Result&lt;Value, CommandError&gt;)</code> which pushes a <code>result</code> onto that client's channel (dropping silently if the client disconnected). Pending commands time out server-side at 5 minutes (a <code>ctx.spawn</code> sleep) with <code>bridge_unavailable</code>, so no id leaks.</li>
+</ul>
+
+<h3>Task 2 — Headless worktree creation (refactor)</h3>
+<ul>
+<li>In <span class="path">worktrees.rs</span> split <code>start_worktree_creation</code> into:
+<pre><code>pub(crate) struct WorktreeCreationOutcome { pub worktree_id: WorktreeId, pub tab_id: EntityId, pub branch: String, pub path: PathBuf, pub include_report: IncludeCopyReport }
+pub(crate) fn create_worktree(
+    &amp;mut self,
+    name: Option&lt;String&gt;,
+    agent_launch: Option&lt;AgentLaunchRequest&gt;,
+    on_done: impl FnOnce(&amp;mut Workspace, Result&lt;WorktreeCreationOutcome, String&gt;, &amp;mut ViewContext&lt;Workspace&gt;) + 'static,
+    ctx: &amp;mut ViewContext&lt;Self&gt;,
+)
+</code></pre>
+<code>name: None</code> → <code>generate_worktree_branch_name(&amp;local_branches)</code> (the composer's default). The modal's <code>Submit</code> handler becomes a thin caller whose <code>on_done</code> closes the modal on success and calls <code>set_error</code> on failure; the existing toasts and <code>finish_worktree_creation</code> stay inside <code>create_worktree</code>. Existing tests in <span class="path">worktrees_tests.rs</span> must keep passing unchanged; add one for the <code>None</code> name path.</li>
+<li><code>worktree.create {project_id, name?, agent?}</code>: resolve the project; if not <code>ProjectKind::Git</code> or no primary branch → <code>not_git_project</code>; ensure a screen exists (<code>project.open</code> logic) and use its <code>Workspace</code>; call <code>create_worktree</code>; <code>Deferred</code> until <code>on_done</code> replies with <code>{worktree_id, tab_id, branch, path}</code> or <code>git_failed {details}</code>.</li>
+</ul>
+
+<h3>Task 3 — Headless worktree deletion and rename (refactor)</h3>
+<ul>
+<li>Make <code>execute_worktree_deletion</code> take an <code>on_done: impl FnOnce(&amp;mut Workspace, Result&lt;BranchDeleteOutcome, String&gt;, ctx)</code> and become <code>pub(crate) fn delete_worktree(&amp;mut self, worktree_id, force, on_done, ctx)</code>; the dialog's <code>Confirm</code> subscription passes a no-op <code>on_done</code> (the toasts already live inside). Primary refusal and the "close tabs first, then git" ordering are unchanged.</li>
+<li><code>worktree.dirty_check {worktree_id}</code>: deferred; <code>git_ops::status_is_dirty(dir, path_env)</code> on the background executor via <code>ctx.spawn</code>; reply <code>{dirty}</code>.</li>
+<li><code>worktree.delete {worktree_id, confirm, force}</code>: <code>confirm != true</code> → <code>invalid_request</code>; Primary → <code>invalid_request</code>; run <code>status_is_dirty</code> first and refuse with <code>conflict</code> when dirty and <code>!force</code> (the web UI always does the check → confirm → delete sequence, but the server enforces it); then <code>delete_worktree</code>; reply <code>{branch_kept}</code>.</li>
+<li><code>worktree.rename {worktree_id, name}</code>: reuse the inline editor's validation (<code>sanitize_worktree_name</code>, non-empty, unique within the project via <code>worktree_names_for_project</code>) then <code>rename_worktree</code>; Primary → <code>invalid_request</code>. Extract the validation from <code>finish_worktree_rename</code> into a shared helper.</li>
+</ul>
+
+<h3>Task 4 — Terminal, agent and tab commands</h3>
+<ul>
+<li><code>terminal.create {screen_id, worktree_id?}</code>: snapshot tab ids, dispatch <code>NewTerminalInWorktree</code> (when the worktree belongs to that screen's project) or <code>AddTerminalTab { hide_homepage: true }</code>, then diff to find the new tab and its terminal (<code>visible_terminal_views</code>); reply <code>{tab_id, terminal_id}</code>.</li>
+<li><code>agent.launch {screen_id, worktree_id?, catalog_index, approval_mode}</code>: validate the index against <code>agent_catalog()</code>; with a worktree → <code>add_tab_in_worktree(worktree_id, Some(request))</code>; without → create a terminal tab as above then <code>launch_agent_in_active_tab(request)</code>; reply like <code>terminal.create</code>. The agent's <code>installed</code> flag is advisory; launching an uninstalled agent yields the shell's "command not found" in the terminal, exactly like the desktop.</li>
+<li><code>tab.close {tab_id, confirm}</code>: <code>confirm != true</code> → <code>invalid_request</code>; <code>close_tabs([index], true, true, ctx)</code>; <code>false</code> → <code>conflict</code>.</li>
+<li>All of these activate the owning screen first (Phase 3 helper) so the desktop shows the change; all end with <code>mark_dirty</code>.</li>
+<li>Tests: <code>terminal.create</code> on Home adds a tab; <code>agent.launch</code> with an out-of-range index → <code>invalid_request</code>; <code>worktree.delete</code> without <code>confirm</code> → <code>invalid_request</code>; on a Primary → <code>invalid_request</code>.</li>
+</ul>
+
+<h3>Task 5 — Web UI</h3>
+<ul>
+<li>Section "+" menu: New Terminal, Launch agent ▸ (sheet listing <code>snapshot.agents</code> with artwork, "not installed" tag, and a YOLO/Normal segmented control defaulting to the desktop setting exposed in the snapshot — add <code>defaults.agent_approval_mode</code> to <code>AppSnapshot</code> in this phase), Rename (sheet with validation feedback), Delete (flow: <code>worktree.dirty_check</code> → confirm sheet with the same copy as the desktop dialog — clean: "Delete worktree ‘x’? This removes its folder and deletes branch y if fully merged."; dirty: warning + "Delete anyway" toggle that enables the button). Primary sections show only New Terminal / Launch agent.</li>
+<li>Workspace footer "New Worktree" → sheet: name (pre-filled with a generated name from a <code>worktree.suggest_name {project_id}</code> command — add it: returns <code>generate_worktree_branch_name</code> over local branches), live "Branch &lt;sanitized&gt; from &lt;primary&gt;" hint (sanitize in JS with the same rules as <code>sanitize_worktree_name</code>; the server re-sanitizes), optional agent + approval mode, Create → pending state with a spinner until the deferred <code>result</code>, then navigate to the new tab's terminal.</li>
+<li>Tab row kebab: Close (confirm sheet). Pending indicators for every deferred command; errors as persistent toasts with the git stderr summary.</li>
+<li>Home screen: only New Terminal and Launch agent (no Worktrees).</li>
+</ul>
+
+<h2>Out of scope</h2>
+<ul>
+<li>Pane splits/moves (D20), tab groups, pinning, drag reorder, tab rename (add <code>tab.rename</code> later if wanted — trivial via <code>PaneGroup::set_title</code>), choosing a base branch, adopting existing branches, <code>git worktree move</code>.</li>
+<li>Project creation/removal (Phase 8).</li>
+</ul>
+
+<h2>Verification</h2>
+<ul>
+<li><code>./script/presubmit</code> green; all existing <code>worktrees_tests.rs</code>, <code>host_tests.rs</code>, <code>view_tests.rs</code> unchanged and green after the refactors; the New Worktree composer and Delete dialog on the desktop behave exactly as before (manual check: create, error path with an invalid name, delete clean, delete dirty with force).</li>
+<li>Phone: New Terminal in a linked worktree → <code>pwd</code> in the new terminal is the worktree dir; Launch Claude Code (YOLO) in a worktree → the agent starts there with <code>--dangerously-skip-permissions</code> visible in the block; New Worktree "auth" with Codex → folder at <code>&lt;data_dir&gt;/worktrees/&lt;repo&gt;/auth</code>, branch <code>auth</code> from primary, tab bound, agent running; second "auth" → <code>auth-2</code>; delete a clean worktree → gone on both; dirty worktree → refused until "Delete anyway"; close a tab → gone on both; the desktop's vertical tabs panel mirrors every step.</li>
+<li>Kill the phone's connection mid-creation → the desktop completes the creation anyway; on reconnect the new worktree is in the snapshot.</li>
+</ul>
+
+<h2>Gotchas</h2>
+<ul>
+<li><strong>The creation pipeline must stay a single code path.</strong> The refactor moves logic, it does not copy it; the modal is a caller. Review the diff for duplicated git calls.</li>
+<li><strong>Deletion ordering is the whole game</strong> (0828 spec rule 9): tabs closed and PTYs torn down before <code>git worktree remove</code>. The refactor must not reorder anything; <code>on_done</code> fires only after the registry removal.</li>
+<li><strong>Do not hold locks across the async git calls</strong>; the pipeline already snapshots then spawns — keep it so.</li>
+<li><strong><code>ProjectHost::open_project</code> is idempotent but may raise another window</strong> when that window owns the project (D11); the command resolves the owning window first to avoid surprising window focus changes.</li>
+<li><strong>Agent catalog indices are the wire ids</strong> (<span class="path">catalog.rs:44-196</span>); never reorder the catalog without a protocol bump, and validate the index server-side.</li>
+<li><strong><code>close_tabs</code> with <code>skip_confirmation = true</code> still returns <code>false</code></strong> for unsaved code files; surface as <code>conflict</code> with a message telling the user to close it on the desktop.</li>
+</ul>
+
+<p class="muted" style="margin-top:2.5rem"><a href="phase-5-terminal-input.html">← Phase 5</a> · <a href="index.html">Overview</a> · Next: <a href="phase-7-agent-sessions.html">Phase 7 — Agent sessions UX</a></p>
+
+</body>
+</html>

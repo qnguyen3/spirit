@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phase 10 — Verification</title>
+<style>
+:root{--bg:#ffffff;--fg:#1a1d23;--muted:#5c6470;--accent:#0d66d0;--card:#f6f8fa;--border:#d7dde3;--code:#eef1f5;--warn-bg:#fff8e6;--warn-border:#e6c56b;--danger-bg:#fdf0f0;--danger-border:#e3a5a5;--ok-bg:#effaf1;--ok-border:#9fd3ab}
+@media (prefers-color-scheme: dark){:root{--bg:#14161a;--fg:#e8eaed;--muted:#9aa3ad;--accent:#5ca8ff;--card:#1c1f24;--border:#30353c;--code:#20242a;--warn-bg:#2a2413;--warn-border:#7a6524;--danger-bg:#2a1717;--danger-border:#7a3b3b;--ok-bg:#15241a;--ok-border:#2f6b40}}
+body{background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:980px;margin:0 auto;padding:2rem 1.5rem 4rem}
+h1{font-size:1.9rem;line-height:1.25;margin:0 0 .3rem}
+h2{font-size:1.35rem;margin:2.2rem 0 .6rem;padding-top:.6rem;border-top:1px solid var(--border)}
+h3{font-size:1.08rem;margin:1.4rem 0 .4rem}
+h4{font-size:1rem;margin:1rem 0 .3rem}
+p{margin:.5rem 0}
+.subtitle{color:var(--muted);font-size:1.02rem;margin-bottom:1.2rem}
+code{background:var(--code);border-radius:4px;padding:.08em .35em;font:.88em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--border);border-radius:8px;padding:.9rem 1rem;overflow-x:auto;font-size:.86rem;line-height:1.45}
+pre code{background:none;padding:0;font-size:inherit}
+table{border-collapse:collapse;width:100%;margin:.8rem 0;font-size:.93rem}
+th,td{border:1px solid var(--border);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:var(--card)}
+.callout{border:1px solid var(--border);border-left:4px solid var(--accent);background:var(--card);border-radius:6px;padding:.7rem 1rem;margin:1rem 0}
+.callout.warn{border-left-color:var(--warn-border);background:var(--warn-bg)}
+.callout.danger{border-left-color:var(--danger-border);background:var(--danger-bg)}
+.callout.ok{border-left-color:var(--ok-border);background:var(--ok-bg)}
+.callout-title{font-weight:600;margin-bottom:.25rem}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+ul,ol{padding-left:1.4rem}
+li{margin:.25rem 0}
+.tag{display:inline-block;font-size:.75rem;font-weight:600;border-radius:10px;padding:.05rem .55rem;border:1px solid var(--border);background:var(--card);color:var(--muted);vertical-align:middle}
+.path{font:.88em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--accent)}
+.muted{color:var(--muted)}
+</style>
+</head>
+<body>
+
+<h1>Phase 10 — Verification</h1>
+<p class="subtitle">Prove the whole feature: device and browser matrix, flag-off byte-identity, restart matrix, throughput and idle-CPU budgets, reconnection behavior, the full presubmit, a straggler audit, and a CLOSEOUT.md that records what was and was not verified. Manual GUI/device QA is mandatory here — earlier specs skipped it and shipped unseen UI.</p>
+
+<h2>Goal</h2>
+<p>A written, reproducible verification record showing Remote Control works on the supported devices, does not change the app when disabled, survives restarts and network drops, stays within performance budgets, and passes every automated check — plus a closeout listing deviations, deferrals and known issues in the format of <span class="path">spirit_specs/0828-ade-workspaces/CLOSEOUT.md</span>.</p>
+
+<h2>Prerequisites</h2>
+<p>Phases 1–9 landed. A phone (iOS Safari), an Android device (Chrome), a tablet (iPad Safari) and a laptop with Safari, Chrome and Firefox, all on the same Wi-Fi as the desktop. Optional: Tailscale on the phone.</p>
+
+<h2>Tasks</h2>
+
+<h3>Task 1 — Automated suite</h3>
+<ul>
+<li><code>./script/format --check</code>, <code>./script/check_no_inline_test_modules</code>, the three clippy invocations from <span class="path">script/presubmit</span>, <code>cargo nextest run --no-fail-fast --workspace --exclude command-signatures-v2</code>, <code>cargo nextest run -p warp_completer --features v2</code>, <code>cargo test --doc</code>, <code>cargo deny check</code> (new dependencies: <code>tokio-tungstenite</code> via <code>axum/ws</code>; duplicate <code>tungstenite</code> majors must be allowed or reconciled).</li>
+<li>Targeted: <code>cargo nextest run -p remote_control -p warp_terminal ansi_export -p warp remote_control::</code>; count and list the tests added by this effort.</li>
+<li>Cross-compile checks that work locally: <code>cargo check -p warp --target x86_64-pc-windows-msvc</code> (the module must compile on Windows; only LAN hostname lookup is platform-specific). Note in the closeout that Linux cross-check fails locally on <code>freetype-sys</code> as before and is CI-only.</li>
+<li>Web: a Rust integration test (in <span class="path">app/src/remote_control/mod_tests.rs</span>) fetches <code>/</code>, <code>/assets/&lt;build&gt;/app.js</code> and every module referenced by <code>index.html</code> and asserts 200 + correct content types, so a missing vendored file fails the build's tests, not a phone.</li>
+</ul>
+
+<h3>Task 2 — Flag-off byte-identity</h3>
+<ul>
+<li>Build with <code>remote_control</code> removed from <code>default</code>: no settings group registered (<code>dump-settings-schema</code> output identical to a pre-feature baseline except for nothing), no Settings page, no palette entries (search the palette for "Remote"), no tray entry, no pill, no listener, no <code>remote_control</code> log lines. Restore the feature afterwards.</li>
+<li>Flag on but setting disabled (the default for new users): identical to the above except the Settings page, palette toggle and tray absence — verify no listener (<code>lsof -nP -iTCP:7777</code> empty) and no idle CPU difference.</li>
+</ul>
+
+<h3>Task 3 — Device and browser matrix</h3>
+<p>For each of: iPhone Safari (portrait + landscape), Android Chrome, iPad Safari (with and without a hardware keyboard), macOS Safari, Chrome, Firefox — run the script and tick every line; record OS/browser versions.</p>
+<ol>
+<li>Pair via URL (laptop) or QR (phone/tablet); reload keeps the session; Log out returns to pairing.</li>
+<li>Workspaces: open two projects, switch from the device, cards update; Home works.</li>
+<li>Workspace detail: sections match the desktop; tap tab → desktop follows; create terminal; launch agent (YOLO and Normal); new worktree with agent; rename; delete clean and dirty; close tab.</li>
+<li>Terminal: <code>ls --color</code>, <code>top</code>, <code>vim</code> (edit, save), <code>htop</code>, a 5 MB <code>cat</code>, <code>yes | head -c 50M</code> (resync recovers), Claude Code full turn including a permission answer from the device, Codex prompt via the agent composer, paste 5 KB, Ctrl-C a sleep, Ctrl-D a shell, rotate the device mid-session (fit updates), background the browser for 1 minute then return (re-attach), disable Wi-Fi 10 s (reconnect banner then recovery).</li>
+<li>Sessions: live ranking, needs-input alert (banner/badge/vibration), history list + filters, Resume, Copy.</li>
+<li>New Workspace: open folder via picker, clone with progress + cancel, create; rename/reveal/remove.</li>
+<li>Settings sheet on the device: rename device, revoke another device, log out.</li>
+<li>Accessibility spot checks: VoiceOver/TalkBack can reach the bottom nav, a tab row, the composer Send button; page zoom to 200 % on the laptop keeps layouts usable.</li>
+</ol>
+
+<h3>Task 4 — Restart and lifecycle matrix</h3>
+<table>
+<tr><th>Row</th><th>Scenario</th><th>Expected</th></tr>
+<tr><td>L1</td><td>Quit Spirit with the feature enabled and a phone connected</td><td>Phone shows "shut down" banner; on relaunch the server starts, the phone reconnects (new <code>instance_id</code>), pairing intact.</td></tr>
+<tr><td>L2</td><td>Crash-kill Spirit (<code>kill -9</code>) then relaunch</td><td>Same as L1 minus the banner; no stale state; port rebinds (no <code>EADDRINUSE</code> — verify <code>SO_REUSEADDR</code> behavior on macOS/Linux).</td></tr>
+<tr><td>L3</td><td>Change port while connected</td><td>Old socket closes; Settings shows the new URL; phone must re-pair only if the cookie's host changed (it did: the port is part of the origin) — document this.</td></tr>
+<tr><td>L4</td><td>Toggle LAN access off while a LAN phone is connected</td><td>Server restarts on loopback; the LAN phone loses connection and cannot reconnect; loopback laptop reconnects.</td></tr>
+<tr><td>L5</td><td>Rotate token</td><td>All devices revoked and disconnected; Settings device list empty.</td></tr>
+<tr><td>L6</td><td>Close the last desktop window (tray keeps the app alive)</td><td>State shows zero windows; the web UI shows an empty state with "Open Spirit" that dispatches <code>desktop.reveal</code>-like window restore (or documents that no window exists); reopening from the dock restores and the web UI repopulates.</td></tr>
+<tr><td>L7</td><td>Sleep the laptop 10 minutes with a connected phone</td><td>On wake, the phone reconnects within the backoff window; no zombie clients (count returns to the true number).</td></tr>
+<tr><td>L8</td><td>Two desktop windows, project open in the second</td><td><code>project.open</code> from the phone activates the second window's screen without stealing focus; <code>desktop.reveal</code> brings it forward.</td></tr>
+</table>
+
+<h3>Task 5 — Performance budgets</h3>
+<ul>
+<li>Idle: desktop with 20 tabs, 3 agents, 2 connected phones idle → additional CPU of the Spirit process ≤ 1 % (Activity Monitor / <code>top</code> 60 s average); no periodic <code>state</code> messages when nothing changes (the 1 Hz reconcile must not produce network traffic).</li>
+<li>Throughput: <code>time yes | head -c 200M &gt; /dev/null</code> inside Spirit with a phone attached vs. not attached — within 10 %.</li>
+<li>Snapshot cost: <code>build_snapshot</code> for 100 tabs ≤ 2 ms (test); attach snapshot for a 10 MB block ≤ 20 ms (test).</li>
+<li>Latency: keystroke echo round trip on LAN ≤ 50 ms p95 (measure with a simple <code>cat</code> and a phone-side timer in a debug overlay behind a query flag).</li>
+<li>Memory: Spirit RSS growth after 1 hour with a phone attached to a chatty terminal ≤ 20 MB; the browser tab ≤ 150 MB.</li>
+</ul>
+
+<h3>Task 6 — Straggler audit</h3>
+<ul>
+<li><code>git diff main...HEAD</code> added lines: no <code>//</code>, <code>/*</code>, <code>#</code> (non-attribute), <code>*</code> comment lines in Rust, JS or CSS (allowed: <code>#[…]</code> attributes, <code>#!/bin/bash</code>, the module doc-comment on <span class="path">remote_control/mod.rs</span> if the repo owner accepted that exception, CSS <code>#id</code> selectors).</li>
+<li><code>rg innerHTML app/assets/web</code> empty; <code>rg 'dispatch_global_action\("remote' app/src</code> empty except tray entries; <code>rg 'views_of_type::&lt;Workspace&gt;' app/src/remote_control</code> empty; <code>rg -n 'unwrap\(\)' app/src/remote_control crates/remote_control</code> reviewed (network code must not unwrap on client input).</li>
+<li>No new global actions; <code>WorkspaceAction</code>/page-action matches exhaustive; no <code>#[allow(dead_code)]</code>; <code>cargo udeps</code>-style check that <code>qrcode</code> is now used.</li>
+<li>Log audit: pair, rotate, connect from a phone, then <code>rg &lt;token prefix&gt; ~/Library/Logs/&lt;logfile&gt;</code> finds nothing.</li>
+</ul>
+
+<h3>Task 7 — CLOSEOUT.md</h3>
+<p>Write <span class="path">spirit_specs/0907-remote-control/CLOSEOUT.md</span> (and copy it to the canonical spec location) with: commits per phase; what shipped (files, crates, settings, protocol version); verification results with exact commands and counts; the device matrix table with versions; the lifecycle matrix results; performance numbers; deviations from this spec with reasons; deliberate deferrals (TLS, remote resize arbiter, pane splits, Web Push, mDNS, tab rename, mouse reporting, draft sync, interface enumeration); known issues; and the manual-QA statement — "performed on &lt;devices&gt; on &lt;date&gt;" or, if anything was skipped, exactly what.</p>
+
+<h2>Verification</h2>
+<ul>
+<li>Every task above has a written result. Any red item blocks the closeout — fix it or record it as a known issue with a repro.</li>
+</ul>
+
+<h2>Gotchas</h2>
+<ul>
+<li><strong>Do not verify on the same machine's browser only.</strong> Loopback hides every Host/Origin/LAN bug; at least one phone over LAN is required.</li>
+<li><strong>Safari's aggressive tab suspension</strong> can make reconnection look broken; test with the screen on and note the behavior when backgrounded separately (D17 territory).</li>
+<li><strong>Baseline first:</strong> capture idle CPU and throughput numbers with the feature disabled before measuring with it enabled, on the same build.</li>
+<li><strong>Keep the spec honest:</strong> if a phase deviated, update the phase page's decision or add it to the closeout — the next feature (TLS, resize arbiter) will build on these documents.</li>
+</ul>
+
+<p class="muted" style="margin-top:2.5rem"><a href="phase-9-pairing-and-hardening.html">← Phase 9</a> · <a href="index.html">Overview</a></p>
+
+</body>
+</html>

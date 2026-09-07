@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phase 7 — Agent sessions UX</title>
+<style>
+:root{--bg:#ffffff;--fg:#1a1d23;--muted:#5c6470;--accent:#0d66d0;--card:#f6f8fa;--border:#d7dde3;--code:#eef1f5;--warn-bg:#fff8e6;--warn-border:#e6c56b;--danger-bg:#fdf0f0;--danger-border:#e3a5a5;--ok-bg:#effaf1;--ok-border:#9fd3ab}
+@media (prefers-color-scheme: dark){:root{--bg:#14161a;--fg:#e8eaed;--muted:#9aa3ad;--accent:#5ca8ff;--card:#1c1f24;--border:#30353c;--code:#20242a;--warn-bg:#2a2413;--warn-border:#7a6524;--danger-bg:#2a1717;--danger-border:#7a3b3b;--ok-bg:#15241a;--ok-border:#2f6b40}}
+body{background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:980px;margin:0 auto;padding:2rem 1.5rem 4rem}
+h1{font-size:1.9rem;line-height:1.25;margin:0 0 .3rem}
+h2{font-size:1.35rem;margin:2.2rem 0 .6rem;padding-top:.6rem;border-top:1px solid var(--border)}
+h3{font-size:1.08rem;margin:1.4rem 0 .4rem}
+h4{font-size:1rem;margin:1rem 0 .3rem}
+p{margin:.5rem 0}
+.subtitle{color:var(--muted);font-size:1.02rem;margin-bottom:1.2rem}
+code{background:var(--code);border-radius:4px;padding:.08em .35em;font:.88em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--border);border-radius:8px;padding:.9rem 1rem;overflow-x:auto;font-size:.86rem;line-height:1.45}
+pre code{background:none;padding:0;font-size:inherit}
+table{border-collapse:collapse;width:100%;margin:.8rem 0;font-size:.93rem}
+th,td{border:1px solid var(--border);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:var(--card)}
+.callout{border:1px solid var(--border);border-left:4px solid var(--accent);background:var(--card);border-radius:6px;padding:.7rem 1rem;margin:1rem 0}
+.callout.warn{border-left-color:var(--warn-border);background:var(--warn-bg)}
+.callout.danger{border-left-color:var(--danger-border);background:var(--danger-bg)}
+.callout.ok{border-left-color:var(--ok-border);background:var(--ok-bg)}
+.callout-title{font-weight:600;margin-bottom:.25rem}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+ul,ol{padding-left:1.4rem}
+li{margin:.25rem 0}
+.tag{display:inline-block;font-size:.75rem;font-weight:600;border-radius:10px;padding:.05rem .55rem;border:1px solid var(--border);background:var(--card);color:var(--muted);vertical-align:middle}
+.path{font:.88em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--accent)}
+.muted{color:var(--muted)}
+</style>
+</head>
+<body>
+
+<h1>Phase 7 — Agent sessions UX</h1>
+<p class="subtitle">Making the phone the place you answer agents: a Sessions screen with live sessions and on-disk history (resume in one tap), needs-input alerts while the page is open, an agent context strip above the composer, quick keys for permission prompts, and explicit session status events.</p>
+
+<h2>Goal</h2>
+<p>When Claude Code in Worktree <em>api-auth</em> asks for permission, a phone with the web UI open shows a banner "Claude Code needs your input · api-auth" within a second, the tab title gets a badge, the phone vibrates; tapping the banner opens that terminal with the tool request summarized above the composer and a quick-keys row ("1", "2", "3", "y", "n", Enter, Esc). The Sessions screen lists live sessions first (needs-input at the top) and past sessions from disk with Resume.</p>
+
+<h2>Prerequisites</h2>
+<p>Phases 1–6. Requires <code>FeatureFlag::AgentSessionHistory</code> for the history half (on by default in this fork).</p>
+
+<h2>Context</h2>
+<ul>
+<li><strong>Live sessions:</strong> <code>CLIAgentSessionsModel</code> events <span class="path">app/src/terminal/cli_agent_sessions/mod.rs:218-251</span> (<code>Started</code>, <code>StatusChanged { status, session_context }</code>, <code>InputSessionChanged</code>, <code>Ended</code>); status → signal mapping <code>AgentSignal::from_status</code> <span class="path">app/src/terminal/cli_agent_sessions/signal.rs:38</span>; context fields <span class="path">mod.rs:61-72</span> (<code>tool_name</code>, <code>tool_input_preview</code>, <code>summary</code>, <code>query</code>, <code>response</code>); display title <span class="path">:84-103</span>.</li>
+<li><strong>Desktop notification pipeline (for parity of wording):</strong> <code>format_agent_notification</code> <span class="path">app/src/workspace/agent_notification.rs:22</span> ("Task “…” is done | needs your input | failed"), inbox recording <span class="path">app/src/workspace/view.rs:3959</span>, <code>AgentInboxModel</code> (singleton, <span class="path">app/src/lib.rs:1201</span>).</li>
+<li><strong>History:</strong> <code>AgentSessionHistoryModel</code> <span class="path">app/src/terminal/cli_agent_session_history/mod.rs:1807-1880</span> (<code>sessions()</code>, <code>issues()</code>, <code>state()</code>, <code>refresh(force, ctx)</code>, event <code>Updated</code> <span class="path">:1803</span>), <code>AgentSession</code> <span class="path">:110</span>, <code>SessionPreviewMessage</code>/<code>PreviewRole</code> <span class="path">:94-103</span>, filters <span class="path">:56-161</span>, <code>build_resume_command</code> <span class="path">:1617</span>; desktop Sessions panel scope logic <code>scope_paths</code> <span class="path">app/src/workspace/view/sessions.rs:388</span>, worktree scoping <span class="path">:361</span>, live-row matching by <code>agent + session_id</code> <span class="path">:886-891</span>; resume <code>Workspace::resume_agent_session</code> <span class="path">app/src/workspace/view.rs:4562</span>; delete <code>move_session_to_trash</code> <span class="path">cli_agent_session_history/mod.rs:1775</span>.</li>
+<li><strong>Reveal on desktop:</strong> Phase 3's <code>desktop.reveal</code>.</li>
+</ul>
+
+<h2>Tasks</h2>
+
+<h3>Task 1 — Session status events (Rust)</h3>
+<ul>
+<li>The bridge already subscribes to <code>CLIAgentSessionsModel</code> for dirtiness; additionally translate <code>StatusChanged</code>, <code>Started</code> and <code>Ended</code> into <code>event session.status {terminal_id, tab_id, screen_id, project_id, worktree_id, agent, display_name, status, status_message, title, workspace_name}</code> broadcast to all clients immediately (bypassing the 50 ms coalescer) so alerts are prompt and independent of snapshot diffing. Location resolution reuses the projection's index (cache the last <code>terminal → location</code> map on the bridge).</li>
+<li>The desktop's notification settings are not consulted: the phone is a surface the user opened deliberately, so the server always sends the events and the client's own preferences decide how loudly to alert.</li>
+</ul>
+
+<h3>Task 2 — History commands (Rust)</h3>
+<ul>
+<li><code>history.list {project_id?, worktree_id?, agents?, limit?}</code>: from <code>AgentSessionHistoryModel::sessions()</code>, filtered by <code>scope_paths</code> semantics (project root + its worktree dirs when <code>project_id</code> is given; a single worktree dir when <code>worktree_id</code> is given; unscoped for Home), by agent set, sorted by <code>modified_at</code> desc, capped (default 50, max 200); map to <code>HistorySession { id, agent, display_name, title, cwd, branch, model, message_count, total_tokens, created_ts, updated_ts, modified_ts, first_user_prompt, last_user_prompt, preview: [{role, text, ts}], preview_truncated, resume_command, live_terminal_id: Option }</code> where <code>live_terminal_id</code> comes from matching live sessions by <code>agent + session_id</code> as the desktop does. Also return <code>state</code> (<code>ScanState</code> serialized) and <code>issues</code> count. If the history flag is off → <code>unsupported</code>.</li>
+<li><code>history.refresh</code> → <code>refresh(true, ctx)</code>; the model's <code>Updated</code> event marks the bridge dirty and additionally emits <code>event history.updated</code> so the Sessions screen refetches.</li>
+<li><code>history.resume {history_id, screen_id?}</code>: find the <code>AgentSession</code>; choose the screen (given, else the screen whose project contains <code>cwd</code>, else Home); <code>workspace.resume_agent_session(session, ctx)</code>; reply with the new tab/terminal (diff pattern). <code>history.delete {history_id, confirm}</code> → <code>move_session_to_trash</code> (optional; include if cheap).</li>
+</ul>
+
+<h3>Task 3 — Sessions screen (web)</h3>
+<ul>
+<li><strong>Live</strong> group from the snapshot (unchanged from Phase 3) with richer rows: status pill with the desktop's wording (working / needs input / failed / idle / done / cancelled), agent artwork, title, <code>workspace · worktree</code>, tool line (<code>tool_name: tool_input_preview</code>) when blocked, relative "since" using the client's first-seen time (the server has no timestamps).</li>
+<li><strong>History</strong> group: fetched with <code>history.list</code> on screen entry and on <code>history.updated</code>; filter chips (Workspace: current/all; Agent: multi-select; "Hide empty"); rows expand to show the preview messages (You/Agent/Tool with role glyphs); actions: Resume (→ <code>history.resume</code> then navigate to the terminal), Copy command (clipboard when available, else a copy sheet), Jump (when <code>live_terminal_id</code>), Delete (confirm). A "Refresh" button and the scan state line ("Scanned 312 sessions · 2 unreadable").</li>
+</ul>
+
+<h3>Task 4 — Alerts (web)</h3>
+<ul>
+<li>On <code>session.status</code> with <code>status == blocked</code> (or <code>failed</code>): push an <em>alert</em> into <code>ui.alerts</code> (deduped by <code>terminal_id</code>), render the top banner ("&lt;agent&gt; needs your input · &lt;workspace&gt; / &lt;worktree&gt;" with Open and Dismiss), set <code>document.title</code> to <code>(N) Spirit</code>, <code>navigator.vibrate([30, 40, 30])</code> if prefs allow, play a short beep (Web Audio, generated, no asset) if prefs allow and the page has had a user gesture. The bottom-nav Sessions badge shows the count. Clearing: when the status leaves <code>blocked</code>, when the user opens the terminal, or on Dismiss.</li>
+<li>When the alerted terminal is already the one on screen, skip the banner but flash the status pill.</li>
+<li>Prefs (client settings sheet): vibrate, sound, "alert for failed too". Stored in localStorage.</li>
+</ul>
+
+<h3>Task 5 — Agent context strip and quick keys (web)</h3>
+<ul>
+<li>Above the composer on a terminal with a live agent session: a strip with the status pill, <code>summary</code> (or "Waiting for your answer"), and the tool request (<code>tool_name</code> + <code>tool_input_preview</code> in monospace, truncated with expand). It updates from the snapshot.</li>
+<li>When <code>status == blocked</code>: a quick-keys row above the key toolbar: <code>1 2 3</code>, <code>y n</code>, Enter, Esc, ↑ ↓ — each sends the byte(s) then focuses xterm. These are generic (different agents number their options differently) — no agent-specific logic.</li>
+<li>Tab title in the header shows the agent's display name and brand-colored dot.</li>
+</ul>
+
+<h3>Task 6 — Desktop parity check</h3>
+<ul>
+<li>Verify that answering from the phone updates the desktop's status dot, inbox and tray entries exactly as answering at the desk does (all of them are driven by the same <code>CLIAgentSessionsModel</code> events; no extra work expected — this task is verification plus fixing anything that assumed the answer came from the focused view, e.g. <code>is_navigated_away</code> logic in <span class="path">app/src/terminal/view.rs:7073</span> should be unaffected).</li>
+</ul>
+
+<h2>Out of scope</h2>
+<ul>
+<li>Web Push / background notifications (D17). Parsing agent transcripts live (the history model's preview is enough). Killing agents (no such action on the desktop either — Ctrl-C via <code>terminal.signal</code> is the way). Syncing the desktop's draft text.</li>
+</ul>
+
+<h2>Verification</h2>
+<ul>
+<li><code>./script/presubmit</code> green; unit tests: <code>history.list</code> scope filtering against a fake model; <code>session.status</code> event emitted on <code>StatusChanged</code>.</li>
+<li>Phone in the Workspaces screen; on the desktop start Claude Code in a worktree and ask it to run a command needing permission → banner within ~1 s, badge, vibration; tap Open → terminal with the context strip showing the tool request; tap "1" → the agent proceeds, banner clears, status pill shows working; when it finishes, the pill shows done.</li>
+<li>Sessions → History lists yesterday's sessions for the current Workspace; Resume opens a new tab on the desktop and phone in the right cwd running the resume command; Copy command works; filters work; Refresh rescans.</li>
+<li>Failed session (kill the agent's network) → "failed" pill, optional alert.</li>
+<li>Two phones: both get the alert; answering on one clears it on both after the status change.</li>
+</ul>
+
+<h2>Gotchas</h2>
+<ul>
+<li><strong>No timestamps on live sessions</strong> (<code>CLIAgentSession</code> has none); "since" is client-side only and resets on reload. Do not add fields to <code>CLIAgentSession</code> for this.</li>
+<li><strong><code>session.status</code> bypasses the coalescer</strong> but must still be delivered in order relative to <code>state</code>; send both through the same broadcast so the writer task preserves ordering.</li>
+<li><strong>History scanning is disk-heavy</strong> (<code>scan_home</code> walks agent home dirs); never trigger <code>refresh(true)</code> automatically from the web — only on explicit Refresh or screen entry with the model's own TTL respected (<code>CACHE_TTL = 60 s</code>).</li>
+<li><strong>Audio autoplay:</strong> browsers block sound before a user gesture; create the <code>AudioContext</code> lazily on the first tap and keep the beep optional.</li>
+<li><strong>Vibration API</strong> is Android-only in practice; feature-detect and never depend on it.</li>
+</ul>
+
+<p class="muted" style="margin-top:2.5rem"><a href="phase-6-create-and-manage.html">← Phase 6</a> · <a href="index.html">Overview</a> · Next: <a href="phase-8-workspace-creation.html">Phase 8 — Workspace creation</a></p>
+
+</body>
+</html>

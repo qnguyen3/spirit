@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spirit: Remote Control — Overview</title>
+<style>
+:root{--bg:#ffffff;--fg:#1a1d23;--muted:#5c6470;--accent:#0d66d0;--card:#f6f8fa;--border:#d7dde3;--code:#eef1f5;--warn-bg:#fff8e6;--warn-border:#e6c56b;--danger-bg:#fdf0f0;--danger-border:#e3a5a5;--ok-bg:#effaf1;--ok-border:#9fd3ab}
+@media (prefers-color-scheme: dark){:root{--bg:#14161a;--fg:#e8eaed;--muted:#9aa3ad;--accent:#5ca8ff;--card:#1c1f24;--border:#30353c;--code:#20242a;--warn-bg:#2a2413;--warn-border:#7a6524;--danger-bg:#2a1717;--danger-border:#7a3b3b;--ok-bg:#15241a;--ok-border:#2f6b40}}
+body{background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:980px;margin:0 auto;padding:2rem 1.5rem 4rem}
+h1{font-size:1.9rem;line-height:1.25;margin:0 0 .3rem}
+h2{font-size:1.35rem;margin:2.2rem 0 .6rem;padding-top:.6rem;border-top:1px solid var(--border)}
+h3{font-size:1.08rem;margin:1.4rem 0 .4rem}
+h4{font-size:1rem;margin:1rem 0 .3rem}
+p{margin:.5rem 0}
+.subtitle{color:var(--muted);font-size:1.02rem;margin-bottom:1.2rem}
+code{background:var(--code);border-radius:4px;padding:.08em .35em;font:.88em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--border);border-radius:8px;padding:.9rem 1rem;overflow-x:auto;font-size:.86rem;line-height:1.45}
+pre code{background:none;padding:0;font-size:inherit}
+table{border-collapse:collapse;width:100%;margin:.8rem 0;font-size:.93rem}
+th,td{border:1px solid var(--border);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:var(--card)}
+.callout{border:1px solid var(--border);border-left:4px solid var(--accent);background:var(--card);border-radius:6px;padding:.7rem 1rem;margin:1rem 0}
+.callout.warn{border-left-color:var(--warn-border);background:var(--warn-bg)}
+.callout.danger{border-left-color:var(--danger-border);background:var(--danger-bg)}
+.callout.ok{border-left-color:var(--ok-border);background:var(--ok-bg)}
+.callout-title{font-weight:600;margin-bottom:.25rem}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+ul,ol{padding-left:1.4rem}
+li{margin:.25rem 0}
+.tag{display:inline-block;font-size:.75rem;font-weight:600;border-radius:10px;padding:.05rem .55rem;border:1px solid var(--border);background:var(--card);color:var(--muted);vertical-align:middle}
+.path{font:.88em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--accent)}
+.muted{color:var(--muted)}
+</style>
+</head>
+<body>
+
+<h1>Spirit — Remote Control</h1>
+<p class="subtitle">Master plan for <strong>Remote Control</strong>: a toggle in Settings that starts a local web server inside the running Spirit app and serves a responsive web UI (phone, tablet, laptop) that mirrors the desktop — see and type into any terminal, switch Workspaces, create Worktrees, launch and answer CLI agents, open new terminals — using the same models and actions the desktop UI uses.</p>
+
+<div class="callout">
+<div class="callout-title">How to use this spec</div>
+<p>This directory contains one HTML file per phase plus three reference pages. Phases are ordered and each phase must leave the tree <strong>compiling and presubmit-green</strong> (<code>./script/presubmit</code>) — every phase is an independently landable unit of work. An implementing agent should read this overview <em>fully</em>, then <a href="protocol.html">protocol.html</a> and <a href="web-ui.html">web-ui.html</a>, then execute the phase files in order. Every phase file has: Goal, Prerequisites, Context (with <code>file:line</code> references), Tasks, Out of scope, Verification, and Gotchas.</p>
+<p><strong>Line numbers were captured on 2026-09-07 at Spirit commit <code>606b9c2a</code></strong> (branch <code>feat-remote-control</code>) — treat them as strong hints, not gospel; re-locate symbols by name if a file has drifted.</p>
+</div>
+
+<div class="callout warn">
+<div class="callout-title">Environment facts — read before starting</div>
+<ul>
+<li><strong><code>spirit_specs/</code> is gitignored</strong> (<span class="path">.gitignore:16</span>), so this spec never appears in commits and is absent from fresh worktrees. This copy lives at <span class="path">/Users/qnguyen3/.spirit/worktrees/spirit/feat-remote-control/spirit_specs/0907-remote-control/</span>. Prior specs keep their canonical copy in the main checkout at <span class="path">/Users/qnguyen3/Desktop/code/spirit/spirit_specs/</span>; copy this directory there before spawning agents from other worktrees, and always reference the spec by absolute path in agent prompts.</li>
+<li>The working checkout <span class="path">~/.spirit/worktrees/spirit/feat-remote-control</span> is itself a Spirit-managed git worktree on branch <code>feat-remote-control</code>. Do not create new worktrees under <span class="path">~/.spirit/worktrees/spirit/</span> (the running app reconciles that directory) and never use bare <code>git stash</code> (shared stash stack).</li>
+<li>Verification caveats inherited from earlier closeouts: the 5 <code>test_ssh_*</code> integration tests are opt-in (<code>WARP_SSH_INTEGRATION_TESTS</code>); presubmit's clippy configuration excludes <code>warp_completer</code> from <code>--all-features</code>; <code>wasm-lint</code> is retired; manual GUI QA has historically been skipped by implementing agents — this spec makes it mandatory in Phase 10 and lists device checks per phase.</li>
+</ul>
+</div>
+
+<h2 id="product">The product in one page</h2>
+<p>The user flips <strong>Settings → Remote Control → Enable</strong>. Spirit starts an HTTP+WebSocket server bound to <code>127.0.0.1:7777</code> (port configurable) and shows the URL, a copy button, an "Open in browser" button and an access token. Opening the pairing URL in any browser sets a session cookie and loads a single-page web app that shows, live:</p>
+<ul>
+<li><strong>Workspaces</strong> (code name <code>Project</code>): cards with name, primary branch, worktree count, agent activity counters; tap to switch the desktop to that Workspace and open it in the web UI.</li>
+<li><strong>A Workspace's tabs</strong>, grouped into Worktree sections exactly like the desktop's vertical tabs panel (registry order, Primary first), each tab with its panes, titles, cwd, and agent status dot.</li>
+<li><strong>Any terminal</strong>: a faithful live mirror (xterm.js fed by the PTY byte stream) with a command composer at the shell prompt, an "agent composer" when a CLI agent is waiting for input, and a phone-friendly key toolbar (Esc, Tab, Ctrl, arrows, Enter…) while a program is running.</li>
+<li><strong>Sessions</strong>: every live CLI agent session ranked needs-input first, plus the on-disk session history with one-tap resume.</li>
+<li><strong>Creation</strong>: new terminal in a Worktree, launch an agent in a Worktree (with approval mode), create a Worktree (optionally with an agent), close tabs, delete Worktrees (dirty-checked), add/clone/create Workspaces.</li>
+</ul>
+<p>It works adaptively on phones (bottom navigation, one screen at a time, key toolbar above the soft keyboard), tablets (sidebar + content) and laptops (three-column). Turning on <strong>"Allow access from other devices on this network"</strong> binds the server to all interfaces and shows a QR code with the LAN pairing URL; the recommended path for remote access is Tailscale or an SSH port-forward (no TLS in v1).</p>
+
+<h3>What this buys</h3>
+<p>Kick off three agents in three Worktrees at the desk, walk away, and answer their permission prompts from a phone; glance at what a long build printed from the couch; open a Workspace and start a terminal on the laptop from a tablet — all against the same live processes, with the desktop window updating in lockstep.</p>
+
+<h2 id="precedent">The most important fact: the control server already exists</h2>
+<div class="callout ok">
+<div class="callout-title"><code>app/src/local_control/</code> is an axum loopback HTTP server that already drives the UI</div>
+<p>Gated by <code>FeatureFlag::WarpControlCli</code>, it owns a private tokio runtime, binds an ephemeral loopback port, routes <code>POST /v1/control</code> into a main-thread <code>LocalControlBridge</code> via <code>ModelSpawner</code>, and executes ~70 typed actions (tab create/activate/close, pane split/focus, input insert, settings, themes) with a security-reviewed credential broker. Read <span class="path">app/src/local_control/mod.rs:1-58</span> (architecture doc), <span class="path">mod.rs:184-260</span> (start), <span class="path">mod.rs:527-535</span> (the tokio→main-thread handoff), <span class="path">bridge.rs:41-190</span> (dispatch), <span class="path">resolver.rs</span> (selectors → handles), <span class="path">handlers/app_state.rs</span> (mutations) and <span class="path">specs/warp-control-cli/SECURITY.md</span> before writing a line.</p>
+<p><strong>Remote Control copies its mechanics but is a separate module (D1).</strong> Its surface is the wrong shape for a browser: it rejects every request carrying an <code>Origin</code> header (<span class="path">mod.rs:652-684</span>), issues single-action 5-minute grants through a Unix socket, has no push channel, no WebSocket, no terminal output, no Project/Worktree actions, and its resolver takes the first <code>Workspace</code> in a window (<span class="path">resolver.rs:228-241</span>), which <code>WorkspaceRegistry</code>'s own doc calls ambiguous now that a window hosts one <code>Workspace</code> per Project. Leave <code>local_control</code> untouched; do not extend its <code>ActionKind</code> catalog.</p>
+</div>
+
+<h2 id="terminology">Terminology and name traps — read this before touching code</h2>
+<table>
+<tr><th>Word</th><th>Means in this spec</th><th>Collides with</th></tr>
+<tr><td><strong>Remote Control</strong></td><td>This feature. Code: module <code>app/src/remote_control/</code>, crate <code>crates/remote_control</code>, types <code>RemoteControlServer</code>, <code>RemoteControlBridge</code>, <code>RemoteControlSettings</code>, <code>FeatureFlag::RemoteControl</code>.</td><td><span class="path">app/src/remote_server/</span> (the <em>SSH remote server</em> feature — a stdin/stdout daemon, unrelated), <span class="path">app/src/terminal/remote_tty/</span> (a WebSocket <em>client</em> for a cloud PTY), <code>FeatureFlag::RemoteCodeReview</code>. Never put a new type whose name starts with <code>Remote</code> outside <code>remote_control/</code>, and never name anything <code>RemoteServer*</code>.</td></tr>
+<tr><td><strong>Local Control</strong></td><td>The existing <code>warpctrl</code> CLI surface (<span class="path">app/src/local_control/</span>, <span class="path">crates/local_control/</span>). Read-only precedent for this spec.</td><td>Do not add Remote Control routes, settings or actions there.</td></tr>
+<tr><td><strong>Workspace (UI)</strong> = <code>Project</code> (code)</td><td>A registered repo/folder, one full-screen "screen" per window. <span class="path">app/src/projects/</span>.</td><td><code>Workspace</code> the view (<span class="path">app/src/workspace/view.rs:681</span>) = the per-screen window view (tabs, panels). In the protocol a Workspace view is a <strong>screen</strong>.</td></tr>
+<tr><td><strong>Worktree</strong></td><td>A git worktree of a Project; tabs bind to it via <code>TabData.worktree_id</code>. Primary = repo root.</td><td>The legacy tab-config worktree flow (<code>NewWorktreeModal</code>, <code>OpenNewWorktreeModal</code>) — ignore it.</td></tr>
+<tr><td><strong>Session</strong></td><td>In the web UI: a live CLI agent session (<code>CLIAgentSessionsModel</code>, keyed by terminal view <code>EntityId</code>) or a history entry (<code>AgentSessionHistoryModel</code>).</td><td>Local Control's <code>session.*</code> actions and <code>SessionNavigationData</code> mean "terminal pane". The desktop's <em>Sessions</em> left panel lists history only.</td></tr>
+<tr><td><strong>Terminal</strong></td><td>One <code>TerminalView</code> inside a pane, identified by its <code>EntityId</code>; owns an <code>Arc&lt;FairMutex&lt;TerminalModel&gt;&gt;</code> and a PTY.</td><td><code>TerminalPane</code> (the pane wrapper, has the restart-stable <code>uuid</code>), <code>TerminalManager</code> (PTY plumbing).</td></tr>
+<tr><td><strong>Mode</strong> (of a terminal)</td><td><code>prompt</code> (shell idle, desktop shows the input box), <code>running</code> (a long-running command or agent owns the screen), <code>alt_screen</code> (vim/htop). Derived from <code>TerminalView::is_input_box_visible</code> and <code>TerminalModel::is_alt_screen_active</code>.</td><td><code>TermMode</code> (DECSET bitflags), <code>TerminalMode { AltScreen, BlockList }</code> (<span class="path">app/src/terminal/event.rs:182</span>), <code>LocalControlMode</code>, <code>AgentApprovalMode</code>.</td></tr>
+<tr><td><strong>Snapshot</strong></td><td>Either the JSON <em>app snapshot</em> pushed over the WebSocket, or the ANSI <em>attach snapshot</em> that seeds xterm.js.</td><td><code>AppState</code>/<code>WindowSnapshot</code>/<code>TabSnapshot</code> in <span class="path">app/src/app_state.rs</span> (session persistence) — never reuse those types on the wire.</td></tr>
+</table>
+
+<h2 id="phases">The phases</h2>
+<table>
+<tr><th>#</th><th>Spec</th><th>Goal</th><th>Nature</th><th>Rough scope</th></tr>
+<tr><td>1</td><td><a href="phase-1-foundation.html">Foundation</a></td><td>Feature flag, settings (enabled/port/LAN) + secure access token, <code>RemoteControlServer</code> lifecycle on a private tokio runtime, pairing + cookie sessions, host/origin hardening, embedded static assets, Settings page, palette entries, tray entry, top-bar pill. Serves a placeholder page.</td><td>Additive</td><td>~2k LOC Rust</td></tr>
+<tr><td>2</td><td><a href="phase-2-state-and-websocket.html">State model &amp; WebSocket</a></td><td><code>crates/remote_control</code> protocol types, main-thread projection of windows/screens/tabs/panes/terminals/projects/worktrees/sessions into a versioned JSON snapshot, coalesced change detection, <code>/api/v1/ws</code> push channel, command envelope with acks. No UI yet.</td><td>Core plumbing</td><td>~2k LOC Rust</td></tr>
+<tr><td>3</td><td><a href="phase-3-web-app-shell.html">Web app shell</a></td><td>The responsive SPA (no build step): store, WebSocket client, router, three layouts, Workspaces / Workspace detail / Sessions / Terminal-placeholder screens, navigation commands (open project, activate screen/tab/pane, reveal on desktop).</td><td>UI feature</td><td>~2.5k LOC JS/CSS, ~300 Rust</td></tr>
+<tr><td>4</td><td><a href="phase-4-terminal-live-view.html">Terminal live view</a></td><td>Read-only mirroring: grid→ANSI serializer, attach snapshot (history + live screen + modes), PTY byte relay over binary frames with overflow/resync, xterm.js viewer sized to the desktop, mode/size tracking.</td><td>Core feature (hardest)</td><td>~1.5k Rust, ~600 JS</td></tr>
+<tr><td>5</td><td><a href="phase-5-terminal-input.html">Terminal input</a></td><td>Keystrokes and paste into the PTY, command composer at the prompt (block-clean execution), agent composer reusing rich-input submit strategies, signals, phone key toolbar, soft-keyboard handling.</td><td>Core feature</td><td>~600 Rust, ~800 JS</td></tr>
+<tr><td>6</td><td><a href="phase-6-create-and-manage.html">Create &amp; manage</a></td><td>New terminal / launch agent in a Worktree, create Worktree (optionally with agent), rename/delete Worktree (dirty-check + force), close tab; refactor the modal-bound creation/deletion pipelines into headless functions; deferred command results.</td><td>Integration</td><td>~1k Rust, ~700 JS</td></tr>
+<tr><td>7</td><td><a href="phase-7-agent-sessions.html">Agent sessions UX</a></td><td>Sessions screen (live + history, resume), needs-input alerts (banner, title badge, vibration), agent context strip (tool, summary), quick keys for permission prompts, session status events.</td><td>UI feature</td><td>~500 Rust, ~700 JS</td></tr>
+<tr><td>8</td><td><a href="phase-8-workspace-creation.html">Workspace creation</a></td><td>Add folder / clone (with progress) / create from the web, directory browser API, Workspace overview parity (rename, remove, reveal).</td><td>Integration</td><td>~700 Rust, ~600 JS</td></tr>
+<tr><td>9</td><td><a href="phase-9-pairing-and-hardening.html">Pairing &amp; hardening</a></td><td>QR code, LAN URL discovery, paired-device list with revoke, token rotation UX, rate limits, idle expiry, connection caps, audit logging, threat-model checklist.</td><td>Security</td><td>~800 Rust, ~300 JS</td></tr>
+<tr><td>10</td><td><a href="phase-10-verification.html">Verification</a></td><td>Device/browser matrix, flag-off byte-identity, restart matrix, throughput and idle-CPU budgets, reconnection, full presubmit, straggler audit, CLOSEOUT.md.</td><td>QA</td><td>—</td></tr>
+</table>
+<p>Reference pages: <a href="protocol.html">protocol.html</a> (HTTP routes, auth, WebSocket message catalog, error codes, limits) and <a href="web-ui.html">web-ui.html</a> (web client architecture, layouts per device, components, theming, xterm.js configuration, mobile rules).</p>
+
+<h2 id="architecture">Target architecture</h2>
+<pre><code>Browser (phone / tablet / laptop)
+  app/assets/web/remote_control/**   ← embedded via crates/warp_assets (rust-embed), no build step
+  index.html + ES modules + styles.css + vendor/xterm.js
+        │  HTTP: /pair, /, /assets/&lt;build&gt;/*, /api/v1/*        (cookie session, Host/Origin checks)
+        │  WebSocket: /api/v1/ws   JSON text frames (state, commands, events) + binary frames (PTY bytes)
+        ▼
+RemoteControlServer  (SingletonEntity, app/src/remote_control/mod.rs)          ── tokio runtime (private, 2 workers, enable_all)
+  ├─ http.rs      axum Router, middleware (host allow-list, security headers, auth extractor)
+  ├─ sessions.rs  pairing → cookie sessions (in memory + hashed persistence), rate limits
+  ├─ ws.rs        per-connection task: hello/state push, command → bridge, terminal streams
+  ├─ assets.rs    embedded static files (warp_assets::Assets, mime_guess, cache headers)
+  └─ state: Stopped | Running { endpoint, lan_endpoints, clients } | Failed { message }   (observed by Settings page, pill, tray)
+        │ ModelSpawner&lt;RemoteControlBridge&gt;  — the ONLY way off the tokio threads
+        ▼
+RemoteControlBridge  (SingletonEntity, app/src/remote_control/bridge.rs)       ── main thread
+  ├─ projection.rs  build_snapshot(ctx) → AppSnapshot   (WorkspaceRegistry, Workspace.tabs, PaneGroup, TerminalView, ProjectRegistryModel, CLIAgentSessionsModel, agent_status)
+  ├─ watch.rs       observe/subscribe everything that can change the snapshot → coalesced (50 ms) rebuild → broadcast if changed
+  ├─ commands.rs    CommandName → existing Workspace / ProjectHost / TerminalView methods and WorkspaceAction::handle_action
+  └─ terminal_streams.rs / terminal_snapshot.rs   attach: ANSI snapshot + activate_cloned() PTY receiver → per-attachment relay task
+
+crates/remote_control  (no app deps)   protocol.rs (serde wire types, PROTOCOL_VERSION), auth.rs (AccessToken, SessionId, PairedDevice), hosts.rs (Host/Origin validation), tests
+crates/warp_terminal/src/model/ansi_export.rs   grid_to_ansi + modes_to_ansi (+ roundtrip tests)
+
+Desktop surfaces: Settings → Remote Control page (app/src/settings_view/remote_control_page.rs), Command Palette toggle pair + copy/open,
+                  tray entry (app/src/status_item.rs), top-bar pill next to the Workspace switcher (app/src/workspace/view.rs).
+</code></pre>
+
+<h3>Key mechanics inherited from the existing codebase</h3>
+<ul>
+<li><strong>Main-thread boundary:</strong> <code>App</code> is <code>Rc&lt;RefCell&lt;AppContext&gt;&gt;</code> (<span class="path">crates/warpui_core/src/core/app.rs:72</span>), not <code>Send</code>. The only sanctioned bridge is <code>ModelSpawner&lt;M&gt;</code> (<span class="path">crates/warpui_core/src/core/model/context.rs:657-691</span>): <code>ctx.spawner()</code> on the main thread, then <code>spawner.spawn(move |model, ctx| …).await</code> from any thread returns a value. Precedent: <span class="path">app/src/local_control/mod.rs:229-233, 527-535</span>. There is no <code>AsyncAppContext</code> and no global tokio <code>Handle</code>.</li>
+<li><strong>Terminal I/O:</strong> the PTY reader fans raw bytes out through <code>async_broadcast</code> (<span class="path">crates/warp_terminal/src/event_listener.rs:86-96</span>, created deactivated at <span class="path">app/src/terminal/local_tty/terminal_manager.rs:293-296</span>); <code>PtyRecorder</code> (<span class="path">app/src/terminal/recorder.rs:143, 200-228</span>) is the precedent consumer via <code>activate_cloned()</code>. Writes go through <code>TerminalView::write_viewer_bytes_to_pty</code> (<span class="path">app/src/terminal/view.rs:3796</span>) and commands through <code>execute_command_or_set_pending</code> (<span class="path">view.rs:7142</span>).</li>
+<li><strong>Terminal state:</strong> not one grid — a block list plus an alt screen (<span class="path">app/src/terminal/model/terminal_model.rs:349-382</span>). <code>is_input_box_visible</code> (<span class="path">view.rs:3399</span>) is the desktop's own "at the prompt" predicate; the remote mode derives from it (D8). Cells: <span class="path">crates/warp_terminal/src/model/grid/cell.rs:145</span>; unified row accessor <code>GridHandler::row</code> (<span class="path">grid_handler.rs:2416</span>); cursor <code>cursor_render_point</code> (<span class="path">:1650</span>); DECSET state via <code>ModeProvider</code>/<code>TermMode</code> (<span class="path">crates/warp_terminal/src/model/mode.rs</span>).</li>
+<li><strong>Size:</strong> the GUI layout owns the PTY size and re-sends it on every layout pass (<span class="path">app/src/terminal/terminal_size_element.rs:36-45</span>); there is no arbiter. Hence D9: the browser follows the desktop's cols×rows.</li>
+<li><strong>Enumerating live UI:</strong> <code>WorkspaceRegistry::all_workspaces</code> (<span class="path">app/src/workspace/registry.rs:162</span>) → <code>workspace.tabs</code> → <code>tab.pane_group</code> → <code>visible_pane_ids</code> / <code>terminal_view_from_pane_id</code> (<span class="path">app/src/pane_group/mod.rs:2148, 3999</span>); precedent <code>status_item::resolve_session</code> (<span class="path">app/src/status_item.rs:194-216</span>). Tab id = <code>tab.pane_group.id()</code>; there is no <code>TabData.title</code> — derive from <code>PaneGroup::custom_title</code> and pane summaries as Local Control does (<span class="path">app/src/local_control/handlers/metadata.rs:396-419</span>).</li>
+<li><strong>Projects/Worktrees:</strong> <code>ProjectRegistryModel</code> (<span class="path">app/src/projects/registry.rs</span>), <code>ProjectHost</code> screens and <code>ProjectHostAction</code> (<span class="path">app/src/projects/host.rs:117-195</span>), creation/deletion pipelines on <code>Workspace</code> (<span class="path">app/src/workspace/view/worktrees.rs:183, 480, 545, 622</span>), agent launch (<span class="path">app/src/workspace/view.rs:9246, 9323</span>, catalog <span class="path">app/src/agent_launcher/catalog.rs:42</span>).</li>
+<li><strong>Agent sessions:</strong> <code>CLIAgentSessionsModel</code> keyed by terminal view id (<span class="path">app/src/terminal/cli_agent_sessions/mod.rs:294-324</span>), statuses at <span class="path">:27</span>, events at <span class="path">:218</span>; answers to permission prompts are raw PTY bytes; the rich-input submit strategies live in <span class="path">app/src/terminal/view/cli_agent_footer.rs:637-895</span>.</li>
+<li><strong>Settings, flags, palette, tray, pill:</strong> toggleable-setting end-to-end precedent is <code>alias_expansion_enabled</code> (def <span class="path">app/src/settings/alias_expansion.rs</span>, widget <span class="path">app/src/settings_view/features_page.rs:4966</span>, palette pair <span class="path">:388-401</span>, context flag <span class="path">app/src/workspace/view.rs:15538</span>); secure setting precedent <span class="path">app/src/settings/local_control.rs</span>; page registration <span class="path">app/src/settings_view/mod.rs:185-271, 933-943, 1020-1107, 1543-1551</span>; tray <span class="path">app/src/status_item.rs:82-100</span>; pill <span class="path">app/src/workspace/view.rs:4176-4256, 13851-13913</span>.</li>
+<li><strong>Assets:</strong> <code>rust-embed</code> over <span class="path">app/assets</span> (<span class="path">crates/warp_assets/src/lib.rs:7-18</span>, <span class="path">build.rs</span>); adding <code>#[include = "web/**"]</code> ships a web directory inside the binary; <code>mime_guess</code> and <code>qrcode</code> are already workspace dependencies (<span class="path">Cargo.toml:176, 208</span>; <code>qrcode</code> is declared in <span class="path">app/Cargo.toml:155</span> and unused today).</li>
+<li><strong>Dependencies present:</strong> axum 0.8.4 (without the <code>ws</code> feature), hyper 1.x, tokio 1.47 (no workspace-level features — declare your own), tower-http 0.6 (only <code>trace</code>,<code>cors</code> enabled by <code>crates/http_server</code>), rand, base64, uuid, sha2. Absent: any WebSocket server, <code>tokio-tungstenite</code> (arrives with <code>axum/ws</code>), <code>include_dir</code>, mDNS/if-addrs crates.</li>
+</ul>
+
+<h2 id="decisions">Standing decisions</h2>
+<p>Resolved while planning; implementers follow them unless the repo owner overrides.</p>
+<table>
+<tr><th>ID</th><th>Decision</th><th>Resolution</th></tr>
+<tr><td>D1</td><td>Relationship to Local Control</td><td>Separate module <code>app/src/remote_control/</code> and crate <code>crates/remote_control</code>, copying the <em>mechanics</em> of <code>local_control</code> (private runtime, <code>ModelSpawner</code> bridge, settings-driven lifecycle, resolver-style helpers) but with its own router, auth, protocol and handlers. <code>local_control</code> stays untouched. Shared code is limited to WarpUI/settings framework APIs.</td></tr>
+<tr><td>D2</td><td>Runtime</td><td>A private <code>tokio::runtime::Runtime</code> per server (<code>new_multi_thread().worker_threads(2).enable_all()</code>) owned by <code>RemoteControlServer</code> and dropped on stop, giving instant teardown of every connection. Not the app's <code>Background</code> executor (avoid coupling the app's executor to socket lifetimes), and note <code>crates/http_server</code>'s runtime lacks <code>enable_time()</code>, which this server needs for heartbeats and coalescing.</td></tr>
+<tr><td>D3</td><td>Bind address and port</td><td><code>127.0.0.1:&lt;port&gt;</code>, default port <code>7777</code>, setting <code>remote_control.port</code>. With <code>remote_control.allow_lan_access = true</code> bind <code>0.0.0.0:&lt;port&gt;</code> (IPv4 only in v1). Bind failure → state <code>Failed</code>, toast, Settings shows the error; no automatic port hunting.</td></tr>
+<tr><td>D4</td><td>Authentication</td><td>One long-lived 256-bit random access token (base64url, generated on first enable, rotatable), stored as a <code>SecureSetting</code> (keychain / private store, never in <code>settings.toml</code>, never logged, never synced). Pairing = <code>GET /pair?t=&lt;token&gt;</code> (or a form POST) → server sets an <code>HttpOnly; SameSite=Strict; Path=/</code> cookie <code>spirit_rc</code> holding a random session id, and 303-redirects to <code>/</code> so the token never stays in the address bar. Sessions persist across app restarts as SHA-256 hashes in a private setting so phones stay paired; rotation or disable revokes all. <code>Authorization: Bearer &lt;token&gt;</code> is also accepted on <code>/api/*</code> for curl/tests.</td></tr>
+<tr><td>D5</td><td>Browser hardening</td><td><code>Host</code> allow-list (loopback names + LAN addresses when enabled) → else <code>421</code> (DNS-rebinding defence). WebSocket upgrades and all mutating requests require <code>Origin</code> == <code>http://&lt;Host&gt;</code>; mutating REST additionally requires header <code>X-Spirit-Remote: 1</code>. No CORS headers are ever emitted. Served HTML carries a strict CSP (<code>default-src 'self'; connect-src 'self' ws:; img-src 'self' data:; style-src 'self'; script-src 'self'</code>), <code>X-Frame-Options: DENY</code>, <code>Referrer-Policy: no-referrer</code>; API responses <code>Cache-Control: no-store</code>. Text from the app (titles, cwd, commands) is rendered via <code>textContent</code>, never HTML.</td></tr>
+<tr><td>D6</td><td>Transport security</td><td>Plain HTTP in v1. Loopback needs no TLS; LAN mode shows a persistent warning in Settings and in the web UI and recommends Tailscale (bind LAN, reach it over the tailnet) or <code>ssh -L 7777:127.0.0.1:7777</code>. Self-signed TLS with a pairing-time certificate pin is future work.</td></tr>
+<tr><td>D7</td><td>Wire protocol</td><td>JSON text frames for control (<code>hello</code>, <code>state</code>, <code>command</code>/<code>result</code>, <code>event</code>, <code>ping</code>/<code>pong</code>) and binary frames for terminal bytes (<code>[attach_id: u32 LE][bytes…]</code>). State is pushed as <strong>full snapshots</strong> with a monotonically increasing <code>version</code>; diffs are future work (snapshots are tens of KB at most). All types live in <code>crates/remote_control::protocol</code> with <code>PROTOCOL_VERSION</code>; the client refuses a mismatched major. See <a href="protocol.html">protocol.html</a>.</td></tr>
+<tr><td>D8</td><td>Terminal mirroring</td><td>Relay the raw PTY byte stream into xterm.js (like ttyd/gotty), seeded on attach by an <strong>ANSI attach snapshot</strong> built server-side: recent block history as styled text, then the live screen (alt-screen grid or the active block's output grid) serialized by a new <code>grid_to_ansi</code>, then DECSET modes. No cell-diff protocol, no block-list renderer in the browser. The terminal's <strong>mode</strong> (<code>prompt</code> / <code>running</code> / <code>alt_screen</code>) is derived from <code>is_input_box_visible</code> + <code>is_alt_screen_active</code> and drives input routing and the mobile toolbar: at the prompt, commands are submitted through <code>execute_command_or_set_pending</code> so the desktop keeps clean blocks; while running, raw bytes go to the PTY; when a CLI agent session has its rich input open, text is submitted through <code>submit_cli_agent_rich_input</code>.</td></tr>
+<tr><td>D9</td><td>Terminal size</td><td>The desktop is authoritative. The web client renders exactly the desktop's cols×rows and scales its font (min 8px) or scrolls horizontally to fit; desktop resizes propagate as state changes. No remote-driven resize in v1 (there is no size arbiter — <span class="path">terminal_size_element.rs:36-45</span> re-sends the GUI size every layout). A "smallest client wins" arbiter is future work.</td></tr>
+<tr><td>D10</td><td>Identity on the wire</td><td><code>project_id</code>/<code>worktree_id</code> are UUID strings (add <code>Serialize</code>/<code>Deserialize</code> to <code>WorktreeId</code>). <code>window_id</code>, <code>screen_id</code> (Workspace view id), <code>tab_id</code> (pane group id), <code>pane_id</code>, <code>terminal_id</code> (TerminalView id) are opaque decimal strings valid for one app process; <code>hello.instance_id</code> changes on restart and the client discards everything it knows. Format ids exactly as <span class="path">app/src/local_control/handlers/metadata.rs</span> does.</td></tr>
+<tr><td>D11</td><td>Feature flag and channels</td><td><code>FeatureFlag::RemoteControl</code> mirrors <code>AdeWorkspaces</code> exactly: cargo feature <code>remote_control = []</code> in <code>app/Cargo.toml</code> listed in <code>default</code>, mapped in <code>enabled_features()</code> (<span class="path">app/src/features.rs:248</span>), also in <code>DOGFOOD_FLAGS</code>. (The Oss channel is not dogfood — <span class="path">crates/warp_core/src/channel/mod.rs:30-35</span> — so <code>DOGFOOD_FLAGS</code> alone would not enable it.) The server is instantiated only for <code>LaunchMode::App</code>; the module is <code>#[cfg(not(target_family = "wasm"))]</code> because axum is.</td></tr>
+<tr><td>D12</td><td>Web client technology</td><td>Hand-written ES2020 modules + CSS, <strong>no bundler, no framework, no Node in the build</strong>. Vendored, pinned <code>@xterm/xterm</code> 5.5.0 (+ <code>@xterm/addon-fit</code>, <code>@xterm/addon-web-links</code>) committed under <span class="path">app/assets/web/remote_control/vendor/</span> by a checked-in script with URLs and SHA-256 pins. Everything is embedded through <code>crates/warp_assets</code> and served by the Rust server; the page loads nothing from the network. Rationale: <code>cargo bundle</code> stays self-contained and the only JS precedent in-tree (<span class="path">crates/command-signatures-v2/js</span>, yarn+tsc in <code>build.rs</code>) makes Node a soft build requirement that this feature must not make hard.</td></tr>
+<tr><td>D13</td><td>Change detection</td><td>The bridge marks itself dirty from: <code>ctx.observe</code> on every registered <code>Workspace</code> view and every <code>TerminalView</code> it has seen, <code>PaneGroupFocusEvent</code>s, <code>ProjectRegistryEvent</code>s, <code>CLIAgentSessionsModelEvent</code>s, and a 1 Hz reconcile timer while ≥1 client is connected. Rebuilds are coalesced (50 ms), compared structurally (<code>PartialEq</code>), and broadcast only when changed. No new <code>WorkspaceEvent</code> variants are required (<code>WorkspaceEvent</code> has only two today — <span class="path">app/src/workspace/view.rs:818</span>).</td></tr>
+<tr><td>D14</td><td>Command execution</td><td>Every command runs on the main thread inside <code>bridge_spawner.spawn</code>, resolving handles through <code>WorkspaceRegistry</code>/<code>ProjectRegistryModel</code> and calling existing methods or <code>handle_action(&amp;WorkspaceAction::…)</code> directly (Local Control's pattern, <span class="path">app/src/local_control/handlers/app_state.rs:361-370</span>). Never string global actions. Where today's entry point is private and modal-bound (<code>start_worktree_creation</code>, <code>execute_worktree_deletion</code>, <code>start_clone</code>, <code>start_create</code>), refactor it into a headless <code>pub(crate)</code> function with a completion callback that the modal also calls — one code path.</td></tr>
+<tr><td>D15</td><td>Multiple clients</td><td>Up to 8 concurrent WebSocket clients per instance; all see the same state; input is shared (like a tmux session). The desktop pill shows the connected count.</td></tr>
+<tr><td>D16</td><td>Destructive commands</td><td><code>worktree.delete</code>, <code>tab.close</code>, <code>project.remove</code> require <code>"confirm": true</code>; the web UI shows a confirmation sheet; dirty worktrees additionally require <code>"force": true</code> after a <code>worktree.dirty_check</code>. Nothing else is destructive.</td></tr>
+<tr><td>D17</td><td>Notifications on the device</td><td>No Web Push (service workers need a secure context; LAN IPs are not one). Needs-input alerts are in-page: banner, <code>document.title</code> badge, <code>navigator.vibrate</code>, optional beep — only while the page is open.</td></tr>
+<tr><td>D18</td><td>Persistence</td><td>No SQLite changes. Public settings in <code>settings.toml</code> under <code>remote_control.*</code>; the token and paired-device hashes in private/secure storage.</td></tr>
+<tr><td>D19</td><td>Logging</td><td>Tokens, session ids and cookies never reach logs; use <code>safe_info!</code>/<code>safe_warn!</code> (<span class="path">crates/warp_core/src/safe_log.rs</span>) for anything that could contain them. Connects, disconnects, pairing successes/failures (remote address only) are logged at info.</td></tr>
+<tr><td>D20</td><td>Pane splits and layout editing</td><td>Out of scope for v1 (the pane tree is displayed, focus works, no split/resize/move from the web). Local Control already has <code>pane.split</code>; adding it later is a handler and a button.</td></tr>
+</table>
+
+<h2 id="rules">Global rules for every phase</h2>
+<ol>
+<li><strong>Green per phase:</strong> <code>./script/presubmit</code> passes at the end of each phase. Use <code>./script/format</code>, not plain <code>cargo fmt</code>.</li>
+<li><strong>Zero comments in code.</strong> CLAUDE.md bans all comments in written/edited code (sole exception: a hidden constraint that would make a future reader break the code). Before reporting a phase done, run <code>git diff</code> and check added lines for <code>//</code>, <code>/*</code>, <code>#</code>, <code>*</code>. This applies to <strong>JavaScript and CSS too</strong> — no JSDoc, no <code>//</code> narration; a clear function name beats a comment.</li>
+<li><strong>Feature flag:</strong> everything user-visible is gated by <code>FeatureFlag::RemoteControl.is_enabled()</code>; prefer runtime checks over <code>#[cfg]</code>. Flag off must be byte-identical to today: no settings group registered, no page, no pill, no tray entry, no listener.</li>
+<li><strong>Main-thread boundary:</strong> code that touches <code>AppContext</code>, views, models, or <code>TerminalModel</code> runs only inside <code>bridge_spawner.spawn(...)</code> or in bridge callbacks. Tokio tasks hold only <code>Send</code> data (<code>ModelSpawner</code>, channels, <code>async_broadcast</code> receivers, <code>Arc&lt;Vec&lt;u8&gt;&gt;</code>). Never block the main thread on the network; never <code>block_on</code> from the bridge.</li>
+<li><strong><code>TerminalModel</code> locking:</strong> take <code>model.lock()</code> for the shortest possible scope, copy what you need out, drop it, then emit/notify/write. Never hold it across <code>ctx.emit</code>, <code>ctx.notify</code>, any <code>update</code>, a PTY write, or an <code>.await</code>. Never call a function that may lock while holding the lock.</li>
+<li><strong>Bounded everything:</strong> every channel between tokio and the bridge or a client has a capacity and a documented overflow policy (drop + resync for terminal bytes, error for commands). Message size caps live in <code>crates/remote_control::limits</code> and are enforced server-side.</li>
+<li><strong>Exhaustive matches:</strong> no wildcard <code>_</code> arms where avoidable. <code>CommandName</code>, <code>ServerMessage</code>, <code>ClientMessage</code>, <code>ServerState</code>, <code>TerminalMode</code> are enums that must produce compile errors at consumers when extended.</li>
+<li><strong>Style rules that will bite:</strong> ctx param named <code>ctx</code> and last (closure param is the exception); delete unused params entirely (never <code>_</code>-prefix); tests in sibling <code>${filename}_tests.rs</code> files included via <code>#[cfg(test)] #[path] mod tests;</code>; banned APIs: <code>std::process::Command</code> → <code>command::blocking::Command</code>/<code>command::r#async::Command</code>, <code>std::time::Instant</code> → <code>instant::Instant</code>; inline format args; no <code>Itertools::format</code> in log macros; imports at the top of the file.</li>
+<li><strong>Typed actions only:</strong> new desktop actions go on <code>WorkspaceAction</code> / page action enums. No new global string actions (<span class="path">app/src/workspace/global_actions.rs:20-21</span> is deprecated) — the tray's <code>status_item:*</code> handlers are the one place a string action already exists and may gain siblings for tray entries only.</li>
+<li><strong>Security invariants are code, not docs:</strong> every route except <code>/health</code>, <code>/pair</code> and <code>/assets/*</code> goes through the auth extractor; every response goes through the security-headers layer; the <code>Host</code> check runs before routing. Add a test for each invariant in <code>app/src/remote_control/mod_tests.rs</code> (precedent: <span class="path">app/src/local_control/mod_tests.rs</span> spins up a runtime and issues real HTTP requests).</li>
+<li><strong>Web client rules:</strong> ES modules only, no <code>innerHTML</code> with app-provided strings, no external network requests, no build step, no framework, vendored files only from the pinned script, works with JavaScript features supported by Safari 16 / Chrome 110 (the oldest targets), and every screen must be usable at 360×640 CSS px.</li>
+<li><strong>Keep commits reviewable:</strong> within a phase, separate additive scaffolding, refactors of existing code paths, and behavioral edits into distinct commits.</li>
+</ol>
+
+<h2 id="layout">File layout (target)</h2>
+<pre><code>crates/remote_control/
+  Cargo.toml                 serde, serde_json, rand, base64, sha2, thiserror (no warpui, no app types)
+  src/lib.rs                 pub mod protocol; pub mod auth; pub mod hosts; pub mod limits; pub const PROTOCOL_VERSION: u32 = 1;
+  src/protocol.rs (+_tests)  ServerMessage, ClientMessage, AppSnapshot &amp; friends, CommandName, CommandError, ErrorCode
+  src/auth.rs (+_tests)      AccessToken, SessionId, PairedDevice, constant-time comparison, hashing
+  src/hosts.rs (+_tests)     AllowedHosts, host_matches, origin_matches
+  src/limits.rs              MAX_* constants
+
+crates/warp_terminal/src/model/ansi_export.rs (+_tests)   grid_to_ansi, modes_to_ansi
+
+app/src/remote_control/
+  mod.rs (+mod_tests.rs)     RemoteControlServer (SingletonEntity), ServerState, start/stop, runtime, endpoints
+  bridge.rs                  RemoteControlBridge (SingletonEntity, main thread): clients, dirty tracking, snapshot cache
+  projection.rs (+_tests)    build_snapshot(ctx) → AppSnapshot
+  watch.rs                   subscriptions/observers that mark the bridge dirty
+  commands.rs (+_tests)      execute(command, client, ctx) → immediate or deferred result
+  terminal_snapshot.rs       build_attach_snapshot(terminal_view, ctx)
+  terminal_streams.rs        attachment registry, relay tasks, resync
+  http.rs                    Router, middleware, auth extractor, security headers
+  sessions.rs (+_tests)      pairing, cookie sessions, persistence, rate limits
+  ws.rs                      WebSocket connection task
+  assets.rs                  embedded asset serving
+  lan.rs                     LAN address discovery (Phase 9)
+
+app/src/settings/remote_control.rs (+_tests)      RemoteControlSettings, RemoteControlSecrets
+app/src/settings_view/remote_control_page.rs      Settings page
+app/assets/web/remote_control/                    index.html, pair.html, styles.css, app.js, store.js, ws.js, router.js, ui/*.js, terminal.js, vendor/
+script/vendor_remote_control_assets               downloads + verifies xterm.js files
+</code></pre>
+
+<h2 id="refs">Primary references</h2>
+<ul>
+<li><span class="path">app/src/local_control/</span>, <span class="path">crates/local_control/</span>, <span class="path">specs/warp-control-cli/{SECURITY,TECH}.md</span> — the control-server precedent (mechanics, threat model, tests).</li>
+<li><span class="path">app/src/status_item.rs</span> — out-of-view controller that lists sessions and focuses panes across windows.</li>
+<li><span class="path">app/src/terminal/recorder.rs</span> — PTY byte fan-out precedent; <span class="path">app/src/terminal/remote_tty/</span> — terminal over a socket (client side).</li>
+<li><span class="path">spirit_specs/0828-ade-workspaces/</span> and its <code>CLOSEOUT.md</code> — Workspace/Worktree model, decisions D1–D15 of that spec remain binding (one window per Project, registry-ordered sections, PTY teardown before git removal).</li>
+<li><span class="path">CLAUDE.md</span> — engineering conventions, comment ban, exhaustive matching, locking rules.</li>
+<li>External prior art (design only, no code reuse): ttyd and gotty (PTY byte relay to xterm.js), tmux control mode (shared sessions), VS Code Remote Tunnels (pairing UX).</li>
+</ul>
+
+<p class="muted" style="margin-top:2.5rem">Spec authored 2026-09-07 against Spirit <code>606b9c2a</code> · spirit_specs/0907-remote-control/</p>
+
+</body>
+</html>
