@@ -766,7 +766,7 @@ impl TerminalView {
 
     /// Inserts `text` into the active CLI agent's input without submitting it, routing to the
     /// rich input composer when it is open and to the PTY when it is not.
-    pub(super) fn insert_text_into_cli_agent_input(
+    pub(crate) fn insert_text_into_cli_agent_input(
         &mut self,
         text: &str,
         ctx: &mut ViewContext<Self>,
@@ -801,7 +801,7 @@ impl TerminalView {
         }
     }
 
-    pub(super) fn submit_cli_agent_rich_input(
+    pub(crate) fn submit_cli_agent_rich_input(
         &mut self,
         text: String,
         ctx: &mut ViewContext<Self>,

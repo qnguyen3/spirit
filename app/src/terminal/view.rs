@@ -3201,7 +3201,6 @@ impl TerminalView {
         self.sessions.as_ref(ctx)
     }
 
-    #[cfg(test)]
     pub fn model_event_dispatcher(&self) -> &ModelHandle<ModelEventDispatcher> {
         &self.model_events_handle
     }
@@ -3793,6 +3792,13 @@ impl TerminalView {
     /// Observation never delays or drops the write itself, and never arms a
     /// window for a byte that `write_user_bytes_to_pty` rejected (e.g. the
     /// active block is under agent control).
+    pub(crate) fn subscribe_to_pty_reads(
+        &self,
+        ctx: &AppContext,
+    ) -> Option<async_broadcast::Receiver<Arc<Vec<u8>>>> {
+        self.pty_recorder.as_ref(ctx).subscribe_to_pty_reads()
+    }
+
     pub fn write_viewer_bytes_to_pty(&mut self, bytes: Vec<u8>, ctx: &mut ViewContext<Self>) {
         let is_ctrl_c = bytes == [0x03];
         let forwarded = self.write_user_bytes_to_pty(bytes, ctx);
@@ -9488,6 +9494,12 @@ impl TerminalView {
             input.editor().update(ctx, |editor, ctx| {
                 editor.handle_action(&EditorAction::SelectAll, ctx)
             })
+        });
+    }
+
+    pub(crate) fn insert_text_into_input(&mut self, text: &str, ctx: &mut ViewContext<Self>) {
+        self.input.update(ctx, |input, ctx| {
+            input.system_insert(text, ctx);
         });
     }
 

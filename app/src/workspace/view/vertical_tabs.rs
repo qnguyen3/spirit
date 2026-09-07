@@ -32,7 +32,7 @@ use warpui::ui_components::components::{UiComponent, UiComponentStyles};
 use warpui::ui_components::text_input::TextInput;
 use warpui::{AppContext, EntityId, SingletonEntity, ViewHandle, WindowId};
 
-use super::worktrees::worktree_run_partition;
+use super::worktrees::{worktree_run_partition, worktree_sections_for_bindings};
 use super::{render_group_member_icon_collage, select_unique_pane_kinds};
 use crate::FeatureFlag;
 use crate::appearance::Appearance;
@@ -2093,7 +2093,7 @@ fn render_groups(
             i += run_len;
         }
     } else {
-        let sections = worktree_sections(&resolved_bindings, &registry_worktrees);
+        let sections = worktree_sections_for_bindings(&resolved_bindings, &registry_worktrees);
         let unbound: Vec<(usize, Option<Vec<PaneId>>)> = visible_tabs
             .iter()
             .zip(&resolved_bindings)
@@ -2195,24 +2195,6 @@ struct TabRunRenderContext {
     is_any_pane_dragging: bool,
     ghost_insertion_index: Option<usize>,
     total_visible: usize,
-}
-
-fn worktree_sections<'a>(
-    bindings: &[Option<WorktreeId>],
-    registry_worktrees: &[&'a Worktree],
-) -> Vec<(&'a Worktree, Vec<usize>)> {
-    registry_worktrees
-        .iter()
-        .map(|worktree| {
-            let members = bindings
-                .iter()
-                .enumerate()
-                .filter(|(_, binding)| **binding == Some(worktree.id))
-                .map(|(index, _)| index)
-                .collect();
-            (*worktree, members)
-        })
-        .collect()
 }
 
 fn resolved_worktree_of_tab<'a>(
