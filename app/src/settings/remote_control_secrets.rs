@@ -1,6 +1,6 @@
 use anyhow::Result;
 use remote_control::auth::{AccessToken, PairedDevice};
-use settings::macros::{define_setting, define_settings_group};
+use settings::macros::define_settings_group;
 use settings::{SecureSetting, Setting, SettingSurfaces, SupportedPlatforms, SyncToCloud};
 use warpui::{AppContext, ModelContext, SingletonEntity};
 use warpui_extras::secure_storage;
@@ -9,20 +9,17 @@ const REMOTE_CONTROL_ACCESS_TOKEN_STORAGE_KEY: &str = "RemoteControlAccessToken"
 
 define_settings_group!(RemoteControlSecrets, settings: [
     remote_control_access_token: RemoteControlAccessTokenSetting,
-    remote_control_paired_devices: RemoteControlPairedDevicesSetting,
+    remote_control_paired_devices: RemoteControlPairedDevicesSetting {
+        type: String,
+        default: String::new(),
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        surface: SettingSurfaces::GUI,
+        private: true,
+        storage_key: "RemoteControlPairedDevices",
+        description: "Hashed identifiers of the browsers paired with Remote Control.",
+    },
 ]);
-
-define_setting!(
-    RemoteControlPairedDevicesSetting: String,
-    default: {String::new()},
-    supported_platforms: SupportedPlatforms::DESKTOP,
-    group: RemoteControlSecrets,
-    storage_key: "RemoteControlPairedDevices",
-    sync_to_cloud: SyncToCloud::Never,
-    surface: SettingSurfaces::GUI,
-    private: true,
-    description: "Hashed identifiers of the browsers paired with Remote Control."
-);
 
 pub struct RemoteControlAccessTokenSetting {
     inner: Option<String>,
