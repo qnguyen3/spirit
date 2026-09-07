@@ -61,11 +61,14 @@ const ALL_SECTIONS: &[SettingsSection] = &[
     SettingsSection::Features,
     SettingsSection::Keybindings,
     SettingsSection::Privacy,
+    SettingsSection::RemoteControl,
     SettingsSection::Scripting,
     SettingsSection::Warpify,
     SettingsSection::ThirdPartyCLIAgents,
     SettingsSection::EditorAndCodeReview,
 ];
+
+const SECTIONS_WITH_RENAMED_DISPLAY_LABELS: &[SettingsSection] = &[SettingsSection::RemoteControl];
 
 #[test]
 fn all_sections_list_is_exhaustive() {
@@ -76,6 +79,7 @@ fn all_sections_list_is_exhaustive() {
             | SettingsSection::Features
             | SettingsSection::Keybindings
             | SettingsSection::Privacy
+            | SettingsSection::RemoteControl
             | SettingsSection::Scripting
             | SettingsSection::Warpify
             | SettingsSection::ThirdPartyCLIAgents
@@ -117,6 +121,9 @@ fn slugs_were_seeded_from_the_display_labels_they_replaced() {
     // SECTIONS_WITH_RENAMED_DISPLAY_LABELS rather than moving the slug, which
     // is a stored contract.
     for section in ALL_SECTIONS {
+        if SECTIONS_WITH_RENAMED_DISPLAY_LABELS.contains(section) {
+            continue;
+        }
         assert_eq!(
             section.slug(),
             section.to_string(),

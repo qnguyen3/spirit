@@ -8,6 +8,7 @@ use keybindings::KeybindingsView;
 use nav::{SettingsNavItem, SettingsUmbrella};
 use pathfinder_geometry::vector::Vector2F;
 use privacy_page::{PrivacyPageView, PrivacyPageViewEvent};
+use remote_control_page::RemoteControlSettingsPageView;
 use scripting_page::ScriptingSettingsPageView;
 use settings_file_footer::{SettingsFooterKind, SettingsFooterMouseStates, render_footer};
 use settings_page::{
@@ -65,6 +66,7 @@ mod nav;
 pub mod pane_manager;
 mod privacy;
 mod privacy_page;
+mod remote_control_page;
 mod scripting_page;
 mod settings_file_footer;
 pub(crate) mod settings_page;
@@ -74,6 +76,7 @@ pub mod warpify_page;
 pub use cli_agents_page::cli_agent_settings_widget_id;
 pub use features_page::FeaturesPageAction;
 pub use privacy_page::PrivacyPageAction;
+pub use remote_control_page::RemoteControlPageAction;
 pub use settings_page::{
     AdditionalInfo, InputListItem, ToggleState, render_body_item_label, render_info_icon,
     render_input_list, render_separator,
@@ -190,6 +193,7 @@ pub enum SettingsSection {
     Features,
     Keybindings,
     Privacy,
+    RemoteControl,
     Scripting,
     Warpify,
     // ── Agents umbrella subpages ──
@@ -206,6 +210,7 @@ impl Display for SettingsSection {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SettingsSection::Keybindings => write!(f, "Keyboard shortcuts"),
+            SettingsSection::RemoteControl => write!(f, "Remote Control"),
             SettingsSection::Scripting => write!(f, "Scripting"),
             SettingsSection::ThirdPartyCLIAgents => write!(f, "Third party CLI agents"),
             SettingsSection::EditorAndCodeReview => write!(f, "Editor and Code Review"),
@@ -235,6 +240,7 @@ impl SettingsSection {
             Self::Features => "Features",
             Self::Keybindings => "Keyboard shortcuts",
             Self::Privacy => "Privacy",
+            Self::RemoteControl => "remote-control",
             Self::Scripting => "Scripting",
             Self::Warpify => "Warpify",
             Self::ThirdPartyCLIAgents => "Third party CLI agents",
@@ -256,6 +262,7 @@ impl SettingsSection {
             "Features" => Self::Features,
             "Keyboard shortcuts" => Self::Keybindings,
             "Privacy" => Self::Privacy,
+            "remote-control" | "Remote Control" | "RemoteControl" => Self::RemoteControl,
             "Scripting" => Self::Scripting,
             "Warpify" => Self::Warpify,
             "Third party CLI agents" | "ThirdPartyCLIAgents" => Self::ThirdPartyCLIAgents,
@@ -474,6 +481,11 @@ pub mod flags {
     pub const SHOW_PROJECT_EXPLORER: &str = "ShowProjectExplorer";
     pub const SHOW_GLOBAL_SEARCH: &str = "ShowGlobalSearch";
     pub const SHOW_HIDDEN_FILES: &str = "ShowHiddenFiles";
+    pub const REMOTE_CONTROL_CONTEXT_FLAG: &str = "Remote_Control_Enabled";
+}
+
+pub fn remote_control_page_is_available() -> bool {
+    cfg!(not(target_family = "wasm")) && FeatureFlag::RemoteControl.is_enabled()
 }
 
 pub fn init_actions_from_parent_view<T: Action + Clone>(
@@ -485,6 +497,7 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
     features_page::init_actions_from_parent_view(app, context, builder);
     warpify_page::init_actions_from_parent_view(app, context, builder);
     privacy_page::init_actions_from_parent_view(app, context, builder);
+    remote_control_page::init_actions_from_parent_view(app, context, builder);
     code_editor_review_page::init_actions_from_parent_view(app, context, builder);
     cli_agents_page::init_actions_from_parent_view(app, context, builder);
 
@@ -791,6 +804,7 @@ pub enum SettingsAction {
     EditorAndCodeReview(EditorAndCodeReviewPageAction),
     CLIAgents(CLIAgentsPageAction),
     WarpifyPageToggle(WarpifyPageAction),
+    RemoteControlPageToggle(RemoteControlPageAction),
     Tab,
     Split(Direction),
     ToggleMaximizePane,
@@ -936,6 +950,7 @@ macro_rules! update_page {
             SettingsPageViewHandle::Warpify(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Privacy(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Scripting(handle) => $ctx.update_view(handle, $update),
+            SettingsPageViewHandle::RemoteControl(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::CLIAgents(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::About(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::EditorAndCodeReview(handle) => {
@@ -1023,6 +1038,12 @@ impl SettingsView {
             None
         };
 
+        let remote_control_page_handle = if remote_control_page_is_available() {
+            Some(ctx.add_typed_action_view(RemoteControlSettingsPageView::new))
+        } else {
+            None
+        };
+
         let font_family = Appearance::as_ref(ctx).ui_font_family();
         let search_editor = ctx.add_typed_action_view(|ctx| {
             let options = SingleLineEditorOptions {
@@ -1064,6 +1085,10 @@ impl SettingsView {
             settings_pages.push(SettingsPage::new(scripting_page_handle));
         }
 
+        if let Some(remote_control_page_handle) = remote_control_page_handle {
+            settings_pages.push(SettingsPage::new(remote_control_page_handle));
+        }
+
         settings_pages.extend(vec![
             SettingsPage::new(privacy_page_handle),
             SettingsPage::new(about_page_handle),
@@ -1099,8 +1124,28 @@ impl SettingsView {
             );
         }
 
+        if remote_control_page_is_available() {
+            let after_scripting = nav_items
+                .iter()
+                .position(|item| matches!(item, SettingsNavItem::Page(SettingsSection::Scripting)))
+                .map(|index| index + 1)
+                .or_else(|| {
+                    nav_items.iter().position(|item| {
+                        matches!(item, SettingsNavItem::Page(SettingsSection::Privacy))
+                    })
+                })
+                .unwrap_or(nav_items.len());
+            nav_items.insert(
+                after_scripting,
+                SettingsNavItem::Page(SettingsSection::RemoteControl),
+            );
+        }
+
         let initial_page = match page {
             Some(SettingsSection::Scripting) if !FeatureFlag::WarpControlCli.is_enabled() => {
+                SettingsSection::default()
+            }
+            Some(SettingsSection::RemoteControl) if !remote_control_page_is_available() => {
                 SettingsSection::default()
             }
             other => other.unwrap_or_default(),
@@ -1547,6 +1592,7 @@ impl SettingsView {
             SettingsPageViewHandle::Privacy(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Warpify(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Scripting(v) => v.as_ref(app).should_render(app),
+            SettingsPageViewHandle::RemoteControl(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::CLIAgents(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::EditorAndCodeReview(v) => v.as_ref(app).should_render(app),
         }
@@ -2111,6 +2157,17 @@ impl TypedActionView for SettingsView {
                 {
                     view.update(ctx, |view, ctx| {
                         view.handle_action(warpify_action, ctx);
+                    })
+                }
+            }
+            SettingsAction::RemoteControlPageToggle(remote_control_action) => {
+                if let Some(remote_control_page) =
+                    self.settings_page(SettingsSection::RemoteControl)
+                    && let SettingsPageViewHandle::RemoteControl(view) =
+                        &remote_control_page.view_handle
+                {
+                    view.update(ctx, |view, ctx| {
+                        view.handle_action(remote_control_action, ctx);
                     })
                 }
             }
