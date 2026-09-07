@@ -135,6 +135,8 @@ pub struct SessionsView {
     project_id: Option<ProjectId>,
     worktrees: Vec<SessionWorktree>,
     selected_worktree: Option<WorktreeId>,
+    visible: bool,
+    refresh_on_show: bool,
 }
 
 impl SessionsView {
@@ -224,15 +226,26 @@ impl SessionsView {
         );
         ctx.subscribe_to_model(
             &CLIAgentSessionsModel::handle(ctx),
-            |view, _, event, ctx| {
+            |view, sessions_model, event, ctx| {
                 match event {
-                    CLIAgentSessionsModelEvent::Ended { .. } => {
-                        view.history
-                            .update(ctx, |history, ctx| history.refresh(true, ctx));
-                    }
-                    CLIAgentSessionsModelEvent::SessionUpdated { .. } => {
-                        view.history
-                            .update(ctx, |history, ctx| history.refresh(false, ctx));
+                    CLIAgentSessionsModelEvent::Ended { .. } => view.request_refresh(true, ctx),
+                    CLIAgentSessionsModelEvent::SessionUpdated {
+                        terminal_view_id,
+                        agent,
+                    } => {
+                        let transcript_path = sessions_model
+                            .as_ref(ctx)
+                            .session(*terminal_view_id)
+                            .and_then(|session| session.session_context.transcript_path.clone());
+                        if let Some(transcript_path) = transcript_path {
+                            view.history.update(ctx, |history, ctx| {
+                                history.refresh_transcript(
+                                    *agent,
+                                    std::path::PathBuf::from(transcript_path),
+                                    ctx,
+                                );
+                            });
+                        }
                     }
                     CLIAgentSessionsModelEvent::Started { .. }
                     | CLIAgentSessionsModelEvent::StatusChanged { .. }
@@ -241,8 +254,6 @@ impl SessionsView {
                 ctx.notify();
             },
         );
-
-        history.update(ctx, |history, ctx| history.refresh(false, ctx));
 
         let handle = ctx.handle();
         let list_state = ListState::new(move |index, _, app| {
@@ -285,12 +296,35 @@ impl SessionsView {
             project_id,
             worktrees: Vec::new(),
             selected_worktree: None,
+            visible: false,
+            refresh_on_show: false,
         };
         view.reload_worktrees(ctx);
         let initial_limit = view.limit;
         view.history
-            .update(ctx, |history, ctx| history.set_limit(initial_limit, ctx));
+            .update(ctx, |history, _| history.set_limit(initial_limit));
         view
+    }
+
+    pub fn set_visible(&mut self, visible: bool, ctx: &mut ViewContext<Self>) {
+        if self.visible == visible {
+            return;
+        }
+        self.visible = visible;
+        if visible {
+            let force = std::mem::take(&mut self.refresh_on_show);
+            self.history
+                .update(ctx, |history, ctx| history.refresh(force, ctx));
+        }
+    }
+
+    fn request_refresh(&mut self, force: bool, ctx: &mut ViewContext<Self>) {
+        if self.visible {
+            self.history
+                .update(ctx, |history, ctx| history.refresh(force, ctx));
+        } else {
+            self.refresh_on_show |= force;
+        }
     }
 
     fn persist_view_options(&self, ctx: &mut ViewContext<Self>) {
@@ -1065,7 +1099,8 @@ impl TypedActionView for SessionsView {
             SessionsAction::SetLimit(limit) => {
                 self.limit = *limit;
                 self.history
-                    .update(ctx, |history, ctx| history.set_limit(self.limit, ctx));
+                    .update(ctx, |history, _| history.set_limit(*limit));
+                self.request_refresh(true, ctx);
             }
             SessionsAction::ToggleAgent(agent) => {
                 if !self.enabled_agents.remove(agent) {
@@ -1086,9 +1121,7 @@ impl TypedActionView for SessionsView {
                 }
             }
             SessionsAction::ToggleHideEmpty => self.hide_empty = !self.hide_empty,
-            SessionsAction::Refresh => self
-                .history
-                .update(ctx, |history, ctx| history.refresh(true, ctx)),
+            SessionsAction::Refresh => self.request_refresh(true, ctx),
             SessionsAction::Resume(id) => {
                 if let Some(session) = self
                     .history
