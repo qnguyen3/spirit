@@ -191,6 +191,7 @@ native-dialog = "0.7.0"
 open = "5.0.0"
 
 [target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
+image = { workspace = true, default-features = false, features = ["png"] }
 blocking.workspace = true
 dirs.workspace = true
 image = { workspace = true, default-features = false, features = ["png"] }
