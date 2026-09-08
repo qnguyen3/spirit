@@ -257,6 +257,57 @@ pub struct Commit {
     pub files: Vec<FileChangeEntry>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct NumStatEntry {
+    /// For a rename or copy this is the destination, matching what the porcelain
+    /// status model keys on.
+    pub path: String,
+    pub additions: usize,
+    pub deletions: usize,
+    pub is_binary: bool,
+}
+
+/// Always pass `-z`: without it git C-quotes non-ASCII paths
+/// (`"caf\303\251.txt"`) and collapses renames into one `old => new` field, so
+/// counts no longer match the raw paths from the porcelain status parser.
+///
+/// An ordinary record is `<add>\t<del>\t<path>\0`; a rename or copy leaves that
+/// path field empty and follows it with the old path then the new one.
+pub fn parse_numstat_z(output: &str) -> Vec<NumStatEntry> {
+    let mut entries = Vec::new();
+    let mut records = output.split('\0').filter(|record| !record.is_empty());
+
+    while let Some(record) = records.next() {
+        let mut fields = record.splitn(3, '\t');
+        let (Some(additions), Some(deletions), Some(path)) =
+            (fields.next(), fields.next(), fields.next())
+        else {
+            continue;
+        };
+
+        let path = if path.is_empty() {
+            let Some(_old_path) = records.next() else {
+                continue;
+            };
+            let Some(new_path) = records.next() else {
+                continue;
+            };
+            new_path
+        } else {
+            path
+        };
+
+        entries.push(NumStatEntry {
+            path: path.to_string(),
+            additions: additions.parse().unwrap_or(0),
+            deletions: deletions.parse().unwrap_or(0),
+            is_binary: additions == "-" && deletions == "-",
+        });
+    }
+
+    entries
+}
+
 /// A single changed file with per-file addition/deletion counts.
 #[derive(Debug, Clone)]
 pub struct FileChangeEntry {
@@ -273,25 +324,19 @@ pub async fn get_file_change_entries(
     include_unstaged: bool,
 ) -> Result<Vec<FileChangeEntry>> {
     let args: &[&str] = if include_unstaged {
-        &["diff", "--numstat", "HEAD"]
+        &["diff", "--numstat", "-z", "HEAD"]
     } else {
-        &["diff", "--cached", "--numstat"]
+        &["diff", "--cached", "--numstat", "-z"]
     };
     let output = run_git_command(repo_path, args).await.unwrap_or_default();
-    let mut entries = Vec::new();
-    for line in output.lines() {
-        if line.is_empty() {
-            continue;
-        }
-        let parts: Vec<&str> = line.split('\t').collect();
-        if parts.len() >= 3 {
-            entries.push(FileChangeEntry {
-                path: parts[2].to_string(),
-                additions: parts[0].parse().unwrap_or(0),
-                deletions: parts[1].parse().unwrap_or(0),
-            });
-        }
-    }
+    let mut entries: Vec<FileChangeEntry> = parse_numstat_z(&output)
+        .into_iter()
+        .map(|entry| FileChangeEntry {
+            path: entry.path,
+            additions: entry.additions,
+            deletions: entry.deletions,
+        })
+        .collect();
 
     // Also include untracked files when showing all changes.
     if include_unstaged
@@ -346,25 +391,17 @@ pub async fn get_committed_branch_file_entries(repo_path: &Path) -> Result<Vec<F
 
     // `git diff --numstat <merge_base> HEAD` is the committed-only diff
     // (equivalent to `main...HEAD`): no working-tree edits, no untracked files.
-    let output = run_git_command(repo_path, &["diff", "--numstat", &merge_base, "HEAD"])
+    let output = run_git_command(repo_path, &["diff", "--numstat", "-z", &merge_base, "HEAD"])
         .await
         .unwrap_or_default();
-    let mut entries = Vec::new();
-    for line in output.lines() {
-        if line.is_empty() {
-            continue;
-        }
-        let parts: Vec<&str> = line.split('\t').collect();
-        if parts.len() >= 3 {
-            entries.push(FileChangeEntry {
-                path: parts[2].to_string(),
-                // Binary files render as "-\t-\t<path>"; parse failures fall back
-                // to 0, mirroring `get_file_change_entries`.
-                additions: parts[0].parse().unwrap_or(0),
-                deletions: parts[1].parse().unwrap_or(0),
-            });
-        }
-    }
+    let entries = parse_numstat_z(&output)
+        .into_iter()
+        .map(|entry| FileChangeEntry {
+            path: entry.path,
+            additions: entry.additions,
+            deletions: entry.deletions,
+        })
+        .collect();
 
     Ok(entries)
 }

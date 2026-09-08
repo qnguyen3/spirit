@@ -439,3 +439,142 @@ async fn detached_tag_display_returns_short_sha() {
         "expected {full_sha} to start with {result}"
     );
 }
+
+#[test]
+fn parse_numstat_z_keeps_raw_path_for_non_ascii_filename() {
+    let entries = super::parse_numstat_z("1\t0\tcafé.txt\0");
+
+    assert_eq!(
+        entries,
+        vec![super::NumStatEntry {
+            path: "café.txt".to_owned(),
+            additions: 1,
+            deletions: 0,
+            is_binary: false,
+        }]
+    );
+}
+
+#[test]
+fn parse_numstat_z_attributes_rename_counts_to_destination_path() {
+    let entries = super::parse_numstat_z("3\t1\t\0old/name.txt\0new/name.txt\0");
+
+    assert_eq!(
+        entries,
+        vec![super::NumStatEntry {
+            path: "new/name.txt".to_owned(),
+            additions: 3,
+            deletions: 1,
+            is_binary: false,
+        }]
+    );
+}
+
+#[test]
+fn parse_numstat_z_marks_dash_counts_as_binary() {
+    let entries = super::parse_numstat_z("-\t-\timage.png\0");
+
+    assert_eq!(
+        entries,
+        vec![super::NumStatEntry {
+            path: "image.png".to_owned(),
+            additions: 0,
+            deletions: 0,
+            is_binary: true,
+        }]
+    );
+}
+
+#[test]
+fn parse_numstat_z_distinguishes_binary_from_zero_line_change() {
+    let entries = super::parse_numstat_z("0\t0\tmode-only.txt\0");
+
+    assert_eq!(
+        entries,
+        vec![super::NumStatEntry {
+            path: "mode-only.txt".to_owned(),
+            additions: 0,
+            deletions: 0,
+            is_binary: false,
+        }]
+    );
+}
+
+#[test]
+fn parse_numstat_z_keeps_paths_containing_tabs_and_newlines_intact() {
+    let entries = super::parse_numstat_z("2\t0\tweird\tname\nhere.txt\0");
+
+    assert_eq!(
+        entries,
+        vec![super::NumStatEntry {
+            path: "weird\tname\nhere.txt".to_owned(),
+            additions: 2,
+            deletions: 0,
+            is_binary: false,
+        }]
+    );
+}
+
+#[test]
+fn parse_numstat_z_reads_records_following_a_rename() {
+    let entries = super::parse_numstat_z("3\t1\t\0old.txt\0new.txt\0-\t-\tlogo.png\0");
+
+    assert_eq!(
+        entries,
+        vec![
+            super::NumStatEntry {
+                path: "new.txt".to_owned(),
+                additions: 3,
+                deletions: 1,
+                is_binary: false,
+            },
+            super::NumStatEntry {
+                path: "logo.png".to_owned(),
+                additions: 0,
+                deletions: 0,
+                is_binary: true,
+            },
+        ]
+    );
+}
+
+#[cfg(feature = "local_fs")]
+#[tokio::test]
+async fn file_change_entries_report_counts_for_non_ascii_filenames() {
+    let (_dir, repo) = init_repo().await;
+    std::fs::write(repo.join("café.txt"), "one\n").expect("write file");
+    git(&repo, &["add", "-A"]).await;
+    git(&repo, &["commit", "-m", "add"]).await;
+    std::fs::write(repo.join("café.txt"), "one\ntwo\n").expect("edit file");
+
+    let entries = super::get_file_change_entries(&repo, true)
+        .await
+        .expect("entries");
+
+    let entry = entries
+        .iter()
+        .find(|e| e.path == "café.txt")
+        .expect("café.txt should be reported under its raw path");
+    assert_eq!((entry.additions, entry.deletions), (1, 0));
+}
+
+#[cfg(feature = "local_fs")]
+#[tokio::test]
+async fn file_change_entries_report_counts_when_quote_path_is_disabled() {
+    let (_dir, repo) = init_repo().await;
+    git(&repo, &["config", "core.quotePath", "false"]).await;
+    std::fs::write(repo.join("café.txt"), "one\n").expect("write file");
+    git(&repo, &["add", "-A"]).await;
+    git(&repo, &["commit", "-m", "add"]).await;
+    std::fs::write(repo.join("café.txt"), "one\ntwo\n").expect("edit file");
+
+    let entries = super::get_file_change_entries(&repo, true)
+        .await
+        .expect("entries");
+
+    let entry = entries
+        .iter()
+        .find(|e| e.path == "café.txt")
+        .expect("café.txt should be reported under its raw path");
+    assert_eq!((entry.additions, entry.deletions), (1, 0));
+}

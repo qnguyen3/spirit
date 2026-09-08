@@ -644,6 +644,7 @@ impl GitDialog {
             GitOpResult::PrCreated(result) => {
                 pr::finish_create_pr(self, result.clone().map_err(|e| anyhow::anyhow!(e)), ctx);
             }
+            GitOpResult::DiscardCompleted(_) => {}
         }
     }
 

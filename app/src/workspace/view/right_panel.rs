@@ -649,15 +649,28 @@ impl RightPanelView {
         ctx: &mut ViewContext<Self>,
     ) {
         let pane_group_id = pane_group.id();
+        let previous_pane_group = self.active_pane_group.clone();
+        let is_same_pane_group = previous_pane_group
+            .as_ref()
+            .is_some_and(|previous| previous.id() == pane_group_id);
 
-        // Subscribe to pane group events so we can recompute terminal
-        // availability when terminal state changes (e.g. command
-        // starts/finishes).
-        ctx.subscribe_to_view(&pane_group, |me, _, event, ctx| {
-            if matches!(event, PaneGroupEvent::TerminalViewStateChanged) {
-                me.recompute_terminal_availability(ctx);
+        if !is_same_pane_group {
+            // Must run before the pane group and selection it is keyed by are
+            // replaced below.
+            self.close_active_code_review_view(ctx);
+
+            if let Some(previous) = &previous_pane_group {
+                ctx.unsubscribe_to_view(previous);
             }
-        });
+            // Subscribe to pane group events so we can recompute terminal
+            // availability when terminal state changes (e.g. command
+            // starts/finishes).
+            ctx.subscribe_to_view(&pane_group, |me, _, event, ctx| {
+                if matches!(event, PaneGroupEvent::TerminalViewStateChanged) {
+                    me.recompute_terminal_availability(ctx);
+                }
+            });
+        }
 
         self.active_pane_group = Some(pane_group);
 

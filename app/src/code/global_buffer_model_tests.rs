@@ -321,3 +321,142 @@ fn pending_batch_bumps_client_version_immediately() {
         });
     })
 }
+
+#[cfg(feature = "local_fs")]
+fn record_failed_to_load(
+    app: &mut App,
+) -> std::rc::Rc<std::cell::RefCell<Vec<warp_util::file::FileId>>> {
+    let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let handle = gbm(app);
+    let sink = seen.clone();
+    app.update(|ctx| {
+        ctx.subscribe_to_model(&handle, move |_, event, _| {
+            if let super::GlobalBufferModelEvent::FailedToLoad { file_id, .. } = event {
+                sink.borrow_mut().push(*file_id);
+            }
+        });
+    });
+    seen
+}
+
+#[cfg(feature = "local_fs")]
+#[test]
+fn reopening_a_buffer_whose_initial_read_failed_replays_the_failure() {
+    App::test((), |mut app| async move {
+        init_app(&mut app);
+        app.add_singleton_model(GlobalBufferModel::new);
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("unreadable.txt");
+        std::fs::write(&path, "content\n").expect("write file");
+        let handle = gbm(&app);
+
+        let retained_by_another_editor = handle.update(&mut app, |model, ctx| {
+            let state = model.open_local(path.clone(), false, ctx);
+            let error = std::rc::Rc::new(warp_util::file::FileLoadError::DoesNotExist);
+            model.handle_file_model_events(
+                FileModel::handle(ctx),
+                &warp_files::FileModelEvent::FailedToLoad {
+                    id: state.file_id,
+                    error,
+                },
+                ctx,
+            );
+            state
+        });
+        let file_id = retained_by_another_editor.file_id;
+        let failures = record_failed_to_load(&mut app);
+
+        let reopened_id = handle.update(&mut app, |model, ctx| {
+            model.open_local(path, false, ctx).file_id
+        });
+
+        assert_eq!(reopened_id, file_id, "the live buffer should be reused");
+        app.read(|_| {});
+        assert_eq!(
+            *failures.borrow(),
+            vec![file_id],
+            "the new consumer must be told the buffer is unusable instead of waiting forever"
+        );
+    });
+}
+
+#[cfg(feature = "local_fs")]
+#[test]
+fn a_buffer_whose_initial_read_is_still_running_replays_nothing() {
+    App::test((), |mut app| async move {
+        init_app(&mut app);
+        app.add_singleton_model(GlobalBufferModel::new);
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("loading.txt");
+        std::fs::write(&path, "content\n").expect("write file");
+        let handle = gbm(&app);
+
+        let retained = handle.update(&mut app, |model, ctx| {
+            model.open_local(path.clone(), false, ctx)
+        });
+        let file_id = retained.file_id;
+        let failures = record_failed_to_load(&mut app);
+
+        handle.update(&mut app, |model, ctx| {
+            model.open_local(path, false, ctx);
+        });
+
+        assert!(matches!(
+            app.read(|ctx| handle.as_ref(ctx).load_state(file_id)),
+            super::BufferLoadState::Loading
+        ));
+        app.read(|_| {});
+        assert!(
+            failures.borrow().is_empty(),
+            "an in-flight initial read must not be reported as a failure"
+        );
+    });
+}
+
+#[cfg(feature = "local_fs")]
+#[test]
+fn a_successful_load_clears_a_previous_failure() {
+    App::test((), |mut app| async move {
+        init_app(&mut app);
+        app.add_singleton_model(GlobalBufferModel::new);
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("recovers.txt");
+        std::fs::write(&path, "content\n").expect("write file");
+        let handle = gbm(&app);
+
+        let retained = handle.update(&mut app, |model, ctx| {
+            let state = model.open_local(path.clone(), false, ctx);
+            model.handle_file_model_events(
+                FileModel::handle(ctx),
+                &warp_files::FileModelEvent::FailedToLoad {
+                    id: state.file_id,
+                    error: std::rc::Rc::new(warp_util::file::FileLoadError::DoesNotExist),
+                },
+                ctx,
+            );
+            state
+        });
+        let file_id = retained.file_id;
+        assert!(matches!(
+            app.read(|ctx| handle.as_ref(ctx).load_state(file_id)),
+            super::BufferLoadState::Failed(_)
+        ));
+
+        handle.update(&mut app, |model, ctx| {
+            model.handle_file_model_events(
+                FileModel::handle(ctx),
+                &warp_files::FileModelEvent::FileLoaded {
+                    id: file_id,
+                    content: "content\n".to_string(),
+                    version: ContentVersion::new(),
+                },
+                ctx,
+            );
+        });
+
+        assert!(matches!(
+            app.read(|ctx| handle.as_ref(ctx).load_state(file_id)),
+            super::BufferLoadState::Loaded
+        ));
+    });
+}
