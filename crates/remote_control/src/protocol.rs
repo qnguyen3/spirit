@@ -113,8 +113,8 @@ pub enum CommandName {
     TerminalSelection,
     #[serde(rename = "terminal.mirror")]
     TerminalMirror,
-    #[serde(rename = "terminal.frame")]
-    TerminalFrame,
+    #[serde(rename = "terminal.mirror_stop")]
+    TerminalMirrorStop,
     #[serde(rename = "terminal.interact")]
     TerminalInteract,
     #[serde(rename = "terminal.attach")]
@@ -189,7 +189,7 @@ impl CommandName {
             CommandName::DesktopReveal => "desktop.reveal",
             CommandName::TerminalSelection => "terminal.selection",
             CommandName::TerminalMirror => "terminal.mirror",
-            CommandName::TerminalFrame => "terminal.frame",
+            CommandName::TerminalMirrorStop => "terminal.mirror_stop",
             CommandName::TerminalInteract => "terminal.interact",
             CommandName::TerminalAttach => "terminal.attach",
             CommandName::TerminalDetach => "terminal.detach",
@@ -234,7 +234,7 @@ impl CommandName {
             CommandName::DesktopReveal,
             CommandName::TerminalSelection,
             CommandName::TerminalMirror,
-            CommandName::TerminalFrame,
+            CommandName::TerminalMirrorStop,
             CommandName::TerminalInteract,
             CommandName::TerminalAttach,
             CommandName::TerminalDetach,
@@ -276,6 +276,14 @@ pub enum TerminalMode {
     Running,
     AltScreen,
 }
+
+pub const MIRROR_CHANNEL_FLAG: u32 = 0x8000_0000;
+pub const MIRROR_FRAME_VERSION: u8 = 1;
+pub const MIRROR_FRAME_KEY: u8 = 1;
+pub const MIRROR_FRAME_PATCH: u8 = 2;
+pub const MIRROR_FRAME_STATE: u8 = 3;
+pub const MIRROR_STATE_LIVE: u8 = 0;
+pub const MIRROR_STATE_UNAVAILABLE: u8 = 1;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

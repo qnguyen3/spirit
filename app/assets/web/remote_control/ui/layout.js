@@ -30,6 +30,15 @@ export function mountLayout(root, ctx) {
   const bottomNav = h('nav', { class: 'bottom-nav', 'aria-label': 'Sections' });
   const mainColumn = h('div', { class: 'main-column' }, topbarNode, bannerSlot, contentHost, bottomNav);
   const frame = h('div', { class: 'frame' }, railNode, sidebarNode, mainColumn);
+  if (window.visualViewport) {
+    const fitViewport = () => {
+      const viewport = window.visualViewport;
+      if (viewport.scale === 1) frame.style.setProperty('--viewport-height', `${viewport.height}px`);
+    };
+    window.visualViewport.addEventListener('resize', fitViewport);
+    fitViewport();
+  }
+
   const toastStack = h('div', {
     class: 'toast-stack',
     role: 'status',
@@ -213,11 +222,23 @@ function overflowItems(ctx, state) {
 function renderBanners(node, ctx, state) {
   clear(node);
   const status = state.connection.status;
-  if (status === 'reconnecting' || status === 'connecting') {
+  if (status === 'connecting') {
+    node.appendChild(banner('info', 'refresh', 'Connecting to Spirit…', null));
+  } else if (status === 'reconnecting') {
     node.appendChild(
-      banner('info', 'refresh', status === 'connecting' ? 'Connecting to Spirit…' : 'Reconnecting…', null),
+      banner('info', 'refresh', 'Reconnecting to Spirit automatically…', {
+        label: 'Retry now',
+        onSelect: () => ctx.ws.retry(),
+      }),
     );
-  } else if (status === 'closed' || status === 'error') {
+  } else if (status === 'error') {
+    node.appendChild(
+      banner('danger', 'warning', 'Connection error. Reconnecting automatically…', {
+        label: 'Retry now',
+        onSelect: () => ctx.ws.retry(),
+      }),
+    );
+  } else if (status === 'closed') {
     node.appendChild(
       banner('danger', 'warning', 'Not connected to Spirit.', {
         label: 'Retry',

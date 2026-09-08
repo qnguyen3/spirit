@@ -1,5 +1,9 @@
 const BACKOFF_STEPS = [500, 1000, 2000, 4000, 8000];
 const HEARTBEAT_MS = 15000;
+const PONG_DEADLINE_MS = 8000;
+const RESUME_PONG_DEADLINE_MS = 3000;
+const CONNECT_TIMEOUT_MS = 10000;
+const MIN_OPEN_INTERVAL_MS = 1000;
 const DEFAULT_TIMEOUT_MS = 30000;
 
 export function connect(handlers) {
@@ -8,8 +12,12 @@ export function connect(handlers) {
   let socket = null;
   let attempt = 0;
   let heartbeat = null;
+  let pongTimer = null;
+  let connectTimer = null;
   let reconnectTimer = null;
+  let lastOpenAt = 0;
   let stopped = false;
+  let listening = false;
   let nextId = 1;
 
   function url() {
@@ -21,8 +29,26 @@ export function connect(handlers) {
     handlers.onStatus({ status, ...(extra || {}) });
   }
 
+  function clearReconnectTimer() {
+    if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+
+  function clearPongTimer() {
+    if (pongTimer !== null) window.clearTimeout(pongTimer);
+    pongTimer = null;
+  }
+
+  function clearConnectTimer() {
+    if (connectTimer !== null) window.clearTimeout(connectTimer);
+    connectTimer = null;
+  }
+
   function open() {
     if (stopped) return;
+    clearReconnectTimer();
+    discardSocket();
+    lastOpenAt = Date.now();
     setStatus(attempt === 0 ? 'connecting' : 'reconnecting');
     let next;
     try {
@@ -33,14 +59,22 @@ export function connect(handlers) {
     }
     next.binaryType = 'arraybuffer';
     socket = next;
+    connectTimer = window.setTimeout(() => {
+      connectTimer = null;
+      if (socket === next) dropSocket();
+    }, CONNECT_TIMEOUT_MS);
 
     next.addEventListener('open', () => {
+      if (socket !== next) return;
       attempt = 0;
+      clearConnectTimer();
       startHeartbeat();
       setStatus('open');
     });
 
     next.addEventListener('message', (event) => {
+      if (socket !== next) return;
+      clearPongTimer();
       if (typeof event.data === 'string') {
         handleText(event.data);
       } else {
@@ -49,8 +83,8 @@ export function connect(handlers) {
     });
 
     next.addEventListener('close', (event) => {
-      stopHeartbeat();
-      socket = null;
+      if (socket !== next) return;
+      releaseSocket();
       failAllPending({ code: 'disconnected', message: 'The connection dropped.' });
       if (stopped) {
         setStatus('closed', { code: event.code });
@@ -60,8 +94,34 @@ export function connect(handlers) {
     });
 
     next.addEventListener('error', () => {
+      if (socket !== next) return;
       setStatus('error');
     });
+  }
+
+  function releaseSocket() {
+    socket = null;
+    stopHeartbeat();
+    clearPongTimer();
+    clearConnectTimer();
+  }
+
+  function discardSocket() {
+    const stale = socket;
+    if (!stale) return;
+    releaseSocket();
+    try {
+      stale.close();
+    } catch (error) {
+      return;
+    }
+  }
+
+  function dropSocket() {
+    discardSocket();
+    failAllPending({ code: 'disconnected', message: 'The connection stalled.' });
+    if (stopped) return;
+    scheduleReconnect();
   }
 
   function handleText(raw) {
@@ -105,12 +165,26 @@ export function connect(handlers) {
     if (handler) handler(bytes.subarray(4));
   }
 
+  function sendPing(deadlineMs) {
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    try {
+      socket.send(JSON.stringify({ type: 'ping', ts: Date.now() }));
+    } catch (error) {
+      dropSocket();
+      return;
+    }
+    if (pongTimer !== null) return;
+    pongTimer = window.setTimeout(() => {
+      pongTimer = null;
+      dropSocket();
+    }, deadlineMs);
+  }
+
   function startHeartbeat() {
     stopHeartbeat();
     heartbeat = window.setInterval(() => {
-      if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: 'ping', ts: Date.now() }));
-      }
+      if (document.hidden) return;
+      sendPing(PONG_DEADLINE_MS);
     }, HEARTBEAT_MS);
   }
 
@@ -122,12 +196,55 @@ export function connect(handlers) {
   }
 
   function scheduleReconnect() {
+    clearReconnectTimer();
     const base = BACKOFF_STEPS[Math.min(attempt, BACKOFF_STEPS.length - 1)];
     const jitter = base * 0.2 * (Math.random() * 2 - 1);
     const delay = Math.max(250, Math.round(base + jitter));
     attempt += 1;
     setStatus('reconnecting', { reconnectAt: Date.now() + delay });
     reconnectTimer = window.setTimeout(open, delay);
+  }
+
+  function openSoon() {
+    if (stopped) return;
+    const wait = Math.max(0, lastOpenAt + MIN_OPEN_INTERVAL_MS - Date.now());
+    if (wait === 0) {
+      open();
+      return;
+    }
+    clearReconnectTimer();
+    setStatus('reconnecting', { reconnectAt: Date.now() + wait });
+    reconnectTimer = window.setTimeout(open, wait);
+  }
+
+  function ensureConnecting() {
+    if (stopped) return;
+    if (socket && socket.readyState === WebSocket.CONNECTING) return;
+    if (socket && socket.readyState === WebSocket.OPEN) return;
+    openSoon();
+  }
+
+  function resume() {
+    if (stopped) return;
+    attempt = 0;
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      sendPing(RESUME_PONG_DEADLINE_MS);
+      return;
+    }
+    if (socket && socket.readyState === WebSocket.CONNECTING) return;
+    clearReconnectTimer();
+    openSoon();
+  }
+
+  function listen() {
+    if (listening) return;
+    listening = true;
+    window.addEventListener('online', resume);
+    window.addEventListener('pageshow', resume);
+    window.addEventListener('focus', resume);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) resume();
+    });
   }
 
   function failAllPending(error) {
@@ -141,20 +258,19 @@ export function connect(handlers) {
   return {
     start() {
       stopped = false;
+      listen();
       open();
     },
     retry() {
       stopped = false;
       attempt = 0;
-      if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
       open();
     },
+    resume,
     stop(reason) {
       stopped = true;
-      if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
-      stopHeartbeat();
-      if (socket) socket.close();
-      socket = null;
+      clearReconnectTimer();
+      discardSocket();
       setStatus('closed', { reason });
     },
     isOpen() {
@@ -165,6 +281,7 @@ export function connect(handlers) {
       const timeoutMs = (options && options.timeoutMs) || DEFAULT_TIMEOUT_MS;
       return new Promise((resolve, reject) => {
         if (!socket || socket.readyState !== WebSocket.OPEN) {
+          ensureConnecting();
           reject({ code: 'disconnected', message: 'Not connected to Spirit.' });
           return;
         }
@@ -173,7 +290,11 @@ export function connect(handlers) {
           reject({ code: 'timeout', message: 'Spirit did not answer in time.' });
         }, timeoutMs);
         pending.set(id, { resolve, reject, timer });
-        socket.send(JSON.stringify({ type: 'command', id, name, params: params || {} }));
+        try {
+          socket.send(JSON.stringify({ type: 'command', id, name, params: params || {} }));
+        } catch (error) {
+          dropSocket();
+        }
       });
     },
     sendBinary(attachId, bytes) {

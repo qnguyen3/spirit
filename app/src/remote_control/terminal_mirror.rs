@@ -1,31 +1,102 @@
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Weak};
 use std::time::Duration;
 
-use base64::Engine as _;
-use image::ImageEncoder as _;
-use image::codecs::png::{CompressionType, FilterType, PngEncoder};
+use instant::Instant;
+use parking_lot::Mutex;
 use pathfinder_geometry::rect::RectF;
 use pathfinder_geometry::vector::vec2f;
+use remote_control::limits::MIRROR_CAPTURE_TIMEOUT_MS;
 use remote_control::protocol::{CommandError, ErrorCode};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use warpui::r#async::FutureExt as _;
+use tokio::sync::watch;
+use warpui::r#async::{SpawnedFutureHandle, Timer};
 use warpui::event::{Event, KeyEventDetails, ModifiersState};
 use warpui::keymap::Keystroke;
-use warpui::platform::CapturedFrame;
-use warpui::{AppContext, ModelContext, SingletonEntity as _};
+use warpui::platform::{CapturedFrame, FrameObserver};
+use warpui::zoom::Scale as _;
+use warpui::{AppContext, ModelContext, SingletonEntity as _, WindowId};
 
 use super::bridge::{ClientId, CommandOutcome, RemoteControlBridge};
 use super::commands::activate_screen;
+use super::mirror_encoder::{CropRect, MirrorFrame, MirrorState, run_encoder, state_payload};
 use super::resolve::{self, TerminalTarget};
 use crate::workspace::WorkspaceRegistry;
 use crate::workspace::util::PaneViewLocator;
 
+const RETRY_INTERVAL: Duration = Duration::from_millis(250);
+const UNAVAILABLE_GRACE: Duration = Duration::from_secs(1);
+const NOT_DRAWING_RETRY: Duration = Duration::from_secs(1);
+const MIRROR_ID_MASK: u32 = 0x7FFF_FFFF;
+
 #[derive(Deserialize)]
 struct TerminalRef {
     terminal_id: String,
-    #[serde(default)]
-    previous_frame: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct MirrorRef {
+    mirror_id: u32,
+}
+
+struct MirrorSession {
+    mirror_id: u32,
+    terminal_id: String,
+    window_id: WindowId,
+    frames: watch::Sender<Option<MirrorFrame>>,
+    unavailable_since: Option<Instant>,
+    reported_unavailable: bool,
+}
+
+type Target = (watch::Sender<Option<MirrorFrame>>, CropRect);
+
+#[derive(Default)]
+struct WindowCapture {
+    armed: bool,
+    observing: bool,
+    next_seq: Arc<AtomicU64>,
+    targets: Arc<Mutex<Vec<Target>>>,
+    arm_timer: Option<SpawnedFutureHandle>,
+    timeout: Option<SpawnedFutureHandle>,
+}
+
+impl WindowCapture {
+    fn clear_timers(&mut self) {
+        replace_timer(&mut self.arm_timer, None);
+        replace_timer(&mut self.timeout, None);
+    }
+}
+
+impl Drop for WindowCapture {
+    fn drop(&mut self) {
+        self.clear_timers();
+    }
+}
+
+fn replace_timer(slot: &mut Option<SpawnedFutureHandle>, next: Option<SpawnedFutureHandle>) {
+    if let Some(previous) = slot.take() {
+        previous.abort();
+    }
+    *slot = next;
+}
+
+#[derive(Default)]
+pub(crate) struct MirrorHub {
+    sessions: HashMap<ClientId, MirrorSession>,
+    windows: HashMap<WindowId, WindowCapture>,
+    next_mirror_id: u32,
+}
+
+impl MirrorHub {
+    fn clients_on(&self, window_id: WindowId) -> Vec<ClientId> {
+        self.sessions
+            .iter()
+            .filter(|(_, session)| session.window_id == window_id)
+            .map(|(client_id, _)| *client_id)
+            .collect()
+    }
 }
 
 fn unavailable(message: &str) -> CommandError {
@@ -62,7 +133,12 @@ fn visible_terminal(id: &str, ctx: &AppContext) -> Result<(TerminalTarget, RectF
     Ok((target, bounds))
 }
 
-pub(super) fn open(raw: Value, ctx: &mut ModelContext<RemoteControlBridge>) -> CommandOutcome {
+pub(super) fn open(
+    bridge: &mut RemoteControlBridge,
+    client_id: ClientId,
+    raw: Value,
+    ctx: &mut ModelContext<RemoteControlBridge>,
+) -> CommandOutcome {
     let result = (|| {
         let request: TerminalRef = serde_json::from_value(raw)
             .map_err(|_| CommandError::invalid_request("terminal_id is required"))?;
@@ -78,9 +154,368 @@ pub(super) fn open(raw: Value, ctx: &mut ModelContext<RemoteControlBridge>) -> C
                 ctx,
             );
         });
-        Ok(json!({}))
+        let mirror_id = start(
+            bridge,
+            client_id,
+            request.terminal_id,
+            target.window_id,
+            ctx,
+        )?;
+        Ok(json!({ "mirror_id": mirror_id }))
     })();
     CommandOutcome::Immediate(result)
+}
+
+pub(super) fn stop_command(
+    bridge: &mut RemoteControlBridge,
+    client_id: ClientId,
+    raw: Value,
+) -> CommandOutcome {
+    let result = (|| {
+        let request: MirrorRef = serde_json::from_value(raw)
+            .map_err(|_| CommandError::invalid_request("mirror_id is required"))?;
+        if stop(bridge, client_id, request.mirror_id) {
+            Ok(json!({}))
+        } else {
+            Err(CommandError::not_found("that mirror"))
+        }
+    })();
+    CommandOutcome::Immediate(result)
+}
+
+fn start(
+    bridge: &mut RemoteControlBridge,
+    client_id: ClientId,
+    terminal_id: String,
+    window_id: WindowId,
+    ctx: &mut ModelContext<RemoteControlBridge>,
+) -> Result<u32, CommandError> {
+    let closing = || CommandError::new(ErrorCode::BridgeUnavailable, "this connection is closing");
+    let payloads = bridge.mirror_sender(client_id).ok_or_else(closing)?;
+    let (runtime, spawner) = bridge
+        .encoder_host()
+        .map(|host| (host.runtime.clone(), host.spawner.clone()))
+        .ok_or_else(closing)?;
+    stop_client(bridge, client_id);
+    let hub = &mut bridge.mirrors;
+    hub.next_mirror_id = (hub.next_mirror_id.wrapping_add(1) & MIRROR_ID_MASK).max(1);
+    let mirror_id = hub.next_mirror_id;
+    let (frames, receiver) = watch::channel(None);
+    runtime.spawn(run_encoder(
+        receiver, payloads, spawner, client_id, mirror_id,
+    ));
+    hub.sessions.insert(
+        client_id,
+        MirrorSession {
+            mirror_id,
+            terminal_id,
+            window_id,
+            frames,
+            unavailable_since: None,
+            reported_unavailable: false,
+        },
+    );
+    arm_window(bridge, window_id, ctx);
+    Ok(mirror_id)
+}
+
+fn stop(bridge: &mut RemoteControlBridge, client_id: ClientId, mirror_id: u32) -> bool {
+    let matches = bridge
+        .mirrors
+        .sessions
+        .get(&client_id)
+        .is_some_and(|session| session.mirror_id == mirror_id);
+    if matches {
+        stop_client(bridge, client_id);
+    }
+    matches
+}
+
+pub(crate) fn stop_client(bridge: &mut RemoteControlBridge, client_id: ClientId) {
+    let Some(session) = bridge.mirrors.sessions.remove(&client_id) else {
+        return;
+    };
+    if bridge.mirrors.clients_on(session.window_id).is_empty() {
+        bridge.mirrors.windows.remove(&session.window_id);
+    }
+}
+
+pub(crate) fn stop_all(bridge: &mut RemoteControlBridge) {
+    bridge.mirrors.sessions.clear();
+    bridge.mirrors.windows.clear();
+}
+
+fn crop_for(bounds: RectF, scale: f32) -> CropRect {
+    CropRect {
+        x: (bounds.origin().x() * scale).round().max(0.0) as u32,
+        y: (bounds.origin().y() * scale).round().max(0.0) as u32,
+        width: (bounds.width() * scale).round().max(0.0) as u32,
+        height: (bounds.height() * scale).round().max(0.0) as u32,
+    }
+}
+
+fn send_state(
+    bridge: &RemoteControlBridge,
+    client_id: ClientId,
+    mirror_id: u32,
+    state: MirrorState,
+    message: &str,
+) {
+    if let Some(sender) = bridge.mirror_sender(client_id) {
+        let _ = sender.try_send((mirror_id, state_payload(state, message)));
+    }
+}
+
+fn note_failure(
+    bridge: &mut RemoteControlBridge,
+    client_id: ClientId,
+    error: CommandError,
+    now: Instant,
+) {
+    let Some(session) = bridge.mirrors.sessions.get_mut(&client_id) else {
+        return;
+    };
+    let mirror_id = session.mirror_id;
+    match error.code {
+        ErrorCode::NotFound => {
+            send_state(
+                bridge,
+                client_id,
+                mirror_id,
+                MirrorState::Unavailable,
+                "This terminal was closed.",
+            );
+            stop_client(bridge, client_id);
+        }
+        ErrorCode::Unauthorized
+        | ErrorCode::ForbiddenOrigin
+        | ErrorCode::BadHost
+        | ErrorCode::FeatureDisabled
+        | ErrorCode::InvalidRequest
+        | ErrorCode::UnknownCommand
+        | ErrorCode::NotAtPrompt
+        | ErrorCode::NoAgentSession
+        | ErrorCode::TerminalReadOnly
+        | ErrorCode::Conflict
+        | ErrorCode::NotGitProject
+        | ErrorCode::GitFailed
+        | ErrorCode::PayloadTooLarge
+        | ErrorCode::TooManyAttachments
+        | ErrorCode::RateLimited
+        | ErrorCode::BridgeUnavailable
+        | ErrorCode::Unsupported => {
+            let since = *session.unavailable_since.get_or_insert(now);
+            if !session.reported_unavailable && now.duration_since(since) >= UNAVAILABLE_GRACE {
+                session.reported_unavailable = true;
+                send_state(
+                    bridge,
+                    client_id,
+                    mirror_id,
+                    MirrorState::Unavailable,
+                    &error.message,
+                );
+            }
+        }
+    }
+}
+
+fn note_success(bridge: &mut RemoteControlBridge, client_id: ClientId) {
+    let Some(session) = bridge.mirrors.sessions.get_mut(&client_id) else {
+        return;
+    };
+    session.unavailable_since = None;
+    if session.reported_unavailable {
+        session.reported_unavailable = false;
+        let mirror_id = session.mirror_id;
+        send_state(bridge, client_id, mirror_id, MirrorState::Live, "");
+    }
+}
+
+fn compute_targets(
+    bridge: &mut RemoteControlBridge,
+    window_id: WindowId,
+    ctx: &mut ModelContext<RemoteControlBridge>,
+) -> Vec<Target> {
+    let now = Instant::now();
+    let zoom = ctx.zoom_factor();
+    let scale = ctx
+        .windows()
+        .platform_window(window_id)
+        .map(|window| window.as_ctx().backing_scale_factor().scale_up(zoom));
+    let mut targets = Vec::new();
+    let mut successes = Vec::new();
+    let mut failures = Vec::new();
+    for client_id in bridge.mirrors.clients_on(window_id) {
+        let Some(session) = bridge.mirrors.sessions.get(&client_id) else {
+            continue;
+        };
+        let Some(scale) = scale else {
+            failures.push((client_id, CommandError::not_found("that window")));
+            continue;
+        };
+        match visible_terminal(&session.terminal_id, ctx) {
+            Ok((_, bounds)) => {
+                targets.push((session.frames.clone(), crop_for(bounds, scale)));
+                successes.push(client_id);
+            }
+            Err(error) => failures.push((client_id, error)),
+        }
+    }
+    for (client_id, error) in failures {
+        note_failure(bridge, client_id, error, now);
+    }
+    for client_id in successes {
+        note_success(bridge, client_id);
+    }
+    targets
+}
+
+fn deliver(targets: &Weak<Mutex<Vec<Target>>>, next_seq: &AtomicU64, frame: CapturedFrame) -> bool {
+    let Some(targets) = targets.upgrade() else {
+        return false;
+    };
+    let frame = Arc::new(frame);
+    let seq = next_seq.fetch_add(1, Ordering::Relaxed) + 1;
+    for (sender, crop) in targets.lock().iter() {
+        sender.send_replace(Some(MirrorFrame {
+            frame: frame.clone(),
+            crop: *crop,
+            seq,
+        }));
+    }
+    true
+}
+
+fn frame_observer(targets: Weak<Mutex<Vec<Target>>>, next_seq: Arc<AtomicU64>) -> FrameObserver {
+    Box::new(move |frame| deliver(&targets, &next_seq, frame))
+}
+
+fn schedule_retry(
+    capture: &mut WindowCapture,
+    window_id: WindowId,
+    ctx: &mut ModelContext<RemoteControlBridge>,
+) {
+    let retry = ctx.spawn(
+        async move { Timer::after(RETRY_INTERVAL).await },
+        move |bridge, _, ctx| arm_window(bridge, window_id, ctx),
+    );
+    replace_timer(&mut capture.arm_timer, Some(retry));
+}
+
+fn arm_window(
+    bridge: &mut RemoteControlBridge,
+    window_id: WindowId,
+    ctx: &mut ModelContext<RemoteControlBridge>,
+) {
+    if bridge.mirrors.clients_on(window_id).is_empty() {
+        bridge.mirrors.windows.remove(&window_id);
+        return;
+    }
+    let targets = compute_targets(bridge, window_id, ctx);
+    if bridge.mirrors.clients_on(window_id).is_empty() {
+        bridge.mirrors.windows.remove(&window_id);
+        return;
+    }
+    let capture = bridge.mirrors.windows.entry(window_id).or_default();
+    replace_timer(&mut capture.arm_timer, None);
+    if targets.is_empty() {
+        capture.armed = false;
+        capture.targets.lock().clear();
+        schedule_retry(capture, window_id, ctx);
+        return;
+    }
+    *capture.targets.lock() = targets;
+    capture.armed = true;
+    let weak_targets = Arc::downgrade(&capture.targets);
+    let next_seq = capture.next_seq.clone();
+    let install_observer = !capture.observing;
+    capture.observing = true;
+    if let Some(window) = ctx.windows().platform_window(window_id) {
+        if install_observer {
+            window
+                .as_ctx()
+                .set_frame_observer(Some(frame_observer(weak_targets.clone(), next_seq.clone())));
+        }
+        window
+            .as_ctx()
+            .request_frame_capture(Box::new(move |frame| {
+                deliver(&weak_targets, &next_seq, frame);
+            }));
+    }
+    let timeout = ctx.spawn(
+        async move { Timer::after(Duration::from_millis(MIRROR_CAPTURE_TIMEOUT_MS)).await },
+        move |bridge, _, ctx| capture_timed_out(bridge, window_id, ctx),
+    );
+    if let Some(capture) = bridge.mirrors.windows.get_mut(&window_id) {
+        replace_timer(&mut capture.timeout, Some(timeout));
+    }
+}
+
+fn capture_timed_out(
+    bridge: &mut RemoteControlBridge,
+    window_id: WindowId,
+    ctx: &mut ModelContext<RemoteControlBridge>,
+) {
+    if !bridge
+        .mirrors
+        .windows
+        .get(&window_id)
+        .is_some_and(|capture| capture.armed)
+    {
+        return;
+    }
+    for client_id in bridge.mirrors.clients_on(window_id) {
+        let Some(session) = bridge.mirrors.sessions.get_mut(&client_id) else {
+            continue;
+        };
+        session.reported_unavailable = true;
+        session.unavailable_since.get_or_insert(Instant::now());
+        let mirror_id = session.mirror_id;
+        send_state(
+            bridge,
+            client_id,
+            mirror_id,
+            MirrorState::Unavailable,
+            "The desktop is not drawing. Restore its window and retry.",
+        );
+    }
+    let Some(capture) = bridge.mirrors.windows.get_mut(&window_id) else {
+        return;
+    };
+    capture.armed = false;
+    let retry = ctx.spawn(
+        async move { Timer::after(NOT_DRAWING_RETRY).await },
+        move |bridge, _, ctx| arm_window(bridge, window_id, ctx),
+    );
+    replace_timer(&mut capture.arm_timer, Some(retry));
+}
+
+pub(crate) fn frame_done(
+    bridge: &mut RemoteControlBridge,
+    client_id: ClientId,
+    mirror_id: u32,
+    ctx: &mut ModelContext<RemoteControlBridge>,
+) {
+    let Some(session) = bridge.mirrors.sessions.get(&client_id) else {
+        return;
+    };
+    if session.mirror_id != mirror_id {
+        return;
+    }
+    let window_id = session.window_id;
+    let Some(capture) = bridge.mirrors.windows.get_mut(&window_id) else {
+        return;
+    };
+    capture.armed = false;
+    replace_timer(&mut capture.timeout, None);
+    let targets = compute_targets(bridge, window_id, ctx);
+    let Some(capture) = bridge.mirrors.windows.get_mut(&window_id) else {
+        return;
+    };
+    if targets.is_empty() && capture.arm_timer.is_none() {
+        schedule_retry(capture, window_id, ctx);
+    }
+    *capture.targets.lock() = targets;
 }
 
 pub(super) fn selection(raw: Value, ctx: &mut ModelContext<RemoteControlBridge>) -> CommandOutcome {
@@ -98,115 +533,14 @@ pub(super) fn selection(raw: Value, ctx: &mut ModelContext<RemoteControlBridge>)
     CommandOutcome::Immediate(result)
 }
 
-pub(super) fn capture(
-    bridge: &mut RemoteControlBridge,
-    client_id: ClientId,
-    command_id: String,
-    raw: Value,
-    ctx: &mut ModelContext<RemoteControlBridge>,
-) -> CommandOutcome {
-    let request: TerminalRef = match serde_json::from_value(raw) {
-        Ok(request) => request,
-        Err(_) => {
-            return CommandOutcome::Immediate(Err(CommandError::invalid_request(
-                "terminal_id is required",
-            )));
-        }
-    };
-    let (target, bounds) = match visible_terminal(&request.terminal_id, ctx) {
-        Ok(target) => target,
-        Err(error) => return CommandOutcome::Immediate(Err(error)),
-    };
-    let window_id = target.window_id;
-    let Some(window) = ctx.windows().platform_window(window_id) else {
-        return CommandOutcome::Immediate(Err(CommandError::not_found("that window")));
-    };
-    if !bridge.capturing_windows.insert(window_id) {
-        return CommandOutcome::Immediate(Err(CommandError::new(
-            ErrorCode::RateLimited,
-            "Waiting for the next desktop frame.",
-        )));
+fn typed_chars_for_key(key: &str) -> Option<&'static str> {
+    match key {
+        "enter" => Some("\r"),
+        "tab" => Some("\t"),
+        "escape" => Some("\x1b"),
+        "backspace" => Some("\x7f"),
+        _ => None,
     }
-    let scale = window.as_ctx().backing_scale_factor();
-    let previous_frame = request.previous_frame;
-    let (tx, rx) = futures::channel::oneshot::channel();
-    window
-        .as_ctx()
-        .request_frame_capture(Box::new(move |frame| {
-            let _ = tx.send(frame);
-        }));
-    window.as_ctx().request_redraw();
-    ctx.spawn(
-        async move {
-            let frame = rx
-                .with_timeout(Duration::from_secs(3))
-                .await
-                .map_err(|_| {
-                    unavailable("The desktop is not drawing. Restore its window and retry.")
-                })?
-                .map_err(|_| unavailable("The desktop frame was interrupted."))?;
-            encode_frame(frame, bounds, scale, previous_frame.as_deref())
-        },
-        move |bridge, result, ctx| {
-            bridge.capturing_windows.remove(&window_id);
-            // A tab switch or resize during GPU readback invalidates the crop.
-            let result = visible_terminal(&request.terminal_id, ctx).and_then(|(_, current)| {
-                if current != bounds {
-                    Err(unavailable(
-                        "The terminal moved. Waiting for the next frame.",
-                    ))
-                } else {
-                    result
-                }
-            });
-            bridge.resolve_deferred(client_id, command_id, result);
-        },
-    );
-    CommandOutcome::Deferred
-}
-
-fn encode_frame(
-    mut frame: CapturedFrame,
-    bounds: RectF,
-    scale: f32,
-    previous_frame: Option<&str>,
-) -> Result<Value, CommandError> {
-    let x = (bounds.origin().x() * scale).round().max(0.0) as u32;
-    let y = (bounds.origin().y() * scale).round().max(0.0) as u32;
-    let width = (bounds.width() * scale).round().max(0.0) as u32;
-    let height = (bounds.height() * scale).round().max(0.0) as u32;
-    if width == 0
-        || height == 0
-        || x.saturating_add(width) > frame.width
-        || y.saturating_add(height) > frame.height
-        || frame.data.len() != frame.width as usize * frame.height as usize * 4
-    {
-        return Err(unavailable("The terminal frame changed size. Retrying."));
-    }
-    frame.ensure_rgba();
-    let mut pixels = Vec::with_capacity(width as usize * height as usize * 4);
-    for row in y..y + height {
-        let offset = (row as usize * frame.width as usize + x as usize) * 4;
-        pixels.extend_from_slice(&frame.data[offset..offset + width as usize * 4]);
-    }
-    let mut hash = DefaultHasher::new();
-    (width, height, &pixels).hash(&mut hash);
-    let fingerprint = format!("{:016x}", hash.finish());
-    if previous_frame == Some(fingerprint.as_str()) {
-        return Ok(
-            json!({ "image": null, "fingerprint": fingerprint, "width": width, "height": height }),
-        );
-    }
-    let mut png = Vec::new();
-    PngEncoder::new_with_quality(&mut png, CompressionType::Fast, FilterType::Sub)
-        .write_image(&pixels, width, height, image::ExtendedColorType::Rgba8)
-        .map_err(|_| unavailable("Could not encode the desktop frame."))?;
-    Ok(json!({
-        "image": base64::engine::general_purpose::STANDARD.encode(png),
-        "width": width,
-        "height": height,
-        "fingerprint": fingerprint,
-    }))
 }
 
 #[derive(Default, Deserialize)]
@@ -279,6 +613,7 @@ pub(super) fn interact(raw: Value, ctx: &mut ModelContext<RemoteControlBridge>) 
                 "That terminal has exited.",
             ));
         }
+        let zoom = ctx.zoom_factor();
         let point = |x: f32, y: f32| {
             if !x.is_finite()
                 || !y.is_finite()
@@ -289,11 +624,12 @@ pub(super) fn interact(raw: Value, ctx: &mut ModelContext<RemoteControlBridge>) 
                     "pointer is outside the terminal",
                 ));
             }
-            Ok(bounds.origin()
+            Ok((bounds.origin()
                 + vec2f(
                     x * (bounds.width() - 1.0).max(0.0),
                     y * (bounds.height() - 1.0).max(0.0),
                 ))
+            .scale_up(zoom))
         };
         let event = match request.interaction {
             Interaction::Key {
@@ -307,6 +643,11 @@ pub(super) fn interact(raw: Value, ctx: &mut ModelContext<RemoteControlBridge>) 
                 if !target.terminal.is_self_or_child_focused(ctx) {
                     return Err(unavailable("Click the terminal to focus its input first."));
                 }
+                let chars = if chars.is_empty() {
+                    typed_chars_for_key(&key).unwrap_or_default().to_owned()
+                } else {
+                    chars
+                };
                 let keystroke = Keystroke {
                     key,
                     ctrl: modifiers.ctrl,

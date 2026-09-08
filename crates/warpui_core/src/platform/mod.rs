@@ -495,7 +495,13 @@ pub trait WindowContext {
     /// When the frame is captured, the provided callback will be invoked with the
     /// captured frame data.
     fn request_frame_capture(&self, callback: Box<dyn FnOnce(CapturedFrame) + Send + 'static>);
+
+    fn set_frame_observer(&self, observer: Option<FrameObserver>) {
+        drop(observer);
+    }
 }
+
+pub type FrameObserver = Box<dyn FnMut(CapturedFrame) -> bool + Send + 'static>;
 
 /// Pixel format of the data in a `CapturedFrame`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

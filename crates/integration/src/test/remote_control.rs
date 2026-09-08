@@ -1,7 +1,7 @@
 use remote_control::protocol::CommandName;
 use serde_json::json;
 use warp::integration_testing::remote_control::{
-    capture_remote_terminal_frame, connect_remote_control_client, create_remote_terminal,
+    await_remote_terminal_frame, connect_remote_control_client, create_remote_terminal,
     remote_terminal_command, settings_are_not_remote_tabs,
 };
 use warp::integration_testing::terminal::{
@@ -21,7 +21,7 @@ pub fn test_remote_control_mirror() -> Builder {
             CommandName::TerminalMirror,
             json!({}),
         ))
-        .with_step(capture_remote_terminal_frame())
+        .with_step(await_remote_terminal_frame())
         .with_step(remote_terminal_command(
             CommandName::TerminalInteract,
             json!({"kind": "text", "text": "echo remote-mirror-smoke"}),
@@ -38,7 +38,7 @@ pub fn test_remote_control_mirror() -> Builder {
                 ))
                 .with_take_screenshot("desktop.png"),
         )
-        .with_step(capture_remote_terminal_frame())
+        .with_step(await_remote_terminal_frame())
         .with_step(create_remote_terminal())
         .with_step(wait_until_bootstrapped_single_pane_for_tab(1))
 }

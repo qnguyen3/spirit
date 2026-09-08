@@ -4,6 +4,7 @@ pub(crate) mod commands;
 pub(crate) mod history_ops;
 pub(crate) mod http;
 pub(crate) mod lan;
+pub(crate) mod mirror_encoder;
 pub(crate) mod project_ops;
 pub(crate) mod projection;
 pub(crate) mod qr;
@@ -237,9 +238,9 @@ impl RemoteControlServer {
                 broadcast_for_bridge,
                 sessions_for_bridge,
                 self.instance_id.clone(),
+                runtime.handle().clone(),
                 ctx,
-            );
-            ctx.spawner()
+            )
         });
         let server_spawner = ctx.spawner();
         self.client_count.store(0, Ordering::Relaxed);

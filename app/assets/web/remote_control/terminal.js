@@ -1,8 +1,12 @@
 import { h, icon } from './dom.js';
 import { encodeBase64 } from './ws.js';
 
-const FRAME_DELAY_MS = 100;
-const RETRY_DELAY_MS = 1000;
+const MIRROR_CHANNEL_FLAG = 0x80000000;
+const MIRROR_FRAME_VERSION = 1;
+const MIRROR_FRAME_KEY = 1;
+const MIRROR_FRAME_PATCH = 2;
+const MIRROR_FRAME_STATE = 3;
+const MIRROR_STATE_UNAVAILABLE = 1;
 const KEY_NAMES = {
   Enter: 'enter', Escape: 'escape', Backspace: 'backspace', Delete: 'delete',
   Tab: 'tab', ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
@@ -13,6 +17,45 @@ const CONTROL_KEYS = {
   '\x1b[A': 'up', '\x1b[B': 'down', '\x1b[C': 'right', '\x1b[D': 'left',
   '\x1b[H': 'home', '\x1b[F': 'end', '\x1b[5~': 'pageup', '\x1b[6~': 'pagedown',
 };
+const KEY_CHARS = { enter: '\r', tab: '\t', escape: '\x1b', backspace: '\x7f' };
+const decoder = new TextDecoder();
+
+export function mirrorChannel(mirrorId) {
+  return (MIRROR_CHANNEL_FLAG | mirrorId) >>> 0;
+}
+
+export function parseMirrorPayload(bytes) {
+  if (bytes.length < 12 || bytes[0] !== MIRROR_FRAME_VERSION) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const kind = bytes[1];
+  const seq = view.getUint32(2, true);
+  if (kind === MIRROR_FRAME_STATE) {
+    const length = view.getUint16(7, true);
+    return { kind, seq, state: bytes[6], message: decoder.decode(bytes.subarray(9, 9 + length)) };
+  }
+  if (kind !== MIRROR_FRAME_KEY && kind !== MIRROR_FRAME_PATCH) return null;
+  const width = view.getUint16(6, true);
+  const height = view.getUint16(8, true);
+  const count = view.getUint16(10, true);
+  const rects = [];
+  let offset = 12;
+  for (let index = 0; index < count; index += 1) {
+    if (offset + 12 > bytes.length) return null;
+    const rect = {
+      x: view.getUint16(offset, true),
+      y: view.getUint16(offset + 2, true),
+      width: view.getUint16(offset + 4, true),
+      height: view.getUint16(offset + 6, true),
+    };
+    const length = view.getUint32(offset + 8, true);
+    offset += 12;
+    if (offset + length > bytes.length) return null;
+    rect.png = bytes.subarray(offset, offset + length);
+    offset += length;
+    rects.push(rect);
+  }
+  return { kind, seq, width, height, rects };
+}
 
 export function createTerminalController(ctx) {
   const canvas = h('canvas', { class: 'terminal-mirror', role: 'img', 'aria-label': 'Live desktop terminal' });
@@ -32,22 +75,26 @@ export function createTerminalController(ctx) {
   let attached = false;
   let disposed = false;
   let closed = false;
-  let timer = null;
   let attaching = null;
   let composing = false;
   let pointerDown = false;
   let hasFrame = false;
   let seenTerminal = false;
-  let previousFrame = null;
+  let mirrorId = null;
+  let unsubscribe = null;
+  let drawQueue = Promise.resolve();
+  let pausedTerminal = null;
   let touch = null;
   let swiped = false;
+  let touchScroll = false;
+  let keyboardChanged = () => {};
+  const touchDevice = () => window.matchMedia('(any-pointer: coarse)').matches;
+  keyboard.inputMode = touchDevice() ? 'none' : 'text';
+  keyboard.addEventListener('focus', () => keyboardChanged(keyboard.inputMode !== 'none'));
+  keyboard.addEventListener('blur', () => keyboardChanged(false));
   const resizeObserver = new ResizeObserver(() => refit());
   resizeObserver.observe(body);
-
-  function clearTimer() {
-    if (timer !== null) window.clearTimeout(timer);
-    timer = null;
-  }
+  document.addEventListener('visibilitychange', handleVisibility);
 
   function showStatus(message, retry = false) {
     statusText.textContent = message;
@@ -60,66 +107,90 @@ export function createTerminalController(ctx) {
     return !disposed && attached && epoch === generation;
   }
 
-  async function frame(epoch) {
+  function stopMirror() {
+    if (unsubscribe) {
+      unsubscribe();
+      unsubscribe = null;
+    }
+    if (mirrorId === null) return;
+    const id = mirrorId;
+    mirrorId = null;
+    ctx.ws.command('terminal.mirror_stop', { mirror_id: id }).catch(() => {});
+  }
+
+  function handlePayload(bytes, epoch) {
     if (!current(epoch)) return;
-    if (document.hidden) {
-      timer = window.setTimeout(() => frame(epoch), RETRY_DELAY_MS);
+    const payload = parseMirrorPayload(bytes);
+    if (!payload) return;
+    if (payload.kind === MIRROR_FRAME_STATE) {
+      if (payload.state === MIRROR_STATE_UNAVAILABLE) showStatus(payload.message || 'Waiting for the desktop…', true);
+      else resume.hidden = true;
       return;
     }
-    let delay = FRAME_DELAY_MS;
-    try {
-      const data = await ctx.ws.command('terminal.frame', { terminal_id: terminalId, previous_frame: previousFrame }, { timeoutMs: 5000 });
-      if (!current(epoch)) return;
-      if (data.image) {
-        const image = new Image();
-        image.src = `data:image/png;base64,${data.image}`;
-        await image.decode();
-        if (!current(epoch)) return;
-        if (canvas.width !== data.width || canvas.height !== data.height) {
-          canvas.width = data.width;
-          canvas.height = data.height;
-        }
-        canvas.getContext('2d').drawImage(image, 0, 0);
-        previousFrame = data.fingerprint || null;
-        hasFrame = true;
-        const background = canvas.getContext('2d').getImageData(0, 0, 1, 1).data;
-        body.style.backgroundColor = `rgb(${background[0]}, ${background[1]}, ${background[2]})`;
-        refit();
-      }
-      status.hidden = true;
-      canvas.classList.remove('terminal-mirror-stale');
-    } catch (error) {
-      if (!current(epoch)) return;
-      if (error.code !== 'rate_limited') showStatus(error.message || 'Waiting for the desktop…', true);
-      delay = error.code === 'rate_limited' ? FRAME_DELAY_MS : RETRY_DELAY_MS;
+    drawQueue = drawQueue.then(() => drawFrame(payload, epoch)).catch(() => {});
+  }
+
+  async function drawFrame(frame, epoch) {
+    const bitmaps = await Promise.all(
+      frame.rects.map((rect) => createImageBitmap(new Blob([rect.png], { type: 'image/png' }))),
+    );
+    if (!current(epoch)) {
+      for (const bitmap of bitmaps) if (bitmap.close) bitmap.close();
+      return;
     }
-    if (current(epoch)) timer = window.setTimeout(() => frame(epoch), delay);
+    if (canvas.width !== frame.width || canvas.height !== frame.height) {
+      canvas.width = frame.width;
+      canvas.height = frame.height;
+    }
+    const context = canvas.getContext('2d');
+    frame.rects.forEach((rect, index) => {
+      context.clearRect(rect.x, rect.y, rect.width, rect.height);
+      context.drawImage(bitmaps[index], rect.x, rect.y);
+      if (bitmaps[index].close) bitmaps[index].close();
+    });
+    if (!hasFrame || frame.kind === MIRROR_FRAME_KEY) {
+      const background = context.getImageData(0, 0, 1, 1).data;
+      body.style.backgroundColor = `rgb(${background[0]}, ${background[1]}, ${background[2]})`;
+    }
+    hasFrame = true;
+    status.hidden = true;
+    canvas.classList.remove('terminal-mirror-stale');
+    refit();
   }
 
   async function attach(id) {
     if (disposed || !id) return;
     if (terminalId === id && attached) return;
     if (attaching && terminalId === id) return attaching;
-    clearTimer();
+    if (document.hidden) {
+      terminalId = id;
+      pausedTerminal = id;
+      return;
+    }
+    stopMirror();
     const epoch = ++generation;
     terminalId = id;
     attached = false;
     closed = false;
     hasFrame = false;
     seenTerminal = false;
-    previousFrame = null;
+    pausedTerminal = null;
     canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
     showStatus('Connecting to the desktop terminal…');
     const request = ctx.command('terminal.mirror', { terminal_id: id });
     attaching = request;
     try {
-      await request;
-      if (disposed || epoch !== generation) return;
+      const data = await request;
+      if (disposed || epoch !== generation) {
+        if (data && data.mirror_id) ctx.ws.command('terminal.mirror_stop', { mirror_id: data.mirror_id }).catch(() => {});
+        return;
+      }
+      mirrorId = data.mirror_id;
+      unsubscribe = ctx.ws.onBinary(mirrorChannel(mirrorId), (bytes) => handlePayload(bytes, epoch));
       attached = true;
       const summary = ctx.store.indexes().terminals.get(id)?.terminal;
       ctx.store.patchTerminal({ terminalId: id, mode: summary?.mode, closed: false });
       applyTheme();
-      frame(epoch);
     } catch (error) {
       if (epoch === generation) showStatus(error.message || 'Could not open this terminal.', true);
       throw error;
@@ -130,11 +201,12 @@ export function createTerminalController(ctx) {
 
   function detach() {
     ++generation;
-    clearTimer();
+    stopMirror();
     attached = false;
     attaching = null;
     pointerDown = false;
     terminalId = null;
+    pausedTerminal = null;
     ctx.store.patchTerminal({ terminalId: null, attachId: null, mode: null });
     return Promise.resolve();
   }
@@ -143,6 +215,23 @@ export function createTerminalController(ctx) {
     const id = terminalId;
     await detach();
     return attach(id);
+  }
+
+  function handleVisibility() {
+    if (disposed) return;
+    if (document.hidden) {
+      if (!attached || terminalId === null) return;
+      pausedTerminal = terminalId;
+      ++generation;
+      stopMirror();
+      attached = false;
+      showStatus('Paused while this page is in the background.');
+      return;
+    }
+    const id = pausedTerminal;
+    if (!id || terminalId !== id) return;
+    pausedTerminal = null;
+    attach(id).catch(() => {});
   }
 
   function interact(interaction) {
@@ -181,8 +270,8 @@ export function createTerminalController(ctx) {
   });
   canvas.addEventListener('pointermove', (event) => {
     if (event.pointerType === 'touch' && touch) {
-      if (Math.abs(event.clientY - touch.y) > 8 && Math.abs(event.clientY - touch.y) > Math.abs(event.clientX - touch.x)) {
-        swiped = true;
+      if (Math.hypot(event.clientX - touch.x, event.clientY - touch.y) > 8) swiped = true;
+      if (touchScroll && swiped && event.clientY !== touch.lastY) {
         interact({ kind: 'scroll', ...position(event), delta_x: 0, delta_y: touch.lastY - event.clientY });
       }
       touch.lastY = event.clientY;
@@ -200,7 +289,7 @@ export function createTerminalController(ctx) {
   canvas.addEventListener('pointercancel', pointerUp);
   canvas.addEventListener('click', (event) => {
     if (event.pointerType !== 'touch' || swiped) return;
-    keyboard.focus({ preventScroll: true });
+    if (!touchDevice() || keyboard.inputMode !== 'none') keyboard.focus({ preventScroll: true });
     interact({ kind: 'pointer', phase: 'down', ...position(event), modifiers: {} });
     interact({ kind: 'pointer', phase: 'up', ...position(event), modifiers: {} });
   });
@@ -219,7 +308,14 @@ export function createTerminalController(ctx) {
     if (!key) return;
     event.preventDefault();
     event.stopPropagation();
-    interact({ kind: 'key', key, chars: printable ? event.key : '', modifiers: modifiers(event) });
+    interact({ kind: 'key', key, chars: printable ? event.key : KEY_CHARS[key] || '', modifiers: modifiers(event) });
+  });
+  keyboard.addEventListener('beforeinput', (event) => {
+    if (composing || event.isComposing) return;
+    const key = { deleteContentBackward: 'backspace', deleteContentForward: 'delete', insertLineBreak: 'enter', insertParagraph: 'enter' }[event.inputType];
+    if (!key) return;
+    event.preventDefault();
+    interact({ kind: 'key', key, chars: KEY_CHARS[key] || '' });
   });
   keyboard.addEventListener('compositionstart', () => { composing = true; });
   keyboard.addEventListener('compositionend', () => {
@@ -240,11 +336,16 @@ export function createTerminalController(ctx) {
 
   function sendText(value) {
     const key = CONTROL_KEYS[value];
-    if (key) return interact({ kind: 'key', key });
+    if (key) return interact({ kind: 'key', key, chars: KEY_CHARS[key] || '' });
     if (value.length === 1 && value.charCodeAt(0) > 0 && value.charCodeAt(0) < 27) {
       return interact({ kind: 'key', key: String.fromCharCode(value.charCodeAt(0) + 96), modifiers: { ctrl: true } });
     }
-    return sendBytes(new TextEncoder().encode(value));
+    if (value.startsWith('\x1b')) return sendBytes(new TextEncoder().encode(value));
+    const submit = value.endsWith('\r');
+    const text = submit ? value.slice(0, -1) : value;
+    const typed = text ? interact({ kind: 'text', text }) : Promise.resolve();
+    if (!submit) return typed;
+    return typed.then(() => interact({ kind: 'key', key: 'enter', chars: '\r' }));
   }
 
   function sendBytes(bytes) {
@@ -261,8 +362,8 @@ export function createTerminalController(ctx) {
     if (!hasFrame || !body.clientWidth || !body.clientHeight) return;
     const scale = Math.min(3, Math.max(0.5, ctx.store.get().prefs.fontScale || 1));
     const heightFit = body.clientHeight * canvas.width / canvas.height;
-    const mobile = window.matchMedia('(max-width: 767px)').matches;
-    const fitted = mobile ? Math.max(body.clientWidth, heightFit) : Math.min(body.clientWidth, heightFit);
+    const mobile = touchDevice() || window.matchMedia('(max-width: 1023px)').matches;
+    const fitted = mobile ? Math.max(body.clientWidth, 800) : Math.min(body.clientWidth, heightFit);
     canvas.style.width = `${Math.round(fitted * scale)}px`;
   }
 
@@ -287,7 +388,7 @@ export function createTerminalController(ctx) {
         closed = true;
         attached = false;
         ++generation;
-        clearTimer();
+        stopMirror();
         showStatus('This terminal was closed.');
       } else if (summary) {
         seenTerminal = true;
@@ -300,9 +401,33 @@ export function createTerminalController(ctx) {
       const result = await ctx.command('terminal.selection', { terminal_id: terminalId });
       return result.text || '';
     },
+    touchScrollEnabled: () => touchScroll,
+    setTouchScroll(enabled) {
+      touchScroll = enabled;
+      body.classList.toggle('terminal-touch-scroll', enabled);
+    },
+    onKeyboardChange(callback) {
+      keyboardChanged = callback;
+      callback(document.activeElement === keyboard && keyboard.inputMode !== 'none');
+    },
+    toggleKeyboard() {
+      if (document.activeElement === keyboard && keyboard.inputMode !== 'none') {
+        keyboard.inputMode = 'none';
+        keyboard.blur();
+      } else {
+        keyboard.blur();
+        keyboard.inputMode = 'text';
+        keyboard.focus({ preventScroll: true });
+      }
+    },
     focus() { keyboard.focus({ preventScroll: true }); },
     blur() { keyboard.blur(); },
     scrollToBottom() { sendText('\x1b[F'); },
-    dispose() { detach(); resizeObserver.disconnect(); disposed = true; },
+    dispose() {
+      detach();
+      resizeObserver.disconnect();
+      document.removeEventListener('visibilitychange', handleVisibility);
+      disposed = true;
+    },
   };
 }

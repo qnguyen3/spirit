@@ -58,9 +58,9 @@ pub(crate) fn execute(
         CommandName::PaneFocus => pane_focus(raw, ctx),
         CommandName::DesktopReveal => desktop_reveal(raw, ctx),
         CommandName::TerminalSelection => super::terminal_mirror::selection(raw, ctx),
-        CommandName::TerminalMirror => super::terminal_mirror::open(raw, ctx),
-        CommandName::TerminalFrame => {
-            super::terminal_mirror::capture(bridge, client_id, command_id, raw, ctx)
+        CommandName::TerminalMirror => super::terminal_mirror::open(bridge, client_id, raw, ctx),
+        CommandName::TerminalMirrorStop => {
+            super::terminal_mirror::stop_command(bridge, client_id, raw)
         }
         CommandName::TerminalInteract => super::terminal_mirror::interact(raw, ctx),
         CommandName::TerminalAttach => terminal_attach(bridge, client_id, raw, ctx),

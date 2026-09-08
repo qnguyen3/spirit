@@ -490,6 +490,7 @@ pub struct WindowState {
     executor: Rc<executor::Foreground>,
     ime_active: Cell<bool>,
     pub(super) capture_callback: RefCell<Option<FrameCaptureCallback>>,
+    pub(super) frame_observer: RefCell<Option<platform::FrameObserver>>,
 }
 
 impl Window {
@@ -620,6 +621,7 @@ impl Window {
                 executor,
                 ime_active: Cell::new(false),
                 capture_callback: RefCell::new(None),
+                frame_observer: RefCell::new(None),
             });
 
             // Store a +1 reference to the window state in the window, its content
@@ -1059,6 +1061,10 @@ impl platform::WindowContext for Window {
     ) {
         self.0.request_frame_capture(callback);
     }
+
+    fn set_frame_observer(&self, observer: Option<platform::FrameObserver>) {
+        self.0.set_frame_observer(observer);
+    }
 }
 
 impl WindowState {
@@ -1214,6 +1220,10 @@ impl platform::WindowContext for WindowState {
         // `setNeedsDisplayAsync` is a custom WarpWindow selector.
         // SAFETY: messaging a valid window.
         let _: () = unsafe { msg_send![self.window(), setNeedsDisplayAsync] };
+    }
+
+    fn set_frame_observer(&self, observer: Option<platform::FrameObserver>) {
+        *self.frame_observer.borrow_mut() = observer;
     }
 }
 

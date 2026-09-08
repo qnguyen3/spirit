@@ -1092,10 +1092,19 @@ impl super::super::Renderer for Renderer {
         };
 
         let capture_callback = window.capture_callback.borrow_mut().take();
-        let should_capture = capture_callback.is_some();
+        let should_capture = capture_callback.is_some() || window.frame_observer.borrow().is_some();
         let captured = Self::render(self, scene, ctx, should_capture, presents_with_transaction);
-        if let (Some(frame), Some(callback)) = (captured, capture_callback) {
-            callback(frame);
+        let Some(frame) = captured else {
+            return;
+        };
+        match capture_callback {
+            Some(callback) => callback(frame),
+            None => {
+                let mut observer = window.frame_observer.borrow_mut();
+                if observer.as_mut().is_some_and(|observe| !observe(frame)) {
+                    *observer = None;
+                }
+            }
         }
     }
 

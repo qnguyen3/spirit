@@ -8,11 +8,11 @@ export const STICKY_MODIFIERS = [
 export const KEY_DEFINITIONS = [
   { id: 'esc', label: 'Esc', bytes: ESC, description: 'Escape' },
   { id: 'tab', label: 'Tab', bytes: '\x09', description: 'Tab' },
-  { id: 'enter', label: '⏎', bytes: '\r', description: 'Enter' },
-  { id: 'up', label: '↑', bytes: `${ESC}[A`, description: 'Arrow up', repeatable: true },
-  { id: 'down', label: '↓', bytes: `${ESC}[B`, description: 'Arrow down', repeatable: true },
-  { id: 'left', label: '←', bytes: `${ESC}[D`, description: 'Arrow left', repeatable: true },
-  { id: 'right', label: '→', bytes: `${ESC}[C`, description: 'Arrow right', repeatable: true },
+  { id: 'enter', label: 'Enter', glyph: '⏎', bytes: '\r', description: 'Enter' },
+  { id: 'up', icon: 'arrow-up', bytes: `${ESC}[A`, description: 'Arrow up', repeatable: true },
+  { id: 'down', icon: 'arrow-down', bytes: `${ESC}[B`, description: 'Arrow down', repeatable: true },
+  { id: 'left', icon: 'arrow-left', bytes: `${ESC}[D`, description: 'Arrow left', repeatable: true },
+  { id: 'right', icon: 'arrow-right', bytes: `${ESC}[C`, description: 'Arrow right', repeatable: true },
   { id: 'home', label: 'Home', bytes: `${ESC}[H`, description: 'Home' },
   { id: 'end', label: 'End', bytes: `${ESC}[F`, description: 'End' },
   { id: 'pgup', label: 'PgUp', bytes: `${ESC}[5~`, description: 'Page up', repeatable: true },
@@ -27,8 +27,20 @@ export const KEY_DEFINITIONS = [
   { id: 'tilde', label: '~', bytes: '~', description: 'Tilde' },
 ];
 
+export const KEY_PAD_LEFT_ROWS = [
+  ['esc', 'tab', 'ctrl', 'alt'],
+  ['ctrl-c', 'ctrl-d', 'ctrl-z', 'ctrl-l'],
+  ['slash', 'dash', 'pipe', 'tilde'],
+];
+
+export const KEY_PAD_RIGHT_IDS = ['pgup', 'up', 'pgdn', 'left', 'down', 'right', 'home', 'end', 'enter'];
+
 export const REPEAT_DELAY_MS = 420;
 export const REPEAT_INTERVAL_MS = 90;
+
+export function keyDefinition(id) {
+  return KEY_DEFINITIONS.find((key) => key.id === id) || null;
+}
 
 export function controlByte(character) {
   const upper = String(character || '').toUpperCase();

@@ -1,25 +1,45 @@
-use base64::Engine as _;
-use remote_control::protocol::{CommandName, ServerMessage};
+use remote_control::limits::MIRROR_QUEUE_FRAMES;
+use remote_control::protocol::{
+    CommandName, MIRROR_FRAME_KEY, MIRROR_FRAME_PATCH, MIRROR_FRAME_VERSION,
+};
 use serde_json::{Value, json};
+use tokio::sync::mpsc;
 use warpui::integration::{AssertionOutcome, TestStep};
 use warpui::{SingletonEntity as _, TypedActionView as _};
 
 use super::view_getters::{single_terminal_view_for_tab, workspace_view};
 use crate::remote_control::bridge::{ClientRegistration, CommandOutcome, RemoteControlBridge};
+use crate::remote_control::mirror_encoder::MirrorPayload;
 use crate::remote_control::{commands, projection};
 use crate::workspace::WorkspaceAction;
 
 const CLIENT: &str = "remote_control_client";
 const TERMINAL: &str = "remote_control_terminal";
+const MIRROR_PAYLOADS: &str = "remote_control_mirror_payloads";
+const ENCODER_RUNTIME: &str = "remote_control_encoder_runtime";
 
 pub fn connect_remote_control_client() -> TestStep {
     TestStep::new("Connect a remote client to the desktop terminal").with_action(
         |app, window_id, data| {
             let terminal = single_terminal_view_for_tab(app, window_id, 0);
             data.insert(TERMINAL, terminal.id().to_string());
-            let client =
-                RemoteControlBridge::handle(app).update(app, |bridge, ctx| bridge.connect(ctx));
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(1)
+                .enable_all()
+                .build()
+                .expect("encoder runtime");
+            let handle = runtime.handle().clone();
+            let (payload_tx, payload_rx) =
+                mpsc::channel::<MirrorPayload>(MIRROR_QUEUE_FRAMES as usize);
+            let client = RemoteControlBridge::handle(app).update(app, |bridge, ctx| {
+                bridge.install_encoder_host(handle, ctx);
+                let client = bridge.connect(ctx);
+                bridge.set_mirror_sender(client.client_id, payload_tx);
+                client
+            });
             data.insert(CLIENT, client);
+            data.insert(MIRROR_PAYLOADS, payload_rx);
+            data.insert(ENCODER_RUNTIME, runtime);
         },
     )
 }
@@ -41,65 +61,84 @@ pub fn remote_terminal_command(name: CommandName, interaction: Value) -> TestSte
     })
 }
 
-pub fn capture_remote_terminal_frame() -> TestStep {
-    TestStep::new("Capture native terminal pixels through remote control")
-        .with_action(|app, _, data| {
-            let id = data.get::<_, String>(TERMINAL).unwrap().clone();
-            let client = data.get::<_, ClientRegistration>(CLIENT).unwrap().client_id;
-            RemoteControlBridge::handle(app).update(app, |bridge, ctx| {
-                match commands::execute(
-                    bridge,
-                    client,
-                    "frame".to_owned(),
-                    CommandName::TerminalFrame,
-                    json!({"terminal_id": id}),
-                    ctx,
-                ) {
-                    CommandOutcome::Deferred => {}
-                    CommandOutcome::Immediate(result) => {
-                        panic!("expected a captured frame: {result:?}")
-                    }
-                }
-            });
-        })
+struct MirrorRect {
+    width: u32,
+    height: u32,
+    png: Vec<u8>,
+}
+
+fn parse_mirror_payload(payload: &[u8]) -> Option<(u8, u16, u16, Vec<MirrorRect>)> {
+    let u16_at = |offset: usize| u16::from_le_bytes([payload[offset], payload[offset + 1]]);
+    let u32_at = |offset: usize| {
+        u32::from_le_bytes([
+            payload[offset],
+            payload[offset + 1],
+            payload[offset + 2],
+            payload[offset + 3],
+        ])
+    };
+    if payload.len() < 12 || payload[0] != MIRROR_FRAME_VERSION {
+        return None;
+    }
+    let kind = payload[1];
+    if kind != MIRROR_FRAME_KEY && kind != MIRROR_FRAME_PATCH {
+        return None;
+    }
+    let (width, height, count) = (u16_at(6), u16_at(8), u16_at(10));
+    let mut offset = 12;
+    let mut rects = Vec::new();
+    for _ in 0..count {
+        let (rect_width, rect_height) = (u16_at(offset + 4), u16_at(offset + 6));
+        let length = u32_at(offset + 8) as usize;
+        rects.push(MirrorRect {
+            width: u32::from(rect_width),
+            height: u32::from(rect_height),
+            png: payload[offset + 12..offset + 12 + length].to_vec(),
+        });
+        offset += 12 + length;
+    }
+    Some((kind, width, height, rects))
+}
+
+pub fn await_remote_terminal_frame() -> TestStep {
+    TestStep::new("Receive native terminal pixels through remote control")
         .add_named_assertion_with_data_from_prior_step(
-            "frame contains a nonempty PNG of the terminal",
+            "a mirror frame contains a nonempty PNG of the terminal",
             |_, _, data| {
-                let client = data.get_mut::<_, ClientRegistration>(CLIENT).unwrap();
-                while let Ok(message) = client.receiver.try_recv() {
-                    if let ServerMessage::Result {
-                        id,
-                        ok,
-                        data,
-                        error,
-                    } = message.as_ref()
-                        && id == "frame"
-                    {
-                        assert!(ok, "frame capture failed: {error:?}");
-                        let data = data.as_ref().unwrap();
-                        let bytes = base64::engine::general_purpose::STANDARD
-                            .decode(data["image"].as_str().unwrap())
-                            .unwrap();
-                        let image = image::load_from_memory(&bytes).unwrap();
-                        assert!(image.width() > 100 && image.height() > 100);
-                        let pixels = image.into_rgba8();
+                let payloads = data
+                    .get_mut::<_, mpsc::Receiver<MirrorPayload>>(MIRROR_PAYLOADS)
+                    .unwrap();
+                while let Ok((_, payload)) = payloads.try_recv() {
+                    let Some((kind, width, height, rects)) = parse_mirror_payload(&payload) else {
+                        continue;
+                    };
+                    assert!(
+                        width > 100 && height > 100,
+                        "mirror frame is {width}x{height}"
+                    );
+                    assert!(!rects.is_empty());
+                    let rect = &rects[0];
+                    let image = image::load_from_memory(&rect.png).unwrap();
+                    assert_eq!((image.width(), image.height()), (rect.width, rect.height));
+                    if kind == MIRROR_FRAME_KEY {
+                        let pixels = image.into_rgb8();
                         let first = pixels.get_pixel(0, 0);
                         assert!(
                             pixels.pixels().any(|pixel| pixel != first),
-                            "frame must contain rendered content"
+                            "keyframe must contain rendered content"
                         );
                         if let Ok(directory) = std::env::var("WARP_REMOTE_MIRROR_ARTIFACTS") {
                             std::fs::create_dir_all(&directory).unwrap();
                             std::fs::write(
                                 std::path::Path::new(&directory).join("terminal.png"),
-                                bytes,
+                                &rect.png,
                             )
                             .unwrap();
                         }
-                        return AssertionOutcome::Success;
                     }
+                    return AssertionOutcome::Success;
                 }
-                AssertionOutcome::failure("Waiting for the GPU frame".to_owned())
+                AssertionOutcome::failure("Waiting for the mirror frame".to_owned())
             },
         )
 }

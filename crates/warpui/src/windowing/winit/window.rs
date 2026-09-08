@@ -725,6 +725,7 @@ pub(super) struct Window {
     /// maximize/restore when double-clicked.
     titlebar_height: Cell<f32>,
     capture_callback: RefCell<Option<FrameCaptureCallback>>,
+    frame_observer: Arc<Mutex<Option<platform::FrameObserver>>>,
 }
 
 impl Window {
@@ -735,7 +736,25 @@ impl Window {
             scene: Default::default(),
             titlebar_height: Cell::new(DEFAULT_TITLEBAR_HEIGHT),
             capture_callback: RefCell::new(None),
+            frame_observer: Arc::new(Mutex::new(None)),
         }
+    }
+
+    fn frame_delivery(&self) -> Option<FrameCaptureCallback> {
+        let one_shot = self.capture_callback.borrow_mut().take();
+        if one_shot.is_none() && self.frame_observer.lock().is_none() {
+            return None;
+        }
+        let observer = self.frame_observer.clone();
+        Some(Box::new(move |frame| match one_shot {
+            Some(callback) => callback(frame),
+            None => {
+                let mut observer = observer.lock();
+                if observer.as_mut().is_some_and(|observe| !observe(frame)) {
+                    *observer = None;
+                }
+            }
+        }))
     }
 
     pub fn titlebar_height(&self) -> f32 {
@@ -864,7 +883,7 @@ impl Window {
             return Ok(());
         };
 
-        let capture_callback = self.capture_callback.borrow_mut().take();
+        let capture_callback = self.frame_delivery();
         let window = &inner.window;
         renderer.render(
             scene.as_ref(),
@@ -1741,6 +1760,10 @@ impl platform::WindowContext for Window {
         if let Some(inner) = self.inner.borrow_mut().as_mut() {
             inner.window.request_redraw();
         }
+    }
+
+    fn set_frame_observer(&self, observer: Option<platform::FrameObserver>) {
+        *self.frame_observer.lock() = observer;
     }
 }
 

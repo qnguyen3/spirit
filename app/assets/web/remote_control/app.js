@@ -242,7 +242,7 @@ function onStatus(update) {
     reconnectAt: update.reconnectAt || null,
     lastError: update.status === 'error' ? 'connection error' : store.get().connection.lastError,
   });
-  if (update.status !== 'open' && previous === 'open') terminalScreen.handleDisconnect();
+  if (previous === 'open') terminalScreen.handleDisconnect();
 }
 
 function onRoute(route, options) {

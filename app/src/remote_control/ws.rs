@@ -5,18 +5,24 @@ use std::time::Duration;
 use axum::extract::State;
 use axum::extract::ws::{Message, Utf8Bytes, WebSocket, WebSocketUpgrade};
 use axum::response::Response;
+use bytes::Bytes;
 use remote_control::limits::{
     CLIENT_IDLE_TIMEOUT_SECONDS, MAX_CLIENTS, MAX_INPUT_FRAME_BYTES, MAX_JSON_FRAME_BYTES,
+    MIRROR_QUEUE_FRAMES,
 };
 use remote_control::protocol::{
-    ClientMessage, CommandError, CommandName, ErrorCode, LimitEntry, ServerEvent, ServerMessage,
+    ClientMessage, CommandError, CommandName, ErrorCode, LimitEntry, MIRROR_CHANNEL_FLAG,
+    ServerEvent, ServerMessage,
 };
 use remote_control::{PROTOCOL_VERSION, limits};
 use tokio::sync::{broadcast, mpsc};
 
 use super::bridge::{ClientId, CommandOutcome};
 use super::http::{AppState, Authed, SameSiteOrigin, api_error};
+use super::mirror_encoder::MirrorPayload;
 use super::terminal_streams::{StreamFrame, output_queue_capacity};
+
+const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(20);
 
 pub(crate) async fn upgrade(
     State(state): State<Arc<AppState>>,
@@ -50,10 +56,12 @@ async fn run(socket: WebSocket, state: Arc<AppState>, authed: Authed) {
     let client_id = registration.client_id;
 
     let (stream_tx, stream_rx) = mpsc::channel(output_queue_capacity());
+    let (mirror_tx, mirror_rx) = mpsc::channel(MIRROR_QUEUE_FRAMES as usize);
     let _ = state
         .bridge_spawner
         .spawn(move |bridge, _| {
             bridge.set_stream_sender(client_id, stream_tx);
+            bridge.set_mirror_sender(client_id, mirror_tx);
             bridge.set_client_device(client_id, device_id);
         })
         .await;
@@ -85,6 +93,7 @@ async fn run(socket: WebSocket, state: Arc<AppState>, authed: Authed) {
         registration.latest,
         registration.receiver,
         stream_rx,
+        mirror_rx,
         broadcast_rx,
     )
     .await;
@@ -106,6 +115,7 @@ async fn pump(
     initial_state: Option<Arc<ServerMessage>>,
     mut replies: mpsc::Receiver<Arc<ServerMessage>>,
     mut streams: mpsc::Receiver<(u32, StreamFrame)>,
+    mut mirrors: mpsc::Receiver<MirrorPayload>,
     mut broadcast_rx: broadcast::Receiver<Arc<ServerMessage>>,
 ) {
     if send_json(&mut socket, &hello).await.is_err() {
@@ -118,8 +128,18 @@ async fn pump(
     }
 
     let idle = Duration::from_secs(CLIENT_IDLE_TIMEOUT_SECONDS);
+    let mut keepalive = tokio::time::interval_at(
+        tokio::time::Instant::now() + KEEPALIVE_INTERVAL,
+        KEEPALIVE_INTERVAL,
+    );
+    keepalive.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         tokio::select! {
+            _ = keepalive.tick() => {
+                if socket.send(Message::Ping(Bytes::new())).await.is_err() {
+                    return;
+                }
+            }
             incoming = tokio::time::timeout(idle, socket.recv()) => {
                 let Ok(incoming) = incoming else {
                     let _ = socket.send(Message::Close(None)).await;
@@ -149,6 +169,12 @@ async fn pump(
                     .await
                     .is_err()
                 {
+                    return;
+                }
+            }
+            payload = mirrors.recv() => {
+                let Some((mirror_id, bytes)) = payload else { return };
+                if send_mirror_payload(&mut socket, mirror_id, bytes).await.is_err() {
                     return;
                 }
             }
@@ -310,6 +336,20 @@ async fn send_stream_frame(
             .await
         }
     }
+}
+
+async fn send_mirror_payload(
+    socket: &mut WebSocket,
+    mirror_id: u32,
+    bytes: Vec<u8>,
+) -> Result<(), ()> {
+    let mut framed = Vec::with_capacity(4 + bytes.len());
+    framed.extend_from_slice(&(MIRROR_CHANNEL_FLAG | mirror_id).to_le_bytes());
+    framed.extend_from_slice(&bytes);
+    socket
+        .send(Message::Binary(framed.into()))
+        .await
+        .map_err(|_| ())
 }
 
 async fn resend_latest(socket: &mut WebSocket, state: &Arc<AppState>) -> Result<(), ()> {

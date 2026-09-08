@@ -11,9 +11,11 @@ pub const HISTORY_SNAPSHOT_MAX_BYTES: u64 = 256 * 1024;
 pub const PAIR_FAILURES_PER_MINUTE: u64 = 5;
 pub const SESSION_IDLE_DAYS: u64 = 30;
 pub const STATE_COALESCE_MS: u64 = 50;
-pub const CLIENT_IDLE_TIMEOUT_SECONDS: u64 = 60;
+pub const CLIENT_IDLE_TIMEOUT_SECONDS: u64 = 90;
 pub const MAX_DIRECTORY_ENTRIES: u64 = 2000;
 pub const COOKIE_MAX_AGE_SECONDS: u64 = 30 * 24 * 60 * 60;
+pub const MIRROR_QUEUE_FRAMES: u64 = 4;
+pub const MIRROR_CAPTURE_TIMEOUT_MS: u64 = 3000;
 
 pub fn all() -> &'static [(&'static str, u64)] {
     &[
@@ -33,5 +35,7 @@ pub fn all() -> &'static [(&'static str, u64)] {
         ("client_idle_timeout_seconds", CLIENT_IDLE_TIMEOUT_SECONDS),
         ("max_directory_entries", MAX_DIRECTORY_ENTRIES),
         ("cookie_max_age_seconds", COOKIE_MAX_AGE_SECONDS),
+        ("mirror_queue_frames", MIRROR_QUEUE_FRAMES),
+        ("mirror_capture_timeout_ms", MIRROR_CAPTURE_TIMEOUT_MS),
     ]
 }

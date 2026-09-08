@@ -10,9 +10,11 @@ use remote_control::protocol::{
 use serde_json::Value;
 use tokio::sync::{broadcast, mpsc};
 use warpui::r#async::Timer;
-use warpui::{Entity, EntityId, ModelContext, SingletonEntity};
+use warpui::{Entity, EntityId, ModelContext, ModelSpawner, SingletonEntity};
 
+use super::mirror_encoder::MirrorPayload;
 use super::sessions::SessionStore;
+use super::terminal_mirror::{self, MirrorHub};
 use super::terminal_snapshot::build_attach_snapshot;
 use super::terminal_streams::{StreamFrame, TerminalStreams};
 use super::{commands, projection, remote_control_available, watch};
@@ -39,7 +41,13 @@ pub(crate) enum CommandOutcome {
 struct ClientHandle {
     sender: mpsc::Sender<Arc<ServerMessage>>,
     streams: Option<mpsc::Sender<(u32, StreamFrame)>>,
+    mirror_payloads: Option<mpsc::Sender<MirrorPayload>>,
     device_id: Option<DeviceId>,
+}
+
+pub(crate) struct EncoderHost {
+    pub runtime: tokio::runtime::Handle,
+    pub spawner: ModelSpawner<RemoteControlBridge>,
 }
 
 pub(crate) struct ClientRegistration {
@@ -64,7 +72,8 @@ pub struct RemoteControlBridge {
     watchers_installed: bool,
     path_env: Option<String>,
     streams: TerminalStreams,
-    pub(super) capturing_windows: HashSet<warpui::WindowId>,
+    pub(super) mirrors: MirrorHub,
+    encoder_host: Option<EncoderHost>,
     instance_id: String,
 }
 
@@ -91,7 +100,8 @@ impl RemoteControlBridge {
             watchers_installed: false,
             path_env: None,
             streams: TerminalStreams::default(),
-            capturing_windows: HashSet::new(),
+            mirrors: MirrorHub::default(),
+            encoder_host: None,
             instance_id: String::new(),
         };
         bridge.refresh_path_env(ctx);
@@ -103,23 +113,45 @@ impl RemoteControlBridge {
         state_tx: broadcast::Sender<Arc<ServerMessage>>,
         sessions: SessionStore,
         instance_id: String,
+        runtime: tokio::runtime::Handle,
         ctx: &mut ModelContext<Self>,
-    ) {
+    ) -> ModelSpawner<Self> {
         self.state_tx = Some(state_tx);
         self.sessions = Some(sessions);
         self.instance_id = instance_id;
         self.latest = None;
         self.dirty = true;
+        let spawner = self.install_encoder_host(runtime, ctx);
         if !self.watchers_installed {
             watch::install_watchers(ctx);
             self.watchers_installed = true;
         }
         watch::ensure_entity_watchers(self, ctx);
+        spawner
+    }
+
+    pub(crate) fn install_encoder_host(
+        &mut self,
+        runtime: tokio::runtime::Handle,
+        ctx: &mut ModelContext<Self>,
+    ) -> ModelSpawner<Self> {
+        let spawner = ctx.spawner();
+        self.encoder_host = Some(EncoderHost {
+            runtime,
+            spawner: spawner.clone(),
+        });
+        spawner
+    }
+
+    pub(crate) fn encoder_host(&self) -> Option<&EncoderHost> {
+        self.encoder_host.as_ref()
     }
 
     pub(crate) fn detach_server(&mut self) {
+        terminal_mirror::stop_all(self);
         self.state_tx = None;
         self.sessions = None;
+        self.encoder_host = None;
         self.clients.clear();
         self.streams.close_all();
         self.latest = None;
@@ -156,6 +188,7 @@ impl RemoteControlBridge {
             .collect();
         for client_id in owned {
             self.clients.remove(&client_id);
+            terminal_mirror::stop_client(self, client_id);
         }
     }
 
@@ -257,6 +290,7 @@ impl RemoteControlBridge {
             ClientHandle {
                 sender,
                 streams: None,
+                mirror_payloads: None,
                 device_id: None,
             },
         );
@@ -284,6 +318,7 @@ impl RemoteControlBridge {
     pub(crate) fn disconnect(&mut self, client_id: ClientId) {
         self.clients.remove(&client_id);
         self.streams.detach_client(client_id);
+        terminal_mirror::stop_client(self, client_id);
     }
 
     pub(crate) fn set_stream_sender(
@@ -301,6 +336,29 @@ impl RemoteControlBridge {
         client_id: ClientId,
     ) -> Option<mpsc::Sender<(u32, StreamFrame)>> {
         self.clients.get(&client_id)?.streams.clone()
+    }
+
+    pub(crate) fn set_mirror_sender(
+        &mut self,
+        client_id: ClientId,
+        sender: mpsc::Sender<MirrorPayload>,
+    ) {
+        if let Some(client) = self.clients.get_mut(&client_id) {
+            client.mirror_payloads = Some(sender);
+        }
+    }
+
+    pub(crate) fn mirror_sender(&self, client_id: ClientId) -> Option<mpsc::Sender<MirrorPayload>> {
+        self.clients.get(&client_id)?.mirror_payloads.clone()
+    }
+
+    pub(crate) fn mirror_frame_done(
+        &mut self,
+        client_id: ClientId,
+        mirror_id: u32,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        terminal_mirror::frame_done(self, client_id, mirror_id, ctx);
     }
 
     pub(crate) fn build_resync(

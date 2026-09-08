@@ -123,7 +123,7 @@ export function terminalTitle(state, terminalId) {
 const PREFS_KEY = 'spirit.remote.prefs';
 
 export function loadPrefs() {
-  const defaults = { fontScale: 1, sound: false, vibrate: true, theme: 'system' };
+  const defaults = { fontScale: 1, sound: false, vibrate: true, theme: 'system', richInput: false };
   try {
     const raw = window.localStorage.getItem(PREFS_KEY);
     return raw ? { ...defaults, ...JSON.parse(raw) } : defaults;
