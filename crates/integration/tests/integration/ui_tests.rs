@@ -319,6 +319,8 @@ integration_tests! {
     // Video recording test — requires real display, run manually
     #[ignore = "Manual test: requires real display for frame capture"]
     test_video_recording,
+    #[ignore = "Requires a real GPU display for native terminal capture"]
+    test_remote_control_mirror,
 
     // Rich Input Ctrl+Enter submit toggle (issue #11588)
     // Regression: Enter must accept inline menus (not insert newline) when toggle=true

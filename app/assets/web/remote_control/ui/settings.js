@@ -82,7 +82,7 @@ function appearanceSection(ctx, state) {
       h(
         'div',
         { class: 'row-texts' },
-        h('div', { class: 'row-title' }, 'Terminal font size'),
+        h('div', { class: 'row-title' }, 'Terminal zoom'),
         h('div', { class: 'row-sub' }, `${Math.round(scale * 100)}% of the fitted size`),
       ),
       h('span', { class: 'row-trail' }, icon('chevron-right', 'icon-sm')),

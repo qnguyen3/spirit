@@ -1,6 +1,6 @@
 import { h, clear, icon, shortenPath } from '../dom.js';
 import { encodeBase64 } from '../ws.js';
-import { createTerminalController, terminalAssetsAvailable } from '../terminal.js';
+import { createTerminalController } from '../terminal.js';
 import { statusInfo } from './sessions.js';
 import {
   KEY_DEFINITIONS,
@@ -72,10 +72,6 @@ export function render(host, ctx, state) {
     clear(host);
     host.appendChild(root);
   }
-  if (!terminalAssetsAvailable()) {
-    renderFoot(ctx, state, terminalId, 'unavailable');
-    return;
-  }
   ensureAttached(ctx, terminalId);
   controller.syncFromSnapshot(state);
   renderFoot(ctx, state, terminalId, footKind(state, terminalId));
@@ -84,25 +80,7 @@ export function render(host, ctx, state) {
 function ensureRoot(ctx) {
   if (root) return;
   footHost = h('div', { class: 'terminal-foot' });
-  if (terminalAssetsAvailable()) {
-    bodyHost = terminalController(ctx).element;
-  } else {
-    bodyHost = h(
-      'div',
-      { class: 'terminal-body' },
-      h(
-        'div',
-        { class: 'terminal-placeholder' },
-        icon('warning', 'icon-lg'),
-        h('p', {}, 'Terminal viewer assets are not vendored in this build'),
-        h(
-          'p',
-          {},
-          'Run script/vendor_remote_control_assets and rebuild Spirit to view terminal output here.',
-        ),
-      ),
-    );
-  }
+  bodyHost = terminalController(ctx).element;
   root = h('div', { class: 'terminal-screen' }, bodyHost, footHost);
 }
 
@@ -149,7 +127,7 @@ function updateStrip(agent, found) {
     const detail = agent.tool_name
       ? [agent.tool_name, agent.tool_input_preview].filter(Boolean).join(': ')
       : agent.summary || agent.status_message || info.label;
-    stripText.textContent = `${agent.display_name} · ${info.label}${detail ? ` · ${detail}` : ''}`;
+    stripText.textContent = `${agent.display_name} · ${info.label}${detail && detail !== info.label ? ` · ${detail}` : ''}`;
     return;
   }
   const cwd = found && found.terminal.cwd ? shortenPath(found.terminal.cwd, 40) : '';
@@ -158,12 +136,6 @@ function updateStrip(agent, found) {
 
 function buildFoot(ctx, state, terminalId, kind, agent) {
   stripText = null;
-  if (kind === 'unavailable') {
-    footHost.appendChild(
-      h('p', { class: 'composer-readonly' }, 'Input is unavailable until the viewer assets are vendored.'),
-    );
-    return;
-  }
   if (kind === 'closed' || kind === 'gone') {
     footHost.appendChild(
       h(

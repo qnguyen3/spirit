@@ -9,6 +9,7 @@ pub(crate) mod projection;
 pub(crate) mod qr;
 pub(crate) mod resolve;
 pub(crate) mod sessions;
+pub(crate) mod terminal_mirror;
 pub(crate) mod terminal_snapshot;
 pub(crate) mod terminal_streams;
 pub(crate) mod watch;

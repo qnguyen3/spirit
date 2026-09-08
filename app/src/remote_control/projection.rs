@@ -175,6 +175,10 @@ fn build_screen(
             locations,
             app,
         );
+        if !snapshot.panes.iter().any(|pane| pane.terminal.is_some()) {
+            tabs_by_index.push(None);
+            continue;
+        }
         if let Some(worktree_id) = worktree_id {
             *open_tabs_per_worktree
                 .entry(worktree_id.to_string())
@@ -184,6 +188,11 @@ fn build_screen(
     }
 
     let sections = assemble_sections(&bindings, &registry_worktrees, &mut tabs_by_index, app);
+    let active_tab_id = active_tab_id.filter(|id| {
+        sections
+            .iter()
+            .any(|section| section.tabs.iter().any(|tab| &tab.id == id))
+    });
 
     ScreenSnapshot {
         id: screen_id,
@@ -295,6 +304,8 @@ fn build_tab(
         ));
     }
 
+    panes.retain(|pane| pane.terminal.is_some());
+
     let title = pane_group
         .custom_title(app)
         .or_else(|| {
@@ -314,7 +325,11 @@ fn build_tab(
         pinned: tab.pinned,
         group_title: None,
         agent_summary: wire_agent_summary(summarize_tab(tab, app)),
-        focused_pane_id: Some(focused_pane_id.to_string()),
+        focused_pane_id: panes
+            .iter()
+            .find(|pane| pane.id == focused_pane_id.to_string())
+            .or_else(|| panes.first())
+            .map(|pane| pane.id.clone()),
         panes,
     }
 }

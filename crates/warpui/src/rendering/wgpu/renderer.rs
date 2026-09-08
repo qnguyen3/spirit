@@ -186,6 +186,9 @@ fn capture_surface_texture(
     callback: Box<dyn FnOnce(CapturedFrame) + Send + 'static>,
 ) -> Result<(), String> {
     let texture = &surface_texture.texture;
+    if !texture.usage().contains(wgpu::TextureUsages::COPY_SRC) {
+        return Err("This GPU surface does not support frame capture".to_owned());
+    }
     let width = texture.width();
     let height = texture.height();
 

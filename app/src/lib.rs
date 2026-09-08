@@ -1264,7 +1264,11 @@ pub(crate) fn initialize_app(
     }
 
     #[cfg(not(target_family = "wasm"))]
-    if matches!(launch_mode, LaunchMode::App { .. }) && FeatureFlag::RemoteControl.is_enabled() {
+    if matches!(
+        launch_mode,
+        LaunchMode::App { .. } | LaunchMode::Test { .. }
+    ) && FeatureFlag::RemoteControl.is_enabled()
+    {
         ctx.add_singleton_model(remote_control::bridge::RemoteControlBridge::new);
         ctx.add_singleton_model(remote_control::RemoteControlServer::new);
     }

@@ -172,7 +172,7 @@ function overflowItems(ctx, state) {
       icon: 'desktop',
       onSelect: () => ctx.command('desktop.reveal', { terminal_id: terminalId }),
     });
-    items.push({ label: 'Font size', icon: 'edit', onSelect: () => ctx.openSheet('font-size', {}) });
+    items.push({ label: 'Terminal zoom', icon: 'edit', onSelect: () => ctx.openSheet('font-size', {}) });
     items.push({
       label: 'Paste',
       icon: 'clipboard',
@@ -181,9 +181,13 @@ function overflowItems(ctx, state) {
     items.push({
       label: 'Copy selection',
       icon: 'clipboard',
-      onSelect: () => {
-        const selection = terminalController(ctx).selection();
-        ctx.openSheet('copy', { title: 'Copy selection', text: selection || '' });
+      onSelect: async () => {
+        try {
+          const selection = await terminalController(ctx).selection();
+          ctx.openSheet('copy', { title: 'Copy selection', text: selection });
+        } catch {
+          // The command helper already displays the failure.
+        }
       },
     });
     items.push({

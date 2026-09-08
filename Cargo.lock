@@ -5592,6 +5592,7 @@ dependencies = [
  "pathfinder_geometry",
  "rand 0.8.6",
  "regex",
+ "remote_control",
  "rust-embed 8.7.2",
  "serde",
  "serde_json",

@@ -57,6 +57,12 @@ pub(crate) fn execute(
         CommandName::TabActivate => tab_activate(raw, ctx),
         CommandName::PaneFocus => pane_focus(raw, ctx),
         CommandName::DesktopReveal => desktop_reveal(raw, ctx),
+        CommandName::TerminalSelection => super::terminal_mirror::selection(raw, ctx),
+        CommandName::TerminalMirror => super::terminal_mirror::open(raw, ctx),
+        CommandName::TerminalFrame => {
+            super::terminal_mirror::capture(bridge, client_id, command_id, raw, ctx)
+        }
+        CommandName::TerminalInteract => super::terminal_mirror::interact(raw, ctx),
         CommandName::TerminalAttach => terminal_attach(bridge, client_id, raw, ctx),
         CommandName::TerminalDetach => terminal_detach(bridge, client_id, raw),
         CommandName::TerminalInput => terminal_input(raw, ctx),
@@ -285,7 +291,7 @@ fn screen_activate(raw: Value, ctx: &mut ModelContext<RemoteControlBridge>) -> O
     }
 }
 
-fn activate_screen(
+pub(super) fn activate_screen(
     screen_id: &str,
     ctx: &mut ModelContext<RemoteControlBridge>,
 ) -> Result<(), CommandError> {
@@ -618,8 +624,7 @@ fn created_tab(
     let tab = workspace
         .tabs
         .iter()
-        .find(|tab| !before.contains(&tab.pane_group.id().to_string()))
-        .or_else(|| workspace.tabs.get(workspace.active_tab_index()))?;
+        .find(|tab| !before.contains(&tab.pane_group.id().to_string()))?;
     let tab_id = tab.pane_group.id().to_string();
     let pane_group = tab.pane_group.clone();
     let group = pane_group.as_ref(ctx);

@@ -34,12 +34,28 @@ export function parse(hash) {
 export function createRouter(onRoute) {
   let current = parse(window.location.hash);
   let sheetDepth = 0;
+  let closingSheet = false;
+  let pendingNavigation = null;
+  let pendingSheet = false;
 
   function emit() {
     onRoute(current);
   }
 
   function handleLocationChange() {
+    if (closingSheet) {
+      closingSheet = false;
+      if (pendingNavigation) {
+        window.history.replaceState(null, '', pendingNavigation);
+        pendingNavigation = null;
+      }
+      if (pendingSheet) {
+        pendingSheet = false;
+        sheetDepth = 1;
+        window.history.pushState({ sheet: 1 }, '');
+        return;
+      }
+    }
     const next = parse(window.location.hash);
     const state = window.history.state;
     if (state && state.sheet) return;
@@ -63,6 +79,10 @@ export function createRouter(onRoute) {
     },
     navigate(name, params, options) {
       const target = hashFor(name, params || {});
+      if (closingSheet) {
+        pendingNavigation = target;
+        return;
+      }
       if (window.location.hash === target) {
         current = parse(target);
         emit();
@@ -77,16 +97,26 @@ export function createRouter(onRoute) {
       }
     },
     pushSheet() {
-      sheetDepth += 1;
+      if (closingSheet) {
+        pendingSheet = true;
+        return;
+      }
+      if (sheetDepth > 0) return;
+      sheetDepth = 1;
       window.history.pushState({ sheet: sheetDepth }, '');
     },
     popSheet() {
+      if (closingSheet) {
+        pendingSheet = false;
+        return;
+      }
       if (sheetDepth === 0) return;
-      sheetDepth -= 1;
+      sheetDepth = 0;
+      closingSheet = true;
       window.history.back();
     },
     hasSheet() {
-      return sheetDepth > 0;
+      return sheetDepth > 0 || pendingSheet;
     },
   };
 }

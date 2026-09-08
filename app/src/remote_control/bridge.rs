@@ -64,6 +64,7 @@ pub struct RemoteControlBridge {
     watchers_installed: bool,
     path_env: Option<String>,
     streams: TerminalStreams,
+    pub(super) capturing_windows: HashSet<warpui::WindowId>,
     instance_id: String,
 }
 
@@ -90,6 +91,7 @@ impl RemoteControlBridge {
             watchers_installed: false,
             path_env: None,
             streams: TerminalStreams::default(),
+            capturing_windows: HashSet::new(),
             instance_id: String::new(),
         };
         bridge.refresh_path_env(ctx);

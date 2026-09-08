@@ -3507,6 +3507,15 @@ impl AppContext {
         }
     }
 
+    /// Dispatches input through the window's key bindings and rendered elements.
+    pub fn dispatch_window_input(&mut self, event: Event, window_id: WindowId) -> bool {
+        let Some(presenter) = self.presenter(window_id) else {
+            return false;
+        };
+        self.handle_window_event(event, window_id, presenter)
+            .handled
+    }
+
     #[cfg(any(test, feature = "test-util"))]
     pub fn simulate_window_event(
         &mut self,

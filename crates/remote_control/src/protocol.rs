@@ -109,6 +109,14 @@ pub enum CommandName {
     PaneFocus,
     #[serde(rename = "desktop.reveal")]
     DesktopReveal,
+    #[serde(rename = "terminal.selection")]
+    TerminalSelection,
+    #[serde(rename = "terminal.mirror")]
+    TerminalMirror,
+    #[serde(rename = "terminal.frame")]
+    TerminalFrame,
+    #[serde(rename = "terminal.interact")]
+    TerminalInteract,
     #[serde(rename = "terminal.attach")]
     TerminalAttach,
     #[serde(rename = "terminal.detach")]
@@ -179,6 +187,10 @@ impl CommandName {
             CommandName::TabActivate => "tab.activate",
             CommandName::PaneFocus => "pane.focus",
             CommandName::DesktopReveal => "desktop.reveal",
+            CommandName::TerminalSelection => "terminal.selection",
+            CommandName::TerminalMirror => "terminal.mirror",
+            CommandName::TerminalFrame => "terminal.frame",
+            CommandName::TerminalInteract => "terminal.interact",
             CommandName::TerminalAttach => "terminal.attach",
             CommandName::TerminalDetach => "terminal.detach",
             CommandName::TerminalInput => "terminal.input",
@@ -220,6 +232,10 @@ impl CommandName {
             CommandName::TabActivate,
             CommandName::PaneFocus,
             CommandName::DesktopReveal,
+            CommandName::TerminalSelection,
+            CommandName::TerminalMirror,
+            CommandName::TerminalFrame,
+            CommandName::TerminalInteract,
             CommandName::TerminalAttach,
             CommandName::TerminalDetach,
             CommandName::TerminalInput,

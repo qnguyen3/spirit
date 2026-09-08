@@ -12,6 +12,7 @@ path = "src/bin/integration.rs"
 test = false
 
 [dependencies]
+remote_control.workspace = true
 anyhow = "1.0"
 backtrace.workspace = true
 cfg-if.workspace = true

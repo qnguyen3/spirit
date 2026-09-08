@@ -158,7 +158,7 @@ function agentOptions(state) {
 function agentChooser(state, onChange, includeNone) {
   const options = agentOptions(state);
   const list = h('div', { class: 'row-group', role: 'radiogroup', 'aria-label': 'Agent' });
-  let selected = includeNone ? null : (options[0] ? options[0].index : null);
+  let selected = includeNone ? null : (options.find((agent) => agent.installed)?.index ?? null);
 
   function paint() {
     clear(list);
@@ -209,7 +209,6 @@ function agentChooser(state, onChange, includeNone) {
   }
 
   paint();
-  if (onChange) onChange(selected);
   return {
     element: list,
     selection() {
@@ -398,6 +397,7 @@ function buildLaunchAgentSheet(ctx, props, state) {
   const error = errorLine();
   const approval = approvalChooser();
   const chooser = agentChooser(state, () => approval.setEnabled(chooser.supportsYolo()), false);
+  approval.setEnabled(chooser.supportsYolo());
   const launch = busyButton('Launch agent', 'robot', async () => {
     error.textContent = '';
     const index = chooser.selection();
@@ -443,6 +443,7 @@ function buildNewWorktreeSheet(ctx, props, state) {
   });
   const approval = approvalChooser();
   const chooser = agentChooser(state, () => approval.setEnabled(chooser.supportsYolo()), true);
+  approval.setEnabled(chooser.supportsYolo());
   const create = busyButton('Create worktree', 'git-branch', async () => {
     error.textContent = '';
     try {
@@ -839,7 +840,7 @@ function buildCopySheet(ctx, props) {
 
 function buildFontSizeSheet(ctx) {
   const label = h('p', { class: 'sheet-note', role: 'status' });
-  const steps = [0.75, 0.85, 1, 1.15, 1.3, 1.5];
+  const steps = [0.75, 0.85, 1, 1.25, 1.5, 2, 3];
 
   function current() {
     return ctx.store.get().prefs.fontScale || 1;
@@ -853,12 +854,12 @@ function buildFontSizeSheet(ctx) {
   }
 
   function paint() {
-    label.textContent = `Terminal text at ${Math.round(current() * 100)}% of the fitted size.`;
+    label.textContent = `Desktop view at ${Math.round(current() * 100)}% zoom.`;
   }
 
   paint();
   return {
-    title: 'Font size',
+    title: 'Terminal zoom',
     body: [
       label,
       h(
@@ -872,7 +873,7 @@ function buildFontSizeSheet(ctx) {
           'Reset',
         ),
       ),
-      h('p', { class: 'field-hint' }, 'Spirit picks the largest size that fits the desktop column count; this scales that result.'),
+      h('p', { class: 'field-hint' }, 'Swipe sideways to pan and vertically to scroll the terminal. Zoom changes this view’s size.'),
     ],
     update: paint,
   };

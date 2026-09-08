@@ -670,6 +670,7 @@ a {
 }
 
 .row-title {
+  display: block;
   font-size: var(--text-md);
   font-weight: 550;
   white-space: nowrap;
@@ -678,6 +679,7 @@ a {
 }
 
 .row-sub {
+  display: block;
   font-size: var(--text-sm);
   color: var(--fg-muted);
   white-space: nowrap;
@@ -1890,4 +1892,51 @@ a {
 
 .section-warning {
   color: var(--warn);
+}
+
+
+.terminal-mirror-body {
+  position: relative;
+  display: block;
+  overflow: auto;
+  padding: 0;
+}
+
+.terminal-mirror {
+  display: block;
+  width: 100%;
+  height: auto;
+  touch-action: pan-x pinch-zoom;
+  margin: 0 auto;
+}
+
+.terminal-mirror-stale {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.terminal-mirror-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  text-align: center;
+  min-height: 12rem;
+}
+
+.terminal-keyboard {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  padding: 0;
+  border: 0;
+  resize: none;
+  font-size: 16px;
 }
