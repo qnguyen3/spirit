@@ -136,10 +136,6 @@ impl RemoteControlServer {
         &self.state
     }
 
-    pub fn instance_id(&self) -> &str {
-        &self.instance_id
-    }
-
     pub fn pairing_url(&self, ctx: &AppContext) -> Option<String> {
         let endpoint = self.state.endpoint()?;
         let token = RemoteControlSecrets::as_ref(ctx).access_token()?;
@@ -236,7 +232,12 @@ impl RemoteControlServer {
         let sessions = SessionStore::new(RemoteControlSecrets::as_ref(ctx).paired_devices());
         let sessions_for_bridge = sessions.clone();
         let bridge_spawner = bridge_handle.update(ctx, |bridge, ctx| {
-            bridge.attach_server(broadcast_for_bridge, sessions_for_bridge, ctx);
+            bridge.attach_server(
+                broadcast_for_bridge,
+                sessions_for_bridge,
+                self.instance_id.clone(),
+                ctx,
+            );
             ctx.spawner()
         });
         let server_spawner = ctx.spawner();

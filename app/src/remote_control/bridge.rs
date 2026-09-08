@@ -15,7 +15,7 @@ use warpui::{Entity, EntityId, ModelContext, SingletonEntity};
 use super::sessions::SessionStore;
 use super::terminal_snapshot::build_attach_snapshot;
 use super::terminal_streams::{StreamFrame, TerminalStreams};
-use super::{RemoteControlServer, commands, projection, remote_control_available, watch};
+use super::{commands, projection, remote_control_available, watch};
 use crate::projects::interactive_path_env;
 
 const RECONCILE_INTERVAL: Duration = Duration::from_secs(1);
@@ -100,14 +100,12 @@ impl RemoteControlBridge {
         &mut self,
         state_tx: broadcast::Sender<Arc<ServerMessage>>,
         sessions: SessionStore,
+        instance_id: String,
         ctx: &mut ModelContext<Self>,
     ) {
         self.state_tx = Some(state_tx);
         self.sessions = Some(sessions);
-        self.instance_id = RemoteControlServer::handle(ctx)
-            .as_ref(ctx)
-            .instance_id()
-            .to_owned();
+        self.instance_id = instance_id;
         self.latest = None;
         self.dirty = true;
         if !self.watchers_installed {

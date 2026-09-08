@@ -5,10 +5,94 @@ use std::sync::atomic::AtomicUsize;
 use axum::Router;
 use remote_control::auth::AccessToken;
 use remote_control::hosts::AllowedHosts;
+use settings::Setting as _;
 use tokio::sync::broadcast;
+use warp_core::features::FeatureFlag;
+use warpui::{App, SingletonEntity as _};
 
+use super::bridge::RemoteControlBridge;
 use super::http::{self, AppState, SESSION_COOKIE};
 use super::sessions::SessionStore;
+use super::{RemoteControlServer, ServerState};
+use crate::projects::registry::ProjectRegistryModel;
+use crate::settings::{RemoteControlSecrets, RemoteControlSettings};
+use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
+use crate::test_util::settings::initialize_settings_for_tests;
+use crate::workspace::WorkspaceRegistry;
+
+fn initialize_server_models(app: &mut App) {
+    initialize_settings_for_tests(app);
+    RemoteControlSettings::register(app);
+    RemoteControlSecrets::register(app);
+    app.add_singleton_model(|_| WorkspaceRegistry::new());
+    app.add_singleton_model(|_| ProjectRegistryModel::new(None));
+    app.add_singleton_model(|_| CLIAgentSessionsModel::new());
+    app.add_singleton_model(RemoteControlBridge::new);
+
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("reserve a test port");
+    let port = listener.local_addr().expect("local address").port();
+    RemoteControlSettings::handle(app).update(app, |settings, ctx| {
+        settings.remote_control_port.set_value(port, ctx).unwrap();
+    });
+}
+
+fn set_server_enabled(enabled: bool, app: &mut App) {
+    RemoteControlSettings::handle(app).update(app, |settings, ctx| {
+        settings
+            .remote_control_enabled
+            .set_value(enabled, ctx)
+            .unwrap();
+    });
+}
+
+fn assert_server_running(app: &App) {
+    app.read(|ctx| {
+        let server = RemoteControlServer::as_ref(ctx);
+        assert!(server.state().is_running(), "{:?}", server.state());
+        assert_eq!(
+            RemoteControlBridge::as_ref(ctx).instance_id(),
+            server.instance_id
+        );
+        assert!(server.pairing_url(ctx).is_some());
+    });
+}
+
+#[test]
+fn server_starts_with_remote_control_already_enabled() {
+    let _flag = FeatureFlag::RemoteControl.override_enabled(true);
+    App::test((), |mut app| async move {
+        initialize_server_models(&mut app);
+        set_server_enabled(true, &mut app);
+
+        app.add_singleton_model(RemoteControlServer::new);
+
+        assert_server_running(&app);
+        set_server_enabled(false, &mut app);
+    });
+}
+
+#[test]
+fn server_can_be_enabled_again_after_stopping() {
+    let _flag = FeatureFlag::RemoteControl.override_enabled(true);
+    App::test((), |mut app| async move {
+        initialize_server_models(&mut app);
+        app.add_singleton_model(RemoteControlServer::new);
+
+        set_server_enabled(true, &mut app);
+        assert_server_running(&app);
+        set_server_enabled(false, &mut app);
+        app.read(|ctx| {
+            assert_eq!(
+                RemoteControlServer::as_ref(ctx).state(),
+                &ServerState::Stopped
+            );
+        });
+
+        set_server_enabled(true, &mut app);
+        assert_server_running(&app);
+        set_server_enabled(false, &mut app);
+    });
+}
 
 struct Harness {
     runtime: tokio::runtime::Runtime,
