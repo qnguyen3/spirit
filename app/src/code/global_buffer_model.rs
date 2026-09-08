@@ -154,6 +154,9 @@ struct InternalBufferState {
     latest_buffer_version: Option<usize>,
     /// Tracks any active background diff parsing for auto-reload.
     pending_diff_parse: Option<PendingDiffParse>,
+    /// A failed initial read emits `FailedToLoad` once; this retains the error so
+    /// a consumer attaching afterwards still learns the buffer is unusable.
+    initial_load_failure: Option<Rc<FileLoadError>>,
     source: BufferSource,
 }
 
@@ -232,6 +235,16 @@ impl InternalBufferState {
         }
     }
 
+    fn load_state(&self) -> BufferLoadState {
+        if self.is_loaded() {
+            BufferLoadState::Loaded
+        } else if let Some(error) = &self.initial_load_failure {
+            BufferLoadState::Failed(error.clone())
+        } else {
+            BufferLoadState::Loading
+        }
+    }
+
     /// Whether this buffer has been loaded (has content).
     fn is_loaded(&self) -> bool {
         match &self.source {
@@ -248,6 +261,14 @@ impl InternalBufferState {
             BufferSource::Remote { sync_clock, .. } => sync_clock.is_some(),
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub enum BufferLoadState {
+    Unknown,
+    Loading,
+    Loaded,
+    Failed(Rc<FileLoadError>),
 }
 
 pub enum GlobalBufferModelEvent {
@@ -692,12 +713,16 @@ impl GlobalBufferModel {
                 // Only set the initial_content_version on first file load.
                 if let Some(state) = self.buffers.get_mut(id) {
                     state.set_initial_content_version(*version);
+                    state.initial_load_failure = None;
                 }
 
                 // For initial load, base_version and new_version are the same
                 self.populate_buffer_with_read_content(*id, content, *version, *version, true, ctx);
             }
             FileModelEvent::FailedToLoad { id, error } => {
+                if let Some(state) = self.buffers.get_mut(id) {
+                    state.initial_load_failure = Some(error.clone());
+                }
                 ctx.emit(GlobalBufferModelEvent::FailedToLoad {
                     file_id: *id,
                     error: error.clone(),
@@ -888,6 +913,13 @@ impl GlobalBufferModel {
             .and_then(|state| state.base_content_version())
     }
 
+    pub fn load_state(&self, file_id: FileId) -> BufferLoadState {
+        self.buffers
+            .get(&file_id)
+            .map(InternalBufferState::load_state)
+            .unwrap_or(BufferLoadState::Unknown)
+    }
+
     /// Discard any in progress changes and reload the buffer with the canonical version from the file system.
     #[cfg(feature = "local_fs")]
     pub fn discard_unsaved_changes(&mut self, path: &Path, ctx: &mut ModelContext<Self>) {
@@ -1029,6 +1061,7 @@ impl GlobalBufferModel {
                 buffer: buffer.downgrade(),
                 latest_buffer_version: None,
                 pending_diff_parse: None,
+                initial_load_failure: None,
                 source: BufferSource::Local {
                     base_content_version,
                     initial_content_version,
@@ -1145,12 +1178,15 @@ impl GlobalBufferModel {
             if let Some(state) = self.buffers.get(&id)
                 && let Some(handle) = state.buffer.upgrade(ctx)
             {
-                // Only emit buffer loaded if the base content version is set.
-                if state.is_loaded() {
-                    ctx.emit(GlobalBufferModelEvent::BufferLoaded {
+                match state.load_state() {
+                    BufferLoadState::Loaded => ctx.emit(GlobalBufferModelEvent::BufferLoaded {
                         file_id: id,
                         content_version: handle.as_ref(ctx).version(),
-                    });
+                    }),
+                    BufferLoadState::Failed(error) => {
+                        ctx.emit(GlobalBufferModelEvent::FailedToLoad { file_id: id, error })
+                    }
+                    BufferLoadState::Loading | BufferLoadState::Unknown => {}
                 }
                 return BufferState::new(id, handle.clone());
             }
@@ -1287,6 +1323,7 @@ impl GlobalBufferModel {
                 buffer: buffer.downgrade(),
                 latest_buffer_version: None,
                 pending_diff_parse: None,
+                initial_load_failure: None,
                 source,
             },
         );
@@ -1636,11 +1673,15 @@ impl GlobalBufferModel {
             && let Some(state) = self.buffers.get(&id)
             && let Some(handle) = state.buffer.upgrade(ctx)
         {
-            if state.is_loaded() {
-                ctx.emit(GlobalBufferModelEvent::BufferLoaded {
+            match state.load_state() {
+                BufferLoadState::Loaded => ctx.emit(GlobalBufferModelEvent::BufferLoaded {
                     file_id: id,
                     content_version: handle.as_ref(ctx).version(),
-                });
+                }),
+                BufferLoadState::Failed(error) => {
+                    ctx.emit(GlobalBufferModelEvent::FailedToLoad { file_id: id, error })
+                }
+                BufferLoadState::Loading | BufferLoadState::Unknown => {}
             }
             return BufferState::new(id, handle.clone());
         }
@@ -1744,6 +1785,7 @@ impl GlobalBufferModel {
                 buffer: buffer.downgrade(),
                 latest_buffer_version: None,
                 pending_diff_parse: None,
+                initial_load_failure: None,
                 source: BufferSource::Remote {
                     remote_path,
                     sync_clock: None,
@@ -1839,10 +1881,11 @@ impl GlobalBufferModel {
             ))
             | Err(error) => {
                 log::warn!("[remote-buffer] Failed to open remote buffer: {error}");
-                ctx.emit(GlobalBufferModelEvent::FailedToLoad {
-                    file_id,
-                    error: Rc::new(FileLoadError::DoesNotExist),
-                });
+                let error = Rc::new(FileLoadError::DoesNotExist);
+                if let Some(state) = self.buffers.get_mut(&file_id) {
+                    state.initial_load_failure = Some(error.clone());
+                }
+                ctx.emit(GlobalBufferModelEvent::FailedToLoad { file_id, error });
             }
         }
     }
@@ -2416,6 +2459,7 @@ impl GlobalBufferModel {
                 buffer: buffer.downgrade(),
                 latest_buffer_version: None,
                 pending_diff_parse: None,
+                initial_load_failure: None,
                 source: BufferSource::Remote {
                     remote_path,
                     sync_clock: Some(SyncClock::from_wire(server_version, 0)),

@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use warp_core::SessionId;
 use warp_util::remote_path::RemotePath;
 use warp_util::standardized_path::StandardizedPath;
-use warpui::{AppContext, ModelContext, ModelHandle};
+use warpui::{AppContext, EntityId, ModelContext, ModelHandle};
 
 use crate::code_review::diff_size_limits::DiffSize;
 use crate::util::git::{BranchEntry, Commit, FileChangeEntry, PrInfo};
@@ -143,6 +143,10 @@ pub struct FileDiff {
 impl FileDiff {
     pub fn is_empty(&self) -> bool {
         self.additions() == 0 && self.deletions() == 0
+    }
+
+    pub fn is_unrenderable(&self) -> bool {
+        matches!(self.size, DiffSize::Unrenderable(_))
     }
 
     /// Returns the number of added lines in this file diff
@@ -370,6 +374,14 @@ pub enum DiffStateModelEvent {
     BranchCommittedFilesReceived(Vec<FileChangeEntry>),
 }
 
+/// Diff state is shared per repository, so a closing panel must release only
+/// its own interest rather than silencing every other consumer of that repo.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum DiffRefreshConsumer {
+    CodeReviewView(EntityId),
+    RemoteSubscribers,
+}
+
 /// Result of a remote git operation, emitted via
 /// `DiffStateModelEvent::GitOpCompleted`. The model applies the post-op
 /// delta before emitting, so the dialog only handles UI concerns.
@@ -382,6 +394,9 @@ pub enum GitOpResult {
     PushCompleted(Result<(), String>),
     /// Standalone create-PR completed.
     PrCreated(Result<PrInfo, String>),
+    /// `Err` carries the per-path failures; the working tree may have been
+    /// partially discarded.
+    DiscardCompleted(Result<(), String>),
 }
 
 // ── Unified model ────────────────────────────────────────────────────────
@@ -638,15 +653,30 @@ impl DiffStateModel {
         }
     }
 
-    pub(crate) fn set_code_review_metadata_refresh_enabled(
+    pub(crate) fn add_refresh_consumer(
         &self,
-        enabled: bool,
+        consumer: DiffRefreshConsumer,
         ctx: &mut ModelContext<Self>,
     ) {
         match self {
             Self::Local(local) => {
                 local.update(ctx, |local, ctx| {
-                    local.set_code_review_metadata_refresh_enabled(enabled, ctx);
+                    local.add_refresh_consumer(consumer, ctx);
+                });
+            }
+            Self::Remote(_) => {}
+        }
+    }
+
+    pub(crate) fn remove_refresh_consumer(
+        &self,
+        consumer: DiffRefreshConsumer,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        match self {
+            Self::Local(local) => {
+                local.update(ctx, |local, _| {
+                    local.remove_refresh_consumer(consumer);
                 });
             }
             Self::Remote(_) => {}

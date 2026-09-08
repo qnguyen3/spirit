@@ -74,7 +74,7 @@ use crate::code::editor::{
 };
 use crate::code::editor_management::CodeEditorStatus;
 use crate::code::footer::{CodeFooterView, CodeFooterViewEvent};
-use crate::code::global_buffer_model::GlobalBufferModel;
+use crate::code::global_buffer_model::{BufferLoadState, GlobalBufferModel};
 use crate::code::local_code_editor::{
     LocalCodeEditorEvent, LocalCodeEditorView, render_unsaved_circle_with_tooltip,
 };
@@ -89,8 +89,9 @@ use crate::code_review::comments::{
 use crate::code_review::context::convert_file_diffs_to_diffset_hunks;
 use crate::code_review::diff_selector::{DiffSelector, DiffSelectorEvent, DiffTarget};
 use crate::code_review::diff_state::{
-    DiffHunk, DiffLineType, DiffMode, DiffState, DiffStateModel, DiffStateModelEvent, DiffStats,
-    FileDiff, FileDiffAndContent, FileStatusInfo, GitDiffWithBaseContent, GitFileStatus,
+    DiffHunk, DiffLineType, DiffMode, DiffRefreshConsumer, DiffState, DiffStateModel,
+    DiffStateModelEvent, DiffStats, FileDiff, FileDiffAndContent, FileStatusInfo,
+    GitDiffWithBaseContent, GitFileStatus, GitOpResult,
 };
 use crate::code_review::editor_state::CodeReviewEditorState;
 use crate::code_review::find_model::CodeReviewFindModel;
@@ -745,15 +746,23 @@ impl CodeReviewView {
         // should_fetch_base: false because re-opening the panel doesn't
         // need to fetch the base branch from origin.
         let preferred_session = self.preferred_review_session(ctx);
+        let consumer = self.refresh_consumer(ctx);
         self.diff_state_model.update(ctx, |model, ctx| {
-            model.set_code_review_metadata_refresh_enabled(true, ctx);
+            model.add_refresh_consumer(consumer, ctx);
             model.load_diffs_for_current_repo(false, true, preferred_session, ctx);
         });
+    }
+
+    fn refresh_consumer(&self, ctx: &ViewContext<Self>) -> DiffRefreshConsumer {
+        DiffRefreshConsumer::CodeReviewView(ctx.view_id())
     }
 
     /// Called when the code review view is closed/detached.
     /// Unsubscribes from the diff state model.
     pub fn on_close(&mut self, ctx: &mut ViewContext<Self>) {
+        if !self.is_open {
+            return;
+        }
         self.is_open = false;
 
         if self
@@ -766,11 +775,14 @@ impl CodeReviewView {
         ctx.unsubscribe_to_model(&self.diff_state_model);
         self.unsubscribe_from_git_repo_status_model(ctx);
         self.unsubscribe_from_github_repo_model(ctx);
+        #[cfg(feature = "local_fs")]
+        ctx.unsubscribe_to_model(&PersistedWorkspace::handle(ctx));
 
         self.code_review_footer = None;
 
+        let consumer = self.refresh_consumer(ctx);
         self.diff_state_model.update(ctx, |model, ctx| {
-            model.set_code_review_metadata_refresh_enabled(false, ctx);
+            model.remove_refresh_consumer(consumer, ctx);
         });
     }
 
@@ -2311,6 +2323,13 @@ impl CodeReviewView {
                 }
                 self.update_diff_selector_selection(ctx);
             }
+            DiffStateModelEvent::GitOpCompleted(GitOpResult::DiscardCompleted(Err(error))) => {
+                let error_message = format!("Could not discard all changes: {error}");
+                ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                    let toast = DismissibleToast::error(error_message);
+                    toast_stack.add_ephemeral_toast(toast, self.window_id, ctx);
+                });
+            }
             DiffStateModelEvent::GitOpCompleted(_)
             | DiffStateModelEvent::BranchCommittedFilesReceived(_) => {
                 // Handled by GitDialog's own subscription.
@@ -2885,8 +2904,11 @@ impl CodeReviewView {
         ctx: &mut ViewContext<Self>,
     ) -> Option<CodeReviewEditorState> {
         let repo_path = self.repo_path()?.clone();
-        // Skip editor creation for binary files or files without content (e.g., pure renames)
-        if file.file_diff.is_binary || file.content_at_head.is_none() {
+        // These render an explanatory placeholder rather than an editor.
+        if file.file_diff.is_binary
+            || file.file_diff.is_unrenderable()
+            || file.content_at_head.is_none()
+        {
             None
         } else if matches!(file.file_diff.status, GitFileStatus::Deleted) {
             // For deleted files, the file doesn't exist on disk anymore, so we can't use
@@ -2968,7 +2990,20 @@ impl CodeReviewView {
                 }
             });
 
-            Some(CodeReviewEditorState::new(local_code_view))
+            // A buffer shared with another view may have settled before this
+            // editor subscribed, so its event will never arrive again.
+            let already_settled = local_code_view
+                .as_ref(ctx)
+                .file_id()
+                .map(|file_id| GlobalBufferModel::as_ref(ctx).load_state(file_id))
+                .is_some_and(|state| {
+                    matches!(state, BufferLoadState::Loaded | BufferLoadState::Failed(_))
+                });
+            if already_settled {
+                Some(CodeReviewEditorState::new_loaded(local_code_view))
+            } else {
+                Some(CodeReviewEditorState::new(local_code_view))
+            }
         }
     }
 
@@ -2980,7 +3015,7 @@ impl CodeReviewView {
     ) -> Option<CodeReviewEditorState> {
         let repo_path = self.repo_path()?.clone();
 
-        if file.file_diff.is_binary {
+        if file.file_diff.is_binary || file.file_diff.is_unrenderable() {
             None
         } else {
             let code_editor_view = ctx.add_typed_action_view(|ctx| {
@@ -5014,6 +5049,18 @@ impl CodeReviewView {
                 theme,
             )
         } else if let Some(editor_state) = file.editor_state.as_ref() {
+            if !editor_state.is_loaded() {
+                return Self::styled_file_content_container(
+                    Text::new(
+                        "Loading file...",
+                        appearance.ui_font_family(),
+                        appearance.ui_font_size(),
+                    )
+                    .with_color(remove_color(appearance))
+                    .finish(),
+                    theme,
+                );
+            }
             Hoverable::new(editor_state.editor_mouse_state.clone(), |_| {
                 Container::new(ChildView::new(&editor_state.editor).finish())
                     .with_corner_radius(CornerRadius::with_bottom(Radius::Pixels(8.)))
@@ -6426,13 +6473,7 @@ impl View for CodeReviewView {
         let main_content = match self.state() {
             CodeReviewViewState::None => CodeReviewView::render_loading_state(appearance),
             CodeReviewViewState::Loaded(loaded_state) => {
-                // For global buffer mode, show loading state until all editors have loaded
-                // their buffer content. This prevents a brief flash of empty editors.
-                if !self.all_editors_loaded() {
-                    CodeReviewView::render_loading_state(appearance)
-                } else {
-                    self.render_loaded_state(loaded_state, appearance, is_in_split_pane, ctx)
-                }
+                self.render_loaded_state(loaded_state, appearance, is_in_split_pane, ctx)
             }
             CodeReviewViewState::Error(err) => self.render_error_state(err, appearance),
             CodeReviewViewState::NoRepoFound => self.render_no_repo_for_env(ctx, appearance),

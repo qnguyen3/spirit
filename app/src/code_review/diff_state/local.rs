@@ -3,7 +3,7 @@
 //! Some of the code in this module is adapted from GitHub Desktop, which is licensed under the MIT license,
 //! Copyright (c) GitHub, Inc.  See GITHUB-DESKTOP-LICENSE in this directory.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Seek};
 use std::path::{Path, PathBuf};
@@ -40,14 +40,13 @@ use crate::terminal::local_shell::LocalShellState;
 use crate::throttle::throttle;
 use crate::util::git::{
     Commit, FileChangeEntry, detect_current_branch, detect_main_branch, get_unpushed_commits,
-    parse_unified_diff_header,
+    parse_numstat_z, parse_unified_diff_header,
 };
 #[cfg(feature = "local_fs")]
 use crate::util::git::{get_all_branches, git_operation_in_progress};
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "local_fs")] {
-        use std::collections::HashSet;
         use crate::code_review::file_invalidation_queue::FileInvalidationTask;
         use repo_metadata::repositories::{DetectedRepositories, RepoDetectionSource};
         use repo_metadata::{
@@ -63,9 +62,9 @@ use warp_errors::report_error;
 
 use super::{
     CommitChainMode, DiffHunk, DiffLine, DiffLineType, DiffMetadata, DiffMetadataAgainstBase,
-    DiffMode, DiffState, DiffStateError, DiffStateModelEvent, DiffStats, FileDiff,
-    FileDiffAndContent, FileStatusInfo, GitDiffData, GitDiffWithBaseContent, GitFileStatus,
-    GitOpResult,
+    DiffMode, DiffRefreshConsumer, DiffState, DiffStateError, DiffStateModelEvent, DiffStats,
+    FileDiff, FileDiffAndContent, FileStatusInfo, GitDiffData, GitDiffWithBaseContent,
+    GitFileStatus, GitOpResult,
 };
 
 // Unicode bidirectional characters that should be flagged
@@ -126,12 +125,28 @@ struct DiffsWithBaseContent {
     changes: Result<GitDiffWithBaseContent, String>,
 }
 
+#[cfg(feature = "local_fs")]
+#[derive(Clone, PartialEq)]
+struct FullLoadTarget {
+    repo_path: PathBuf,
+    mode: DiffMode,
+}
+
+#[cfg(feature = "local_fs")]
+#[derive(Default)]
+struct QueuedFullReload {
+    should_fetch_base: bool,
+    track_load_duration: bool,
+}
+
 /// Tracks state for in-flight file invalidation tasks and full-reload coordination.
 #[cfg(feature = "local_fs")]
 struct FileInvalidationState {
-    /// Whether a full invalidation is in-flight.
-    /// When true, per-file invalidation requests are deferred to `pending_file_updates`.
-    invalidate_all_pending: bool,
+    /// Spans the load and the merge base recomputation that follows it.
+    full_load_in_flight: bool,
+    full_load_target: Option<FullLoadTarget>,
+    queued_full_reload: Option<QueuedFullReload>,
+    index_lock_held: bool,
     /// Merge base commit for the current diff mode, computed eagerly during
     /// full invalidation.
     merge_base: Option<String>,
@@ -146,7 +161,10 @@ struct FileInvalidationState {
 impl FileInvalidationState {
     fn new(queue: SyncQueue<FileInvalidationTask>) -> Self {
         Self {
-            invalidate_all_pending: false,
+            full_load_in_flight: false,
+            full_load_target: None,
+            queued_full_reload: None,
+            index_lock_held: false,
             merge_base: None,
             merge_base_handle: None,
             queue,
@@ -159,6 +177,10 @@ impl FileInvalidationState {
         if let Some(handle) = self.merge_base_handle.take() {
             handle.abort();
         }
+    }
+
+    fn should_defer_file_invalidations(&self) -> bool {
+        self.full_load_in_flight || self.index_lock_held
     }
 }
 
@@ -206,9 +228,7 @@ pub struct LocalDiffStateModel {
     computing_metadata_abort_handle: Option<SpawnedFutureHandle>,
     /// Start time for the latest caller-tracked full diff load.
     tracked_diff_load_start_time: Option<Instant>,
-    /// Controls whether periodic throttled metadata refresh is active.
-    /// Refresh is suppressed when the code review pane is not open.
-    metadata_refresh_enabled: bool,
+    refresh_consumers: HashSet<DiffRefreshConsumer>,
     // TODO: Remove pending file invalidations — pause the queue instead.
     /// Files that have been invalidated but not yet processed when diff is still loading.
     #[cfg(feature = "local_fs")]
@@ -236,7 +256,7 @@ impl LocalDiffStateModel {
         ctx.spawn_stream_local(
             rx,
             |me, broadcast_result: Result<_, Arc<DiffStateError>>, ctx| {
-                if me.file_invalidation.invalidate_all_pending {
+                if me.file_invalidation.should_defer_file_invalidations() {
                     return;
                 }
                 match broadcast_result {
@@ -270,7 +290,7 @@ impl LocalDiffStateModel {
             computing_diffs_abort_handle: None,
             computing_metadata_abort_handle: None,
             tracked_diff_load_start_time: None,
-            metadata_refresh_enabled: false,
+            refresh_consumers: HashSet::new(),
             file_invalidation: FileInvalidationState::new(queue),
             pending_file_updates: None,
         };
@@ -321,7 +341,7 @@ impl LocalDiffStateModel {
             computing_diffs_abort_handle: None,
             computing_metadata_abort_handle: None,
             tracked_diff_load_start_time: None,
-            metadata_refresh_enabled: false,
+            refresh_consumers: HashSet::new(),
         }
     }
 
@@ -452,15 +472,6 @@ impl LocalDiffStateModel {
         None
     }
 
-    /// Cancels in-flight per-file invalidation tasks and marks a full
-    /// invalidation pending so that stale queue results are suppressed
-    /// until the reload completes.
-    #[cfg(feature = "local_fs")]
-    fn queue_full_invalidation(&mut self) {
-        self.file_invalidation.cancel_all();
-        self.file_invalidation.invalidate_all_pending = true;
-    }
-
     /// Fetches branches for the active repository and emits
     /// `DiffStateModelEvent::BranchesReceived` on completion.
     #[cfg(feature = "local_fs")]
@@ -520,33 +531,59 @@ impl LocalDiffStateModel {
         track_load_duration: bool,
         ctx: &mut ModelContext<Self>,
     ) {
-        if track_load_duration {
-            self.tracked_diff_load_start_time = Some(Instant::now());
-        }
-        // Cancels in-flight per-file invalidation tasks so that stale queue results cannot
-        // race with the new full reload.
-        self.queue_full_invalidation();
-
-        // Abort any previous diff loading operations before spawning a new one.
-        if let Some(handle) = self.computing_diffs_abort_handle.take() {
-            handle.abort();
-        }
-
         let Some(current_repository) = &self.repository else {
             if matches!(self.state, InternalDiffState::NotInRepository) {
                 self.start_repo_detection(ctx);
             }
             return;
         };
-        let current_repository_path = current_repository
-            .as_ref(ctx)
-            .root_dir()
-            .to_local_path_lossy();
-        let mode = self.mode.clone();
+        let target = FullLoadTarget {
+            repo_path: current_repository
+                .as_ref(ctx)
+                .root_dir()
+                .to_local_path_lossy(),
+            mode: self.mode.clone(),
+        };
+
+        if self.file_invalidation.full_load_in_flight
+            && self.file_invalidation.full_load_target.as_ref() == Some(&target)
+        {
+            // The caller's wait started with the running load, so the clock keeps running.
+            if track_load_duration && self.tracked_diff_load_start_time.is_none() {
+                self.tracked_diff_load_start_time = Some(Instant::now());
+            }
+            let queued = self
+                .file_invalidation
+                .queued_full_reload
+                .get_or_insert_with(QueuedFullReload::default);
+            queued.should_fetch_base |= should_fetch_base;
+            queued.track_load_duration |= track_load_duration;
+            return;
+        }
+
+        if track_load_duration {
+            self.tracked_diff_load_start_time = Some(Instant::now());
+        }
+
+        // Cancels in-flight per-file invalidation tasks so that stale queue results cannot
+        // race with the new full reload.
+        self.file_invalidation.cancel_all();
+        self.file_invalidation.full_load_in_flight = true;
+        self.file_invalidation.full_load_target = Some(target.clone());
+        self.file_invalidation.queued_full_reload = None;
+
+        // Abort any previous diff loading operations before spawning a new one.
+        if let Some(handle) = self.computing_diffs_abort_handle.take() {
+            handle.abort();
+        }
+
+        let repo_path = target.repo_path.clone();
+        let mode = target.mode.clone();
         self.state = InternalDiffState::Loading;
         self.computing_diffs_abort_handle = Some(ctx.spawn(
             async move {
-                Self::load_diffs_for_repo(current_repository_path, mode, should_fetch_base).await
+                let diffs = Self::load_diffs_for_repo(repo_path, mode, should_fetch_base).await;
+                (target, diffs)
             },
             Self::handle_updated_state_for_repo,
         ));
@@ -607,14 +644,127 @@ impl LocalDiffStateModel {
             }
         }
     }
-    /// Runs git restore and git clean for one or more files
+    /// Formats a repo-relative path as a literal git pathspec so wildcards,
+    /// leading dashes and pathspec magic in a filename are matched verbatim.
+    #[cfg(feature = "local_fs")]
+    fn literal_pathspec(relative_path: &str) -> String {
+        format!(":(literal){relative_path}")
+    }
+
+    /// An unresolvable `source` (an unborn `HEAD`) yields an empty present set
+    /// rather than an error, so discard removes every selected path.
+    #[cfg(feature = "local_fs")]
+    async fn partition_paths_by_source(
+        repo_path: &Path,
+        relative_paths: &[String],
+        source: &str,
+    ) -> (Vec<String>, Vec<String>) {
+        let present = Self::paths_present_in_source(repo_path, relative_paths, source).await;
+        relative_paths
+            .iter()
+            .cloned()
+            .partition(|path| present.contains(path))
+    }
+
+    #[cfg(feature = "local_fs")]
+    async fn paths_present_in_source(
+        repo_path: &Path,
+        relative_paths: &[String],
+        source: &str,
+    ) -> HashSet<String> {
+        let tree_ref = format!("{source}^{{tree}}");
+        log::debug!(
+            "[GIT OPERATION] local.rs paths_present_in_source git rev-parse --verify --quiet {tree_ref}"
+        );
+        if run_git_command(repo_path, &["rev-parse", "--verify", "--quiet", &tree_ref])
+            .await
+            .is_err()
+        {
+            return HashSet::new();
+        }
+
+        let pathspecs: Vec<String> = relative_paths
+            .iter()
+            .map(|path| Self::literal_pathspec(path))
+            .collect();
+        let mut args = vec![
+            "ls-tree",
+            "-z",
+            "-r",
+            "--name-only",
+            "--full-tree",
+            source,
+            "--",
+        ];
+        args.extend(pathspecs.iter().map(String::as_str));
+        log::debug!(
+            "[GIT OPERATION] local.rs paths_present_in_source git ls-tree -z -r --name-only --full-tree {source} -- ({} paths)",
+            pathspecs.len()
+        );
+        let Ok(output) = run_git_command(repo_path, &args).await else {
+            return HashSet::new();
+        };
+
+        let listed: HashSet<&str> = output.split('\0').filter(|s| !s.is_empty()).collect();
+        relative_paths
+            .iter()
+            .filter(|requested| {
+                let requested = requested.as_str();
+                if listed.contains(requested) {
+                    return true;
+                }
+                let dir_prefix = requested.trim_end_matches('/');
+                listed.iter().any(|listed_path| {
+                    listed_path
+                        .strip_prefix(dir_prefix)
+                        .is_some_and(|rest| rest.starts_with('/'))
+                })
+            })
+            .cloned()
+            .collect()
+    }
+
     #[cfg(feature = "local_fs")]
     async fn git_restore_and_clean(
         repo_path: &Path,
         relative_paths: &[String],
         branch: &str,
     ) -> Result<()> {
+        let (to_restore, to_remove) =
+            Self::partition_paths_by_source(repo_path, relative_paths, branch).await;
+
+        let mut failures = Vec::new();
+        if let Err(err) = Self::restore_paths_from_source(repo_path, &to_restore, branch).await {
+            failures.push(format!("restore {}: {err}", to_restore.join(", ")));
+        }
+        if let Err(err) = Self::remove_paths_absent_from_source(repo_path, &to_remove).await {
+            failures.push(format!("remove {}: {err}", to_remove.join(", ")));
+        }
+
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(anyhow!(
+                "Failed to discard changes: {}",
+                failures.join("; ")
+            ))
+        }
+    }
+
+    #[cfg(feature = "local_fs")]
+    async fn restore_paths_from_source(
+        repo_path: &Path,
+        relative_paths: &[String],
+        branch: &str,
+    ) -> Result<()> {
+        if relative_paths.is_empty() {
+            return Ok(());
+        }
         let source_arg = format!("--source={branch}");
+        let pathspecs: Vec<String> = relative_paths
+            .iter()
+            .map(|path| Self::literal_pathspec(path))
+            .collect();
         let mut restore_args = vec![
             "restore",
             "--staged",
@@ -622,93 +772,62 @@ impl LocalDiffStateModel {
             source_arg.as_str(),
             "--",
         ];
-        for path in relative_paths {
-            restore_args.push(path.as_str());
-        }
+        restore_args.extend(pathspecs.iter().map(String::as_str));
 
         log::debug!(
-            "[GIT OPERATION] local.rs git_restore_and_clean git {}",
-            restore_args.join(" ")
+            "[GIT OPERATION] local.rs restore_paths_from_source git restore --staged --worktree {source_arg} -- ({} paths)",
+            pathspecs.len()
         );
-        let restore_res = run_git_command(repo_path, &restore_args).await;
+        run_git_command(repo_path, &restore_args).await.map(|_| ())
+    }
 
-        match restore_res {
-            Ok(_) => {
-                // Clean untracked files for these specific paths
-                let mut clean_args = vec!["clean", "-fd"];
-                for path in relative_paths {
-                    clean_args.push(path.as_str());
-                }
-                log::debug!(
-                    "[GIT OPERATION] local.rs git_restore_and_clean git {}",
-                    clean_args.join(" ")
-                );
-                let clean_res = run_git_command(repo_path, &clean_args).await;
+    #[cfg(feature = "local_fs")]
+    async fn remove_paths_absent_from_source(
+        repo_path: &Path,
+        relative_paths: &[String],
+    ) -> Result<()> {
+        if relative_paths.is_empty() {
+            return Ok(());
+        }
+        let pathspecs: Vec<String> = relative_paths
+            .iter()
+            .map(|path| Self::literal_pathspec(path))
+            .collect();
 
-                match clean_res {
-                    Ok(_) => Ok(()),
-                    Err(err) => {
-                        log::warn!("Failed to clean untracked files: {err}");
-                        Ok(())
-                    }
-                }
+        let mut rm_args = vec!["rm", "-f", "-q", "--ignore-unmatch", "--"];
+        rm_args.extend(pathspecs.iter().map(String::as_str));
+        log::debug!(
+            "[GIT OPERATION] local.rs remove_paths_absent_from_source git rm -f -q --ignore-unmatch -- ({} paths)",
+            pathspecs.len()
+        );
+        let mut failures = Vec::new();
+        if let Err(err) = run_git_command(repo_path, &rm_args).await {
+            failures.push(format!("git rm: {err}"));
+        }
+
+        let mut clean_args = vec!["clean", "-f", "-d", "-q", "--"];
+        clean_args.extend(pathspecs.iter().map(String::as_str));
+        log::debug!(
+            "[GIT OPERATION] local.rs remove_paths_absent_from_source git clean -f -d -q -- ({} paths)",
+            pathspecs.len()
+        );
+        if let Err(err) = run_git_command(repo_path, &clean_args).await {
+            failures.push(format!("git clean: {err}"));
+        }
+
+        for relative_path in relative_paths {
+            match fs::remove_file(repo_path.join(relative_path)) {
+                Ok(()) => {}
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                Err(err) if err.kind() == std::io::ErrorKind::IsADirectory => {}
+                Err(err) => failures.push(format!("remove '{relative_path}': {err}")),
             }
-            Err(err) => {
-                let err_msg = err.to_string();
-                if branch == "HEAD" && err_msg.contains("could not resolve HEAD") {
-                    let mut clean_args = vec!["clean", "-fd"];
-                    for path in relative_paths {
-                        clean_args.push(path.as_str());
-                    }
-                    log::debug!(
-                        "[GIT OPERATION] local.rs git_restore_and_clean git {}",
-                        clean_args.join(" ")
-                    );
-                    let clean_res = run_git_command(repo_path, &clean_args).await;
-                    if let Err(err) = clean_res {
-                        log::warn!("Failed to clean untracked files: {err}");
-                    }
-                    Ok(())
-                } else if err_msg.contains("did not match any file(s) known to git") {
-                    // If some files don't exist in the branch, we need to remove them
-                    for file_path in relative_paths {
-                        log::debug!(
-                            "[GIT OPERATION] local.rs git_restore_and_clean git rm -f -- {file_path}"
-                        );
-                        let rm_res =
-                            run_git_command(repo_path, &["rm", "-f", "--", file_path.as_str()])
-                                .await;
+        }
 
-                        if let Err(rm_err) = rm_res {
-                            let rm_err_msg = rm_err.to_string();
-                            if rm_err_msg.contains("did not match any files") {
-                                // if the file was staged but it isn't in the working directory,
-                                // e.g. it was locally deleted
-                                log::debug!(
-                                    "[GIT OPERATION] local.rs git_restore_and_clean git reset -- {file_path}"
-                                );
-                                if let Err(e) =
-                                    run_git_command(repo_path, &["reset", "--", file_path.as_str()])
-                                        .await
-                                {
-                                    log::warn!("Failed to unstage file '{file_path}': {e}");
-                                }
-                            } else {
-                                log::warn!("Failed to remove file '{file_path}': {rm_err_msg}");
-                            }
-                        }
-
-                        if let Err(e) = fs::remove_file(repo_path.join(file_path))
-                            && e.kind() != std::io::ErrorKind::NotFound
-                        {
-                            log::warn!("Failed to remove file '{file_path}' from filesystem: {e}");
-                        }
-                    }
-                    Ok(())
-                } else {
-                    Err(err)
-                }
-            }
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(anyhow!("{}", failures.join("; ")))
         }
     }
 
@@ -735,6 +854,8 @@ impl LocalDiffStateModel {
             }
         }
 
+        let mut failures = Vec::new();
+
         // Handle renamed files specially
         if !renamed_file_infos.is_empty() {
             if branch == "HEAD" && should_stash {
@@ -751,14 +872,18 @@ impl LocalDiffStateModel {
 
                 for info in &renamed_file_infos {
                     if let GitFileStatus::Renamed { old_path } = &info.status {
+                        let old_pathspec = Self::literal_pathspec(old_path);
                         log::debug!(
                             "[GIT OPERATION] local.rs discard_files_impl git restore --staged --worktree -- {old_path}"
                         );
-                        let _ = run_git_command(
+                        if let Err(e) = run_git_command(
                             &repo_path,
-                            &["restore", "--staged", "--worktree", "--", old_path],
+                            &["restore", "--staged", "--worktree", "--", &old_pathspec],
                         )
-                        .await;
+                        .await
+                        {
+                            failures.push(format!("restore '{old_path}': {e}"));
+                        }
                     }
                 }
             } else {
@@ -770,26 +895,27 @@ impl LocalDiffStateModel {
                             .unwrap_or(info.path.as_str())
                             .to_string();
 
-                        // Remove the new file
-                        log::debug!(
-                            "[GIT OPERATION] local.rs discard_files_impl git rm -f -- {relative_new_path}"
-                        );
-                        if let Err(e) =
-                            run_git_command(&repo_path, &["rm", "-f", "--", &relative_new_path])
-                                .await
+                        if let Err(e) = Self::remove_paths_absent_from_source(
+                            &repo_path,
+                            std::slice::from_ref(&relative_new_path),
+                        )
+                        .await
                         {
-                            log::warn!("Failed to remove renamed file '{relative_new_path}': {e}");
+                            failures.push(format!("remove '{relative_new_path}': {e}"));
                         }
 
                         // Restore the old file from the branch using git checkout
                         // We use checkout instead of restore because the old path doesn't exist in the
                         // working directory yet, and git restore requires the path to exist
+                        let old_pathspec = Self::literal_pathspec(old_path);
                         log::debug!(
                             "[GIT OPERATION] local.rs discard_files_impl git checkout {branch} -- {old_path}"
                         );
                         if let Err(e) =
-                            run_git_command(&repo_path, &["checkout", branch, "--", old_path]).await
+                            run_git_command(&repo_path, &["checkout", branch, "--", &old_pathspec])
+                                .await
                         {
+                            failures.push(format!("restore '{old_path}': {e}"));
                             report_error!(
                                 e.context("Failed to restore old file from branch"),
                                 extra: { "old_path" => %old_path, "branch" => %branch }
@@ -814,11 +940,18 @@ impl LocalDiffStateModel {
 
             if branch == "HEAD" && should_stash {
                 Self::stash_uncommitted_changes(&repo_path, &relative_paths).await?;
-            } else {
-                Self::git_restore_and_clean(&repo_path, &relative_paths, branch).await?;
+            } else if let Err(e) =
+                Self::git_restore_and_clean(&repo_path, &relative_paths, branch).await
+            {
+                failures.push(e.to_string());
             }
         }
-        Ok(())
+
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(anyhow!("{}", failures.join("; ")))
+        }
     }
 
     /// Discard changes for one or more files
@@ -846,14 +979,20 @@ impl LocalDiffStateModel {
                 )
                 .await
             },
-            |me, result, ctx| match result {
-                Ok(_) => {
-                    me.load_diffs_for_current_repo(false, false, ctx);
-                    me.refresh_diff_metadata_for_current_repo(false, ctx);
-                }
-                Err(err) => {
-                    report_error!(err.context("Failed to restore files"));
-                }
+            |me, result, ctx| {
+                me.load_diffs_for_current_repo(false, false, ctx);
+                me.refresh_diff_metadata_for_current_repo(false, ctx);
+                let domain_result = match result {
+                    Ok(()) => Ok(()),
+                    Err(err) => {
+                        let message = err.to_string();
+                        report_error!(err.context("Failed to restore files"));
+                        Err(message)
+                    }
+                };
+                ctx.emit(DiffStateModelEvent::GitOpCompleted(
+                    GitOpResult::DiscardCompleted(domain_result),
+                ));
             },
         );
     }
@@ -869,18 +1008,48 @@ impl LocalDiffStateModel {
         // Noop on WASM builds.
     }
 
-    /// Sets whether the code review pane needs diff metadata.
-    /// When transitioning from disabled to enabled, triggers an
-    /// immediate refresh to catch up on changes that occurred while disabled.
-    pub fn set_code_review_metadata_refresh_enabled(
+    pub fn add_refresh_consumer(
         &mut self,
-        enabled: bool,
+        consumer: DiffRefreshConsumer,
         ctx: &mut ModelContext<Self>,
     ) {
-        let was_enabled = self.metadata_refresh_enabled;
-        self.metadata_refresh_enabled = enabled;
-        if !was_enabled && enabled {
+        let was_idle = self.refresh_consumers.is_empty();
+        self.refresh_consumers.insert(consumer);
+        if was_idle {
             self.refresh_diff_metadata_for_current_repo(false, ctx);
+        }
+    }
+
+    /// Cached diffs and metadata are deliberately kept so a returning consumer
+    /// has something to show while its reload runs.
+    pub fn remove_refresh_consumer(&mut self, consumer: DiffRefreshConsumer) {
+        if !self.refresh_consumers.remove(&consumer) {
+            return;
+        }
+        if self.refresh_consumers.is_empty() {
+            self.cancel_background_work();
+        }
+    }
+
+    fn refresh_enabled(&self) -> bool {
+        !self.refresh_consumers.is_empty()
+    }
+
+    fn cancel_background_work(&mut self) {
+        if let Some(handle) = self.computing_diffs_abort_handle.take() {
+            handle.abort();
+        }
+        if let Some(handle) = self.computing_metadata_abort_handle.take() {
+            handle.abort();
+        }
+        self.tracked_diff_load_start_time = None;
+        #[cfg(feature = "local_fs")]
+        {
+            self.file_invalidation.cancel_all();
+            self.file_invalidation.full_load_in_flight = false;
+            self.file_invalidation.full_load_target = None;
+            self.file_invalidation.queued_full_reload = None;
+            self.pending_file_updates = None;
         }
     }
 
@@ -891,7 +1060,7 @@ impl LocalDiffStateModel {
         should_reload_diffs: bool,
         ctx: &mut ModelContext<Self>,
     ) {
-        if !self.metadata_refresh_enabled {
+        if !self.refresh_enabled() {
             return;
         }
         let Some(current_repository) = &self.repository else {
@@ -940,10 +1109,10 @@ impl LocalDiffStateModel {
 
         // Only kick off the expensive metadata + diff loading when the code
         // review pane is actually open.  When the pane opens later, `on_open`
-        // calls `set_code_review_metadata_refresh_enabled(true)` (which
-        // triggers metadata) and `load_diffs_for_current_repo` (which triggers
-        // diffs), so nothing is lost — just deferred.
-        if self.metadata_refresh_enabled {
+        // calls `add_refresh_consumer` (which triggers metadata) and
+        // `load_diffs_for_current_repo` (which triggers diffs), so nothing is
+        // lost — just deferred.
+        if self.refresh_enabled() {
             let new_repository_root = new_repository.as_ref(ctx).root_dir().to_local_path_lossy();
             // Always include base branch metadata since only code review uses this model now.
             let include_base_branch = true;
@@ -974,23 +1143,18 @@ impl LocalDiffStateModel {
 
         ctx.spawn_stream_local(
             repository_update_rx,
-            move |me, item, ctx| match item {
-                DiffStateRepositoryUpdate::Invalidation(update) => {
-                    if me.handle_file_update(update, ctx) {
-                        log::debug!("[GIT OPERATION] handle_file_update found changes");
-                        let throttled_repository_update_tx_clone =
-                            throttled_repository_update_tx.clone();
-                        ctx.background_executor()
-                            .spawn(async move {
-                                let _ = throttled_repository_update_tx_clone.send(()).await;
-                            })
-                            .detach();
-                    } else {
-                        log::debug!("[GIT OPERATION] No changes found no metadata update.");
-                    }
-                }
-                DiffStateRepositoryUpdate::InvalidationWithLockedIndex => {
-                    me.queue_full_invalidation();
+            move |me, item, ctx| {
+                if me.handle_file_update(item, ctx) {
+                    log::debug!("[GIT OPERATION] handle_file_update found changes");
+                    let throttled_repository_update_tx_clone =
+                        throttled_repository_update_tx.clone();
+                    ctx.background_executor()
+                        .spawn(async move {
+                            let _ = throttled_repository_update_tx_clone.send(()).await;
+                        })
+                        .detach();
+                } else {
+                    log::debug!("[GIT OPERATION] No changes found no metadata update.");
                 }
             },
             |_, _| {},
@@ -1014,9 +1178,14 @@ impl LocalDiffStateModel {
     /// Returns `true` if a metadata refresh should be triggered.
     fn handle_file_update(
         &mut self,
-        update: RepositoryUpdate,
+        update: DiffStateRepositoryUpdate,
         ctx: &mut ModelContext<Self>,
     ) -> bool {
+        let DiffStateRepositoryUpdate {
+            update,
+            index_lock_held,
+        } = update;
+
         // Refresh if there are file changes or if commit state has been updated
         if update.is_empty() {
             return false;
@@ -1028,7 +1197,7 @@ impl LocalDiffStateModel {
             deleted,
             moved,
             commit_updated,
-            index_lock_detected,
+            index_lock_detected: _,
             remote_ref_updated,
         } = update;
 
@@ -1036,36 +1205,8 @@ impl LocalDiffStateModel {
         // false), skip diff reloads and per-file invalidations.  The throttled
         // metadata path already respects this flag, and `on_open` will trigger
         // a full reload when the pane becomes visible.
-        if !self.metadata_refresh_enabled {
+        if !self.refresh_enabled() {
             return false;
-        }
-
-        if commit_updated || remote_ref_updated {
-            self.load_diffs_for_current_repo(false, false, ctx);
-            // Don't emit MetadataRefreshed here — metadata hasn't been
-            // recomputed yet. NewDiffsComputed handles the immediate UI
-            // refresh, and the throttled metadata refresh will emit
-            // MetadataRefreshed with fresh stats/git-operations data.
-            return true;
-        } else if index_lock_detected {
-            if self.file_invalidation.invalidate_all_pending {
-                // Lock was released while a full invalidation was pending — reload now.
-                self.load_diffs_for_current_repo(false, false, ctx);
-                return true;
-            }
-            // Lock just appeared — suppress the per-file queue (data may be stale
-            // while the lock is held) and wait for the lock-release event.
-            self.queue_full_invalidation();
-            return false;
-        }
-
-        // If a previous index-lock event set `invalidate_all_pending` but the
-        // lock has since cleared without a commit (e.g. aborted merge), recover
-        // by forcing a full reload. Without this, all subsequent file
-        // invalidations would be silently deferred forever.
-        if self.file_invalidation.invalidate_all_pending {
-            self.load_diffs_for_current_repo(false, false, ctx);
-            return true;
         }
 
         // Filter out gitignored files and extract paths
@@ -1077,6 +1218,27 @@ impl LocalDiffStateModel {
             .filter(|target_file| !target_file.is_ignored)
             .map(|target_file| target_file.path)
             .collect::<Vec<PathBuf>>();
+
+        let lock_was_held = self.file_invalidation.index_lock_held;
+        self.file_invalidation.index_lock_held = index_lock_held;
+        if index_lock_held {
+            // Diff data read while `.git/index.lock` is held can be torn.
+            self.file_invalidation.cancel_all();
+            return false;
+        }
+        if lock_was_held {
+            self.load_diffs_for_current_repo(false, false, ctx);
+            return true;
+        }
+
+        if commit_updated || remote_ref_updated {
+            self.load_diffs_for_current_repo(false, false, ctx);
+            // Don't emit MetadataRefreshed here — metadata hasn't been
+            // recomputed yet. NewDiffsComputed handles the immediate UI
+            // refresh, and the throttled metadata refresh will emit
+            // MetadataRefreshed with fresh stats/git-operations data.
+            return true;
+        }
 
         if changed_files.is_empty() {
             return false;
@@ -1109,7 +1271,7 @@ impl LocalDiffStateModel {
             return;
         };
 
-        if self.file_invalidation.invalidate_all_pending {
+        if self.file_invalidation.should_defer_file_invalidations() {
             // TODO: Remove pending file invalidations — pause the queue instead.
             // Defer file invalidation if a full reload is in-flight or the diff is still loading.
             match &mut self.pending_file_updates {
@@ -1140,10 +1302,21 @@ impl LocalDiffStateModel {
         }
     }
 
-    /// Flushes deferred file invalidations that accumulated during a full reload.
     #[cfg(feature = "local_fs")]
     fn flush_pending_invalidations(&mut self, ctx: &mut ModelContext<Self>) {
-        self.file_invalidation.invalidate_all_pending = false;
+        self.file_invalidation.full_load_in_flight = false;
+        self.file_invalidation.full_load_target = None;
+
+        if let Some(queued) = self.file_invalidation.queued_full_reload.take() {
+            self.pending_file_updates = None;
+            self.load_diffs_for_current_repo(
+                queued.should_fetch_base,
+                queued.track_load_duration,
+                ctx,
+            );
+            return;
+        }
+
         let Some(repo_path) = self.active_repository_path(ctx) else {
             return;
         };
@@ -1168,11 +1341,15 @@ impl LocalDiffStateModel {
     /// watcher-driven invalidations resume.
     ///
     /// For non-Head diff modes the computation is async (it shells out to git),
-    /// so we keep the `invalidate_all_pending` flag set until it completes.
-    /// This ensures watcher-driven file invalidations are deferred rather than
-    /// enqueued without a merge base.
+    /// so full-load ownership is held until it completes. This ensures
+    /// watcher-driven file invalidations are deferred rather than enqueued
+    /// without a merge base.
     #[cfg(feature = "local_fs")]
     fn recompute_merge_base_and_flush(&mut self, ctx: &mut ModelContext<Self>) {
+        if self.file_invalidation.queued_full_reload.is_some() {
+            self.flush_pending_invalidations(ctx);
+            return;
+        }
         let diff_mode = self.mode.clone();
         if !matches!(diff_mode, DiffMode::Head) {
             let Some(repo_path) = self.active_repository_path(ctx) else {
@@ -1599,9 +1776,13 @@ impl LocalDiffStateModel {
     #[cfg(feature = "local_fs")]
     fn handle_updated_state_for_repo(
         &mut self,
-        diffs: DiffsWithBaseContent,
+        (target, diffs): (FullLoadTarget, DiffsWithBaseContent),
         ctx: &mut ModelContext<Self>,
     ) {
+        if self.file_invalidation.full_load_target.as_ref() != Some(&target) {
+            return;
+        }
+
         let load_duration = match &diffs.changes {
             Ok(_) => self
                 .tracked_diff_load_start_time
@@ -1712,9 +1893,9 @@ impl LocalDiffStateModel {
             let is_binary = binary_files.contains(&file_path);
             let mut file_diff =
                 Self::get_file_diff(repo_path, &file_path, &status, is_binary, None).await?;
-            // Never read or ship base content for binary files: it can't be
-            // inline-rendered and, after lossy UTF-8 decoding, can balloon ~3x.
-            let content_at_head = if is_binary {
+            // Neither is inline-rendered, and the blob can balloon ~3x after
+            // lossy UTF-8 decoding.
+            let content_at_head = if is_binary || file_diff.is_unrenderable() {
                 None
             } else {
                 Self::get_file_content_at_head(repo_path, &file_path, &status).await
@@ -1815,14 +1996,14 @@ impl LocalDiffStateModel {
     }
 
     /// Checks whether a single file is binary by running a scoped
-    /// `git diff --numstat <commit> -- <file>`.
+    /// `git diff --numstat -z <commit> -- <file>`.
     async fn is_file_binary(repo_path: &Path, relative: &str, commit: &str) -> Result<bool> {
         log::debug!(
-            "[GIT OPERATION] local.rs is_file_binary git diff --numstat {commit} -- {relative}"
+            "[GIT OPERATION] local.rs is_file_binary git diff --numstat -z {commit} -- {relative}"
         );
         let output = match run_git_command(
             repo_path,
-            &["diff", "--numstat", commit, "--", relative],
+            &["diff", "--numstat", "-z", commit, "--", relative],
         )
         .await
         {
@@ -1830,11 +2011,9 @@ impl LocalDiffStateModel {
             Err(_) => return Ok(false),
         };
 
-        // numstat output: "<add>\t<del>\t<file>" — binary files use "-\t-".
-        Ok(output
-            .lines()
-            .next()
-            .is_some_and(|line| line.starts_with("-\t-")))
+        Ok(parse_numstat_z(&output)
+            .first()
+            .is_some_and(|entry| entry.is_binary))
     }
 
     /// Retrieves the diff state for a single invalidated file using scoped
@@ -1893,9 +2072,9 @@ impl LocalDiffStateModel {
             return Ok(None);
         }
 
-        // Never read or ship base content for binary files: it can't be
-        // inline-rendered and, after lossy UTF-8 decoding, can balloon ~3x.
-        let content_at_head = if is_binary {
+        // Neither is inline-rendered, and the blob can balloon ~3x after lossy
+        // UTF-8 decoding.
+        let content_at_head = if is_binary || file_diff.is_unrenderable() {
             None
         } else {
             match &merge_base {
@@ -2715,47 +2894,35 @@ impl LocalDiffStateModel {
         Ok(files)
     }
 
-    /// Get binary files using git diff --numstat against a specific commit
     async fn get_diff_metadata_using_numstat(
         repo_path: &Path,
         commit: &str,
     ) -> Result<HashMap<String, GitNumStatMetadata>> {
         log::debug!(
-            "[GIT OPERATION] local.rs get_diff_metadata_using_numstat git diff --numstat {commit}"
+            "[GIT OPERATION] local.rs get_diff_metadata_using_numstat git diff --numstat -z {commit}"
         );
-        let numstat_output = match run_git_command(repo_path, &["diff", "--numstat", commit]).await
-        {
-            Ok(output) => output,
-            Err(_) => {
-                // If numstat fails, return empty set
-                return Ok(HashMap::new());
-            }
-        };
+        let numstat_output =
+            match run_git_command(repo_path, &["diff", "--numstat", "-z", commit]).await {
+                Ok(output) => output,
+                Err(_) => {
+                    // If numstat fails, return empty set
+                    return Ok(HashMap::new());
+                }
+            };
 
-        let mut diff_metadata = std::collections::HashMap::new();
-
-        for line in numstat_output.lines() {
-            if line.is_empty() {
-                continue;
-            }
-
-            let parts: Vec<&str> = line.split('\t').collect();
-            if parts.len() >= 3 {
-                let additions = parts[0];
-                let deletions = parts[1];
-                let filename = parts[2];
-
-                let metadata = GitNumStatMetadata {
-                    lines_added: additions.parse().unwrap_or(0),
-                    lines_removed: deletions.parse().unwrap_or(0),
-                    is_binary_file: additions == "-" && deletions == "-",
-                };
-
-                diff_metadata.insert(filename.to_string(), metadata);
-            }
-        }
-
-        Ok(diff_metadata)
+        Ok(parse_numstat_z(&numstat_output)
+            .into_iter()
+            .map(|entry| {
+                (
+                    entry.path,
+                    GitNumStatMetadata {
+                        lines_added: entry.additions,
+                        lines_removed: entry.deletions,
+                        is_binary_file: entry.is_binary,
+                    },
+                )
+            })
+            .collect())
     }
 
     /// Get binary files using git diff --numstat against a specific commit
@@ -2861,14 +3028,13 @@ impl warpui::Entity for LocalDiffStateModel {
     type Event = DiffStateModelEvent;
 }
 
+/// `RepositoryUpdate::index_lock_detected` is edge-triggered — set both when
+/// `.git/index.lock` appears and when it disappears — so the subscriber resolves
+/// it into the level signal `index_lock_held`.
 #[cfg(feature = "local_fs")]
-enum DiffStateRepositoryUpdate {
-    /// Normal file-system update to process.
-    Invalidation(RepositoryUpdate),
-    /// A commit-level update was detected while `.git/index.lock` was held.
-    /// The receiver should mark a full invalidation pending without triggering
-    /// a diff reload (the data would be stale).
-    InvalidationWithLockedIndex,
+struct DiffStateRepositoryUpdate {
+    update: RepositoryUpdate,
+    index_lock_held: bool,
 }
 
 #[cfg(feature = "local_fs")]
@@ -2898,17 +3064,13 @@ impl RepositorySubscriber for LocalDiffStateModelRepositorySubscriber {
         let update = update.clone();
         let index_lock_path = repository.git_dir().join("index.lock");
         Box::pin(async move {
-            // If commit state changed while the git index is locked (e.g. during
-            // a pull or merge), signal the locked state instead of forwarding stale
-            // data. The lock release atomically renames index.lock → index, which
-            // triggers a fresh commit_updated event that takes the normal path.
-            let msg = if update.commit_updated && async_fs::metadata(&index_lock_path).await.is_ok()
-            {
-                DiffStateRepositoryUpdate::InvalidationWithLockedIndex
-            } else {
-                DiffStateRepositoryUpdate::Invalidation(update)
-            };
-            let _ = tx.send(msg).await;
+            let index_lock_held = async_fs::metadata(&index_lock_path).await.is_ok();
+            let _ = tx
+                .send(DiffStateRepositoryUpdate {
+                    update,
+                    index_lock_held,
+                })
+                .await;
         })
     }
 }
@@ -2932,7 +3094,7 @@ impl LocalDiffStateModel {
             computing_diffs_abort_handle: None,
             computing_metadata_abort_handle: None,
             tracked_diff_load_start_time: None,
-            metadata_refresh_enabled: false,
+            refresh_consumers: HashSet::new(),
             #[cfg(feature = "local_fs")]
             file_invalidation: FileInvalidationState::new(SyncQueue::new_streaming(
                 &ctx.background_executor(),
